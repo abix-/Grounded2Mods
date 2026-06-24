@@ -528,6 +528,26 @@ pub mod horse_offset {
             .max_by_key(|(_, c)| *c)
             .map(|(v, _)| v as usize)
     }
+    /// Per-horse "container kind" cache at +0x1d0 (u32). Byte-diff of a
+    /// real manual drag (HK1 research, docs/HK1-SHIFT-CLICK-TRANSFER-PLAN.md
+    /// section 5b) showed: 7 = trailer/truck, 9 = pasture, 0 or 2 right
+    /// after a save/reload. Flagged a DISPLAY CACHE the game recomputes
+    /// each tick. Writing it does NOT move the horse. But it is the
+    /// first hypothesis for READING trailer-vs-pasture. Zero-hardcoding
+    /// audit: H-gb research-stage; hardcoded until live-confirmed as the
+    /// authoritative read source, then give it a resolver/classification.
+    pub const CONTAINER_KIND: usize = 0x1d0;
+
+    /// Per-horse scene placement position (two f32: x at +0x1d4, y at
+    /// +0x1d8). Live-confirmed 2026-06-23 as the trailer-determining
+    /// field: a trailer horse reads its trailer position (~13, 9); a
+    /// pasture horse reads (0, 0) on the overworld. Drop writes it
+    /// (FUN_1400d2ab0 ~:1888); the location-enter handler re-places
+    /// horses from it (FUN_1400cd5a0 ~:110-112). H-gb research-stage;
+    /// hardcoded until classified.
+    pub const SCENE_POS_X: usize = 0x1d4;
+    pub const SCENE_POS_Y: usize = 0x1d8;
+
     /// Horse name ID (passed to `name_resolve` / FUN_1400c78c0).
     pub const NAME_ID: usize = 0x1f8;
     /// Horse age (years; int32). Old decomp constant; production

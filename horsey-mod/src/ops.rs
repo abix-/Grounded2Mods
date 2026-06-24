@@ -234,8 +234,15 @@ pub fn register_all() {
             |args| {
                 use modforge::winproc::is_addr_readable;
                 let nid = args.get("name_id").and_then(Json::as_u64).unwrap_or(0) as u32;
-                let table = crate::targets_registry::resolve::name_table()
+                let slot = crate::targets_registry::resolve::name_table()
                     .unwrap_or_else(|| crate::targets::rebase(crate::targets::NAME_TABLE));
+                // Resolver returns the static `.data` slot; deref to the live
+                // heap table base (allocated after the save loads).
+                let table = if is_addr_readable(slot + 8) {
+                    unsafe { *(slot as *const usize) }
+                } else {
+                    0
+                };
                 let entry = table + (nid as usize) * 0x88;
                 let entry_readable = is_addr_readable(entry + 0x88);
                 let mut out = json!({
@@ -363,6 +370,16 @@ pub fn register_all() {
                     let name_id = crate::horse::name_id(p);
                     let name = crate::horse::name(p);
                     let species = crate::horse::species(p);
+                    // Trailer vs pasture is POSITIONAL (live-confirmed
+                    // 2026-06-23): the scene placement at +0x1d4/+0x1d8 is a
+                    // trailer position (~13, 9) for trailer horses and (0,0)
+                    // for pasture horses on the overworld. The old +0x1d0
+                    // guess is just a pickup-order counter, not the container.
+                    let scene = crate::horse::scene_pos(p);
+                    let container = match scene {
+                        Some((x, y)) if x.abs() > 0.01 || y.abs() > 0.01 => "trailer",
+                        _ => "pasture",
+                    };
                     horses.push(json!({
                         "idx": i,
                         "ptr": format!("0x{p:x}"),
@@ -374,11 +391,80 @@ pub fn register_all() {
                         "name_id": name_id,
                         "name": name,
                         "species": species,
+                        "scene_x": scene.map(|(x, _)| x),
+                        "scene_y": scene.map(|(_, y)| y),
+                        "container": container,
                     }));
                 }
                 Ok(json!({
                     "count": count,
                     "horses": horses,
+                }))
+            },
+        ),
+
+        // HK1 detection: the truck/trailer horse list lives on the MapState
+        // (world-map state), NOT on the horse. Decomp FUN_1400cd5a0
+        // (truck enter/leave handler) unloads the vector at
+        // `*MAP_STATE_PTR + 0x130/+0x138` into a location on arrival and
+        // refills it on leave. So a horse is "in the trailer" iff its Horse*
+        // is in that vector; owned horses not in it are in the pasture.
+        OpDef::new(
+            "horse.trailer",
+            "Read the truck/trailer horse list at *MAP_STATE_PTR + 0x130/+0x138 (the world-map \
+             carrier) and cross-reference it against the owned horses. Decomp: FUN_1400cd5a0.",
+            "",
+            |_| {
+                use modforge::winproc::is_addr_readable;
+                let slot = crate::targets::rebase(crate::targets::MAP_STATE_PTR);
+                if !is_addr_readable(slot) {
+                    return Ok(json!({"error": "MAP_STATE_PTR slot unreadable"}));
+                }
+                // SAFETY: slot readability checked.
+                let map_state = unsafe { *(slot as *const usize) };
+                if map_state < 0x1_0000 || !is_addr_readable(map_state + 0x138) {
+                    return Ok(json!({
+                        "error": "MapState ptr not heap-shaped / unreadable",
+                        "map_state": format!("0x{map_state:x}")
+                    }));
+                }
+                // SAFETY: map_state+0x138 readability checked just above.
+                let begin = unsafe { *((map_state + 0x130) as *const usize) };
+                let end = unsafe { *((map_state + 0x138) as *const usize) };
+                let mut trailer: Vec<usize> = Vec::new();
+                if begin != 0
+                    && end >= begin
+                    && (end - begin) % 8 == 0
+                    && is_addr_readable(begin)
+                {
+                    let n = (end - begin) / 8;
+                    for i in 0..n.min(256) {
+                        let pp = begin + i * 8;
+                        if !is_addr_readable(pp) {
+                            break;
+                        }
+                        // SAFETY: pp readability checked.
+                        trailer.push(unsafe { *(pp as *const usize) });
+                    }
+                }
+                let count = gamestate::owned_horse_count();
+                let mut owned = Vec::with_capacity(count);
+                for i in 0..count {
+                    let Some(p) = gamestate::owned_horse_ptr(i) else { continue };
+                    let in_trailer = trailer.contains(&p);
+                    owned.push(json!({
+                        "idx": i,
+                        "ptr": format!("0x{p:x}"),
+                        "container": if in_trailer { "trailer" } else { "pasture" },
+                    }));
+                }
+                Ok(json!({
+                    "map_state": format!("0x{map_state:x}"),
+                    "trailer_begin": format!("0x{begin:x}"),
+                    "trailer_end": format!("0x{end:x}"),
+                    "trailer_count": trailer.len(),
+                    "trailer_horses": trailer.iter().map(|h| format!("0x{h:x}")).collect::<Vec<_>>(),
+                    "owned": owned,
                 }))
             },
         ),

@@ -29,67 +29,40 @@ use modforge::vanilla::sig::{ArgKind, RetKind, Signature};
 // CustomResolver's contract.
 // ============================================================================
 
-/// NAME_TABLE: scan .text for `mov r64, [rip+disp32]` (8 ModR/M variants),
-/// deref each candidate slot, score how many entries at stride 0x88 look
-/// like MSVC std::string. Return the heap pointer of the highest-scoring
-/// slot.
+/// NAME_TABLE: anchor on the name resolver's tail (`FUN_1400c78c0`):
+///   `imul rax, rax, 0x88`     -> `48 69 c0 88 00 00 00`
+///   `add  rax, [rip+disp32]`  -> `48 03 05 <disp32>`
+/// The disp32 targets the `.data` slot holding the heap table base; deref
+/// it. The old build had the table inline in `.data`; the current build
+/// moved it to the heap and the slot drifted +0x1110 (same as
+/// GAMESTATE_PTR), which is why the old std::string-shape scan stopped
+/// finding it and names read "?". The `imul *0x88` + `add [rip]` pair is
+/// unique in `.text` (live-verified 2026-06-24: 24 imul-0x88 sites, only
+/// one with this exact reg/op sequence), so this is robust across drift.
 fn resolve_name_table_custom(_image_base: u64) -> Result<u64, String> {
-    let mov_modrms: [(u8, u8, u8); 8] = [
-        (0x48, 0x8b, 0x05), (0x48, 0x8b, 0x0d), (0x48, 0x8b, 0x15),
-        (0x48, 0x8b, 0x1d), (0x48, 0x8b, 0x2d), (0x48, 0x8b, 0x35),
-        (0x48, 0x8b, 0x3d), (0x4c, 0x8b, 0x05),
-    ];
-    let mut slots: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
-    for (a, b, c) in mov_modrms {
-        let sig = format!("{a:02x} {b:02x} {c:02x}");
-        if let Ok(hits) = sleuth::scan_all_matches(&sig) {
-            for site in hits {
-                if !modforge::winproc::is_addr_readable(site + 7) { continue; }
-                // SAFETY: site+7 readability checked.
-                let bytes = unsafe { std::slice::from_raw_parts(site as *const u8, 7) };
-                let disp = i32::from_le_bytes([bytes[3], bytes[4], bytes[5], bytes[6]]) as isize;
-                let next_ip = (site + 7) as isize;
-                let slot = (next_ip + disp) as usize;
-                if modforge::winproc::is_addr_readable(slot + 8) {
-                    slots.insert(slot);
-                }
-            }
-        }
+    let sig = "48 69 c0 88 00 00 00 48 03 05 ?? ?? ?? ??";
+    let hits = sleuth::scan_all_matches(sig).map_err(|e| e.to_string())?;
+    if hits.len() != 1 {
+        return Err(format!("name-table anchor matched {} site(s); want 1", hits.len()));
     }
-    let mut best: Option<(u64, i32)> = None;
-    for slot in slots {
-        // SAFETY: slot+8 readability checked above.
-        let heap_ptr = unsafe { *(slot as *const u64) };
-        if heap_ptr < 0x1_0000_0000 || heap_ptr > 0x7fff_ffff_ffff { continue; }
-        if (heap_ptr & 0xF) != 0 { continue; }
-        let score = score_name_table_entries(heap_ptr as usize);
-        if score >= 16 && best.map(|(_, s)| score > s).unwrap_or(true) {
-            best = Some((heap_ptr, score));
-        }
+    let site = hits[0];
+    if !modforge::winproc::is_addr_readable(site + 14) {
+        return Err("name-table anchor end unreadable".into());
     }
-    best.map(|(addr, _)| addr).ok_or_else(|| "no slot scored >= 16".into())
-}
-
-fn score_name_table_entries(addr: usize) -> i32 {
-    const STRIDE: usize = 0x88;
-    const N: usize = 16;
-    if !modforge::winproc::is_addr_readable(addr + STRIDE * N) {
-        return 0;
+    // The `add r64,[rip+disp32]` is 7 bytes starting at site+7; its disp32
+    // is at site+10 and next_ip = site+14.
+    // SAFETY: site..site+14 is the matched, mapped `.text` run.
+    let disp = unsafe { *((site + 10) as *const i32) } as isize;
+    let slot = ((site + 14) as isize + disp) as usize;
+    if !modforge::winproc::is_addr_readable(slot + 8) {
+        return Err(format!("name-table slot 0x{slot:x} unreadable"));
     }
-    let mut score = 0i32;
-    for i in 0..N {
-        let entry = addr + i * STRIDE;
-        // SAFETY: range readability checked above.
-        let size = unsafe { *((entry + 0x10) as *const usize) };
-        let cap = unsafe { *((entry + 0x18) as *const usize) };
-        let size_ok = size <= 255;
-        let cap_ok = cap < (1 << 24);
-        let sso_default = cap == 15;
-        if size_ok && cap_ok && (size > 0 || sso_default) {
-            score += if sso_default { 2 } else { 1 };
-        }
-    }
-    score
+    // Return the SLOT (a static `.data` address), NOT `*slot`. The heap
+    // table base lives at `*slot` and is allocated only after the save
+    // loads; callers deref at lookup time. Resolving `*slot` here. The
+    // registry runs at attach, pre-load. Would read a null/unallocated
+    // table and cache a permanent failure (the 2026-06-24 names="?" bug).
+    Ok(slot as u64)
 }
 
 /// CHROMOSOME_TABLE: find FUN_1400b39b0 via its unique prologue sig,

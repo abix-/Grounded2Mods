@@ -115,6 +115,33 @@ pub fn species(horse: usize) -> Option<i32> {
     Some(unsafe { *((horse + horse_offset::type_or_species()) as *const i32) })
 }
 
+/// Read the per-horse container-kind cache at +0x1d0 (u32).
+/// 7 = trailer, 9 = pasture, 0 or 2 right after a save/reload (see
+/// `targets::horse_offset::CONTAINER_KIND`). This is the READ
+/// hypothesis for trailer-vs-pasture; its reliability is verified by
+/// the live manual-drag watch, not assumed here.
+pub fn container_kind(horse: usize) -> Option<u32> {
+    if horse == 0 {
+        return None;
+    }
+    // SAFETY: u32 read at a known offset; horse is alive.
+    Some(unsafe { *((horse + horse_offset::CONTAINER_KIND) as *const u32) })
+}
+
+/// Read the per-horse scene placement position (x at +0x1d4, y at
+/// +0x1d8). Live-confirmed trailer-determining field: trailer horses
+/// carry their trailer position (~13, 9), pasture horses read (0, 0) on
+/// the overworld. See `targets::horse_offset::SCENE_POS_X`.
+pub fn scene_pos(horse: usize) -> Option<(f32, f32)> {
+    if horse == 0 {
+        return None;
+    }
+    // SAFETY: two f32 reads at known offsets; horse is alive.
+    let x = unsafe { *((horse + horse_offset::SCENE_POS_X) as *const f32) };
+    let y = unsafe { *((horse + horse_offset::SCENE_POS_Y) as *const f32) };
+    Some((x, y))
+}
+
 pub fn name_id(horse: usize) -> Option<u32> {
     if horse == 0 {
         return None;
@@ -149,7 +176,17 @@ pub fn name_by_id(name_id: u32) -> Option<String> {
     if name_id == u32::MAX {
         return None;
     }
-    let table = crate::targets_registry::resolve::name_table()?;
+    let slot = crate::targets_registry::resolve::name_table()?;
+    if !modforge::winproc::is_addr_readable(slot + 8) {
+        return None;
+    }
+    // SAFETY: slot+8 checked. The resolver returns the static `.data` slot;
+    // deref it here (at lookup time) to the live heap table base, which is
+    // only allocated after the save loads.
+    let table = unsafe { *(slot as *const usize) };
+    if table < 0x1_0000 {
+        return None;
+    }
     let entry = table + (name_id as usize) * 0x88;
     if !modforge::winproc::is_addr_readable(entry + 0x88) {
         return None;

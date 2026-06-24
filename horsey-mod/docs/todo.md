@@ -745,6 +745,35 @@ Without it, every scene-internal feature (CRISPR mods, breeding control, race au
 
 ## Other open work
 
+### HK1 detector + name table + stuck-car (2026-06-24, OPEN). Detail in [HK1-SHIFT-CLICK-TRANSFER-PLAN.md](HK1-SHIFT-CLICK-TRANSFER-PLAN.md) 5g
+
+Honest status. Nothing committed.
+
+- **Trailer/pasture DETECTOR built** (`gamestate.owned_horses` classifies by the
+  scene-placement position `horse+0x1d4/+0x1d8`; `+0x1d0` is a pickup counter,
+  not the container). Rule "non-zero = trailer" is too loose: tomtato at
+  `(14.5, 9)` reads trailer but is probably pasture (operator: only 1 in trailer).
+  Need the real trailer RECTANGLE; the click-handler extent constants read as
+  garbage in memory. Verification blocked: the op reads the static loaded-save
+  snapshot (in-scene drags commit only on leave), the owned list is inconsistent,
+  and Coupe is un-grabbable so can't be moved to test.
+- **NAME TABLE re-derived** (`resolve_name_table_custom` anchored on
+  `imul rax,rax,0x88 ; add rax,[rip+disp32]` in `FUN_1400c78c0`): slot RVA
+  `0x3f45f0` (drifted +0x1110 from the stale `0x3f34e0`). Names decode correctly
+  in `tests/hk1_name_table.rs` (251=Coupe DeVille, 272=Horse, 250=tomtato). OPEN
+  BUG: the live op still reads `<none>`. The registry caches the NAME_TABLE
+  resolve MISS at attach; a `OnceLock` bypass fixed names but broke `owned_horses`
+  (returned 0) and was reverted. Fix the registry caching (resolve lazily / do
+  not cache a NAME_TABLE miss) without breaking `owned_horses`.
+- **COUPE DEVILLE un-grabbable**: grabbing is a box2d collision hit-test
+  (`FUN_1400b6fd0` over the body list `horse+0x40..+0x48`); his collision body is
+  missing/disabled (a failed physics rebuild `FUN_1400b3dc0`). NOT the car type,
+  NOT a flag. Repair = force a physics rebuild (risky); not done. Not yet confirmed
+  by reading his body list.
+- **`owned_horses` list inconsistency**: tomtato (name_id 250) is intermittently
+  absent from the read. The op walks `GS+0x438 -> +0x90 -> +0x130`, which may not
+  be the canonical owned list (scene slot 0). Audit the chain.
+
 ### HK1 Shift+Click smart-transfer (REOPENED via L3 input 2026-05-16)
 
 > **STATUS CHANGE 2026-05-16:** The synthetic-input axis shipped end-to-end ([modforge::input + HorseyInputSurface](../../modforge/docs/input-prior-art.md)). The 4-helper RE blocker below is **no longer the critical path**. The new recommended approach is to drive the GAME'S NATIVE click handler via synthetic input rather than bypass it: `input.combo` + `input.mouse.drag` with `backend: "l3"` writes `LOC+0x174`/`+0x178` directly so `FUN_1400d2ab0` runs end-to-end (vtable[+0x78] + the 4 helpers automatically). Authoritative plan: [`HK1-SHIFT-CLICK-TRANSFER-PLAN.md`](HK1-SHIFT-CLICK-TRANSFER-PLAN.md) is now superseded for the dispatch path; calibration data is still needed.

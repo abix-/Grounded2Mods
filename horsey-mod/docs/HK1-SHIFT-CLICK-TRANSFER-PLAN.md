@@ -432,6 +432,237 @@ These are LOC's internal cursor coords, NOT screen pixel coords. They feed direc
 
 ---
 
+## 5c. Session log: container-detection findings (2026-06-23)
+
+HK1 slice 1 (detection) built and live-tested. Result: the `+0x1d0`
+field is NOT a clean trailer-vs-pasture flag. Reading the decompiled
+drop path is the next step (operator-directed).
+
+What shipped:
+- `targets::horse_offset::CONTAINER_KIND = 0x1d0` (documented constant).
+- `horse::container_kind(horse) -> Option<u32>` accessor.
+- `gamestate.owned_horses` now reports `container_kind` (raw) +
+  `container` (trailer | pasture | unknown, classifying 7/9).
+- `tests/horse_container_detect.rs`: auto gate, green. The op reads +
+  classifies the field per owned horse on the live game.
+- `tests/hk1_container_watch.rs`: `#[ignore]`d manual-drag watch.
+
+Live watch (operator dragged 2 horses to the trailer):
+- Fresh overworld launch: every owned horse reads `+0x1d0 = 0` (unknown).
+- `+0x1d0` values observed across the session: 0, 3, 4. NEVER 7 or 9.
+  So `+0x1d0` is a richer per-horse sub-state (a slot/index), not the
+  2-value flag the 2026-05-16 note assumed.
+- End byte-diff (`horse+0x1b0..+0x1f0`) vs baseline:
+  - horse[0]: only `+0x1dc` changed (00 -> 0x12).
+  - horse[1]: `+0x1d0` 00 -> 04, plus `+0x1d4..+0x1dc` populated with
+    floats + a small counter (0x24 at `+0x1dc`).
+- Moving a horse DOES change observable bytes in `+0x1d0..+0x1dc`, so the
+  move is detectable, but no single byte read cleanly as trailer/pasture.
+
+Capture caveats (fix before trusting any byte-watch):
+- The owned-horse count grew 2 -> 3 mid-watch (save still loading at
+  baseline). Baseline must wait for a STABLE count, and horses must be
+  keyed by a stable id (ptr / name_id), not list index.
+- We only compared overworld-before vs after. Per the operator, the
+  trailer/pasture result is only confirmed on LEAVE; a capture must
+  sample in-pasture, in-trailer-in-scene, and after-leave.
+
+Decision (operator-directed 2026-06-23): stop black-box byte-watching.
+Read the decompiled Location click-drag handler `FUN_1400d2ab0`
+(`all_functions_annotated.c:251400-251680`) and its four on-drop helpers
+(`FUN_1400b47e0`, `FUN_1400b3dc0`, `FUN_1400b6990`, `FUN_1400ccbd0`) to
+find the authoritative field the game writes when a horse is committed to
+the trailer vs the pasture, and the exact values. Decomp-first per skill
+RULE 5 (the game has the feature; read its code).
+
+---
+
+## 5d. Decomp pass + MapState trailer model (2026-06-23). NOT WORKING YET
+
+Read the decompiled drop + enter/leave handlers. Two solid findings, and an
+honest dead end on the live read.
+
+Decomp findings:
+- `+0x1d0` is a PICKUP-ORDER COUNTER, not a container flag. `FUN_1400d2ab0`
+  (the click-drag handler) writes `horse[+0x1d0] = LOC[+0x164]++` on grab
+  (line ~544). That is exactly why the watch saw 0/3/4 and never 7/9. The
+  2026-05-16 "7=trailer/9=pasture" note was a misread of this counter.
+- The trailer horse list lives on the MapState, NOT on the horse.
+  `FUN_1400cd5a0` (the truck enter/leave handler) treats the vector at
+  `*MAP_STATE_PTR + 0x130/+0x138` (`*DAT_1403f4e00 + 0x130/+0x138`) as the
+  truck's carried horses: on arrival it unloads them into the location's
+  vector and clears the source; on leave it refills it from the horses in
+  the trailer rectangle. This is the "you find out when you leave" mechanism.
+
+Built:
+- op `horse.trailer`: reads `*MAP_STATE_PTR + 0x130/+0x138`, lists the
+  `Horse*` in the trailer, cross-refs against owned horses.
+- `tests/hk1_trailer_list.rs`.
+
+HONEST STATUS. The live read FAILED, and it was read in the WRONG STATE.
+On a fresh overworld launch, `*MAP_STATE_PTR` reads NULL (0), so
+`horse.trailer` returned "MapState ptr not heap-shaped". This is consistent
+with the existing `scene::camera()` / overlay, which already show "MapState
+unreadable" in that same state. So MapState is only live in some states
+(in / entering a location, where `FUN_1400cd5a0` runs), NOT on the bare
+fresh-launch overworld where the test queried it. The test ran fine; the
+read was just taken before the pointer is populated.
+
+OPEN: read MapState in a state where it is non-null. Enter a location (or
+let the world fully activate / move the truck). And re-check the trailer
+list; OR find where trailer membership is tracked while on the bare
+overworld. The MapState-trailer model is decomp-grounded and promising; it
+was simply read in the wrong state. The next test must drive the game into a
+state where MapState is live before reading.
+
+---
+
+## 5e. Trailer model RESOLVED: positional, per-horse saved position (2026-06-23)
+
+The trailer is NOT a list and NOT a flag. It is POSITIONAL, and the persisted
+data is each horse's own home-scene position. This reconciles "it has to be
+saved somewhere" with "no trailer list exists."
+
+Evidence (decomp):
+- Each horse stores its home-scene (x, y) at `+0x1d4 / +0x1d8`.
+  - Drop writes it: `FUN_1400d2ab0` (~line 1888) does
+    `*(u64*)(horse + 0x1d4) = building_tile_pos`.
+  - Enter re-places from it: `FUN_1400cd5a0` (~lines 110-112) reads
+    `horse+0x1d4/+0x1d8` as the placement offset when unloading horses into a
+    location.
+- The trailer is a fixed RECTANGLE region in the home scene. The click handler
+  tests a position against it (`FUN_1400d2ab0` ~lines 714-728) using the trailer
+  object `LOC[0xf]` plus fixed extents `_DAT_14030eb8c` / `_DAT_14030eb90` (x)
+  and `DAT_140303374` / `DAT_14030d9b8` (y). `FUN_1400cd5a0` ~lines 326-334
+  writes that rectangle into `LOC[0xf]` on enter.
+- A horse is "in the trailer" iff its saved position is inside that rectangle.
+  This is the "you find out when you leave" mechanism: leaving runs the
+  positional test.
+
+Dead ends ruled out this session:
+- `+0x1d0` = pickup-order counter (not container).
+- `*MAP_STATE_PTR + 0x130` = transient incoming-horses during a location-enter
+  ONLY; `MAP_STATE_PTR` derefs null on the bare overworld (it is the
+  in-location tile-map state). Not the persistent store. (op `horse.trailer` +
+  test `hk1_trailer_list` proved this: a 30s poll stayed null.)
+- The generic leave path (`FUN_1400cdae0` -> `FUN_1400ce9b0`) does per-horse
+  cleanup; it does not move horses to a carrier.
+- The truck object is `*(GameState + 0x300)` (flag at `+0xac`, rendered by
+  `FUN_1400fb3d0`, which draws the "DragHorseHere" trailer prompt). No horse
+  list found on it.
+
+DETECTION PATH (overworld-readable): for each owned horse, read `+0x1d4/+0x1d8`
+and test against the trailer rectangle. The horse objects persist on the
+overworld, so no MapState needed.
+
+OPEN before building:
+1. Confirm `+0x1d4/+0x1d8` still holds the home-scene position while on the
+   overworld (vs being overwritten by overworld movement. The horse's MAIN
+   actor position is `+0x28/+0x2c`).
+2. Pin the exact trailer-rectangle bounds from the constants above.
+
+Decomp functions read this session: FUN_1400d2ab0, FUN_1400cd5a0, FUN_1400cdae0,
+FUN_14002d7c0, FUN_1400ce9b0, FUN_140088350, FUN_1400b3dc0, FUN_1400fb3d0.
+
+---
+
+## 5f. Field CONFIRMED LIVE (2026-06-23)
+
+`tests/hk1_horse_positions.rs` read each owned horse's two candidate position
+fields on the overworld:
+
+| horse | scene `+0x1d4/+0x1d8` | actor `+0x28/+0x2c` |
+|---|---|---|
+| trailer | (13.18, 9.30) | (0.0, 0.0) |
+| pasture | (0.0, 0.0)    | (0.0, 0.0) |
+
+Operator confirmed ground truth: the horse at (13.18, 9.30) IS in the trailer;
+the (0,0) horse IS in the pasture.
+
+CONFIRMED:
+- Detection field = `+0x1d4/+0x1d8` (scene placement). Readable + meaningful on
+  the bare overworld, no MapState needed.
+- Actor position `+0x28/+0x2c` is (0,0) on the overworld -> ruled out.
+- Trailer horses carry a scene position near (~13, ~9) (matches the earlier HK1
+  calibration `trailer=(13.26, 8.90)`; `pasture=(3.41, 3.08)`); pasture horses
+  read (0,0) here.
+
+DETECTOR (agreed direction): classify each owned horse trailer vs pasture by
+testing its `+0x1d4/+0x1d8` against the trailer region. Replaces the wrong
+`0x1d0` classifier currently in `gamestate.owned_horses` / `horse.trailer`.
+
+OPEN:
+1. Region boundary: exact decomp rectangle (extents `_DAT_14030eb8c` /
+   `_DAT_14030eb90` for x, `DAT_140303374` / `DAT_14030d9b8` for y, defined
+   relative to the trailer object. Awkward to apply on the overworld) vs a box
+   centered on the confirmed trailer spot ~(13, 9). Verify-tunable either way.
+2. Verify: operator moves a horse trailer<->pasture; the readout must flip.
+
+Artifacts to date: ops `horse.trailer` (MapState path, dead end),
+`horse::container_kind` + owned_horses `container_kind`/`container` (reads
+`0x1d0`, WRONG field. To be replaced by the position test). Tests:
+`hk1_horse_positions` (confirms field, GREEN), `hk1_trailer_list` (MapState
+null), `horse_container_detect` (0x1d0), `hk1_container_watch` (manual).
+
+---
+
+## 5g. Honest status 2026-06-24 (detector + names + stuck-car)
+
+Nothing is committed. Several threads are half-landed.
+
+### Detector (slice 1). Built, rule UNCONFIRMED
+- `gamestate.owned_horses` classifies trailer/pasture by the scene position
+  `+0x1d4/+0x1d8` (added `horse::scene_pos`, `horse_offset::SCENE_POS_X/Y`).
+  Current rule: non-zero position (near ~13,9) = trailer, `(0,0)` = pasture.
+- `+0x1d0` is a PICKUP-ORDER COUNTER, not the container (kept as
+  `horse_offset::CONTAINER_KIND` + `horse::container_kind`, unused by the op).
+- UNCONFIRMED: the live save has Coupe DeVille `(13.18, 9.30)`=trailer, tomtato
+  `(14.50, 8.98)`=trailer, Horse `(0,0)`=pasture. Operator says only ONE was in
+  the trailer, so tomtato at `(14.5, 9)` is probably PASTURE. Meaning the
+  zero-vs-nonzero rule is too loose and needs a real trailer RECTANGLE.
+- The exact rectangle could NOT be pulled from decomp: the click-handler extent
+  constants (`_DAT_14030eb8c` etc.) read as garbage in memory (Ghidra flagged
+  them overlapping symbols; live dump confirmed). `tests/hk1_trailer_rect.rs`.
+- Verification is BLOCKED: (a) `owned_horses` reads the static loaded-save
+  snapshot, not live in-scene drags (moves commit on leave); (b) the owned list
+  is inconsistent (tomtato sometimes absent); (c) Coupe is un-grabbable so can't
+  be moved to test. `tests/hk1_container_watch.rs` move-verify was inconclusive.
+
+### Name table. Re-derived + decoded, but NOT wired into the live op
+- Anchor (`resolve_name_table_custom`, rewritten): the name resolver
+  `FUN_1400c78c0` ends with `imul rax,rax,0x88` then `add rax,[rip+disp32]`.
+  UNIQUE in `.text`. The disp32 -> NAME_TABLE slot at RVA `0x3f45f0` (drifted
+  +0x1110 from the stale `0x3f34e0`, same drift as GAMESTATE_PTR). `*slot` =
+  heap table base; entry = base + `name_id*0x88`; MSVC `std::string`.
+- Live-decoded names (test `hk1_name_table`): 251="Coupe DeVille",
+  272="Horse", 250="tomtato".
+- OPEN BUG: names STILL read `<none>` in `gamestate.owned_horses`. The registry
+  (`HORSEY_RESOLVER`) resolves NAME_TABLE once at attach and caches the MISS
+  permanently. A `OnceLock` bypass in `resolve::name_table()` fixed resolution
+  but BROKE `owned_horses` (returned 0 horses) and was REVERTED. So the in-mod
+  wiring is unsolved; names only decode in the test. `horse::name_by_id` +
+  `horse.name_diag` were changed to deref the slot (correct), but
+  `resolve::name_table()` is back on the registry (cached None).
+
+### Coupe DeVille un-grabbable. Root cause found, not repaired
+- Grabbing is a box2d COLLISION hit-test (`FUN_1400b6fd0`): walks the horse body
+  list `horse+0x40..+0x48`, per fixture checks active (`+0x160`!=0), type
+  (`+0x150`!=0xd), size (`+0x154`!=0), then cursor-in-shape. No active fixture
+  -> not grabbable.
+- So Coupe's clickable collision body is missing/disabled (a failed physics
+  rebuild `FUN_1400b3dc0`). NOT the car type, NOT a flag. Operator confirmed
+  cars are normally draggable. Not yet confirmed by reading his body list;
+  repair would mean forcing a physics rebuild (risky).
+
+### Tests added (all diagnostic / `#[ignore]`d; build green)
+`horse_container_detect` (gate), `hk1_horse_positions`, `hk1_trailer_list`
+(MapState dead end), `hk1_container_watch` (move-verify), `hk1_trailer_rect`
+(rect consts = garbage), `hk1_name_table` (decodes names), `hk1_diff_stuck`
+(Coupe diff), `rederive_gamestate_ptr`, fixed `gamestate_resolver_lives`
+(load-wait).
+
+---
+
 ## 6. Sequenced delivery, one ship + checkpoint between each
 
 Per CLAUDE.md, each stage ships its own commit with: tests that prove the primitive works, real game verification (Claude drives `horsey-play` + tests), zero unstaged scope creep.

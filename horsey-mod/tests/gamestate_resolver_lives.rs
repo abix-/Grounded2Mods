@@ -17,8 +17,28 @@ use serde_json::{json, Value};
 fn gamestate_resolver_is_alive() {
     let Some(game) = common::launch("gamestate_resolver_lives") else { return };
 
-    let v = game.op_json("targets.resolve.gamestate_ptr", &json!({}))
-        .expect("resolve op");
+    // The save auto-loads on launch, but the HTTP plane comes up
+    // DURING the load: there is a brief window where GAMESTATE_PTR's
+    // slot is still null (deref == 0x0) because the world has not been
+    // deserialized into it yet. Poll until the gamestate populates so
+    // this gate exercises the RESOLVER, not the load race. Querying at
+    // t=0 reads the empty slot and false-fails. That exact early
+    // read got misdiagnosed as an address drift once.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let mut v = game.op_json("targets.resolve.gamestate_ptr", &json!({})).expect("resolve op");
+    loop {
+        let loaded = v
+            .get("result")
+            .unwrap_or(&v)
+            .get("money_at_deref_plus_0x308")
+            .map(|m| !m.is_null())
+            .unwrap_or(false);
+        if loaded || std::time::Instant::now() >= deadline {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        v = game.op_json("targets.resolve.gamestate_ptr", &json!({})).expect("resolve op");
+    }
     let r = v.get("result").unwrap_or(&v);
     eprintln!("[RESOLVE] {}", serde_json::to_string_pretty(r).unwrap());
 
@@ -26,7 +46,7 @@ fn gamestate_resolver_is_alive() {
     let money = r.get("money_at_deref_plus_0x308");
     assert!(
         money.map(|m| !m.is_null()).unwrap_or(false),
-        "money_at_deref_plus_0x308 is null -- resolver still broken. deref={deref}"
+        "money_at_deref_plus_0x308 still null after 30s -- resolver broken. deref={deref}"
     );
 
     let owned = common::list_owned(&game);
