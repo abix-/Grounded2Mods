@@ -555,7 +555,28 @@ pub mod resolve {
     pub fn no_tire_toggle() -> Option<usize> { r("NO_TIRE_TOGGLE") }
     pub fn debug_mode_active() -> Option<usize> { r("DEBUG_MODE_ACTIVE") }
     pub fn debug_log_gate() -> Option<usize> { r("DEBUG_LOG_GATE") }
-    pub fn name_table() -> Option<usize> { r("NAME_TABLE") }
+    pub fn name_table() -> Option<usize> {
+        // NAME_TABLE must NOT go through the registry's resolve cache. The
+        // registry caches the first result permanently, so a single miss
+        // (a transient scan failure at attach, before the image is fully
+        // scannable) sticks forever and every name reads blank. The custom
+        // resolver returns the static `.data` slot and does not depend on the
+        // save being loaded, so resolve it DIRECTLY and cache ONLY a
+        // successful, non-zero slot; a miss is always retried next call.
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static SLOT: AtomicUsize = AtomicUsize::new(0);
+        let cached = SLOT.load(Ordering::Relaxed);
+        if cached != 0 {
+            return Some(cached);
+        }
+        match super::resolve_name_table_custom(0) {
+            Ok(slot) if slot != 0 => {
+                SLOT.store(slot as usize, Ordering::Relaxed);
+                Some(slot as usize)
+            }
+            _ => None,
+        }
+    }
     pub fn chromosome_table() -> Option<usize> { r("CHROMOSOME_TABLE") }
 
     // Function entries

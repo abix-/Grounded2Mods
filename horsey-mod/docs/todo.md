@@ -757,22 +757,29 @@ Honest status. Nothing committed.
   garbage in memory. Verification blocked: the op reads the static loaded-save
   snapshot (in-scene drags commit only on leave), the owned list is inconsistent,
   and Coupe is un-grabbable so can't be moved to test.
-- **NAME TABLE re-derived** (`resolve_name_table_custom` anchored on
-  `imul rax,rax,0x88 ; add rax,[rip+disp32]` in `FUN_1400c78c0`): slot RVA
-  `0x3f45f0` (drifted +0x1110 from the stale `0x3f34e0`). Names decode correctly
-  in `tests/hk1_name_table.rs` (251=Coupe DeVille, 272=Horse, 250=tomtato). OPEN
-  BUG: the live op still reads `<none>`. The registry caches the NAME_TABLE
-  resolve MISS at attach; a `OnceLock` bypass fixed names but broke `owned_horses`
-  (returned 0) and was reverted. Fix the registry caching (resolve lazily / do
-  not cache a NAME_TABLE miss) without breaking `owned_horses`.
+- **NAME TABLE re-derived + live lookup FIXED (2026-06-26).**
+  `resolve_name_table_custom` anchored on `imul rax,rax,0x88 ; add rax,[rip+disp32]`
+  in `FUN_1400c78c0`: slot RVA `0x3f45f0` (drifted +0x1110 from the stale
+  `0x3f34e0`). Names decode in `tests/hk1_name_table.rs` (251=Coupe DeVille,
+  272=Horse, 250=tomtato) AND now in the live `gamestate.owned_horses` op
+  (verified: name_id 345 -> "Horse"). Fix: `resolve::name_table()` no longer goes
+  through the registry's resolve cache (which stored the first miss permanently);
+  it calls the custom resolver directly and caches ONLY a successful non-zero slot,
+  so a transient attach-time miss is always retried. Did NOT break `owned_horses`
+  (the earlier `OnceLock` bypass did; this AtomicUsize success-only cache does not).
 - **COUPE DEVILLE un-grabbable**: grabbing is a box2d collision hit-test
   (`FUN_1400b6fd0` over the body list `horse+0x40..+0x48`); his collision body is
   missing/disabled (a failed physics rebuild `FUN_1400b3dc0`). NOT the car type,
   NOT a flag. Repair = force a physics rebuild (risky); not done. Not yet confirmed
   by reading his body list.
-- **`owned_horses` list inconsistency**: tomtato (name_id 250) is intermittently
-  absent from the read. The op walks `GS+0x438 -> +0x90 -> +0x130`, which may not
-  be the canonical owned list (scene slot 0). Audit the chain.
+- **`owned_horses` count is scene-state dependent (was mislabeled a chain bug)**:
+  RESOLVED 2026-06-26. `gamestate::owned_stable()` already reads scene-table slot
+  0 (the canonical owned list); the `+0x90` in the `ops.rs:354` docstring is
+  STALE and wrong. In the home scene (`active_scene_id = 0`) slot 0 holds all
+  owned horses; reads that returned a subset were taken in a partial / overworld
+  state. The new `tests/horse_full_dump.rs` prints `active_scene_id` so the state
+  is never ambiguous again. See HK1-SHIFT-CLICK-TRANSFER-PLAN.md 5h. TODO: fix the
+  stale `ops.rs:354` docstring.
 
 ### HK1 Shift+Click smart-transfer (REOPENED via L3 input 2026-05-16)
 

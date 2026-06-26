@@ -663,6 +663,106 @@ Nothing is committed. Several threads are half-landed.
 
 ---
 
+## 5h. Clean two-horse save: full per-scene dump (2026-06-26)
+
+Old save retired. It carried the un-grabbable Coupe DeVille (a bugged horse
+whose collision body was missing, per 5g). Operator started a fresh game with
+exactly two horses, one pasture and one trailer, to give the detector a clean
+test case.
+
+New diagnostic test `tests/horse_full_dump.rs`: for the current scene it dumps
+`active_scene_id`, every owned horse's full field set plus the 240-gene working
+genome, and a full `gamestate.scan_438_slots` scan; then it attempts a
+synthetic home-scene entry and dumps again. Run in attach mode against the live
+game (`MODFORGE_ATTACH=1 MODFORGE_SKIP_BUILD=1`).
+
+### Corrections to earlier honest-status
+
+- **The owned-horse read is NOT on the wrong chain.** `gamestate::owned_stable()`
+  already reads scene-table slot 0 (`OWNED_SLOT_OFF = 0x0`), the canonical owned
+  list. The `+0x90` in the `gamestate.owned_horses` op docstring (`ops.rs:354`)
+  is STALE and wrong; it should read "slot 0". The earlier todo speculation that
+  the op "walks GS+0x438 to +0x90 to +0x130, may not be canonical" is disproven.
+  Slot 0x90 IS a separate 3-horse subsystem (visible in the slot scan), but the
+  owned read does not touch it. TODO: fix the stale `ops.rs:354` docstring.
+- **The 1-vs-2 owned-count fluctuation is scene-state, not a chain bug.** In the
+  home scene (`active_scene_id = 0`) slot 0 holds BOTH horses. Earlier reads that
+  returned only 1 were taken in a different / partial state (the comprehensive
+  dump now prints `active_scene_id` so this is no longer ambiguous).
+- **Pasture horses do NOT read (0,0).** The 5f assumption that a pasture horse
+  reads (0,0) on the overworld was an artifact of the OLD save. In the fresh game
+  BOTH horses have real non-zero scene positions, so the current "non-zero =
+  trailer" classifier in `gamestate.owned_horses` mislabels BOTH as trailer. The
+  zero-vs-nonzero rule is dead; a real trailer RECTANGLE is required.
+
+### Live data (home scene, active_scene_id = 0, slot 0 count = 2)
+
+| field | Horse A | Horse B |
+|---|---|---|
+| addr | 0x18718e9f560 | 0x18719017c70 |
+| name_id | 345 | 344 |
+| name | "Horse" | "Horse" (both carry the default name) |
+| species | 0 | 0 |
+| age / max_age | 5 / 9 | 2 / 9 |
+| skill | 0 | 0 |
+| tired_a / tired_b | 0 / 0 | 0 / 1 |
+| litter_stat | 1 | 1 |
+| scene_pos (+0x1d4/+0x1d8) | (18.788, 7.972) | (14.517, 8.490) |
+| container (loose rule) | trailer | trailer |
+| genome non-zero / max | 85 / 240, max 3 | 92 / 240, max 3 |
+
+Trailer-boundary hypothesis from these two points plus prior calibration
+(trailer cluster x ~13-15, y ~8-9): Horse B at (14.5, 8.5) = trailer, Horse A at
+(18.8, 8.0) = pasture. The x boundary sits between 14.5 and 18.8. OPEN: operator
+to confirm which horse (age 5 vs age 2) is in the trailer, then pin the
+rectangle.
+
+Slot scan (home scene), for reference: slot 0 = owned (2); slots 0x08..0x38 = 7
+race lanes (5 each); 0x90 = 3-horse subsystem; 0xb0 = 4; 0xd0 = 3; 0x120 = 5
+(race roster); singletons elsewhere.
+
+### Name-lookup bug FIXED (2026-06-26)
+
+The blank-name bug from 5g is fixed. `resolve::name_table()` no longer routes
+through the registry's resolve cache, which stored the first resolve attempt
+permanently; a single transient miss at attach (before the image is fully
+scannable) stuck forever, so names read blank in the live op even though the
+custom resolver succeeds afterward (that is why `tests/hk1_name_table.rs`
+decoded fine but `gamestate.owned_horses` did not). The function now calls
+`resolve_name_table_custom` directly and caches ONLY a successful non-zero slot,
+so a miss is always retried. Verified live: both owned horses now decode to
+"Horse" (the fresh-game default name) in `gamestate.owned_horses`. This did NOT
+break `owned_horses` (the earlier `OnceLock` bypass did, returning 0 horses; the
+`AtomicUsize` success-only cache does not). Note: the `name_diag` op reports the
+SSO capacity (15) in its `size_at_18` field, not the length; the real length is
+at entry+0x10, which `horse::name_by_id` reads correctly.
+
+### Full roster, both horses (home scene, 2026-06-26)
+
+Both owned horses share the default name "Horse"; tell them apart by age /
+position. Memory addresses are per-session and omitted (they change every
+launch); the rest is save-persistent.
+
+| field | Horse (id 345) | Horse (id 344) |
+|---|---|---|
+| name | "Horse" | "Horse" |
+| name_id | 345 | 344 |
+| species | 0 (normal horse) | 0 (normal horse) |
+| age / max_age | 5 / 9 | 2 / 9 |
+| skill | 0 | 0 |
+| tired_a / tired_b | 0 / 0 | 0 / 1 |
+| litter_stat | 1 | 1 |
+| scene_pos (+0x1d4/+0x1d8) | (18.788, 7.972) | (14.517, 8.490) |
+| container (loose rule) | trailer | trailer |
+| genome non-zero / max tier | 85 / 240, 3 | 92 / 240, 3 |
+
+Detector still mislabels both as trailer (loose rule). Position hypothesis
+unchanged: id 344 at (14.5, 8.5) = trailer, id 345 at (18.8, 8.0) = pasture.
+OPEN: operator to confirm which is in the trailer (the 5yo id 345 or the 2yo
+id 344), then pin the rectangle.
+
+---
+
 ## 6. Sequenced delivery, one ship + checkpoint between each
 
 Per CLAUDE.md, each stage ships its own commit with: tests that prove the primitive works, real game verification (Claude drives `horsey-play` + tests), zero unstaged scope creep.
