@@ -737,15 +737,25 @@ break `owned_horses` (the earlier `OnceLock` bypass did, returning 0 horses; the
 SSO capacity (15) in its `size_at_18` field, not the length; the real length is
 at entry+0x10, which `horse::name_by_id` reads correctly.
 
+Confirmed dynamic and scene context: all the data in this section was captured
+live while the player is in the "My House" scene (`active_scene_id = 0`, the Home
+Location at scene-table slot 0, whose object holds the strings "My House" / "Home"
+at +0x18 / +0x40). That is the scene where BOTH owned horses are loaded into slot
+0 and readable with full data; on the bare overworld only one is in slot 0. After
+this fix, renaming both horses in-game (to "alpha" / "bravo") updated the live op
+immediately with no reinjection. The name_ids stay constant (344 / 345); only the
+name-table strings change.
+
 ### Full roster, both horses (home scene, 2026-06-26)
 
-Both owned horses share the default name "Horse"; tell them apart by age /
+The two horses were renamed in-game to "alpha" and "bravo" (from the default
+"Horse") to confirm the name fix updates live; tell them apart by name / age /
 position. Memory addresses are per-session and omitted (they change every
 launch); the rest is save-persistent.
 
-| field | Horse (id 345) | Horse (id 344) |
+| field | bravo (id 345) | alpha (id 344) |
 |---|---|---|
-| name | "Horse" | "Horse" |
+| name | "bravo" | "alpha" |
 | name_id | 345 | 344 |
 | species | 0 (normal horse) | 0 (normal horse) |
 | age / max_age | 5 / 9 | 2 / 9 |
@@ -756,10 +766,10 @@ launch); the rest is save-persistent.
 | container (loose rule) | trailer | trailer |
 | genome non-zero / max tier | 85 / 240, 3 | 92 / 240, 3 |
 
-Detector still mislabels both as trailer (loose rule). Position hypothesis
-unchanged: id 344 at (14.5, 8.5) = trailer, id 345 at (18.8, 8.0) = pasture.
-OPEN: operator to confirm which is in the trailer (the 5yo id 345 or the 2yo
-id 344), then pin the rectangle.
+Detector still mislabels both as trailer (loose rule). Position hypothesis:
+alpha (id 344) at (14.5, 8.5) = trailer, bravo (id 345) at (18.8, 8.0) =
+pasture. OPEN: operator to confirm which is in the trailer (bravo the 5yo or
+alpha the 2yo), then pin the rectangle.
 
 ---
 
