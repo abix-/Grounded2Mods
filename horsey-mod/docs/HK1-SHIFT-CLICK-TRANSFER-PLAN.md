@@ -792,8 +792,53 @@ Ground truth, established two independent ways:
 Detector implication: the current "non-zero scene_pos = trailer" rule is wrong
 (it tags bravo, the pasture horse, as trailer). Two correct paths: (a) in-scene,
 test scene_pos against the real trailer RECTANGLE (alpha ~14.5 inside, bravo
-~18.8 outside); (b) on the overworld, use slot-0 membership directly. Pin the
-rectangle bounds from these two confirmed points plus prior calibration.
+~18.8 outside); (b) on the overworld, use slot-0 LIVE membership (present in the
+live range = pasture). Pin the rectangle bounds from these two confirmed points
+plus prior calibration.
+
+### Where the trailer horse lives off-scene: home-vector dead capacity (2026-06-26)
+
+Question (operator): on the overworld the trailer horse (alpha, id 344) is in NO
+scene-table slot and slot 0's live vector holds only the pasture horse (bravo,
+id 345). It cannot just vanish, so where is it tracked?
+
+Investigated with two new tests: `tests/locate_trailer_horse.rs` (walks every
+scene-table slot's Horse vector by name_id) and `tests/find_alpha_ref.rs` (hunts
+alpha's pointer across the GameState struct, the truck object `*(GS+0x300)`, and
+every Location sub-struct, with one level of vector indirection, via SEH-guarded
+`patterns.read_bytes`).
+
+Answer (confirmed live, overworld `active_scene_id = -1`):
+
+- alpha's Horse allocation persists; its session pointer still reads name_id 344.
+- alpha is NOT referenced by the GameState struct (direct fields or immediate
+  vectors), NOT by the truck object `*(GS+0x300)`, and NOT by any scene-table
+  slot's LIVE vector.
+- alpha's pointer IS still physically in the Home Location's (slot 0) horse-vector
+  backing array, but PAST the vector's `end`, in the unused-capacity zone.
+
+Confirmed home-vector triple (slot 0 sub-struct, +0x130 / +0x138 / +0x140 =
+begin / end / capacity):
+
+| index | ptr | name_id | zone |
+|---|---|---|---|
+| [0] | 0x..a1340 | 345 (bravo) | LIVE, in [begin, end) -> pasture |
+| [1] | 0x..c9f50 | 344 (alpha) | DEAD, in [end, capacity) -> popped trailer horse |
+
+live count 1, capacity 2.
+
+Mechanism: driving to the overworld pops the trailer horse out of the Home
+Location's horse vector (size 2 -> 1; `end` drops by 8). `std::vector` does not
+zero the freed slot, so alpha's pointer lingers in the spare capacity as a stale
+remnant. This is NOT authoritative tracking: a later push_back overwrites that
+slot. It is simply why prior RE ("no horse list found off-scene") missed it; it
+looked at the live range, where alpha is absent.
+
+Authoritative trailer-membership is POSITIONAL, on the horse itself: each horse
+persists its home-scene position at +0x1d4/+0x1d8, and is "in the trailer" iff
+that saved position is inside the trailer rectangle (decomp 5e). The dead-capacity
+remnant is incidental. Detector should rely on the rectangle test (in-scene) or
+slot-0 LIVE membership (overworld), never the dead-capacity slot.
 
 ---
 
