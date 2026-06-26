@@ -763,13 +763,37 @@ launch); the rest is save-persistent.
 | tired_a / tired_b | 0 / 0 | 0 / 1 |
 | litter_stat | 1 | 1 |
 | scene_pos (+0x1d4/+0x1d8) | (18.788, 7.972) | (14.517, 8.490) |
-| container (loose rule) | trailer | trailer |
+| container (loose rule, WRONG) | trailer | trailer |
+| container (CONFIRMED actual) | pasture | trailer |
 | genome non-zero / max tier | 85 / 240, 3 | 92 / 240, 3 |
 
-Detector still mislabels both as trailer (loose rule). Position hypothesis:
-alpha (id 344) at (14.5, 8.5) = trailer, bravo (id 345) at (18.8, 8.0) =
-pasture. OPEN: operator to confirm which is in the trailer (bravo the 5yo or
-alpha the 2yo), then pin the rectangle.
+### Trailer vs pasture CONFIRMED via overworld (operator-confirmed 2026-06-26)
+
+Operator confirmed in-game: alpha is in the trailer, bravo is in the pasture.
+Ground truth, established two independent ways:
+
+1. **Position (in-scene signal).** alpha sits at scene_pos (14.517, 8.490),
+   inside the trailer cluster (x ~13-15, y ~8-9); bravo sits at (18.788, 7.972),
+   outside it. Matches the hypothesis exactly.
+2. **Leave-the-scene behavior (the clean discriminator).** Driving to the
+   overworld (`active_scene_id = -1`) moves trailer horses into the truck carrier
+   and removes them from the home location vector (slot 0); pasture horses stay.
+   Observed live:
+
+   | scene | slot 0 (owned / home vector) |
+   |---|---|
+   | "My House" (id 0) | 2 horses (alpha + bravo) |
+   | overworld (id -1) | 1 horse (bravo only); alpha off-list, in the truck |
+
+   So on the overworld, slot-0 membership IS the trailer/pasture flag: present =
+   pasture (bravo), missing = trailer (alpha). This is the decomp "you find out
+   when you leave" mechanism (5d/5e), now confirmed against named horses.
+
+Detector implication: the current "non-zero scene_pos = trailer" rule is wrong
+(it tags bravo, the pasture horse, as trailer). Two correct paths: (a) in-scene,
+test scene_pos against the real trailer RECTANGLE (alpha ~14.5 inside, bravo
+~18.8 outside); (b) on the overworld, use slot-0 membership directly. Pin the
+rectangle bounds from these two confirmed points plus prior calibration.
 
 ---
 
