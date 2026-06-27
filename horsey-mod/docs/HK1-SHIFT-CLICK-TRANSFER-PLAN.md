@@ -840,6 +840,62 @@ that saved position is inside the trailer rectangle (decomp 5e). The dead-capaci
 remnant is incidental. Detector should rely on the rectangle test (in-scene) or
 slot-0 LIVE membership (overworld), never the dead-capacity slot.
 
+### Decomp review: how horse-to-scene membership is actually stored (2026-06-26)
+
+Operator pushed to verify the storage model against the decomp, not the live
+memory artifact. Read three handlers in `research/decompiled/funcs/`.
+
+ARRIVAL handler `FUN_1400cd5a0` (truck enters a location; builds the
+"TruckEnterLocation" event) is the load-bearing evidence:
+
+- It walks the truck carrier vector (MapState `DAT_1403f4e00 +0x130/+0x138`)
+  and, for each carried horse, reads that horse's OWN saved position at
+  `+0x1d4/+0x1d8` (lines 110-112), repositions the horse via `FUN_1400b6610` at
+  (saved position + the location's world offset), then push_backs it into the
+  entered location's horse vector (`param_1[0x26]/[0x27]/[0x28]` = location
+  `+0x130/+0x138/+0x140`).
+- After unloading every carried horse it CLEARS the carrier (`+0x138 = +0x130`,
+  lines 150-154).
+- Conclusion: a location's horse list is REBUILT on every arrival from the
+  carrier, and each horse is placed using a position SAVED ON THE HORSE ITSELF.
+
+LEAVE handlers `FUN_1400cdae0` ("TruckLeaveLocation" event + a cancelled-drag
+drop-fail) and `FUN_1400ce9b0` (per-horse cleanup): the leave event fires and
+every horse in the location vector gets `FUN_1400b47e0` called on it (cleanup),
+but neither function loads a carrier or visibly pops the trailer horse. The
+actual scene switch happens in the gamestate transition
+`FUN_140104ac0(GAMESTATE_PTR)` called at the tail of `FUN_1400cdae0` (line 188).
+
+Loop closed (read 2026-06-26): `FUN_140104ac0` is a dispatcher: if the truck's
+`+0xac` flag is set it routes to scene-table slot 0x80, else it calls
+exit-to-overworld `FUN_1401041f0`. `FUN_1401041f0` sets `active_scene_id = -1`
+(line 28), zeroes scene state, calls `FUN_1400a89f0(truck = *(GS+0x300))` and
+`FUN_140107660(GS)`, and then ITERATES THE TRUCK CARRIER
+(`*(DAT_1403f4e00 +0x130 .. +0x138)`, lines 88-102), checking each carried
+horse's `+0x206` byte. So the truck carrier IS the transient home for the
+trailer horses across the leave: it is populated by the time exit runs. The
+exact instruction that MOVES the trailer horses out of the home list and INTO
+the carrier is one level deeper, inside `FUN_1400a89f0(truck)` or
+`FUN_140107660(GS)` (not yet read; not load-bearing for the storage model).
+
+OPEN DISCREPANCY to resolve next: the live mod read the map-state pointer
+(`*(DAT_1403f4e00)`) as NULL on the fully-parked overworld and found alpha only
+in the home vector's dead capacity, yet the decomp shows the carrier populated
+at exit. So either the carrier is torn down once fully parked (live only during
+the transition) or the mod's map-state pointer resolver misreads on the bare
+overworld. That is the next thing to pin.
+
+STORAGE MODEL (decomp-confirmed): there is NO persistent "trailer list". A
+horse's trailer-vs-pasture membership is encoded entirely in its own saved
+home-scene position (`+0x1d4/+0x1d8`); the game re-derives membership by
+re-placing each horse at that position on arrival. A horse "is in the trailer"
+iff that saved position is inside the trailer rectangle.
+
+CORRECTION to the dead-capacity finding above: the leftover pointer in slot 0's
+vector spare capacity is an INCIDENTAL artifact of the list shrinking, not the
+storage mechanism and not authoritative. The authoritative record is the
+per-horse saved position. Lead with that, not the artifact.
+
 ---
 
 ## 6. Sequenced delivery, one ship + checkpoint between each
