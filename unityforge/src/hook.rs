@@ -66,6 +66,46 @@ pub fn patch_prefix(
     })
 }
 
+/// Which object a `patch_prefix_ctx` callback receives as its
+/// context handle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HookCtx {
+    /// `__instance` of the patched (instance) method.
+    Instance = 0,
+    /// The method's first argument.
+    Arg0 = 1,
+}
+
+/// Install a prefix patch whose callback receives a context
+/// object (per `ctx`) as a FRESH handle in the `*const c_void`
+/// parameter: cast the pointer value to i32 and wrap with
+/// `MonoObject::from_handle` (Drop releases the handle; the
+/// callback owns it). 0 means the context object was null.
+/// Returning non-zero still skips the original method.
+pub fn patch_prefix_ctx(
+    class_name: &str,
+    method_name: &str,
+    ctx: HookCtx,
+    prefix_fn: extern "C" fn(*const c_void) -> i32,
+) -> Result<Hook, String> {
+    let bridge = bridge::try_get()?;
+    let c_class = CString::new(class_name).map_err(|e| format!("bad class: {e}"))?;
+    let c_method = CString::new(method_name).map_err(|e| format!("bad method: {e}"))?;
+    let handle =
+        (bridge.harmony_patch_prefix_ctx)(c_class.as_ptr(), c_method.as_ptr(), ctx as i32, prefix_fn);
+    if handle.0 == 0 {
+        return Err(format!(
+            "harmony_patch_prefix_ctx({class_name}, {method_name}, {ctx:?}) failed"
+        ));
+    }
+    Ok(Hook {
+        handle,
+        class_name: class_name.to_string(),
+        method_name: method_name.to_string(),
+        when: HookWhen::Prefix,
+    })
+}
+
 /// Install a postfix patch. The trampoline must be an `extern
 /// "C" fn(*const c_void)`.
 pub fn patch_postfix(

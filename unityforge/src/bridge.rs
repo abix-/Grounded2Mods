@@ -25,8 +25,9 @@ use std::sync::OnceLock;
 /// in little-endian.
 pub const BRIDGE_MAGIC: u32 = 0x52424655;
 
-/// Current ABI version. v4 added `list_methods`.
-pub const BRIDGE_VERSION: u32 = 4;
+/// Current ABI version. v4 added `list_methods`; v5 added
+/// `harmony_patch_prefix_ctx`.
+pub const BRIDGE_VERSION: u32 = 5;
 
 /// Unity runtime backend. Stored in the bridge struct at init;
 /// read via [`runtime_kind`] for code that must branch on
@@ -192,6 +193,22 @@ pub struct BridgeTable {
         out_json_utf8: *mut c_char,
         cap: i32,
     ) -> i32,
+
+    // ---- harmony (v5+) ----------------------------------------------------
+    /// Prefix patch whose callback receives a context object as a
+    /// FRESH handle in the `*const c_void` parameter (cast the
+    /// pointer value to i32). `ctx_kind`: 0 = `__instance`
+    /// (instance methods only), 1 = `args[0]`. The callback OWNS
+    /// the handle and must release it (wrap via
+    /// `MonoObject::from_handle`; Drop releases). NULL context
+    /// object arrives as 0. Non-zero return = skip the original,
+    /// same as `harmony_patch_prefix`.
+    pub harmony_patch_prefix_ctx: extern "C" fn(
+        type_name_utf8: *const c_char,
+        method_name_utf8: *const c_char,
+        ctx_kind: i32,
+        prefix_fn: extern "C" fn(*const c_void) -> i32,
+    ) -> PatchHandle,
 }
 
 static BRIDGE: OnceLock<BridgeTable> = OnceLock::new();

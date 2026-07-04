@@ -4,10 +4,9 @@
 // Rust passes an unmanaged `extern "C" fn` pointer for the
 // prefix/postfix body. We wrap it in a managed delegate via
 // Marshal.GetDelegateForFunctionPointer and dispatch to it from
-// ONE static prefix dispatcher + ONE static postfix dispatcher,
-// keyed by the patched method.
+// static dispatcher methods keyed by the patched method.
 //
-// Why the dispatcher: Harmony patch methods must be STATIC. The
+// Why dispatchers: Harmony patch methods must be STATIC. The
 // first version targeted `new Action(() => del(...)).Method`,
 // which is an instance method on a compiler-generated closure
 // class; HarmonyLib rejects it, so every Rust-side patch was
@@ -16,11 +15,17 @@
 // per-method delegate lists route each call to the right Rust
 // fn(s).
 //
-// Prefix delegate signature: int(IntPtr). Non-zero return = skip
-// the original method (matches unityforge/src/hook.rs).
-// Postfix delegate signature: void(IntPtr).
-// The IntPtr is reserved (always null for now); future extensions
-// may pass a per-call context.
+// Patch kinds:
+//   - prefix:  int(IntPtr ctx). Non-zero return = skip the
+//     original method (matches unityforge/src/hook.rs). ctx is
+//     IntPtr.Zero for the plain kind.
+//   - postfix: void(IntPtr ctx). ctx is IntPtr.Zero.
+//   - prefix_ctx (v5): int(IntPtr ctx) where ctx carries a FRESH
+//     object handle for the patch's context object: ctxKind 0 =
+//     __instance (instance methods only), ctxKind 1 = args[0].
+//     The Rust callback OWNS the handle and must release it
+//     (MonoObject::from_handle + Drop does). Zero when the
+//     context object is null.
 
 using System;
 using System.Collections.Generic;
@@ -42,6 +47,10 @@ namespace Unityforge.Shim
             typeof(HarmonyBridge).GetMethod(nameof(PrefixDispatcher), BindingFlags.NonPublic | BindingFlags.Static);
         private static readonly MethodInfo PostfixDispatcherMi =
             typeof(HarmonyBridge).GetMethod(nameof(PostfixDispatcher), BindingFlags.NonPublic | BindingFlags.Static);
+        private static readonly MethodInfo PrefixInstanceCtxDispatcherMi =
+            typeof(HarmonyBridge).GetMethod(nameof(PrefixInstanceCtxDispatcher), BindingFlags.NonPublic | BindingFlags.Static);
+        private static readonly MethodInfo PrefixArg0CtxDispatcherMi =
+            typeof(HarmonyBridge).GetMethod(nameof(PrefixArg0CtxDispatcher), BindingFlags.NonPublic | BindingFlags.Static);
 
         // delegate signatures matching the Rust extern "C" fns
         private delegate int RustPrefixDelegate(IntPtr ctx);
@@ -49,10 +58,12 @@ namespace Unityforge.Shim
 
         public delegate int PatchPrefixFn(IntPtr typeNameUtf8, IntPtr methodNameUtf8, IntPtr rustFnPtr);
         public delegate int PatchPostfixFn(IntPtr typeNameUtf8, IntPtr methodNameUtf8, IntPtr rustFnPtr);
+        public delegate int PatchPrefixCtxFn(IntPtr typeNameUtf8, IntPtr methodNameUtf8, int ctxKind, IntPtr rustFnPtr);
         public delegate void UnpatchFn(int handle);
 
         public static readonly PatchPrefixFn PatchPrefixDelegate = PatchPrefix;
         public static readonly PatchPostfixFn PatchPostfixDelegate = PatchPostfix;
+        public static readonly PatchPrefixCtxFn PatchPrefixCtxDelegate = PatchPrefixCtx;
         public static readonly UnpatchFn UnpatchDelegate = Unpatch;
 
         public static void EnsureHarmony(string instanceId)
@@ -79,6 +90,8 @@ namespace Unityforge.Shim
                         {
                             if (kv.Value.PrefixApplied) _harmony.Unpatch(kv.Key, PrefixDispatcherMi);
                             if (kv.Value.PostfixApplied) _harmony.Unpatch(kv.Key, PostfixDispatcherMi);
+                            if (kv.Value.PrefixInstanceCtxApplied) _harmony.Unpatch(kv.Key, PrefixInstanceCtxDispatcherMi);
+                            if (kv.Value.PrefixArg0CtxApplied) _harmony.Unpatch(kv.Key, PrefixArg0CtxDispatcherMi);
                         }
                         catch (Exception e)
                         {
@@ -91,10 +104,18 @@ namespace Unityforge.Shim
             }
         }
 
+        private enum PatchKind
+        {
+            Prefix,
+            Postfix,
+            PrefixInstanceCtx,
+            PrefixArg0Ctx,
+        }
+
         private class PatchEntry
         {
             public MethodBase Target;
-            public bool IsPrefix;
+            public PatchKind Kind;
             // The managed delegate wrapping the Rust fn pointer.
             // Held here so the GC can't collect it while the
             // patch is live; also the identity used to remove it
@@ -106,8 +127,15 @@ namespace Unityforge.Shim
         {
             public readonly List<RustPrefixDelegate> Prefixes = new List<RustPrefixDelegate>();
             public readonly List<RustPostfixDelegate> Postfixes = new List<RustPostfixDelegate>();
+            public readonly List<RustPrefixDelegate> PrefixesInstanceCtx = new List<RustPrefixDelegate>();
+            public readonly List<RustPrefixDelegate> PrefixesArg0Ctx = new List<RustPrefixDelegate>();
             public bool PrefixApplied;
             public bool PostfixApplied;
+            public bool PrefixInstanceCtxApplied;
+            public bool PrefixArg0CtxApplied;
+
+            public bool AnyApplied => PrefixApplied || PostfixApplied
+                || PrefixInstanceCtxApplied || PrefixArg0CtxApplied;
         }
 
         // ---- static dispatchers (the methods Harmony targets) ----------
@@ -165,6 +193,59 @@ namespace Unityforge.Shim
             }
         }
 
+        private static bool PrefixInstanceCtxDispatcher(object __instance, MethodBase __originalMethod)
+        {
+            RustPrefixDelegate[] snapshot = null;
+            lock (_lock)
+            {
+                if (__originalMethod != null
+                    && _byMethod.TryGetValue(__originalMethod, out var mp)
+                    && mp.PrefixesInstanceCtx.Count > 0)
+                {
+                    snapshot = mp.PrefixesInstanceCtx.ToArray();
+                }
+            }
+            if (snapshot == null) return true;
+            return DispatchPrefixCtx(snapshot, __instance);
+        }
+
+        private static bool PrefixArg0CtxDispatcher(object[] __args, MethodBase __originalMethod)
+        {
+            RustPrefixDelegate[] snapshot = null;
+            lock (_lock)
+            {
+                if (__originalMethod != null
+                    && _byMethod.TryGetValue(__originalMethod, out var mp)
+                    && mp.PrefixesArg0Ctx.Count > 0)
+                {
+                    snapshot = mp.PrefixesArg0Ctx.ToArray();
+                }
+            }
+            if (snapshot == null) return true;
+            object ctx = (__args != null && __args.Length > 0) ? __args[0] : null;
+            return DispatchPrefixCtx(snapshot, ctx);
+        }
+
+        private static bool DispatchPrefixCtx(RustPrefixDelegate[] snapshot, object ctx)
+        {
+            bool runOriginal = true;
+            for (int i = 0; i < snapshot.Length; i++)
+            {
+                // A FRESH handle per callback: the Rust side owns
+                // it and releases it (MonoObject Drop).
+                var handle = (ctx != null) ? MonoBridge.Acquire(ctx) : 0;
+                try
+                {
+                    if (snapshot[i](new IntPtr(handle)) != 0) runOriginal = false;
+                }
+                catch (Exception e)
+                {
+                    ShimLogger.Error("HarmonyBridge: prefix_ctx callback threw: " + e);
+                }
+            }
+            return runOriginal;
+        }
+
         // ---- Rust-facing entry points -----------------------------------
 
         private static int PatchPrefix(IntPtr typeNameUtf8, IntPtr methodNameUtf8, IntPtr rustFnPtr)
@@ -190,7 +271,7 @@ namespace Unityforge.Shim
                     }
                     mp.Prefixes.Add(del);
                     handle = _next++;
-                    _patches[handle] = new PatchEntry { Target = target, IsPrefix = true, KeepAliveDelegate = del };
+                    _patches[handle] = new PatchEntry { Target = target, Kind = PatchKind.Prefix, KeepAliveDelegate = del };
                 }
                 return handle;
             }
@@ -221,13 +302,63 @@ namespace Unityforge.Shim
                     }
                     mp.Postfixes.Add(del);
                     handle = _next++;
-                    _patches[handle] = new PatchEntry { Target = target, IsPrefix = false, KeepAliveDelegate = del };
+                    _patches[handle] = new PatchEntry { Target = target, Kind = PatchKind.Postfix, KeepAliveDelegate = del };
                 }
                 return handle;
             }
             catch (Exception e)
             {
                 ShimLogger.Error("HarmonyBridge.PatchPostfix: " + e);
+                return 0;
+            }
+        }
+
+        private static int PatchPrefixCtx(IntPtr typeNameUtf8, IntPtr methodNameUtf8, int ctxKind, IntPtr rustFnPtr)
+        {
+            try
+            {
+                if (_harmony == null || rustFnPtr == IntPtr.Zero) return 0;
+                if (ctxKind != 0 && ctxKind != 1) return 0;
+                var target = ResolveTarget(typeNameUtf8, methodNameUtf8);
+                if (target == null) return 0;
+                if (ctxKind == 0 && target.IsStatic) return 0; // __instance needs an instance method
+                var del = (RustPrefixDelegate)Marshal.GetDelegateForFunctionPointer(rustFnPtr, typeof(RustPrefixDelegate));
+
+                int handle;
+                lock (_lock)
+                {
+                    var mp = GetOrAddMethodPatches(target);
+                    if (ctxKind == 0)
+                    {
+                        if (!mp.PrefixInstanceCtxApplied)
+                        {
+                            _harmony.Patch(target, prefix: new HarmonyMethod(PrefixInstanceCtxDispatcherMi));
+                            mp.PrefixInstanceCtxApplied = true;
+                        }
+                        mp.PrefixesInstanceCtx.Add(del);
+                    }
+                    else
+                    {
+                        if (!mp.PrefixArg0CtxApplied)
+                        {
+                            _harmony.Patch(target, prefix: new HarmonyMethod(PrefixArg0CtxDispatcherMi));
+                            mp.PrefixArg0CtxApplied = true;
+                        }
+                        mp.PrefixesArg0Ctx.Add(del);
+                    }
+                    handle = _next++;
+                    _patches[handle] = new PatchEntry
+                    {
+                        Target = target,
+                        Kind = (ctxKind == 0) ? PatchKind.PrefixInstanceCtx : PatchKind.PrefixArg0Ctx,
+                        KeepAliveDelegate = del,
+                    };
+                }
+                return handle;
+            }
+            catch (Exception e)
+            {
+                ShimLogger.Error("HarmonyBridge.PatchPrefixCtx: " + e);
                 return 0;
             }
         }
@@ -239,31 +370,52 @@ namespace Unityforge.Shim
                 if (!_patches.TryGetValue(handle, out var entry)) return;
                 _patches.Remove(handle);
                 if (!_byMethod.TryGetValue(entry.Target, out var mp)) return;
-                if (entry.IsPrefix)
+                switch (entry.Kind)
                 {
-                    mp.Prefixes.Remove((RustPrefixDelegate)entry.KeepAliveDelegate);
-                    if (mp.Prefixes.Count == 0 && mp.PrefixApplied)
-                    {
-                        try { _harmony?.Unpatch(entry.Target, PrefixDispatcherMi); }
-                        catch (Exception e) { ShimLogger.Error("HarmonyBridge.Unpatch: " + e); }
-                        mp.PrefixApplied = false;
-                    }
+                    case PatchKind.Prefix:
+                        mp.Prefixes.Remove((RustPrefixDelegate)entry.KeepAliveDelegate);
+                        if (mp.Prefixes.Count == 0 && mp.PrefixApplied)
+                        {
+                            TryUnpatch(entry.Target, PrefixDispatcherMi);
+                            mp.PrefixApplied = false;
+                        }
+                        break;
+                    case PatchKind.Postfix:
+                        mp.Postfixes.Remove((RustPostfixDelegate)entry.KeepAliveDelegate);
+                        if (mp.Postfixes.Count == 0 && mp.PostfixApplied)
+                        {
+                            TryUnpatch(entry.Target, PostfixDispatcherMi);
+                            mp.PostfixApplied = false;
+                        }
+                        break;
+                    case PatchKind.PrefixInstanceCtx:
+                        mp.PrefixesInstanceCtx.Remove((RustPrefixDelegate)entry.KeepAliveDelegate);
+                        if (mp.PrefixesInstanceCtx.Count == 0 && mp.PrefixInstanceCtxApplied)
+                        {
+                            TryUnpatch(entry.Target, PrefixInstanceCtxDispatcherMi);
+                            mp.PrefixInstanceCtxApplied = false;
+                        }
+                        break;
+                    case PatchKind.PrefixArg0Ctx:
+                        mp.PrefixesArg0Ctx.Remove((RustPrefixDelegate)entry.KeepAliveDelegate);
+                        if (mp.PrefixesArg0Ctx.Count == 0 && mp.PrefixArg0CtxApplied)
+                        {
+                            TryUnpatch(entry.Target, PrefixArg0CtxDispatcherMi);
+                            mp.PrefixArg0CtxApplied = false;
+                        }
+                        break;
                 }
-                else
-                {
-                    mp.Postfixes.Remove((RustPostfixDelegate)entry.KeepAliveDelegate);
-                    if (mp.Postfixes.Count == 0 && mp.PostfixApplied)
-                    {
-                        try { _harmony?.Unpatch(entry.Target, PostfixDispatcherMi); }
-                        catch (Exception e) { ShimLogger.Error("HarmonyBridge.Unpatch: " + e); }
-                        mp.PostfixApplied = false;
-                    }
-                }
-                if (!mp.PrefixApplied && !mp.PostfixApplied)
+                if (!mp.AnyApplied)
                 {
                     _byMethod.Remove(entry.Target);
                 }
             }
+        }
+
+        private static void TryUnpatch(MethodBase target, MethodInfo dispatcher)
+        {
+            try { _harmony?.Unpatch(target, dispatcher); }
+            catch (Exception e) { ShimLogger.Error("HarmonyBridge.Unpatch: " + e); }
         }
 
         private static MethodBase ResolveTarget(IntPtr typeNameUtf8, IntPtr methodNameUtf8)

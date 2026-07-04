@@ -19,6 +19,8 @@
 //!    every frame; `Main.Unload()` (story switch) shuts the
 //!    generation down and a later `Load()` re-arms it.
 
+mod infection;
+
 use unityforge::ModDef;
 
 static MOD_INFO: ModDef = ModDef {
@@ -41,6 +43,10 @@ fn on_init() {
     // Selector resolvers (singleton:, static_instance:, class:,
     // first_class:, handle:).
     unityforge::selector::register_builtins();
+
+    // No infections (operator directive): every injury enters
+    // uninfected via a Character.AddInjury prefix.
+    infection::install();
 
     unityforge::mono::log(
         unityforge::mono::LogLevel::Info,

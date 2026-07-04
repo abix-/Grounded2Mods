@@ -17,7 +17,7 @@ namespace Unityforge.Shim
     public static class BridgeConstants
     {
         public const uint Magic = 0x52424655u; // "UFBR"
-        public const uint Version = 4u;        // bumped: added ListMethods
+        public const uint Version = 5u;        // bumped: added HarmonyPatchPrefixCtx
     }
 
     public enum RuntimeKind : uint
@@ -58,6 +58,10 @@ namespace Unityforge.Shim
 
         // reflection (v4+; method-list helper)
         public IntPtr ListMethods;
+
+        // harmony (v5+; prefix that passes a context object handle
+        // to the Rust callback: __instance or args[0])
+        public IntPtr HarmonyPatchPrefixCtx;
     }
 
     /// <summary>
@@ -110,6 +114,8 @@ namespace Unityforge.Shim
                 UnregisterKeyBinding = Marshal.GetFunctionPointerForDelegate(InputBridge.UnregisterDelegate),
 
                 ListMethods = backend.ListMethods,
+
+                HarmonyPatchPrefixCtx = Marshal.GetFunctionPointerForDelegate(HarmonyBridge.PatchPrefixCtxDelegate),
             };
         }
     }
