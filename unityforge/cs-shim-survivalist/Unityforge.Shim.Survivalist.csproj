@@ -1,0 +1,71 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- net472, not netstandard2.1: Lib.Harmony 2.0.4 ships
+         net4x targets only (NU1701 under netstandard), and the
+         game's own modding guide builds .NET Framework class
+         libraries (DisableHUD ships net40). Unity's Mono loads
+         net4x assemblies natively. -->
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>Unityforge.Shim.Survivalist</AssemblyName>
+    <Version>0.1.0</Version>
+    <LangVersion>9.0</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <!-- No RootNamespace: the game's loader looks up the type
+         "Main" in the GLOBAL namespace (Story.LoadDLLs does
+         assembly.GetType("Main")). -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Common sources linked from cs-shim-common (shared with the
+         BepInEx shims). -->
+    <Compile Include="..\cs-shim-common\Bridge.cs">
+      <Link>Common\Bridge.cs</Link>
+    </Compile>
+    <Compile Include="..\cs-shim-common\GenerationLoader.cs">
+      <Link>Common\GenerationLoader.cs</Link>
+    </Compile>
+    <Compile Include="..\cs-shim-common\HarmonyBridge.cs">
+      <Link>Common\HarmonyBridge.cs</Link>
+    </Compile>
+    <Compile Include="..\cs-shim-common\Logger.cs">
+      <Link>Common\Logger.cs</Link>
+    </Compile>
+    <Compile Include="..\cs-shim-common\InputBridge.cs">
+      <Link>Common\InputBridge.cs</Link>
+    </Compile>
+    <!-- The Mono backend is host-agnostic (pure System.Reflection +
+         Newtonsoft.Json); link it from the BepInEx Mono shim. -->
+    <Compile Include="..\cs-shim-mono\MonoBridge.cs">
+      <Link>Common\MonoBridge.cs</Link>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Official pardeike Harmony 2.0.4 (the version the game's
+      Steam Workshop "Harmony 2.0.4" dependency mod ships), NOT
+      BepInEx's HarmonyX. Compile-only: at runtime the game loads
+      0Harmony.dll from the dependency mod's DLLs folder.
+
+      Unity references come from the game's Managed dir via
+      -p:UnityDir like the other shims.
+    -->
+    <PackageReference Include="Lib.Harmony" Version="2.0.4" PrivateAssets="all" />
+    <Reference Include="UnityEngine" Condition="'$(UnityDir)' != ''">
+      <Private>false</Private>
+      <HintPath>$(UnityDir)\UnityEngine.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule" Condition="'$(UnityDir)' != ''">
+      <Private>false</Private>
+      <HintPath>$(UnityDir)\UnityEngine.CoreModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule" Condition="'$(UnityDir)' != ''">
+      <Private>false</Private>
+      <HintPath>$(UnityDir)\UnityEngine.InputLegacyModule.dll</HintPath>
+    </Reference>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,5 @@
+is_global = true
+build_property.RootNamespace = Unityforge.Shim.Survivalist
+build_property.ProjectDir = C:\code\modforge\unityforge\cs-shim-survivalist\
+build_property.EnableComHosting = 
+build_property.EnableGeneratedComInterfaceComImportInterop = 

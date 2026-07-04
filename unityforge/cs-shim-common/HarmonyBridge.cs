@@ -45,7 +45,11 @@ namespace Unityforge.Shim
 
         /// <summary>
         /// Drop every active patch. Used during hot reload so
-        /// HarmonyX doesn't dispatch into a freed Rust DLL.
+        /// Harmony doesn't dispatch into a freed Rust DLL.
+        /// Per-handle unpatch, not UnpatchSelf: UnpatchSelf is
+        /// HarmonyX-only (missing in pardeike Harmony 2.0.4,
+        /// which the survivalist host builds against), and the
+        /// per-handle path is what hot reload already relies on.
         /// </summary>
         public static void UnpatchAll()
         {
@@ -53,10 +57,13 @@ namespace Unityforge.Shim
             {
                 if (_harmony != null)
                 {
-                    try { _harmony.UnpatchSelf(); }
-                    catch (Exception e)
+                    foreach (var entry in _patches.Values)
                     {
-                        ShimLogger.Error("HarmonyBridge.UnpatchAll: " + e);
+                        try { _harmony.Unpatch(entry.Target, HarmonyPatchType.All, _harmony.Id); }
+                        catch (Exception e)
+                        {
+                            ShimLogger.Error("HarmonyBridge.UnpatchAll: " + e);
+                        }
                     }
                 }
                 _patches.Clear();
