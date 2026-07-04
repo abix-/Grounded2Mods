@@ -36,8 +36,12 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $repoRoot
 
+# Created stories/mods land under StreamingAssets, not the game
+# root (verified from Player.log "Saved .../StreamingAssets/
+# SurvivalistTweaks/Settings.xml" lines, 2026-07-04; the setup
+# guide's "subfolder in the game's directory" is imprecise).
 $managed = Join-Path $GameDir 'Survivalist Invisible Strain_Data\Managed'
-$modDir  = Join-Path $GameDir $ModName
+$modDir  = Join-Path $GameDir "Survivalist Invisible Strain_Data\StreamingAssets\$ModName"
 $dllsDir = Join-Path $modDir 'DLLs'
 
 if (-not (Test-Path $managed)) {
