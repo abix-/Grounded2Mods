@@ -197,13 +197,27 @@ those listed above are the immediate path forward.
   once by the operator in the in-game editor (Is Mod ticked,
   Harmony 2.0.4 workshop dependency added in Story Settings); the
   script only copies files.
-- [ ] **SV7: live smoke.** Launch, activate the mod on a story,
-  then: shim Debug.Log lines visible in the Unity player log; curl
-  ping answers; walk_class on a known type from the decompile (e.g.
-  HudBehaviour) returns fields; one Rust-side Harmony patch
-  observably fires; hot reload generation 0 -> 1 with ops still
-  answering; quit to menu (Unload) and re-enter (Load) without a
-  crash.
+- [x] **SV7: live smoke.** Verified against the live game
+  2026-07-04 (operator mod folder: `SurvivalistTweaks`):
+  - Shim + loader `[Unityforge]` lines in the player log: YES
+    (Harmony 2.0.4 dependency DLL loaded first, then the shim,
+    then the Rust cdylib from the mod root).
+  - `{"op":"ping"}` on 17173: YES.
+  - `walk_class HudBehaviour`: YES (live instance `HudPanel`,
+    handle returned). NOTE: op args nest under `"args"` per the
+    envelope (`{"op":"walk_class","args":{"class":"..."}}`).
+  - `inspect_object` on that handle: YES (field dump with nested
+    handles).
+  - Hot reload generation 0 -> 1 via `-Hot`: YES; gen1
+    re-initialized and ping answers after the swap.
+  - Quit-to-menu + load back in: the game KEEPS the story content
+    loaded; `UnloadDLLs` never fired, the control plane stayed up
+    throughout, no crash. So Unload/re-Load only happens on a
+    story SWITCH; the `ReinitAfterUnload` path is still
+    unexercised live (structurally covered, verify when a story
+    switch happens naturally).
+  - One Rust-side Harmony patch observably firing: OPEN; lands
+    with the first real gameplay tweak (SV8).
 - [ ] **SV8: gameplay research doc.** After SV7,
   `survivalist-mod/docs/research.md`: map the classes for what the
   operator wants to tweak (NPC behavior, loot, zombies, content).
@@ -214,16 +228,21 @@ those listed above are the immediate path forward.
 
 ### Definition of done
 
-- [ ] The official loader is a first-class unityforge host: the
+- [x] The official loader is a first-class unityforge host: the
   BepInEx host and the survivalist host share the generation
   loader, bridge table, and hot reload from cs-shim-common.
-- [ ] `survivalist-mod` answers curl in-game with the standard
-  reflection op surface.
+  Live-verified 2026-07-04.
+- [x] `survivalist-mod` answers curl in-game with the standard
+  reflection op surface. Live-verified 2026-07-04.
 - [ ] One Rust-side Harmony patch verified live (which also closes
-  "Next up" item 0 for the Mono path).
-- [ ] The Load/Unload cycle (story switch) is verified: no crash,
-  control plane back up after re-entry.
-- [ ] Hot reload verified in-game on this host.
+  "Next up" item 0 for the Mono path). Lands with the first SV8
+  tweak.
+- [/] The Load/Unload cycle: quit-to-menu + reload keeps the DLLs
+  loaded (no unload fires) and the control plane stays up; the
+  actual story-SWITCH re-init path is structurally covered but not
+  yet exercised live.
+- [x] Hot reload verified in-game on this host (gen 0 -> 1,
+  2026-07-04).
 
 ### Open questions
 
