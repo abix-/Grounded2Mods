@@ -1,6 +1,0 @@
-C:\code\modforge\unityforge\cs-shim-survivalist\obj\Release\netstandard2.1\Unityforge.Shim.Survivalist.csproj.AssemblyReference.cache
-C:\code\modforge\unityforge\cs-shim-survivalist\obj\Release\netstandard2.1\Unityforge.Shim.Survivalist.GeneratedMSBuildEditorConfig.editorconfig
-C:\code\modforge\unityforge\cs-shim-survivalist\obj\Release\netstandard2.1\Unityforge.Shim.Survivalist.AssemblyInfoInputs.cache
-C:\code\modforge\unityforge\cs-shim-survivalist\obj\Release\netstandard2.1\Unityforge.Shim.Survivalist.AssemblyInfo.cs
-C:\code\modforge\unityforge\cs-shim-survivalist\obj\Release\netstandard2.1\Unityforge.Shim.Survivalist.csproj.CoreCompileInputs.cache
-C:\code\modforge\unityforge\cs-shim-survivalist\obj\Release\netstandard2.1\Unityforge.Shim.Survivalist.sourcelink.json
