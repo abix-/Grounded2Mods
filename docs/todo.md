@@ -137,22 +137,26 @@ those listed above are the immediate path forward.
 
 ### Tasks
 
-- [ ] **SV1: extract the generation loader out of the BepInEx
-  plugin.** `cs-shim-mono/Plugin.cs` currently owns the Generation
-  class, LoadGeneration, CheckHotReload/HotSwap, LocateRustDll, the
-  NativeLibrary P/Invoke wrapper, plus WWM-specific patches. Move
-  the host-agnostic machinery into cs-shim-common (file name decided
-  at implementation), keeping BepInEx-host behavior byte-identical.
-  Plugin.cs keeps: the [BepInPlugin] entry, logger wiring, the WWM
-  patches, and delegates the rest.
-- [ ] **SV2: logger sink seam.** `cs-shim-common/Logger.cs`
-  hard-types BepInEx's ManualLogSource. Introduce a sink the host
-  sets at startup: the BepInEx host keeps ManualLogSource; the
-  survivalist host uses `UnityEngine.Debug.Log` with a
-  `[Unityforge]` prefix.
-- [ ] **SV3: new host project `cs-shim-survivalist/`
-  (`Unityforge.Shim.Survivalist.csproj`).** Global-namespace `Main`
-  with `public static void Load()` / `Unload()`.
+- [x] **SV1: extract the generation loader out of the BepInEx
+  plugin.** Shipped 2026-07-04 commit `abdbfa40`:
+  `cs-shim-common/GenerationLoader.cs` owns the Generation class,
+  LoadGeneration, CheckHotReload/HotSwap, LocateRustDll, and the
+  NativeLibrary P/Invoke wrapper, plus the ShutdownForUnload /
+  ReinitAfterUnload pair for the official-loader re-entry cycle.
+  Plugin.cs keeps the [BepInPlugin] entry, logger wiring, and the
+  WWM patches; mono shim builds green against WWM's BepInEx.
+- [x] **SV2: logger sink seam.** Shipped 2026-07-04 commit
+  `abdbfa40`: `ShimLogger.Sink` delegate; both BepInEx hosts wire
+  their ManualLogSource, the survivalist host wires
+  `UnityEngine.Debug.Log` with a `[Unityforge]` prefix. il2cpp
+  Plugin.cs updated too (written, not built here; no BepInEx 6
+  install on disk).
+- [x] **SV3: new host project `cs-shim-survivalist/`
+  (`Unityforge.Shim.Survivalist.csproj`).** Shipped 2026-07-04
+  commit `61ee122b`. Global-namespace `Main` with static
+  `Load()`/`Unload()`, driver GameObject, re-entrant Load via
+  GenerationLoader park + re-init. Builds green against the game's
+  Managed dir + Lib.Harmony 2.0.4.
   - Load(): re-entrant guard; set the logger sink; EnsureHarmony;
     locate `*.unityforge.dll` relative to the shim assembly (mod
     folder, outside `DLLs/`); create a hidden persistent driver
@@ -165,34 +169,31 @@ those listed above are the immediate path forward.
     destroy the driver GameObject, KEEP the module mapped, stash the
     generation so the next Load() re-inits it via gen.Init() (same
     move as the hot-reload rollback path).
-  - References: official 0Harmony.dll 2.0.4 + the game's
-    UnityEngine/UnityEngine.CoreModule (HintPaths via msbuild props
-    like the Mono shim). Target framework netstandard2.1 like the
-    Mono shim; DisableHUD ships net40, so if the game's Mono refuses
-    netstandard2.1, drop to net472 (open question below).
-- [ ] **SV4: make the Harmony bridge actually work + Harmony 2.0.4
-  compat.** Blocker: "Next up" item 0 above (PatchPrefix /
-  PatchPostfix build the Harmony target from an instance lambda,
-  which HarmonyLib rejects; every Rust-side patch has been silently
-  failing). Fix with the static dispatcher keyed by patch handle as
-  item 0 prescribes; survivalist-mod is the first real consumer of
-  the fixed path. Then verify the bridge against pardeike Harmony
-  2.0.4 instead of HarmonyX: check whether `UnpatchSelf` exists
-  there (it is the HarmonyX-flavored name) and use the 2.0.4
-  equivalent in UnpatchAll(); the per-handle
-  `Unpatch(original, patch)` path is what hot reload uses, verify
-  its signature too.
-- [ ] **SV5: `survivalist-mod` Rust crate.** cdylib, depends on
-  unityforge + modforge, standard `unityforge_mod!` entry. v1 scope
-  is the HTTP control plane only: modforge server + ops + the
-  unityforge reflection primitives (walk_class, inspect_object,
-  read_field, write_field, invoke_method, list_singletons) so all
-  gameplay research runs against the live game instead of by
-  decompile-reading.
-- [ ] **SV6: deploy.** Build script (pattern: wwm's
-  build_and_deploy.ps1 including -Hot generation staging) that
-  places the shim into `<game dir>/<ModName>/DLLs/` and the Rust
-  cdylib next to it outside DLLs/. The mod folder itself is created
+  - References: official 0Harmony.dll 2.0.4 (Lib.Harmony 2.0.4
+    NuGet, compile-only) + the game's UnityEngine modules
+    (HintPaths via -p:UnityDir). Target framework RESOLVED: net472
+    (Lib.Harmony 2.0.4 ships net4x targets only, NU1701 under
+    netstandard2.1; matches the DisableHUD net40 precedent).
+- [x] **SV4: make the Harmony bridge actually work + Harmony 2.0.4
+  compat.** Shipped 2026-07-04 commits `61ee122b` + `b427a15d`.
+  PatchPrefix/PatchPostfix now target ONE static PrefixDispatcher +
+  ONE static PostfixDispatcher (real static methods Harmony
+  accepts), routed per patched method through a delegate list;
+  non-zero Rust prefix return = skip original per
+  unityforge/src/hook.rs. UnpatchSelf confirmed HarmonyX-only
+  (CS1061 against Lib.Harmony 2.0.4); UnpatchAll now unpatches
+  per-dispatcher. Both shims build green. NOT yet live-verified
+  (that is SV7's "one Rust-side Harmony patch observably fires").
+- [x] **SV5: `survivalist-mod` Rust crate.** Shipped 2026-07-04
+  commit `2926b1f9`. cdylib on unityforge + modforge,
+  `unityforge_mod!` entry, http_port 17173, on_init registers
+  ops::register_builtins + selector::register_builtins. Builds
+  green.
+- [x] **SV6: deploy.** Shipped 2026-07-04 commit `0ba153c7`:
+  `survivalist-mod/scripts/build_and_deploy.ps1` (shim to
+  `<game>/<ModName>/DLLs/`, cdylib to the mod root as
+  `survivalist_mod.unityforge.dll`, -Hot generation staging,
+  -NoCopy build path verified). The mod folder itself is created
   once by the operator in the in-game editor (Is Mod ticked,
   Harmony 2.0.4 workshop dependency added in Story Settings); the
   script only copies files.
@@ -226,18 +227,30 @@ those listed above are the immediate path forward.
 
 ### Open questions
 
-- Shim target framework: netstandard2.1 assumed OK on the game's
-  modern Mono; DisableHUD ships net40. Validate on first load.
-- Where the Unity player log lives for this game (shim Debug.Log
-  lines + the loader's per-DLL errors land there; needed for SV7
-  triage).
+- RESOLVED: shim target framework is net472 (Lib.Harmony 2.0.4 has
+  no netstandard target; DisableHUD precedent).
+- RESOLVED: player log is
+  `%USERPROFILE%\AppData\LocalLow\Ginormocorp Industries\Survivalist Invisible Strain\Player.log`
+  (company/product read from the game's app.info).
+- RESOLVED: 0Harmony.dll at build time comes from the Lib.Harmony
+  2.0.4 NuGet package (compile-only, PrivateAssets=all +
+  CopyLocalLockFileAssemblies=false); at runtime the game loads the
+  workshop dependency mod's 0Harmony.dll.
 - Whether the game re-calls Load() on the SAME Story object or a
   fresh one per story select (structurally handled either way by
   the re-entrant guard; confirm during SV7).
-- 0Harmony.dll at build time: vendor a copy under `vendor/` vs
-  reference the workshop mod's file on disk. Vendoring is hermetic;
-  at runtime the game loads whichever 0Harmony.dll the dependency
-  mod ships, so the assembly identity must match 2.0.4.
+
+### SV7 prerequisites (operator, one-time)
+
+1. Subscribe to the Steam Workshop "Harmony 2.0.4" mod
+   (id 2366696532); it is NOT currently downloaded (checked
+   `steamapps/workshop/content/1054510/` 2026-07-04).
+2. In the game's editor: create a mod named `SurvivalistMod` (or
+   any name; pass -ModName), tick "Is Mod", add the Harmony 2.0.4
+   dependency in Story Settings.
+3. Run `survivalist-mod/scripts/build_and_deploy.ps1`.
+4. Start a game with the mod active; tail the player log for the
+   `[Unityforge]` lines.
 
 ---
 
