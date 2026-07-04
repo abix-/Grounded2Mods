@@ -18,3 +18,7 @@ ueforge/cpp/target/
 # GPL-3 prior-art clones used only as research reference.
 # Their source has its own .git history and must not be redistributed in our MIT tree.
 horsey-mod/research/prior-art/
+
+# C# shim build output (dotnet build artifacts)
+unityforge/cs-shim-*/bin/
+unityforge/cs-shim-*/obj/
