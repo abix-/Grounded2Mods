@@ -56,7 +56,7 @@ namespace Unityforge.Shim
                     try { _harmony.UnpatchSelf(); }
                     catch (Exception e)
                     {
-                        ShimLogger.Source?.LogError("HarmonyBridge.UnpatchAll: " + e);
+                        ShimLogger.Error("HarmonyBridge.UnpatchAll: " + e);
                     }
                 }
                 _patches.Clear();

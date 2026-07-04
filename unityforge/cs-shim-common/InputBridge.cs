@@ -102,7 +102,7 @@ namespace Unityforge.Shim
                 }
                 catch (Exception e)
                 {
-                    ShimLogger.Source?.LogError(
+                    ShimLogger.Error(
                         "InputBridge: callback for key " + snapshot[i].Key + " threw: " + e);
                 }
             }

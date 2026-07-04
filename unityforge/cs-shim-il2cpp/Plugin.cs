@@ -36,21 +36,33 @@ namespace Unityforge.Shim
 
         public override void Load()
         {
-            ShimLogger.Source = base.Log;
-            ShimLogger.Source.LogInfo("Unityforge.Shim.Il2Cpp: Load");
+            var src = base.Log;
+            ShimLogger.Sink = (level, msg) =>
+            {
+                switch (level)
+                {
+                    case 0:
+                    case 1: src.LogDebug(msg); break;
+                    case 2: src.LogInfo(msg); break;
+                    case 3: src.LogWarning(msg); break;
+                    case 4: src.LogError(msg); break;
+                    default: src.LogInfo(msg); break;
+                }
+            };
+            ShimLogger.Info("Unityforge.Shim.Il2Cpp: Load");
 
             var dllPath = LocateRustDll();
             if (dllPath == null)
             {
-                ShimLogger.Source.LogError("Unityforge.Shim.Il2Cpp: no Rust target DLL found. Set " + TargetEnv + " or drop a *.unityforge.dll next to this plugin.");
+                ShimLogger.Error("Unityforge.Shim.Il2Cpp: no Rust target DLL found. Set " + TargetEnv + " or drop a *.unityforge.dll next to this plugin.");
                 return;
             }
-            ShimLogger.Source.LogInfo("Unityforge.Shim.Il2Cpp: loading " + dllPath);
+            ShimLogger.Info("Unityforge.Shim.Il2Cpp: loading " + dllPath);
 
             _rustModule = NativeLibrary.Load(dllPath);
             if (_rustModule == IntPtr.Zero)
             {
-                ShimLogger.Source.LogError("Unityforge.Shim.Il2Cpp: LoadLibrary failed: " + Marshal.GetLastWin32Error());
+                ShimLogger.Error("Unityforge.Shim.Il2Cpp: LoadLibrary failed: " + Marshal.GetLastWin32Error());
                 return;
             }
             _init = ResolveSymbol<UnityforgeInitFn>("unityforge_init");
@@ -58,7 +70,7 @@ namespace Unityforge.Shim
             _shutdown = ResolveSymbol<UnityforgeShutdownFn>("unityforge_shutdown");
             if (_init == null || _tick == null || _shutdown == null)
             {
-                ShimLogger.Source.LogError("Unityforge.Shim.Il2Cpp: target DLL is missing one of unityforge_init / unityforge_tick / unityforge_shutdown");
+                ShimLogger.Error("Unityforge.Shim.Il2Cpp: target DLL is missing one of unityforge_init / unityforge_tick / unityforge_shutdown");
                 return;
             }
 
@@ -71,13 +83,13 @@ namespace Unityforge.Shim
                 int rc = _init(_bridgeHandle.AddrOfPinnedObject());
                 if (rc != 0)
                 {
-                    ShimLogger.Source.LogError("Unityforge.Shim.Il2Cpp: unityforge_init returned " + rc);
+                    ShimLogger.Error("Unityforge.Shim.Il2Cpp: unityforge_init returned " + rc);
                     return;
                 }
             }
             catch (Exception e)
             {
-                ShimLogger.Source.LogError("Unityforge.Shim.Il2Cpp: unityforge_init threw: " + e);
+                ShimLogger.Error("Unityforge.Shim.Il2Cpp: unityforge_init threw: " + e);
                 return;
             }
 
@@ -90,7 +102,7 @@ namespace Unityforge.Shim
             driver.Tick = _tick;
 
             _started = true;
-            ShimLogger.Source.LogInfo("Unityforge.Shim.Il2Cpp: ready");
+            ShimLogger.Info("Unityforge.Shim.Il2Cpp: ready");
         }
 
         public override bool Unload()
@@ -98,7 +110,7 @@ namespace Unityforge.Shim
             if (_started)
             {
                 try { _shutdown(); }
-                catch (Exception e) { ShimLogger.Source.LogError("Unityforge.Shim.Il2Cpp: shutdown threw: " + e); }
+                catch (Exception e) { ShimLogger.Error("Unityforge.Shim.Il2Cpp: shutdown threw: " + e); }
             }
             if (_bridgeHandle.IsAllocated) _bridgeHandle.Free();
             if (_rustModule != IntPtr.Zero) NativeLibrary.Free(_rustModule);
@@ -142,7 +154,7 @@ namespace Unityforge.Shim
             if (Tick == null) return;
             InputBridge.PollAll();
             try { Tick(Time.realtimeSinceStartup); }
-            catch (Exception e) { ShimLogger.Source?.LogError("Unityforge.Shim.Il2Cpp: tick threw: " + e); }
+            catch (Exception e) { ShimLogger.Error("Unityforge.Shim.Il2Cpp: tick threw: " + e); }
         }
     }
 

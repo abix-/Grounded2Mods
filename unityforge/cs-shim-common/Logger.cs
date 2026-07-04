@@ -1,14 +1,26 @@
-// Logger.cs. Forwards Rust log lines to BepInEx's ManualLogSource.
+// Logger.cs. Host-agnostic log seam. The host sets `Sink` at
+// startup (BepInEx hosts route to their ManualLogSource; a
+// game-official-loader host routes to UnityEngine.Debug.Log).
+// Rust log lines arrive through EmitDelegate and go to the same
+// sink.
+//
+// Levels: 0/1 debug, 2 info, 3 warning, 4 error.
 
 using System;
 using System.Runtime.InteropServices;
-using BepInEx.Logging;
 
 namespace Unityforge.Shim
 {
     public static class ShimLogger
     {
-        public static ManualLogSource Source;
+        public delegate void SinkFn(int level, string msg);
+
+        public static SinkFn Sink;
+
+        public static void Debug(string msg) => Sink?.Invoke(1, msg);
+        public static void Info(string msg) => Sink?.Invoke(2, msg);
+        public static void Warn(string msg) => Sink?.Invoke(3, msg);
+        public static void Error(string msg) => Sink?.Invoke(4, msg);
 
         public delegate void EmitFn(int level, IntPtr msgUtf8);
 
@@ -18,17 +30,10 @@ namespace Unityforge.Shim
 
         private static void Emit(int level, IntPtr msgUtf8)
         {
-            if (Source == null) return;
+            var sink = Sink;
+            if (sink == null) return;
             var msg = Marshal.PtrToStringAnsi(msgUtf8) ?? "<null>";
-            switch (level)
-            {
-                case 0: Source.LogDebug(msg); break;
-                case 1: Source.LogDebug(msg); break;
-                case 2: Source.LogInfo(msg); break;
-                case 3: Source.LogWarning(msg); break;
-                case 4: Source.LogError(msg); break;
-                default: Source.LogInfo(msg); break;
-            }
+            sink(level, msg);
         }
     }
 }

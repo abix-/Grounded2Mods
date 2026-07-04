@@ -1,28 +1,17 @@
-// Plugin.cs. BepInEx entry. Loads the Rust cdylib next to this
-// DLL, calls unityforge_init with a function-pointer bridge,
-// then drives unityforge_tick from a MonoBehaviour's Update.
-//
-// Hot reload: generation-versioned. Each iteration drops a
-// `*.gen<N>.dll` next to the canonical DLL. The shim's
-// per-second watcher picks it up, calls `unityforge_shutdown`
-// on the active generation (which runs the modforge shutdown
-// registry. HTTP server unblock + slot poller wake + thread
-// joins. So all background threads exit before we proceed),
-// then `LoadLibrary`s the new generation, calls its
-// `unityforge_init`, and switches active. The OLD module is
-// never FreeLibrary'd; the OS unmaps it on its own schedule
-// once nothing references it.
+// Plugin.cs. BepInEx entry. Wires the log sink to BepInEx's
+// ManualLogSource, locates the Rust cdylib next to this DLL, and
+// drives the shared GenerationLoader (cs-shim-common) from a
+// MonoBehaviour's Update. Generation loading + hot reload live in
+// GenerationLoader; this file owns only the BepInEx host seam and
+// the WWM-specific patches.
 //
 // See docs/unityforge-plan.md section 6.5 "Hot reload" for the
-// full design + rationale.
+// generation-loader design + rationale.
 
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Reflection;
-using System.Runtime.InteropServices;
-using System.Text.RegularExpressions;
 using BepInEx;
 using UnityEngine;
 
@@ -35,57 +24,32 @@ namespace Unityforge.Shim
         public const string PluginName = "Unityforge.Shim";
         public const string PluginVersion = "0.1.0";
 
-        private const string TargetEnv = "UNITYFORGE_TARGET";
-
-        // P/Invoke targets resolved by GetProcAddress at runtime.
-        private delegate int UnityforgeInitFn(IntPtr bridge);
-        private delegate void UnityforgeTickFn(float now);
-        private delegate void UnityforgeShutdownFn();
-
-        /// <summary>
-        /// One loaded image of the Rust cdylib. The shim
-        /// holds at most one active generation at a time; old
-        /// generations are dropped from `_quiesced` once their
-        /// background threads have been signaled to stop and
-        /// joined (by `_shutdown()`). We never FreeLibrary.
-        /// the OS unmaps the image once nothing references
-        /// its code segment.
-        /// </summary>
-        private class Generation
-        {
-            public int N;                                 // 0 = initial, then 1, 2, ...
-            public string Path;
-            public IntPtr Module;
-            public UnityforgeInitFn Init;
-            public UnityforgeTickFn Tick;
-            public UnityforgeShutdownFn Shutdown;
-            public BridgeTable Bridge;
-            public GCHandle BridgeHandle;                 // pinned pointer passed to Rust
-        }
-
-        private Generation _active;
-        private readonly List<Generation> _quiesced = new List<Generation>();
-        private string _canonicalDir;
-        private string _canonicalDllPath;
-        private float _lastReloadCheck;
-        private const float ReloadCheckIntervalSec = 1.0f;
-        private static readonly Regex GenFilenameRe = new Regex(
-            @"\.gen(\d+)\.dll$", RegexOptions.IgnoreCase);
+        private GenerationLoader _loader;
 
         private void Awake()
         {
-            ShimLogger.Source = base.Logger;
-            ShimLogger.Source.LogInfo("Unityforge.Shim: Awake");
+            var src = base.Logger;
+            ShimLogger.Sink = (level, msg) =>
+            {
+                switch (level)
+                {
+                    case 0:
+                    case 1: src.LogDebug(msg); break;
+                    case 2: src.LogInfo(msg); break;
+                    case 3: src.LogWarning(msg); break;
+                    case 4: src.LogError(msg); break;
+                    default: src.LogInfo(msg); break;
+                }
+            };
+            ShimLogger.Info("Unityforge.Shim: Awake");
 
-            var dllPath = LocateRustDll();
+            var dir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            var dllPath = GenerationLoader.LocateRustDll(dir);
             if (dllPath == null)
             {
-                ShimLogger.Source.LogError("Unityforge.Shim: no Rust target DLL found. Set " + TargetEnv + " or drop a *.unityforge.dll next to this plugin.");
+                ShimLogger.Error("Unityforge.Shim: no Rust target DLL found. Set " + GenerationLoader.TargetEnv + " or drop a *.unityforge.dll next to this plugin.");
                 return;
             }
-            _canonicalDllPath = dllPath;
-            _canonicalDir = Path.GetDirectoryName(dllPath);
-            ShimLogger.Source.LogInfo("Unityforge.Shim: loading " + dllPath);
 
             HarmonyBridge.EnsureHarmony(PluginGuid);
 
@@ -97,13 +61,14 @@ namespace Unityforge.Shim
             // gameplay so the demo screen never opens.
             InstallDemoCompleteBlock();
 
-            _active = LoadGeneration(dllPath, generationNumber: 0);
-            if (_active == null)
+            _loader = new GenerationLoader(new MonoBackendBridge(), MonoBridge.ClearHandles);
+            if (!_loader.LoadInitial(dllPath))
             {
-                ShimLogger.Source.LogError("Unityforge.Shim: initial generation failed to load");
+                ShimLogger.Error("Unityforge.Shim: initial generation failed to load");
+                _loader = null;
                 return;
             }
-            ShimLogger.Source.LogInfo("Unityforge.Shim: ready (generation 0)");
+            ShimLogger.Info("Unityforge.Shim: ready (generation 0)");
         }
 
         private static void InstallDemoCompleteBlock()
@@ -135,11 +100,11 @@ namespace Unityforge.Shim
                 // turned in the gold bars yet.
                 int patched = PatchTaskClass("TutorialTaskSellItem");
                 int patchedBase = PatchTaskClass("TutorialTask");
-                ShimLogger.Source?.LogInfo($"WWM block: patched {patched} on TutorialTaskSellItem, {patchedBase} on TutorialTask");
+                ShimLogger.Info($"WWM block: patched {patched} on TutorialTaskSellItem, {patchedBase} on TutorialTask");
             }
             catch (Exception e)
             {
-                ShimLogger.Source?.LogError("WWM block: install threw: " + e);
+                ShimLogger.Error("WWM block: install threw: " + e);
             }
         }
 
@@ -161,29 +126,29 @@ namespace Unityforge.Shim
                 var t = TypeCache.Resolve(typeName);
                 if (t == null)
                 {
-                    ShimLogger.Source?.LogWarning($"WWM block: type {typeName} not found");
+                    ShimLogger.Warn($"WWM block: type {typeName} not found");
                     return;
                 }
                 var m = HarmonyLib.AccessTools.Method(t, methodName);
                 if (m == null)
                 {
-                    ShimLogger.Source?.LogWarning($"WWM block: {typeName}.{methodName} not found");
+                    ShimLogger.Warn($"WWM block: {typeName}.{methodName} not found");
                     return;
                 }
                 _wwmHarmony.Patch(m, prefix: new HarmonyLib.HarmonyMethod(
                     typeof(UnityforgeShimPlugin),
                     nameof(WwmCompleteDemo_Prefix)));
-                ShimLogger.Source?.LogInfo($"WWM block: patched {typeName}.{methodName} (return false)");
+                ShimLogger.Info($"WWM block: patched {typeName}.{methodName} (return false)");
             }
             catch (Exception e)
             {
-                ShimLogger.Source?.LogError($"WWM block: patch {typeName}.{methodName} threw: " + e);
+                ShimLogger.Error($"WWM block: patch {typeName}.{methodName} threw: " + e);
             }
         }
 
         public static bool WwmCompleteDemo_Prefix(System.Reflection.MethodBase __originalMethod)
         {
-            ShimLogger.Source?.LogInfo($"WWM block: intercepted {__originalMethod?.DeclaringType?.Name}.{__originalMethod?.Name}() -- demo complete blocked");
+            ShimLogger.Info($"WWM block: intercepted {__originalMethod?.DeclaringType?.Name}.{__originalMethod?.Name}() -- demo complete blocked");
             return false;
         }
 
@@ -192,7 +157,7 @@ namespace Unityforge.Shim
             var t = TypeCache.Resolve(typeName);
             if (t == null)
             {
-                ShimLogger.Source?.LogWarning($"WWM block: type {typeName} not found");
+                ShimLogger.Warn($"WWM block: type {typeName} not found");
                 return 0;
             }
             var prefix = new HarmonyLib.HarmonyMethod(
@@ -216,7 +181,7 @@ namespace Unityforge.Shim
                 }
                 catch (Exception e)
                 {
-                    ShimLogger.Source?.LogWarning($"WWM block: patch {typeName}.{m.Name} threw: {e.Message}");
+                    ShimLogger.Warn($"WWM block: patch {typeName}.{m.Name} threw: {e.Message}");
                 }
             }
             return count;
@@ -233,14 +198,14 @@ namespace Unityforge.Shim
                 _wwmInterceptCount++;
                 if (_wwmInterceptCount <= 5)
                 {
-                    ShimLogger.Source?.LogInfo(
+                    ShimLogger.Info(
                         $"WWM block: intercepted SellGoldBar.{__originalMethod?.Name}() #{_wwmInterceptCount}");
                 }
                 return false; // skip original on the SellGoldBar task
             }
             catch (Exception e)
             {
-                ShimLogger.Source?.LogError("WWM block: prefix threw: " + e);
+                ShimLogger.Error("WWM block: prefix threw: " + e);
                 return true;
             }
         }
@@ -261,7 +226,7 @@ namespace Unityforge.Shim
             }
             catch (Exception e)
             {
-                ShimLogger.Source?.LogError("WWM block: scene-load retry threw: " + e);
+                ShimLogger.Error("WWM block: scene-load retry threw: " + e);
             }
         }
 
@@ -284,21 +249,21 @@ namespace Unityforge.Shim
                     var m = HarmonyLib.AccessTools.Method(t, name);
                     if (m == null)
                     {
-                        ShimLogger.Source?.LogWarning($"WWM block: method {name} not found");
+                        ShimLogger.Warn($"WWM block: method {name} not found");
                         continue;
                     }
                     _wwmHarmony.Patch(m, prefix: new HarmonyLib.HarmonyMethod(
                         typeof(UnityforgeShimPlugin), nameof(BlockDemoComplete_UpdatePrefix)));
-                    ShimLogger.Source?.LogInfo($"WWM block: patched {name}");
+                    ShimLogger.Info($"WWM block: patched {name}");
                     patched++;
                 }
                 catch (Exception e)
                 {
-                    ShimLogger.Source?.LogError($"WWM block: patch {name} threw: " + e);
+                    ShimLogger.Error($"WWM block: patch {name} threw: " + e);
                 }
             }
             _demoBlockInstalled = patched > 0;
-            ShimLogger.Source?.LogInfo($"WWM block: total patched = {patched}");
+            ShimLogger.Info($"WWM block: total patched = {patched}");
         }
 
         // Universal prefix used for every patched method on
@@ -313,253 +278,32 @@ namespace Unityforge.Shim
             try
             {
                 string mname = __originalMethod != null ? __originalMethod.Name : "<unknown>";
-                ShimLogger.Source?.LogInfo($"WWM block: intercepted {mname}() on DemoCompleteScreenUI");
+                ShimLogger.Info($"WWM block: intercepted {mname}() on DemoCompleteScreenUI");
                 if (__instance != null && __instance.gameObject != null
                     && __instance.gameObject.activeSelf)
                 {
                     __instance.gameObject.SetActive(false);
-                    ShimLogger.Source?.LogInfo("WWM block: deactivated DemoCompleteScreen GameObject");
+                    ShimLogger.Info("WWM block: deactivated DemoCompleteScreen GameObject");
                 }
             }
             catch (Exception e)
             {
-                ShimLogger.Source?.LogError("WWM block: prefix threw: " + e);
+                ShimLogger.Error("WWM block: prefix threw: " + e);
             }
             return false; // skip original
         }
 
         private void Update()
         {
-            if (_active == null) return;
+            if (_loader == null || !_loader.Active) return;
             InputBridge.PollAll();
-            CheckHotReload();
-            if (_active == null) return; // reload may have left us unactive
-            try { _active.Tick(Time.realtimeSinceStartup); }
-            catch (Exception e) { ShimLogger.Source.LogError("Unityforge.Shim: tick threw: " + e); }
+            _loader.Tick(Time.realtimeSinceStartup);
         }
 
         private void OnDestroy()
         {
-            if (_active != null)
-            {
-                try { _active.Shutdown(); }
-                catch (Exception e) { ShimLogger.Source.LogError("Unityforge.Shim: shutdown threw: " + e); }
-                if (_active.BridgeHandle.IsAllocated) _active.BridgeHandle.Free();
-                _active = null;
-            }
-            foreach (var g in _quiesced)
-            {
-                if (g.BridgeHandle.IsAllocated) g.BridgeHandle.Free();
-            }
-            _quiesced.Clear();
-            // Intentionally NO FreeLibrary calls. Process exit
-            // unmaps everything; before that, old generations'
-            // threads may still be exiting on stop signals.
+            _loader?.ShutdownFinal();
+            _loader = null;
         }
-
-        // ---- hot reload --------------------------------------------------
-
-        private void CheckHotReload()
-        {
-            var now = Time.realtimeSinceStartup;
-            if (now - _lastReloadCheck < ReloadCheckIntervalSec) return;
-            _lastReloadCheck = now;
-            if (string.IsNullOrEmpty(_canonicalDir)) return;
-
-            // Find the highest .gen<N>.dll in the plugin dir.
-            // We swap to whichever generation is newest on disk
-            // higher than the active one. Lower-numbered files
-            // are ignored (stale staging from a prior run).
-            string[] candidates;
-            try { candidates = Directory.GetFiles(_canonicalDir, "*.gen*.dll"); }
-            catch { return; }
-
-            int bestN = _active.N;
-            string bestPath = null;
-            foreach (var c in candidates)
-            {
-                var m = GenFilenameRe.Match(c);
-                if (!m.Success) continue;
-                if (!int.TryParse(m.Groups[1].Value, out var n)) continue;
-                if (n > bestN) { bestN = n; bestPath = c; }
-            }
-            if (bestPath == null) return;
-
-            ShimLogger.Source.LogInfo(
-                $"Unityforge.Shim: hot reload generation {_active.N} -> {bestN}");
-            HotSwap(bestN, bestPath);
-        }
-
-        private void HotSwap(int newGen, string newPath)
-        {
-            var old = _active;
-
-            // Step 1: stop ticking the old generation. We do
-            // this BEFORE touching the new image so a long shim
-            // shutdown doesn't double-fire ops while new is
-            // half-init.
-            _active = null;
-
-            // Step 2: graceful shutdown on the old generation.
-            // This runs the Rust SHUTDOWN_REGISTRY which:
-            //  - server::shutdown_all unblocks tiny_http and
-            //    joins the listener thread
-            //  - rpg::poller::shutdown_all wakes the poller's
-            //    condvar and joins
-            //  - HOOK_REGISTRY.shutdown_all unpatches Harmony
-            // After this call returns, no Rust thread from the
-            // old generation should be executing in its code
-            // segment.
-            try { old.Shutdown(); }
-            catch (Exception e)
-            {
-                ShimLogger.Source.LogError(
-                    $"Unityforge.Shim: old gen {old.N} shutdown threw: " + e);
-                // Continue anyway. Threads MAY still be
-                // exiting; we just don't FreeLibrary so the
-                // worst case is they finish executing into a
-                // still-mapped image.
-            }
-
-            // Step 3: clear input bindings + handle table.
-            // Harmony patches were already unpatched per-handle
-            // by Rust's HOOK_REGISTRY.shutdown_all (which calls
-            // back into HarmonyBridge.Unpatch for each one).
-            // Calling _harmony.UnpatchSelf() here in addition
-            // tries to detour-back already-cleaned methods and
-            // hits "IL Compile Error" inside HarmonyX. Skip it;
-            // the per-handle path is sufficient and the
-            // _patches dictionary is already empty.
-            InputBridge.Clear();
-            MonoBridge.ClearHandles();
-
-            // Step 4: park the old generation in `_quiesced`.
-            // We keep its module mapped (no FreeLibrary) so any
-            // stray thread that didn't quite finish exiting can
-            // still run its last instructions safely.
-            _quiesced.Add(old);
-
-            // Step 5: load the new image.
-            var fresh = LoadGeneration(newPath, newGen);
-            if (fresh == null)
-            {
-                ShimLogger.Source.LogError(
-                    $"Unityforge.Shim: gen {newGen} failed to load; rolling back");
-                // Re-arm the old generation. Its threads are
-                // gone but the code is still mapped; we can
-                // call init again.
-                _quiesced.Remove(old);
-                try
-                {
-                    int rc = old.Init(old.BridgeHandle.AddrOfPinnedObject());
-                    if (rc == 0)
-                    {
-                        _active = old;
-                        return;
-                    }
-                }
-                catch (Exception e)
-                {
-                    ShimLogger.Source.LogError(
-                        $"Unityforge.Shim: rollback re-init threw: " + e);
-                }
-                return;
-            }
-
-            _active = fresh;
-            ShimLogger.Source.LogInfo(
-                $"Unityforge.Shim: hot reload complete (now generation {newGen}; {_quiesced.Count} draining)");
-        }
-
-        private Generation LoadGeneration(string path, int generationNumber)
-        {
-            var module = NativeLibrary.Load(path);
-            if (module == IntPtr.Zero)
-            {
-                ShimLogger.Source.LogError(
-                    $"Unityforge.Shim: LoadLibrary failed for {path}: " + Marshal.GetLastWin32Error());
-                return null;
-            }
-            var gen = new Generation { N = generationNumber, Path = path, Module = module };
-            gen.Init = ResolveSymbol<UnityforgeInitFn>(module, "unityforge_init");
-            gen.Tick = ResolveSymbol<UnityforgeTickFn>(module, "unityforge_tick");
-            gen.Shutdown = ResolveSymbol<UnityforgeShutdownFn>(module, "unityforge_shutdown");
-            if (gen.Init == null || gen.Tick == null || gen.Shutdown == null)
-            {
-                ShimLogger.Source.LogError(
-                    $"Unityforge.Shim: gen {generationNumber} DLL is missing one of unityforge_init / unityforge_tick / unityforge_shutdown");
-                return null;
-            }
-
-            // Each generation gets its own pinned BridgeTable
-            // instance. The function pointers inside point at
-            // the same shared C# delegates; the struct itself
-            // lives separately so the Rust side's pointer
-            // stays valid for the lifetime of that generation.
-            gen.Bridge = Bridge.Build(new MonoBackendBridge());
-            gen.BridgeHandle = GCHandle.Alloc(gen.Bridge, GCHandleType.Pinned);
-
-            try
-            {
-                int rc = gen.Init(gen.BridgeHandle.AddrOfPinnedObject());
-                if (rc != 0)
-                {
-                    ShimLogger.Source.LogError(
-                        $"Unityforge.Shim: gen {generationNumber} unityforge_init returned " + rc);
-                    if (gen.BridgeHandle.IsAllocated) gen.BridgeHandle.Free();
-                    return null;
-                }
-            }
-            catch (Exception e)
-            {
-                ShimLogger.Source.LogError(
-                    $"Unityforge.Shim: gen {generationNumber} unityforge_init threw: " + e);
-                if (gen.BridgeHandle.IsAllocated) gen.BridgeHandle.Free();
-                return null;
-            }
-            return gen;
-        }
-
-        private string LocateRustDll()
-        {
-            var explicitTarget = Environment.GetEnvironmentVariable(TargetEnv);
-            if (!string.IsNullOrEmpty(explicitTarget) && File.Exists(explicitTarget))
-                return explicitTarget;
-            var dir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            if (string.IsNullOrEmpty(dir)) return null;
-            // Canonical name is `*.unityforge.dll` (not
-            // `*.unityforge.gen<N>.dll`). The generation files
-            // are picked up by the hot-reload watcher, not at
-            // initial load.
-            var candidates = Directory.GetFiles(dir, "*.unityforge.dll")
-                .Where(f => !GenFilenameRe.IsMatch(f))
-                .ToArray();
-            if (candidates.Length == 1) return candidates[0];
-            return null;
-        }
-
-        private T ResolveSymbol<T>(IntPtr module, string name) where T : class
-        {
-            if (!NativeLibrary.TryGetExport(module, name, out var addr) || addr == IntPtr.Zero)
-                return null;
-            return Marshal.GetDelegateForFunctionPointer(addr, typeof(T)) as T;
-        }
-    }
-
-    internal static class NativeLibrary
-    {
-        [DllImport("kernel32", SetLastError = true, CharSet = CharSet.Unicode)]
-        private static extern IntPtr LoadLibraryW(string path);
-        [DllImport("kernel32", SetLastError = true, CharSet = CharSet.Ansi)]
-        private static extern IntPtr GetProcAddress(IntPtr module, string name);
-
-        public static IntPtr Load(string path) => LoadLibraryW(path);
-        public static bool TryGetExport(IntPtr module, string name, out IntPtr addr)
-        {
-            addr = GetProcAddress(module, name);
-            return addr != IntPtr.Zero;
-        }
-        // No Free(): generation-versioned loading never
-        // FreeLibrary's an old image.
     }
 }
