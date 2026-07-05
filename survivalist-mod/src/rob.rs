@@ -115,6 +115,13 @@ fn launch_scan(now: f32) -> Result<(), String> {
         {
             return Ok(true);
         }
+        // Not while the camp has a thief or caravan out: the
+        // vanilla ambush party-fill yanks members from OTHER
+        // squads (it only skips its own), and it pulled Kirby's
+        // thief off his mission live (2026-07-05).
+        if crate::steal::active_target(id).is_some() || crate::trade::active_target(id).is_some() {
+            return Ok(true);
+        }
         // One party in the field at a time, judged from GAME
         // state, not the Rust mission list: a hot reload wipes the
         // list while the ambush squad marches on (which double-
