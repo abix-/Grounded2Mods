@@ -23,7 +23,7 @@ game.
 | Pillar | Score | Why this score today | What 10/10 looks like |
 |---|---|---|---|
 | AI-vs-AI war | 5/10 | LIVE 2026-07-04: ignited war produced a real assault (attacker lost a member at the defender base, Funeral squads burying the dead) AND the generalized revenge trigger fired live ("Almighty Rock Family sets a revenge invasion on The Golden Dudes (member killed)"), re-arming the war without player involvement. NOT yet verified: organic ignition without war_ignite, counter-invasions in BOTH directions, how an AI war ends. | AI factions declare, wage, and settle wars with each other without player involvement: raids launched both ways, ceasefires/surrenders happen, allies drag each other in. Verifiable by spectating two camps. |
-| Town growth | 1/10 | Settlements only repair/rebuild their worldgen footprint; the only population growth is the conjuring repopulator. | REAL growth (operator, 2026-07-04): the settlement itself grows, MORE STRUCTURES and MORE PEOPLE, fed by a non-cheating economy: structures built by real hands from real hauled materials, people recruited from real arrivals, growth rate bound to their food/resource situation and war posture. |
+| Town growth | 1/10 | Growth does not exist in vanilla AT ALL: the repopulator only heals losses back toward worldgen headcount (capped at min(initial members, beds)), and structures only repair/rebuild the worldgen footprint. Our growth work adds a capability the game never had, not restores one. | REAL growth (operator, 2026-07-04): the settlement itself grows, MORE STRUCTURES and MORE PEOPLE, fed by a non-cheating economy: structures built by real hands from real hauled materials, people recruited from real arrivals, growth rate bound to their food/resource situation and war posture. |
 | Fight for control | 2/10 | Research-corrected baseline: `OccupyBase` fully transfers a base (buildings, crops, animals) but only DEAD settlements can be occupied (reclamation by roamers or scripts), never conquest of a living one. | Wars are ABOUT something: bases/areas change hands on victory, controlling more territory feeds growth, and the map's power balance shifts over time. |
 | No cheating | 2/10 | Repopulator conjures people + gear in place; raider camps respawn via spawn points; small credit: squads stock real food/water before traveling. | Every faction person walked onto the map or was recruited from it; every weapon/meal came from loot, trade, crafting, or harvest; destroying a faction's people/stores actually weakens it. |
 | Factions can be destroyed | 3/10 | Extermination already ends a community and clears invasions against it, but the repopulator resurrects nearly-dead camps and capture-as-destruction does not exist. | A faction that loses its people or its base is GONE (or absorbed): no resurrection, its territory claimable, visible on the map as a power vacuum. |
@@ -352,6 +352,44 @@ real flows, and the three cheats are the no-cheat work list.
 | Gear | MIXED | Crafting (CraftGoal + recipes) and looting are real; extortion/trade transfer real items between communities. BUT all spawn-time gear is conjured (worldgen, template travellers, and the repopulator's kit). |
 | Gold | REAL transfers | Extortion moves gold between real holders (`OnShakedown`). |
 | People | CHEATED | The repopulator conjures members with conjured kit in place (CommunityManager.cs:740-793). The legitimate inflow exists: template-spawned travellers (refugees) arriving from outside. |
+
+### The in-place repopulator, exactly (CommunityManager.UpdateRepopulation, 629-793)
+
+1. ONE world timer: `SurvivorRepopulationDays` of game time
+   (1 day on Medium). On expiry: ONE repopulation attempt, then
+   the timer resets; a fruitless attempt retries in 10 seconds.
+2. Candidates: Normal/Looter settlements (plus roving trader
+   parties with a living trader leader) that have AT LEAST ONE
+   living non-zombie member AND sit below
+   min(InitialMemberCount, accommodation). Consequences:
+   - A fully dead camp NEVER resurrects, even in vanilla.
+   - Vanilla can NEVER grow a camp past worldgen size, even by
+     cheating; the repopulator only heals losses.
+   Chickens have a parallel candidate list (below initial flock,
+   coop space), ON TOP of real egg breeding that already exists.
+3. Pick: chickens vs people proportionally, then one random
+   candidate settlement; one new body per firing, globally.
+4. Placement stagecraft: up to 100 tries for a tile on the outer
+   edge of a random sleeping hut, rejecting tiles within 64 units
+   of the player camera, impassable tiles, and the prison area
+   (traders: within 8 tiles of the leader). The conjure is
+   guaranteed off-screen.
+5. The conjure: `GameTerrain.GenerateCharacter` creates the
+   person from nothing with a full generated kit (faction
+   loadout), bandages, an invisible-strain dice roll, and a
+   randomized relationship to an existing member (sibling /
+   parent / lover, reciprocation by dice) so they appear to have
+   always lived there.
+
+Suppression plan notes: skip the conjure for Normal/Looter
+settlements and log every suppressed one; recruitment of real
+arrivals replaces the role. TWO BOUNDARY DECISIONS FOR THE
+OPERATOR before building:
+
+- Trader-party refills are also in-place conjures: world inflow
+  or cheating?
+- Chicken conjuring: does livestock count, given real egg
+  breeding exists underneath it?
 
 The three cheats (the complete no-cheat work list):
 
