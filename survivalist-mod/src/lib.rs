@@ -23,6 +23,7 @@ mod common;
 mod development;
 mod growth;
 mod infection;
+mod survival;
 mod war;
 
 use unityforge::ModDef;
@@ -40,6 +41,7 @@ static MOD_INFO: ModDef = ModDef {
 fn on_tick(now: f32) {
     growth::tick(now);
     development::tick(now);
+    survival::tick(now);
 }
 
 unityforge::unityforge_mod!(MOD_INFO);
@@ -69,6 +71,9 @@ fn on_init() {
 
     // Structure growth (annex model): dev_status + dev_place probe.
     development::register_ops();
+
+    // Survival-driven behavior: desperation ladder + survival_status.
+    survival::register_ops();
 
     unityforge::mono::log(
         unityforge::mono::LogLevel::Info,
