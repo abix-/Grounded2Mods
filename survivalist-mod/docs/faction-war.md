@@ -452,6 +452,21 @@ the shim does not support. The upstream fix is a shim primitive
 (construct game objects / pass fresh List args), which requires a
 game RESTART to ship. Deferred rather than shipping a hollow act.
 
+THE CHRONICLE (commit `4f01c295`, survivalist-mod/src/chronicle.rs,
+verified live 2026-07-05): the living world made visible IN the
+game. Dramatic beats post to the game's own status bar
+(HudBehaviour.SetStatusBarMsg, the vanilla banner surface),
+phrased as word traveling: "Word spreads: X, starving, has
+declared war on Y", surrenders, extinctions, caught thieves, road
+robberies, assassinations, cut-down assassins. Editorial line:
+only PUBLIC events post; a clean getaway stays secret. Fixed in
+passing: our ignitions had been triggering the vanilla banner,
+which says "You are at war with X" even for wars between two AI
+camps; the mod's relationship calls now silence it and the
+chronicle tells the true story (the organic caught-thief path
+still shows the vanilla banner, a known quirk worth a patch
+later).
+
 Decision shape (extends what is already live): on the survival
 scan, enumerate the acts the situation makes eligible (surplus to
 trade, a husk to scavenge, a rich weak neighbor to steal from /
