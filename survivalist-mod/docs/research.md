@@ -117,6 +117,42 @@ belongs in the SurvivalistTweaks mod folder as XML, not in Rust.
   (the game has debug menus; F8 opens the debug menu per the
   dev's model guide).
 
+## Harmony 2.0.4 constraints (both live-verified the hard way, 2026-07-04)
+
+The game's official Harmony is pardeike 2.0.4 (the workshop
+dependency mod), NOT a current Harmony and NOT HarmonyX. Two
+patch-time failures came from assuming features it doesn't have:
+
+| Wanted | 2.0.4 reality |
+|---|---|
+| `harmony.UnpatchSelf()` | Does not exist (HarmonyX name). Use per-target `Unpatch(original, patchMethodInfo)`. Caught at compile time. |
+| `object[] __args` patch parameter | Harmony 2.1 feature. 2.0.4 parses it as an invalid indexed parameter and `Harmony.Patch` throws "Parameter __args does not contain a valid index" AT PATCH TIME. Use indexed injection (`object __0`) instead. Runtime-parsed string, so the compiler can NOT catch this class. |
+
+Safe-parameter set for 2.0.4 patch methods: `__instance`,
+`__result`, `__state`, `__originalMethod`, `__0`/`__1`/...,
+`___fieldName`, and strongly-typed named parameters.
+
+RULE (operator, 2026-07-04): do not guess at Harmony surface.
+Before using any Harmony feature here, verify it against the
+pardeike Harmony source at the 2.0.4 tag or against an existing
+working Survivalist mod (DisableHUD on github, the dev's example
+mods, workshop mods like SISLootRespawn). This game has official
+mod support and plenty of working examples; build on top of them.
+
+## Type resolution gotcha (live-verified 2026-07-04)
+
+Existing C# mods reference game types at COMPILE time against
+Assembly-CSharp, so they can never resolve a wrong type. Our
+bridge resolves type NAMES at runtime, and Unity itself ships
+colliding short names: `UnityEngine.TextCore.Character` shadowed
+the game's global-namespace `Character` in the shim's short-name
+scan and silently killed the AddInjury patch (returned handle 0,
+no exception). Fixed in the shim's TypeCache: exact
+namespace-qualified match across ALL assemblies first, short-name
+scan only as a fallback; plus loud `HarmonyBridge: type/method
+not found` errors on every resolution miss. When a patch fails,
+read the player log; the miss is named now.
+
 ## Mod deploy facts
 
 - Mod folder:
