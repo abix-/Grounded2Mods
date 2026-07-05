@@ -24,10 +24,10 @@ game.
 |---|---|---|---|
 | AI-vs-AI war | 7/10 | LIVE 2026-07-05: ORGANIC IGNITION VERIFIED. Kirby's Co-operative's thief was caught in Crazy Hill Team's stores and the GAME's own caught-stealing ladder declared the war ("War declared between Kirby's Co-operative and Crazy Hill Team"): no ignite op, no mod relationship write; the war grew out of an act's consequence. Same day: the revenge loop verified TWO-WAY (Cherry's Army and Jenna's Council each avenged a loss onto the other, no player). NOT yet verified: how an AI war ends. | AI factions declare, wage, and settle wars with each other without player involvement: raids launched both ways, ceasefires/surrenders happen, allies drag each other in. Verifiable by spectating two camps. |
 | Town growth | 6/10 | LIVE 2026-07-05: the growth flywheel closed end to end. Two beds-full camps (Mercado's Army 10/10, Kirby's Co-operative 8/8) each planned a wire-fence annex with gate + shack; their builders consume the records (Kirby's queue 40 down to 25 mid-build); the shacks COMPLETED (beds 10 to 12 and 8 to 10; the 2026-07-04 probe shack at Crazy Hill Team finished too, 7 to 9: a shack adds 2 beds, not 1); the new beds were then filled by real recruits in the same session (press-gangs at five camps, refugees welcomed at The Dirty Punks). Remaining: a fence line watched to completion, attrition realism over days, growth tied to war posture. | REAL growth (operator, 2026-07-04): the settlement itself grows, MORE STRUCTURES and MORE PEOPLE, fed by a non-cheating economy: structures built by real hands from real hauled materials, people recruited from real arrivals, growth rate bound to their food/resource situation and war posture. |
-| Fight for control / PREDATION | 4/10 | Design corrected (operator 2026-07-05): NOT territorial takeover (`OccupyBase` rejected. It is a move-in model). Darwinian predation instead: a winner strips the beaten loser of people + goods, brings them home, leaves an empty husk. SHIPPED: people-absorption predation (beaten camp <=2 survivors -> absorbed into winner with their gear -> loser extinct -> genome selection). Pending: live-observed conquest; base-stockpile stripping (needs item-model verification). | Wars are ABOUT something: bases change hands on victory, territory feeds growth, and the wars CONVERGE: left to run, the map consolidates until ONE faction controls it. |
+| Fight for control / PREDATION | 7/10 | LIVE 2026-07-05: predation OBSERVED. Jenna's Council beat The Dirty Punks down and CONSUMED them: 5 survivors absorbed (members 20 to 25), the loser extinct, its genome dropped from the pool; the absorbed appear as silenced conscripts in the vote (franchise rule under conquest verified: effective aggression unchanged at 0.63 while the camp swelled). The whole war traced back to a caught burglary: acts compose into consolidation. The loot pass ran but found 0 stored goods (honest zero, their stores were bare). Remaining: a stockpile-stripping observed with actual goods carried; ground-drop loot from the war dead. | Wars are ABOUT something: bases change hands on victory, territory feeds growth, and the wars CONVERGE: left to run, the map consolidates until ONE faction controls it. |
 | No cheating | 3/10 | LIVE 2026-07-04: cheat 1 of 3, the repopulator, is DISABLED in the running game (UpdateRepopulation prefix skip; install log confirmed; it had just conjured back a war casualty minutes earlier, and that healing is now impossible). Remaining cheats: raider spawn-point respawns; spawn-time arrival gear is ACCEPTED per the boundary. Trader-party + chicken refills also stopped as a side effect, pending the two operator boundary calls. | Every faction person walked onto the map or was recruited from it; every weapon/meal came from loot, trade, crafting, or harvest; destroying a faction's people/stores actually weakens it. |
-| Factions can be destroyed | 5/10 | Two forces now make death real: the conjurer is DISABLED (no resurrection) and PREDATION consumes beaten camps to extinction (survivors absorbed, husk dies). SHIPPED, pending live observation of an actual extinction. This is the mechanism that drives the map toward one faction. | A faction that loses its people or its base is GONE (or absorbed): no resurrection, its territory claimable, visible on the map as a power vacuum. |
-| Faction personality / EVOLUTION | 6/10 | LIVE 2026-07-05: every faction carries a trait GENOME (aggression/expansionism/defensiveness/guile), verified varied on the live map: all 22 seeded distinct, Looters aggressive (0.52-0.79) vs Normals cautious (0.23-0.49), no two identical. The desperate-raid choice READS aggression (bold camps raid, timid endure), and a learning loop reinforces/weakens aggression by raid outcome. Pending live: watching aggression actually shift (gated on real famine); the other three traits' learning loops; heredity via conquest. | Normal and Looter settlements are recognizably different actors: each type's war declarations, target picks, growth priorities, and dealings fit its identity, visible to a spectator without reading code. |
+| Factions can be destroyed | 8/10 | LIVE 2026-07-05: EXTINCTION OBSERVED. The Dirty Punks are GONE, consumed by Jenna's Council after losing the war their catching of a thief started: survivors absorbed, faction dead, and with the conjurer disabled it stays dead. The map went from 22 settlements to 21 by Darwinian consolidation, no player involved. Remaining: the husk visible as a claimable power vacuum (vanilla roamer reclamation exists; watch one happen). | A faction that loses its people or its base is GONE (or absorbed): no resurrection, its territory claimable, visible on the map as a power vacuum. |
+| Faction personality / EVOLUTION | 7/10 | LIVE 2026-07-05: personality is now VISIBLE IN BEHAVIOR. Every organic theft came from a Looter camp and the trade act belongs to the careful (Normal-leaning) franchise: the types act differently with zero hardcoded type checks, purely from seeded genomes + votes. Trait learning WATCHED shifting live: guile took -1.5/-2.0 lessons at Jenna's (caught thief, dead thief) and +1.0 at The Golden Dudes (clean haul); defensiveness has its loop armed via trade. Franchise-under-conquest verified (5 absorbed conscripts silenced, victor's will unchanged). Pending live: aggression shift (famine-gated raids), expansionism's loop, per-survivor heredity blending on absorption. | Normal and Looter settlements are recognizably different actors: each type's war declarations, target picks, growth priorities, and dealings fit its identity, visible to a spectator without reading code. |
 
 Update discipline: when work ships, update the row's score AND
 its "why" cell in the same commit as the live verification; never
@@ -480,19 +480,47 @@ live status 2026-07-05:
   (target, thief, going/returning); every beat logs as
   "survivalist-mod: steal".
 
-LIVE-VERIFIED (2026-07-05, within the first hour): three thefts
-launched on their own, all from Looter camps (the guile seeding
-makes them the burglars with zero type checks): The Crazy Snakes
-at The Smiley Cobras, Kirby's Co-operative at Crazy Hill Team,
-The Golden Dudes at Samantha's Gang. The Kirby's mission ran the
-WHOLE arc: Ellie Carey (guile 0.71) walked over, took 2 stacks,
-was CAUGHT by the game's real line-of-sight check, and the
-vanilla ladder itself declared the war ("War declared between
-Kirby's Co-operative and Crazy Hill Team"): the first ORGANIC
-war ignition, an act's consequence rather than an op. She made
-it home alive with the loot; her camp's franchise took the
-guile lesson (-1.5 per voter). NOT yet observed: a CLEAN getaway
-carried home (the +guile branch).
+LIVE-VERIFIED (2026-07-05, all within hours): EVERY branch of the
+act observed, all launches from Looter camps (the guile seeding
+makes them the burglars with zero type checks):
+
+- Caught, survived, WAR: Ellie Carey (Kirby's Co-operative) took
+  2 stacks from Crazy Hill Team, was seen by the game's real
+  line-of-sight check, and the vanilla ladder declared the war:
+  the first ORGANIC ignition. She got home alive with the loot;
+  her franchise took the -1.5 guile lesson.
+- Clean getaway: Rachel Hyde (The Golden Dudes) slipped out of
+  Samantha's Gang's stores unseen and carried 2 stacks home; the
+  franchise grew bolder (+1.0 guile).
+- Caught and KILLED, then the CASCADE: Kennedy Grant (Jenna's
+  Council) was caught at The Dirty Punks, war declared (second
+  organic ignition), the thief killed (-2.0 guile on top of
+  -1.5). The war then ran the whole Darwinian chain: revenge
+  invasions BOTH ways, the Punks beaten down, and PREDATION
+  consumed them to EXTINCTION. One burglary rewrote the map.
+- Timeout recall: Colby Grant's long trek to The Smiley Cobras
+  fizzled and he was recalled cleanly.
+
+Hot-reload hardening (same day): a reload empties the Rust-side
+mission lists while the squads survive in the game, so init now
+sweeps Trade-behaviour squads off AI settlements (provably ours;
+vanilla gives Trade squads only to roving/temporary communities).
+Live: reclaimed 3 orphans.
+
+TRADE SHIPPED (commit `159fcdcb`, survivalist-mod/src/trade.rs),
+same day: the peaceful act. A camp whose franchise votes caution
+(defensiveness floor 0.5, majority: Normal camps seed careful, so
+they become the traders as naturally as Looters became the
+thieves) loads its most careful free member with 2 real food
+stacks from the home stores and walks them, as a 1-member Trade
+squad, to the nearest camp hungrier by 0.2+ nutrition (allies
+welcome, enemies excluded). At the host: food into their storage,
+1 non-food stack home as barter payment, all by the game's own
+Take/Add (vanilla AI-to-AI trade was cosmetic: squads only hung
+out; this is the first real exchange). Defensiveness gets the
+third live learning loop: deal done +1.0 per voter, trader lost
+on the road -2.0. survival_status shows a `trading` field.
+NOT yet observed: the first caravan's full arc.
 
 ## Predation phase (2026-07-05): the selection event
 
@@ -534,9 +562,16 @@ camp had ~2 items per storage building). Ground-drop loot from the
 war dead is a later refinement (needs the rect-enumeration
 infra).
 
-NOT YET VERIFIED live: an actual predation event firing (needs a
-war beaten down to <=2 survivors; the map is currently healthy).
-Watch for "PREDATION. X consumed Y ... Y is EXTINCT" in the log.
+OBSERVED LIVE (2026-07-05): "PREDATION. Jenna's Council
+(aggression 0.55) consumed The Dirty Punks: absorbed 5
+survivor(s) ... The Dirty Punks is EXTINCT." The war had grown
+out of a caught burglary (steal act), escalated through two-way
+revenge, and ended in consumption: the full selection event, no
+player, no ops. The absorbed five show as silenced conscripts in
+Jenna's franchise (will unchanged at 0.63 effective aggression).
+The loot pass ran but their stores were bare (0 goods, honest
+zero); a stockpile-stripping with actual goods is still to be
+watched.
 
 ## Evolution engine status (2026-07-05)
 
