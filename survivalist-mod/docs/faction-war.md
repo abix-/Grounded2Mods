@@ -242,7 +242,62 @@ AI-vs-AI raids need no pathing work):
 - `Exfil`, `Ambush` (AmbushForEquipmentType suggests item-driven
   ambushes), `Funeral` interactions with war.
 
-## The vision (operator, 2026-07-04)
+## NORTH STAR: settlements fighting to survive (operator, 2026-07-04)
+
+This is post-apocalyptic zombie survival. Every faction is
+FIGHTING TO SURVIVE and does whatever it takes, taking BIGGER
+RISKS as it gets more desperate. The settlements must FEEL like
+they want to live, not exist statically.
+
+This reframes the whole effort. War, growth, and conquest are not
+separate features to check off: they are what a settlement DOES
+when survival pressure pushes it. A fed, safe, populous camp
+plays conservative. A starving, dwindling, zombie-pressed camp
+escalates: forage harder, extort neighbors, then raid them for
+food, then stake everything on a desperate attack, then abandon a
+doomed base and flee. Desperation is the engine; war and conquest
+are its OUTPUTS. That is why the early war work felt shallow:
+wars had no MOTIVE. Now the motive is survival.
+
+### The desperation ladder (design)
+
+Each settlement continuously reads its survival state and acts at
+the matching intensity. Rungs (draft):
+
+| State | Signal (all readable live) | Behavior |
+|---|---|---|
+| Comfortable | fed (nutrition high), full/growing, safe | grow (annex), defend, trade |
+| Strained | nutrition dipping, losses, some zombie pressure | forage/hunt harder, extort NEIGHBORS (not just player) |
+| Desperate | nutrition < ~0.5, shrinking, threatened | raid neighbors FOR FOOD, attack camps they'd normally avoid, worse odds accepted |
+| Terminal | starving + few left + base failing | all-in attack, or abandon the base and migrate/merge elsewhere |
+
+### What vanilla already seeds (build on, don't reinvent)
+
+- Hungry settlements (nutrition < 0.5) send Beg squads, and
+  Looters extort, BUT only ever aimed at the PLAYER, and it is
+  the only desperate act (no escalation, no neighbor targets).
+- `UpdateInvasionTarget` (Community.cs:4948) is the per-settlement
+  decision brain: THE hook point to add survival-driven target
+  selection.
+- `StartJourneyToExitMap` (Community.cs:5737) already lets a
+  squad/community leave the map: the migration/abandon lever
+  exists.
+- Signals readable now over the control plane:
+  `CalcCommunityNutritionLevel`, `GetLivingNonZombieMemberCount`
+  vs `InitialMemberCount`/beds, the `Threats` list (zombie/enemy
+  pressure), relationship + invasion state.
+
+### Gap
+
+Vanilla desperation is a single mild rung aimed only at the
+player. The build: a per-settlement survival assessment + a
+graded response that escalates with desperation and targets
+NEIGHBORS, so the map's factions visibly struggle, take chances,
+raid each other for survival, and sometimes break and flee.
+Conquest/absorption become the natural TOP of the ladder, not a
+bolted-on mechanic.
+
+## The original vision (operator, 2026-07-04)
 
 War between ALL factions: AI factions fight EACH OTHER with
 organized warfare; AI factions GROW their towns as they fight (a
