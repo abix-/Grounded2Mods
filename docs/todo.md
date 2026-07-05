@@ -216,15 +216,22 @@ those listed above are the immediate path forward.
     story SWITCH; the `ReinitAfterUnload` path is still
     unexercised live (structurally covered, verify when a story
     switch happens naturally).
-  - One Rust-side Harmony patch observably firing: OPEN; lands
-    with the first real gameplay tweak (SV8).
-- [ ] **SV8: gameplay research doc.** After SV7,
-  `survivalist-mod/docs/research.md`: map the classes for what the
-  operator wants to tweak (NPC behavior, loot, zombies, content).
-  The dev's own custom-code guide demos a zombie-spawn patch, so
-  that surface is confirmed patchable. Some content tweaks may be
-  data-level via the game's in-game editors (a local Mod stacked as
-  a dependency); note per tweak whether it is data or code.
+  - One Rust-side Harmony patch observably firing: VERIFIED
+    2026-07-04 (the faction-war revenge trigger fired live:
+    "Almighty Rock Family sets a revenge invasion on The Golden
+    Dudes (member killed)" in the player log). NOTE: patching
+    required embedding Harmony 2.4.2 in the shim (the workshop
+    2.0.4 cannot rebuild generic-call bodies on the game's Unity
+    6 mono) and the args0 write-back ctx kind for struct args;
+    full trail in survivalist-mod/docs/research.md.
+- [x] **SV8: gameplay research doc.** Shipped 2026-07-04:
+  `survivalist-mod/docs/research.md` (live-access recipe,
+  difficulty knob cluster, class maps, Harmony constraints) plus
+  `survivalist-mod/docs/faction-war.md` (the active front: the
+  operator's faction-war vision, an x/10 scorecard as the
+  authoritative progress tracker, full mechanics documentation,
+  and phase 1 live-verified: AI-vs-AI war ignition, a real
+  assault, and the self-sustaining revenge loop).
 
 ### Definition of done
 
@@ -234,9 +241,10 @@ those listed above are the immediate path forward.
   Live-verified 2026-07-04.
 - [x] `survivalist-mod` answers curl in-game with the standard
   reflection op surface. Live-verified 2026-07-04.
-- [ ] One Rust-side Harmony patch verified live (which also closes
-  "Next up" item 0 for the Mono path). Lands with the first SV8
-  tweak.
+- [x] One Rust-side Harmony patch verified live 2026-07-04 (the
+  faction-war revenge trigger; also the infection prefix installs
+  clean). Closes "Next up" item 0 for the Mono path via the
+  static-slot dispatchers in cs-shim-common/HarmonyBridge.cs.
 - [/] The Load/Unload cycle: quit-to-menu + reload keeps the DLLs
   loaded (no unload fires) and the control plane stays up; the
   actual story-SWITCH re-init path is structurally covered but not
