@@ -27,7 +27,7 @@ game.
 | Fight for control | 2/10 | Research-corrected baseline: `OccupyBase` fully transfers a base (buildings, crops, animals) but only DEAD settlements can be occupied (reclamation by roamers or scripts), never conquest of a living one. | Wars are ABOUT something: bases change hands on victory, territory feeds growth, and the wars CONVERGE: left to run, the map consolidates until ONE faction controls it. |
 | No cheating | 3/10 | LIVE 2026-07-04: cheat 1 of 3, the repopulator, is DISABLED in the running game (UpdateRepopulation prefix skip; install log confirmed; it had just conjured back a war casualty minutes earlier, and that healing is now impossible). Remaining cheats: raider spawn-point respawns; spawn-time arrival gear is ACCEPTED per the boundary. Trader-party + chicken refills also stopped as a side effect, pending the two operator boundary calls. | Every faction person walked onto the map or was recruited from it; every weapon/meal came from loot, trade, crafting, or harvest; destroying a faction's people/stores actually weakens it. |
 | Factions can be destroyed | 3/10 | Extermination already ends a community and clears invasions against it, but the repopulator resurrects nearly-dead camps and capture-as-destruction does not exist. | A faction that loses its people or its base is GONE (or absorbed): no resurrection, its territory claimable, visible on the map as a power vacuum. |
-| Faction personality | 3/10 | LIVE 2026-07-04: the growth doctrine differentiates the types in the running game: a Normal camp welcomed a refugee at its gate while Looter camps took nobody through the same window. Press-ganging (looters seize refugees near base or roaming squads) is shipped; the first observed seizure is pending. War/peace/target-pick doctrines still undifferentiated. | Normal and Looter settlements are recognizably different actors: each type's war declarations, target picks, growth priorities, and dealings fit its identity, visible to a spectator without reading code. |
+| Faction personality / EVOLUTION | 5/10 | LIVE 2026-07-05: every faction carries a trait GENOME (aggression/expansionism/defensiveness/guile), verified varied on the live map: all 22 seeded distinct, Looters aggressive (0.52-0.79) vs Normals cautious (0.23-0.49), no two identical. The desperate-raid choice READS aggression (bold camps raid, timid endure), and a learning loop reinforces/weakens aggression by raid outcome. Pending live: watching aggression actually shift (gated on real famine); the other three traits' learning loops; heredity via conquest. | Normal and Looter settlements are recognizably different actors: each type's war declarations, target picks, growth priorities, and dealings fit its identity, visible to a spectator without reading code. |
 
 Update discipline: when work ships, update the row's score AND
 its "why" cell in the same commit as the live verification; never
@@ -326,6 +326,39 @@ let conquest/absorption blend the victor's traits into survivors,
 add small drift, and let selection do the rest. Then the map does
 not just SELECT, it EVOLVES: the trait mix of the surviving
 factions shifts over a playthrough toward what the world rewards.
+
+## Evolution engine status (2026-07-05)
+
+Shipped + live (commits `efa02bcc` survival, `05af2bbb` genome):
+
+- SURVIVAL ASSESSMENT: every AI settlement on a desperation ladder
+  (comfortable/strained/desperate/terminal) from food + population
+  trend + threat. Live map read 16/5/1 at first snapshot.
+  survival_status makes it legible (desperate first).
+- TRAIT GENOME (the evolution spine): per-faction
+  aggression/expansionism/defensiveness/guile, seeded by type +
+  deterministic Id jitter. VERIFIED varied live: 22 distinct
+  genomes, clean Looter/Normal aggression split, none identical.
+  genome_status shows them.
+- CHOICE reads the genome: the desperate-hunger raid picks the
+  MOST aggressive eligible camp; timid camps endure. Vanilla only
+  ever begged the PLAYER when hungry; this is AI-vs-AI, driven by
+  personality.
+- LEARNING loop (plasticity): each raid is an experiment judged
+  ~200s later; a raid that gained people/food raises aggression,
+  one that cost people lowers it, faction death is max-negative.
+  "learn. <faction> raid PAID OFF/COST THEM ... aggression -> X"
+  in the log.
+- HEREDITY seam: `genome::blend_into` ready for the conquest phase
+  to pour a victor's genome into absorbed survivors.
+
+v1 limits (honest): genome lives for the SESSION, not across
+save/load (deterministic re-seed on reload; mid-session learning
+lost). Only aggression's learning loop is live; the other three
+traits are seeded/shown/propagate but their learning waits for
+the behaviors they drive to be survival-wired. The whole engine is
+gated on real famine (nutrition <= 0.5) to fire raids; the map is
+currently well-fed, so learning kicks in as food gets tight.
 
 ## NORTH STAR: settlements fighting to survive (operator, 2026-07-04)
 
