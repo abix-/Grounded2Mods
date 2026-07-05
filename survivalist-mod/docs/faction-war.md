@@ -22,8 +22,8 @@ game.
 
 | Pillar | Score | Why this score today | What 10/10 looks like |
 |---|---|---|---|
-| AI-vs-AI war | 5/10 | LIVE 2026-07-04: ignited war produced a real assault (attacker lost a member at the defender base, Funeral squads burying the dead) AND the generalized revenge trigger fired live ("Almighty Rock Family sets a revenge invasion on The Golden Dudes (member killed)"), re-arming the war without player involvement. NOT yet verified: organic ignition without war_ignite, counter-invasions in BOTH directions, how an AI war ends. | AI factions declare, wage, and settle wars with each other without player involvement: raids launched both ways, ceasefires/surrenders happen, allies drag each other in. Verifiable by spectating two camps. |
-| Town growth | 4/10 | LIVE 2026-07-04, both halves moving: first organic recruitment fired and Crazy Hill Team EXCEEDS its worldgen size (7 members, initial 6, conjurer off); the structures primitive is verified through site creation (dev_place order -> their Builder consumed it -> a real construction site stands, building_now=1). Remaining: watching a completion (beds rise), the annex planner, attrition realism over days, growth tied to war posture. | REAL growth (operator, 2026-07-04): the settlement itself grows, MORE STRUCTURES and MORE PEOPLE, fed by a non-cheating economy: structures built by real hands from real hauled materials, people recruited from real arrivals, growth rate bound to their food/resource situation and war posture. |
+| AI-vs-AI war | 6/10 | LIVE 2026-07-05: the revenge loop is TWO-WAY. Cherry's Army and Jenna's Council each lost a member to the other and each set a revenge invasion back, in one session, with zero player involvement and no war_ignite that mod generation: an AI war now sustains itself in both directions. Earlier (2026-07-04): ignited war produced a real assault. NOT yet verified: organic ignition without war_ignite (the Cherry/Jenna hostility predates the session log, origin unknown), how an AI war ends. | AI factions declare, wage, and settle wars with each other without player involvement: raids launched both ways, ceasefires/surrenders happen, allies drag each other in. Verifiable by spectating two camps. |
+| Town growth | 6/10 | LIVE 2026-07-05: the growth flywheel closed end to end. Two beds-full camps (Mercado's Army 10/10, Kirby's Co-operative 8/8) each planned a wire-fence annex with gate + shack; their builders consume the records (Kirby's queue 40 down to 25 mid-build); the shacks COMPLETED (beds 10 to 12 and 8 to 10; the 2026-07-04 probe shack at Crazy Hill Team finished too, 7 to 9: a shack adds 2 beds, not 1); the new beds were then filled by real recruits in the same session (press-gangs at five camps, refugees welcomed at The Dirty Punks). Remaining: a fence line watched to completion, attrition realism over days, growth tied to war posture. | REAL growth (operator, 2026-07-04): the settlement itself grows, MORE STRUCTURES and MORE PEOPLE, fed by a non-cheating economy: structures built by real hands from real hauled materials, people recruited from real arrivals, growth rate bound to their food/resource situation and war posture. |
 | Fight for control / PREDATION | 4/10 | Design corrected (operator 2026-07-05): NOT territorial takeover (`OccupyBase` rejected. It is a move-in model). Darwinian predation instead: a winner strips the beaten loser of people + goods, brings them home, leaves an empty husk. SHIPPED: people-absorption predation (beaten camp <=2 survivors -> absorbed into winner with their gear -> loser extinct -> genome selection). Pending: live-observed conquest; base-stockpile stripping (needs item-model verification). | Wars are ABOUT something: bases change hands on victory, territory feeds growth, and the wars CONVERGE: left to run, the map consolidates until ONE faction controls it. |
 | No cheating | 3/10 | LIVE 2026-07-04: cheat 1 of 3, the repopulator, is DISABLED in the running game (UpdateRepopulation prefix skip; install log confirmed; it had just conjured back a war casualty minutes earlier, and that healing is now impossible). Remaining cheats: raider spawn-point respawns; spawn-time arrival gear is ACCEPTED per the boundary. Trader-party + chicken refills also stopped as a side effect, pending the two operator boundary calls. | Every faction person walked onto the map or was recruited from it; every weapon/meal came from loot, trade, crafting, or harvest; destroying a faction's people/stores actually weakens it. |
 | Factions can be destroyed | 5/10 | Two forces now make death real: the conjurer is DISABLED (no resurrection) and PREDATION consumes beaten camps to extinction (survivors absorbed, husk dies). SHIPPED, pending live observation of an actual extinction. This is the mechanism that drives the map toward one faction. | A faction that loses its people or its base is GONE (or absorbed): no resurrection, its territory claimable, visible on the map as a power vacuum. |
@@ -347,10 +347,12 @@ Looter camps vote UNANIMOUSLY to raid (e.g. 50/50, 22/22) at ~0.6
 to 0.7 effective aggression; Normal camps split, only a bold
 minority in favor (e.g. 1/5, 9/15) at ~0.3 to 0.38. The
 type difference EMERGED from ~200 individual votes, not a
-hardcoded faction trait. `silenced` shows conscripts (0 until a
-Looter force-absorbs under this build; disenfranchisement then
-appears). Learning is per-voter; a dead survivor's genome + vote
-leave the pool (OnMemberDied).
+hardcoded faction trait. `silenced` shows conscripts, and
+disenfranchisement is now OBSERVED live (2026-07-05): Kirby's
+Co-operative press-ganged 3 refugees and survival_status shows
+exactly those 3 as silenced (franchise 6 of 9 members). Learning
+is per-voter; a dead survivor's genome + vote leave the pool
+(OnMemberDied).
 
 ROLES (operator 2026-07-05, expand later): every survivor already
 has a `Role` in the settlement (Farmer, Guard, Builder, Trader,
@@ -825,11 +827,12 @@ VERIFIED LIVE (2026-07-04, same session):
   `building_now` = 1: a REAL construction site stands in their
   camp, being built by their own member.
 
-PENDING: completion (beds 7 -> 8 when the shack finishes, or an
-honest stall if their wood runs short). Once observed, the
-append -> real-build primitive is fully proven and the annex
-planner (fence line + gate + infill + BaseRect adoption +
-per-type wall doctrine) is the next build.
+COMPLETION OBSERVED (2026-07-05): the probe shack finished and
+Crazy Hill Team's beds rose 7 to 9 (a shack adds 2 beds, not the
+1 guessed here earlier). The append -> real-build primitive is
+fully proven: order placed, built by their own member from real
+materials, accommodation actually grew. The annex planner built
+on it shipped and is live (see the annex model section below).
 
 ## Growth phase status (people half, 2026-07-04)
 
@@ -866,12 +869,19 @@ left)" in the player log, and growth_status then showed 7
 members vs initial 6: a settlement exceeded its worldgen size
 through a real arrival. Press-ganging shipped in the same hour
 (looters seize refugees near base or any roaming squad leader;
-beds required, food not checked; log verb "press-gangs");
-first observed seizure pending.
+beds required, food not checked; log verb "press-gangs").
+
+PRESS-GANGING OBSERVED LIVE (2026-07-05): seizures at five
+looter camps in one session (Mercado's Army twice, Kirby's
+Co-operative twice, The Dirty Killers, Cherry's Army, Jenna's
+Council), while The Dirty Punks welcomed 2 refugees on the
+Normal path. Kirby's three conscripts then appear as silenced
+in the franchise vote, tying the growth and collective models
+together live.
 
 STILL PENDING: population attrition realism over days with the
 repopulator off (war losses now stay lost until someone walks
-in); the structures half of growth.
+in).
 
 ## Structure growth design: the annex model (operator-locked 2026-07-04)
 
@@ -938,6 +948,23 @@ interior structures) and adopts the annex into BaseRect; the
 game's own builder assignment, recipe resolution, ingredient
 hauling, and legality gating do everything else.
 
+SHIPPED (commit `49d915eb`, survivalist-mod/src/development.rs):
+beds-full + fed settlements with an idle builder plan one annex
+per 2-minute scan, map-wide: fence line first (wood for Normal,
+wire for Looter camps), gate at the outer-edge midpoint, shack
+infill, BaseRect adopted at plan time; terrain gated by the
+game's own IsImpassable.
+
+LIVE-VERIFIED (2026-07-05): Mercado's Army (beds full 10/10)
+planned a 45-post wire annex east; Kirby's Co-operative (8/8)
+planned a 38-post wire annex east. Builders consume the records
+(Kirby's queue read 25 of 40 mid-build) and both annex shacks
+COMPLETED: beds 10 to 12 and 8 to 10, promptly refilled by
+press-ganged conscripts. Full loop observed: beds full -> annex
+planned -> shack built by real hands -> beds free -> recruits
+fill them -> beds full again. Not yet watched: a fence line
+standing complete around its annex.
+
 ## Phase 1 status (2026-07-04)
 
 Shipped (commit `dba3992e` + framework fix `392bca8a`):
@@ -986,13 +1013,20 @@ grep "survivalist-mod: war --" Player.log
   -> every revenge-trigger firing, named both ways
 ```
 
+VERIFIED LATER (2026-07-05): the counter-invasion, on a
+different pair. Cherry's Army lost a member to Jenna's Council's
+Hunt squad and set a revenge invasion on Jenna's Council; Jenna's
+Council then lost a member to Cherry's Army and set a revenge
+invasion straight back. Both directions of the loop, one session,
+zero player involvement, no war_ignite that mod generation.
+
 NOT YET VERIFIED (the pillar is not done until these are watched
 happening):
 
 - Organic ignition: an AI-vs-AI war starting WITHOUT `war_ignite`
-  (provocation-driven hostility + a kill).
-- A counter-invasion in the OPPOSITE direction (needs a Golden
-  Dudes member killed by a Rock Family hand; none died yet).
+  (provocation-driven hostility + a kill). The Cherry/Jenna
+  hostility is a candidate but its origin predates the session
+  log (likely carried in the save), so it cannot be claimed.
 - War end: what Hostile-with-no-InvasionTarget settles into for
   AI pairs (ceasefire path untested).
 
