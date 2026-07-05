@@ -162,6 +162,91 @@ LastEncounteredTime); Defend squads are raised against threats
 - `Exfil`, `Ambush` (AmbushForEquipmentType suggests item-driven
   ambushes), `Funeral` interactions with war.
 
+## The vision (operator, 2026-07-04)
+
+War between ALL factions: AI factions fight EACH OTHER with
+organized warfare; AI factions GROW their towns as they fight (a
+fight for control requires growing); growth must be legitimate
+(no cheating: no conjured people or gear); and AI factions can be
+DESTROYED.
+
+## Gap analysis (vision vs what exists)
+
+### AI factions fight each other
+
+- HAVE: the relationship machinery is pair-agnostic; squads work
+  for any community; `SetInvasionTarget` accepts any community
+  (the script path proves AI-to-AI works mechanically); looters
+  already extort weaker AI settlements; hostile members fight on
+  contact.
+- GAP: war START and SUSTAIN are player-centric. The revenge
+  trigger requires a player/ally killer (Community.cs:1425), and
+  `UpdateInvasionTarget` never selects an AI target except by
+  adopting an ally's (player-rooted) war.
+- CHANGE SHAPE: generalize the revenge trigger to any hostile
+  killer community + add AI-vs-AI war causes in
+  `UpdateInvasionTarget` (extortion refused, resource pressure,
+  nemesis logic aimed at rivals, not just the player). One or two
+  Harmony patches. MUST first verify Hunt/pillage works against
+  an AI base (StartPillaging research pass).
+
+### Towns grow
+
+- HAVE: members do real work (BuildGoal, FarmingGoal, CraftGoal);
+  settlements REPAIR damage and REBUILD their recorded structures
+  (`NeedsRepair` + `ConstructionRecords`, which is a rebuild
+  list, not expansion); crafting is capped by real infrastructure
+  (wood limit per campfire, Community.cs:4945).
+- GAP: no expansion exists. No new buildings beyond the worldgen
+  footprint, and the ONLY population growth is the repopulator.
+- CHANGE SHAPE: the biggest pillar; a new per-community
+  development decision layer that drives EXISTING goals (build,
+  farm, craft) toward expansion, fed by legitimate recruitment.
+
+### No cheating (inventory of today's cheats)
+
+- Repopulation CONJURES people: on the SurvivorRepopulationDays
+  countdown, `GameTerrain.GenerateCharacter` materializes a new
+  member with GENERATED equipment inside an existing settlement
+  (CommunityManager.cs:740-793).
+- Ambient enemy spawn points respawn raider camps
+  (`AmbientEnemySpawnPoint`, `OnSpawnedEnemyDied`).
+- Zombie respawn buildup on ZombieRespawnDays
+  (CommunityManager.cs:1378).
+- GOOD precedent: squads stock up REAL food and water before
+  traveling (Community.cs:5179).
+- CHANGE SHAPE: define the legitimacy boundary (ambient inflow at
+  the map edge, e.g. refugees, is the world feeding the map;
+  in-place conjuring is not) and replace faction repopulation
+  with RECRUITMENT of real wandering survivors, gear from stores
+  or crafting.
+
+### Factions can be destroyed
+
+- HAVE: communities already end when all members die
+  (`OnCommunityHasNoActiveMembers`, Community.cs:1443); invasion
+  targets clear when the target has no active members.
+- GAP: destruction only by extermination; occupation/capture as a
+  war outcome is unverified (Occupy research pass); and the
+  repopulator can resurrect a nearly-dead faction (cheat
+  interplay: no-cheat work also makes destruction stick).
+
+## Proposed build order
+
+1. Three research passes to ground the design: `StartPillaging`
+   (what a raid actually does), Occupy/CaptureGoal/area ownership
+   (what capture can transfer), ambient inflow (spawn points,
+   refugees: the legitimate population source).
+2. AI-vs-AI wars ignite and sustain (generalized revenge +
+   extortion escalation), live-verified by watching two AI camps
+   go to war without player involvement.
+3. No-cheat substrate: recruitment replaces conjuring; growth
+   consumes real resources.
+4. Growth brain: settlements expand buildings and population
+   through the existing work goals.
+5. Control: capture/occupation as a war outcome; destruction
+   rules that stick.
+
 ## Enhancement seams (where changes plug in)
 
 - `UpdateInvasionTarget` (Community.cs:4948) is THE hook point
