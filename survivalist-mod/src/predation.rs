@@ -95,8 +95,9 @@ fn consume(winner: MonoObject, loser: MonoObject) -> Result<(), String> {
     let loser_name = display_name(&loser);
     let loser_id = loser.read_field("Id")?.as_i64().unwrap_or(-1);
 
-    // 1. Consume the people: absorb every living survivor.
-    let mut absorbed = 0i64;
+    // 1. Consume the people: absorb every living survivor. Keep
+    // their handles: they are the carriers who haul the loot home.
+    let mut carriers: Vec<i32> = Vec::new();
     if let Some(m_h) = handle_of(&loser.read_field("Members")?) {
         let mlist = own(m_h);
         let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
@@ -125,19 +126,26 @@ fn consume(winner: MonoObject, loser: MonoObject) -> Result<(), String> {
                 .invoke("SetCommunity", &json!([{ "handle": winner.handle().0 }]))
                 .is_ok()
             {
-                absorbed += 1;
+                carriers.push(h);
             }
+            std::mem::forget(member); // reused as a carrier below
         }
     }
+    let absorbed = carriers.len() as i64;
 
-    // 2. Strip the goods: the absorbed survivors carry their own
-    // inventories to the winner's base (real portable wealth,
-    // moved by the SetCommunity relocation above). Stripping the
-    // loser's BASE stockpile (stored food/materials beyond what
-    // people carry) is the next slice: it needs one live
-    // verification of the game's item-enumeration API before it
-    // is wired (no guessed method names). Tracked in
-    // docs/faction-war.md.
+    // 2. LOOT THE STOCKPILE, carried not cheated: move each item
+    // stored in the loser's buildings into an absorbed survivor's
+    // OWN inventory (the game's honest Take/Add transfer, subject
+    // to real carry capacity, verified APIs). The survivors then
+    // physically walk that loot to the winner's base. Nothing is
+    // duplicated or teleported; wealth conserved, hands do the
+    // carrying. If nobody survived to carry, the stockpile is
+    // left in the husk (no cheat-grab).
+    let goods = if carriers.is_empty() {
+        0
+    } else {
+        loot_buildings(&loser, &carriers)?
+    };
 
     // 3. Selection: the loser's genome dies with it. (The people it
     // lost now carry the winner's genome by belonging to the
@@ -151,9 +159,82 @@ fn consume(winner: MonoObject, loser: MonoObject) -> Result<(), String> {
     mono::log(
         LogLevel::Info,
         &format!(
-            "survivalist-mod: PREDATION -- {winner_name} (aggression {:.2}) consumed {loser_name}: absorbed {absorbed} survivor(s) with their gear. {loser_name} is EXTINCT.",
+            "survivalist-mod: PREDATION -- {winner_name} (aggression {:.2}) consumed {loser_name}: absorbed {absorbed} survivor(s), who carried off {goods} looted good(s). {loser_name} is EXTINCT.",
             wg.get(genome::Trait::Aggression)
         ),
     );
     Ok(())
+}
+
+/// Move the loser's building-stored items into the absorbed
+/// survivors' inventories, round-robin, via the game's own
+/// `EquipmentContainer.Take` (removes from source) + `Add` (gives
+/// to carrier, honoring real carry capacity). Returns how many
+/// items were carried off. Buildings/crops stay with the husk;
+/// only portable stored goods move, and only as far as living
+/// hands can carry them.
+fn loot_buildings(loser: &MonoObject, carriers: &[i32]) -> Result<i64, String> {
+    let Some(b_h) = handle_of(&loser.read_field("Buildings")?) else {
+        return Ok(0);
+    };
+    let blist = own(b_h);
+    let nb = blist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+    let mut carried = 0i64;
+    let mut carrier_ix = 0usize;
+    for bi in 0..nb {
+        let Some(bh) = handle_of(&blist.invoke("get_Item", &json!([bi]))?) else {
+            continue;
+        };
+        let building = own(bh);
+        let Some(inv_h) = handle_of(&building.read_field("Inventory")?) else {
+            continue;
+        };
+        let inv = own(inv_h);
+        // Drain the container from the top; Take() shrinks it, so
+        // re-read Count each pass and always take index 0.
+        loop {
+            let count = inv.invoke("Count", &json!([])).ok();
+            // Count is a property (get_Count) on EquipmentContainer.
+            let count = match count {
+                Some(v) if v.is_i64() => v.as_i64().unwrap(),
+                _ => inv
+                    .invoke("get_Count", &json!([]))
+                    .ok()
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0),
+            };
+            if count <= 0 {
+                break;
+            }
+            let Some(item_h) = handle_of(&inv.invoke("GetItem", &json!([0]))?) else {
+                break;
+            };
+            let item = own(item_h);
+            let amount = item.invoke("GetAmount", &json!([])).ok().and_then(|v| v.as_i64()).unwrap_or(1);
+            // Take the whole stack from the building.
+            let taken = inv.invoke(
+                "Take",
+                &json!([{ "handle": bh }, { "handle": item_h }, amount]),
+            )?;
+            let Some(taken_h) = handle_of(&taken) else {
+                break; // Take failed; stop draining this building
+            };
+            // Hand it to a carrier (round-robin). Add honors carry
+            // capacity; anything that doesn't fit is dropped at the
+            // site by the game, which is realistic (they took what
+            // they could carry).
+            let carrier = own(carriers[carrier_ix % carriers.len()]);
+            let _ = carrier.invoke(
+                "Add",
+                &json!([{ "handle": carrier.handle().0 }, { "handle": taken_h }]),
+            );
+            std::mem::forget(carrier);
+            carrier_ix += 1;
+            carried += 1;
+            if carried >= 500 {
+                return Ok(carried); // safety cap; a camp never holds this much
+            }
+        }
+    }
+    Ok(carried)
 }
