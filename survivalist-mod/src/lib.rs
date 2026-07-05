@@ -27,6 +27,7 @@ mod infection;
 mod predation;
 mod steal;
 mod survival;
+mod trade;
 mod war;
 
 use unityforge::ModDef;
@@ -46,6 +47,7 @@ fn on_tick(now: f32) {
     development::tick(now);
     survival::tick(now);
     steal::tick(now);
+    trade::tick(now);
 }
 
 unityforge::unityforge_mod!(MOD_INFO);
@@ -78,6 +80,10 @@ fn on_init() {
 
     // Survival-driven behavior: desperation ladder + survival_status.
     survival::register_ops();
+
+    // A hot reload empties the steal/trade mission lists while
+    // their squads survive in the game; reclaim the orphans.
+    common::sweep_orphan_trade_squads();
 
     unityforge::mono::log(
         unityforge::mono::LogLevel::Info,

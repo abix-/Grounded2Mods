@@ -32,7 +32,9 @@ use serde_json::json;
 
 use unityforge::mono::{self, LogLevel, MonoObject};
 
-use crate::common::{ctype, display_name, for_each_community, handle_of, own};
+use crate::common::{
+    GoodsFilter, carry_off_stored_goods, ctype, display_name, for_each_community, handle_of, own,
+};
 use crate::genome;
 
 /// A beaten camp with this many or fewer living members is ripe
@@ -153,7 +155,7 @@ fn consume(winner: MonoObject, loser: MonoObject) -> Result<(), String> {
         0
     } else {
         // 500 is a safety cap; a camp never holds this much.
-        carry_off_stored_goods(&loser, &carriers, 500)?
+        carry_off_stored_goods(&loser, &carriers, 500, GoodsFilter::Any)?
     };
 
     // 3. Selection: the loser's genome dies with it. (The people it
@@ -175,80 +177,3 @@ fn consume(winner: MonoObject, loser: MonoObject) -> Result<(), String> {
     Ok(())
 }
 
-/// Move a community's building-stored items into the carriers'
-/// inventories, round-robin, via the game's own
-/// `EquipmentContainer.Take` (removes from source) + `Add` (gives
-/// to carrier, honoring real carry capacity), up to `max_stacks`
-/// stacks. Returns how many stacks were carried off. Predation
-/// drains the husk (high cap); steal.rs takes a burglar's armful.
-/// Buildings/crops stay put; only portable stored goods move, and
-/// only as far as living hands can carry them.
-pub(crate) fn carry_off_stored_goods(
-    loser: &MonoObject,
-    carriers: &[i32],
-    max_stacks: i64,
-) -> Result<i64, String> {
-    let Some(b_h) = handle_of(&loser.read_field("Buildings")?) else {
-        return Ok(0);
-    };
-    let blist = own(b_h);
-    let nb = blist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
-    let mut carried = 0i64;
-    let mut carrier_ix = 0usize;
-    for bi in 0..nb {
-        let Some(bh) = handle_of(&blist.invoke("get_Item", &json!([bi]))?) else {
-            continue;
-        };
-        let building = own(bh);
-        let Some(inv_h) = handle_of(&building.read_field("Inventory")?) else {
-            continue;
-        };
-        let inv = own(inv_h);
-        // Drain the container from the top; Take() shrinks it, so
-        // re-read Count each pass and always take index 0.
-        loop {
-            let count = inv.invoke("Count", &json!([])).ok();
-            // Count is a property (get_Count) on EquipmentContainer.
-            let count = match count {
-                Some(v) if v.is_i64() => v.as_i64().unwrap(),
-                _ => inv
-                    .invoke("get_Count", &json!([]))
-                    .ok()
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0),
-            };
-            if count <= 0 {
-                break;
-            }
-            let Some(item_h) = handle_of(&inv.invoke("GetItem", &json!([0]))?) else {
-                break;
-            };
-            let item = own(item_h);
-            let amount = item.invoke("GetAmount", &json!([])).ok().and_then(|v| v.as_i64()).unwrap_or(1);
-            // Take the whole stack from the building.
-            let taken = inv.invoke(
-                "Take",
-                &json!([{ "handle": bh }, { "handle": item_h }, amount]),
-            )?;
-            let Some(taken_h) = handle_of(&taken) else {
-                break; // Take failed; stop draining this building
-            };
-            // Hand it to a carrier (round-robin). Add honors carry
-            // capacity; anything that doesn't fit is dropped at the
-            // site by the game, which is realistic (they took what
-            // they could carry).
-            let carrier = own(carriers[carrier_ix % carriers.len()]);
-            let _ = carrier.invoke(
-                "Add",
-                &json!([{ "handle": carrier.handle().0 }, { "handle": taken_h }]),
-            );
-            std::mem::forget(carrier);
-            carrier_ix += 1;
-            carried += 1;
-            if carried >= max_stacks {
-                return Ok(carried);
-            }
-        }
-    }
-    Ok(carried)
-}

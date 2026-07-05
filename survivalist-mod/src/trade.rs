@@ -1,26 +1,26 @@
-//! Steal: the guile act of the multidimensional repertoire
+//! Trade: the peaceful act of the multidimensional repertoire
 //! (docs/faction-war.md "Multidimensional factions").
 //!
-//! A camp that is poorer than a neighbor and whose franchise votes
-//! guile sends ONE thief to that neighbor's stores. The thief
-//! travels as a real 1-member squad (the game's own AddSquad /
-//! AddToSquad / SetSquadAction machinery, the same path roving
-//! traders use), takes up to a couple of stacks from the target's
-//! storage buildings with the honest Take/Add transfer predation
-//! proved, then walks home.
+//! A well-fed camp whose franchise votes caution sends its most
+//! careful free member as a one-person trade caravan to a
+//! meaningfully hungrier neighbor: real food stacks loaded from
+//! the home stores into the trader's hands, walked over as a real
+//! 1-member Trade squad, handed into the host's storage, and paid
+//! for with a non-food stack carried home. Barter, both sides
+//! gain: the hungry camp eats, the surplus camp profits. Every
+//! item moves by the game's own Take/Add transfer; the nutrition
+//! ledger follows automatically because the game counts carried
+//! and stored food alike.
 //!
-//! Caught-or-clean is decided by the GAME, not the mod: after the
-//! take, the thief calls the game's own
-//! `Character.OnStoleSomething(target, ...)`, which runs the real
-//! line-of-sight check (`IsCharacterVisibleToAnyMember`). Seen and
-//! not allied: the witness shouts StopThief and the game itself
-//! sets the pair Hostile. A theft gone wrong is therefore an
-//! ORGANIC war ignition through a vanilla path.
+//! Vanilla AI-to-AI "trade" is cosmetic (trade squads only hang
+//! out; goods move solely through the player trade UI). This is
+//! the first real exchange between AI camps.
 //!
-//! Learning: every franchise voter learns guile from the outcome
-//! (clean haul carried home raises it; getting caught or losing
-//! the thief lowers it), the same per-voter plasticity the raid
-//! loop uses for aggression.
+//! Learning: the franchise voters learn defensiveness from the
+//! outcome (a caravan home with payment reinforces the careful
+//! way; a trader lost on the road weakens it): the third trait to
+//! gain a live learning loop, after aggression (raids) and guile
+//! (theft).
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -35,32 +35,35 @@ use crate::common::{
 };
 use crate::genome::{self, Trait};
 
-/// Seconds between launch scans. Slower than the survival scan:
-/// theft is occasional texture, not a drumbeat.
-const STEAL_SCAN_PERIOD_SECS: f32 = 120.0;
+/// Seconds between launch scans. Offset from the steal cadence so
+/// the acts interleave rather than fire in lockstep.
+const TRADE_SCAN_PERIOD_SECS: f32 = 150.0;
 
 /// Seconds between mission-advance passes (arrival checks).
 const MISSION_TICK_SECS: f32 = 5.0;
 
-/// A voter favors stealing if their own guile clears this.
-const STEAL_GUILE_FLOOR: f64 = 0.5;
+/// A voter favors trading if their own defensiveness clears this.
+const TRADE_DEFENSIVENESS_FLOOR: f64 = 0.5;
 
-/// The target must be this much better fed than the thief's camp:
-/// need drives them toward the richer neighbor.
-const STEAL_ENVY_MARGIN: f64 = 0.15;
+/// The host must be this much hungrier than the seller: surplus
+/// seeks need.
+const TRADE_GAP: f64 = 0.2;
 
-/// Stacks taken per theft. A burglary, not a raid.
-const STEAL_MAX_STACKS: i64 = 2;
+/// Food stacks a caravan carries out.
+const TRADE_FOOD_STACKS: i64 = 2;
 
-/// Within this squared tile distance of a target building the
-/// thief is "in the stores"; same bar for being back home.
+/// Non-food stacks taken home as payment.
+const TRADE_PAY_STACKS: i64 = 1;
+
+/// Within this squared tile distance of a building the caravan
+/// has arrived; same bar for home.
 const ARRIVE_DIST_SQ: f64 = 25.0;
 
 /// A mission that has not resolved by then is abandoned.
 const MISSION_TIMEOUT_SECS: f32 = 900.0;
 
-/// At most this many thefts in flight map-wide.
-const MAX_ACTIVE_MISSIONS: usize = 4;
+/// At most this many caravans on the road map-wide.
+const MAX_ACTIVE_MISSIONS: usize = 3;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Stage {
@@ -68,22 +71,23 @@ enum Stage {
     Returning,
 }
 
-/// An in-flight theft. The mission keeps its faction, target, and
-/// thief handles alive (the launch scan's release pass skips them)
-/// until cleanup releases all three.
+/// An in-flight trade. The mission keeps its seller, host, and
+/// trader handles alive (the launch scan's release pass skips
+/// them) until cleanup releases all three.
 struct Mission {
-    faction_h: i32,
-    faction_id: i64,
-    faction_name: String,
-    target_h: i32,
-    target_name: String,
-    thief_h: i32,
-    thief_name: String,
+    seller_h: i32,
+    seller_id: i64,
+    seller_name: String,
+    host_h: i32,
+    host_name: String,
+    trader_h: i32,
+    trader_name: String,
     squad_id: i64,
     home: (i64, i64),
     stage: Stage,
-    caught: bool,
-    stolen: i64,
+    loaded: i64,
+    delivered: i64,
+    paid: i64,
     voter_ids: Vec<i64>,
     deadline: f32,
 }
@@ -92,12 +96,12 @@ static MISSIONS: Mutex<Vec<Mission>> = Mutex::new(Vec::new());
 static LAST_SCAN_BITS: AtomicU32 = AtomicU32::new(0);
 static LAST_TICK_BITS: AtomicU32 = AtomicU32::new(0);
 
-/// The active theft a faction is running, for survival_status.
+/// The active trade a faction is running, for survival_status.
 pub fn active_target(faction_id: i64) -> Option<Json> {
-    MISSIONS.lock().iter().find(|m| m.faction_id == faction_id).map(|m| {
+    MISSIONS.lock().iter().find(|m| m.seller_id == faction_id).map(|m| {
         json!({
-            "target": m.target_name,
-            "thief": m.thief_name,
+            "host": m.host_name,
+            "trader": m.trader_name,
             "stage": match m.stage { Stage::Going => "going", Stage::Returning => "returning" },
         })
     })
@@ -110,11 +114,11 @@ pub fn tick(now: f32) {
         advance_missions(now);
     }
     let last_scan = f32::from_bits(LAST_SCAN_BITS.load(Ordering::Relaxed));
-    if now - last_scan >= STEAL_SCAN_PERIOD_SECS {
+    if now - last_scan >= TRADE_SCAN_PERIOD_SECS {
         LAST_SCAN_BITS.store(now.to_bits(), Ordering::Relaxed);
         if let Err(e) = launch_scan(now) {
             if !e.contains("not found") {
-                mono::log(LogLevel::Warn, &format!("survivalist-mod: steal scan failed: {e}"));
+                mono::log(LogLevel::Warn, &format!("survivalist-mod: trade scan failed: {e}"));
             }
         }
     }
@@ -131,9 +135,9 @@ struct Camp {
     centre: (i64, i64),
     votes: i64,
     franchise: i64,
-    effective_guile: f64,
+    effective_defensiveness: f64,
     voter_ids: Vec<i64>,
-    eligible_thief: bool,
+    eligible_seller: bool,
 }
 
 fn launch_scan(now: f32) -> Result<(), String> {
@@ -141,8 +145,6 @@ fn launch_scan(now: f32) -> Result<(), String> {
         return Ok(());
     }
 
-    // Snapshot every AI settlement once (same discipline as the
-    // survival scan: one pass, handles kept, released at the end).
     let mut camps: Vec<Camp> = Vec::new();
     for_each_community(|com| {
         let t = ctype(&com);
@@ -167,18 +169,15 @@ fn launch_scan(now: f32) -> Result<(), String> {
         let Some(centre) = base_centre(&com) else {
             return Ok(true);
         };
-        // A camp can THIEVE only if it can spare a body and is not
-        // otherwise occupied: at peace (no invasion), unthreatened,
-        // and 3+ members. Any camp can still be a TARGET.
         let at_war = handle_of(&com.read_field("InvasionTarget")?).is_some();
         let threats = list_len(&com, "Threats");
-        let can_thieve = members >= 3 && !at_war && threats == 0;
+        let can_sell = members >= 3 && !at_war && threats == 0;
 
         let mut votes = 0i64;
         let mut franchise = 0i64;
-        let mut sum_guile = 0.0f64;
+        let mut sum_def = 0.0f64;
         let mut voter_ids = Vec::new();
-        if can_thieve {
+        if can_sell {
             let looter = t == "Looter";
             if let Some(m_h) = handle_of(&com.read_field("Members")?) {
                 let mlist = own(m_h);
@@ -203,10 +202,10 @@ fn launch_scan(now: f32) -> Result<(), String> {
                     if looter && genome::is_conscript(char_id) {
                         continue;
                     }
-                    let g = genome::individual(char_id, &t).get(Trait::Guile);
+                    let d = genome::individual(char_id, &t).get(Trait::Defensiveness);
                     franchise += 1;
-                    sum_guile += g;
-                    if g >= STEAL_GUILE_FLOOR {
+                    sum_def += d;
+                    if d >= TRADE_DEFENSIVENESS_FLOOR {
                         votes += 1;
                     }
                     voter_ids.push(char_id);
@@ -222,41 +221,45 @@ fn launch_scan(now: f32) -> Result<(), String> {
             centre,
             votes,
             franchise,
-            effective_guile: if franchise > 0 { sum_guile / franchise as f64 } else { 0.0 },
+            effective_defensiveness: if franchise > 0 { sum_def / franchise as f64 } else { 0.0 },
             voter_ids,
-            eligible_thief: can_thieve,
+            eligible_seller: can_sell,
         });
         std::mem::forget(com);
         Ok(true)
     })?;
 
-    // The thief camp: voted-yes camps not already thieving, by
-    // most guileful franchise first.
-    let active: Vec<i64> = MISSIONS.lock().iter().map(|m| m.faction_id).collect();
-    let mut thieves: Vec<&Camp> = camps
+    // The seller: voted-yes camps not already trading, most
+    // careful franchise first.
+    let active: Vec<i64> = MISSIONS.lock().iter().map(|m| m.seller_id).collect();
+    let mut sellers: Vec<&Camp> = camps
         .iter()
         .filter(|c| {
-            c.eligible_thief
+            c.eligible_seller
                 && c.franchise > 0
                 && c.votes * 2 > c.franchise
                 && !active.contains(&c.id)
         })
         .collect();
-    thieves.sort_by(|a, b| b.effective_guile.partial_cmp(&a.effective_guile).unwrap());
+    sellers.sort_by(|a, b| {
+        b.effective_defensiveness
+            .partial_cmp(&a.effective_defensiveness)
+            .unwrap()
+    });
 
-    for camp in thieves {
-        // The mark: nearest meaningfully-richer neighbor this camp
-        // is neither at war with nor allied to.
+    for camp in sellers {
+        // The host: nearest camp meaningfully hungrier, not an
+        // enemy (allies welcome; trade is how friends stay fed).
         let mut best: Option<(&Camp, i64)> = None;
         for t in &camps {
-            if t.handle == camp.handle || t.nutrition < camp.nutrition + STEAL_ENVY_MARGIN {
+            if t.handle == camp.handle || t.nutrition + TRADE_GAP > camp.nutrition {
                 continue;
             }
             let rel = with(camp.handle, |c| {
                 c.invoke("GetRelationship", &json!([{ "handle": t.handle }]))
             })
             .unwrap_or(json!("?"));
-            if rel == json!("Hostile") || rel == json!("Allied") {
+            if rel == json!("Hostile") {
                 continue;
             }
             let d = (t.centre.0 - camp.centre.0).pow(2) + (t.centre.1 - camp.centre.1).pow(2);
@@ -264,22 +267,22 @@ fn launch_scan(now: f32) -> Result<(), String> {
                 best = Some((t, d));
             }
         }
-        let Some((target, _)) = best else { continue };
+        let Some((host, _)) = best else { continue };
 
-        if let Err(e) = launch(camp, target, now) {
+        if let Err(e) = launch(camp, host, now) {
             mono::log(
                 LogLevel::Warn,
-                &format!("survivalist-mod: steal launch failed for {}: {e}", camp.name),
+                &format!("survivalist-mod: trade launch failed for {}: {e}", camp.name),
             );
         }
-        break; // one new theft per scan
+        break; // one new caravan per scan
     }
 
     // Release the snapshot handles, EXCEPT the ones a live mission
     // (including one just launched) still owns.
     let kept: Vec<i32> = {
         let ms = MISSIONS.lock();
-        ms.iter().flat_map(|m| [m.faction_h, m.target_h]).collect()
+        ms.iter().flat_map(|m| [m.seller_h, m.host_h]).collect()
     };
     for c in &camps {
         if !kept.contains(&c.handle) {
@@ -289,13 +292,13 @@ fn launch_scan(now: f32) -> Result<(), String> {
     Ok(())
 }
 
-fn launch(camp: &Camp, target: &Camp, now: f32) -> Result<(), String> {
+fn launch(camp: &Camp, host: &Camp, now: f32) -> Result<(), String> {
     with(camp.handle, |com| {
-        // The thief: the highest-guile member that is conscious,
-        // not the leader, and not already in a squad.
+        // The trader: the most careful free member (highest
+        // defensiveness, conscious, not the leader, not squadded).
         let leader_id = handle_of(&com.read_field("Leader")?)
             .map(|h| own(h).read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1));
-        let mut thief: Option<(i32, String, f64)> = None;
+        let mut trader: Option<(i32, String, f64)> = None;
         if let Some(m_h) = handle_of(&com.read_field("Members")?) {
             let mlist = own(m_h);
             let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
@@ -323,36 +326,42 @@ fn launch(camp: &Camp, target: &Camp, now: f32) -> Result<(), String> {
                 if !alive || !human || !conscious || squadded || Some(id) == leader_id {
                     continue;
                 }
-                let g = genome::individual(id, &camp.ctype).get(Trait::Guile);
-                if thief.as_ref().map(|(_, _, bg)| g > *bg).unwrap_or(true) {
+                let d = genome::individual(id, &camp.ctype).get(Trait::Defensiveness);
+                if trader.as_ref().map(|(_, _, bd)| d > *bd).unwrap_or(true) {
                     let name = member
                         .invoke("GetDisplayNameString", &json!([]))
                         .ok()
                         .and_then(|v| v.as_str().map(str::to_string))
                         .unwrap_or_else(|| "<unnamed>".into());
-                    if let Some((old_h, ..)) = thief.replace((h, name, g)) {
+                    if let Some((old_h, ..)) = trader.replace((h, name, d)) {
                         drop(own(old_h));
                     }
                     std::mem::forget(member);
                 }
             }
         }
-        let Some((thief_h, thief_name, thief_guile)) = thief else {
+        let Some((trader_h, trader_name, _)) = trader else {
             return Ok(()); // nobody free to send
         };
 
-        // Send them as a real 1-member squad through the game's own
-        // mission machinery (the roving-trader path): Trade
-        // behaviour, so arrival parks them at the mark instead of
-        // exiting the map.
+        // Load the caravan from the home stores BEFORE leaving.
+        // Nothing to sell = no trip (and no squad to clean up).
+        let loaded = carry_off_stored_goods(com, &[trader_h], TRADE_FOOD_STACKS, GoodsFilter::Food)?;
+        if loaded == 0 {
+            drop(own(trader_h));
+            return Ok(());
+        }
+
+        // On the road as a real 1-member Trade squad (the game's
+        // own machinery; pathing, gates, and reactions all vanilla).
         let squad_h =
             handle_of(&com.invoke("AddSquad", &json!(["Trade", 0]))?).ok_or("AddSquad gave no squad")?;
         let squad = own(squad_h);
         com.invoke(
             "AddToSquad",
-            &json!([{ "handle": thief_h }, { "handle": squad_h }]),
+            &json!([{ "handle": trader_h }, { "handle": squad_h }]),
         )?;
-        let dest = json!({"x": target.centre.0, "y": target.centre.1});
+        let dest = json!({"x": host.centre.0, "y": host.centre.1});
         squad.write_field("GoalTile", &dest)?;
         com.invoke(
             "SetSquadAction",
@@ -362,18 +371,19 @@ fn launch(camp: &Camp, target: &Camp, now: f32) -> Result<(), String> {
         drop(squad);
 
         MISSIONS.lock().push(Mission {
-            faction_h: camp.handle,
-            faction_id: camp.id,
-            faction_name: camp.name.clone(),
-            target_h: target.handle,
-            target_name: target.name.clone(),
-            thief_h,
-            thief_name: thief_name.clone(),
+            seller_h: camp.handle,
+            seller_id: camp.id,
+            seller_name: camp.name.clone(),
+            host_h: host.handle,
+            host_name: host.name.clone(),
+            trader_h,
+            trader_name: trader_name.clone(),
             squad_id,
             home: camp.centre,
             stage: Stage::Going,
-            caught: false,
-            stolen: 0,
+            loaded,
+            delivered: 0,
+            paid: 0,
             voter_ids: camp.voter_ids.clone(),
             deadline: now + MISSION_TIMEOUT_SECS,
         });
@@ -381,8 +391,8 @@ fn launch(camp: &Camp, target: &Camp, now: f32) -> Result<(), String> {
         mono::log(
             LogLevel::Info,
             &format!(
-                "survivalist-mod: steal -- {} ({}, {} of {} voters guileful) sends {} (guile {:.2}) to steal from {}",
-                camp.name, camp.ctype, camp.votes, camp.franchise, thief_name, thief_guile, target.name,
+                "survivalist-mod: trade -- {} ({}, fed {:.2}, {} of {} voters careful) sends {} with {} food stack(s) to hungry {} ({:.2})",
+                camp.name, camp.ctype, camp.nutrition, camp.votes, camp.franchise, trader_name, loaded, host.name, host.nutrition,
             ),
         );
         Ok(())
@@ -398,17 +408,16 @@ fn advance_missions(now: f32) {
         let done = advance(&mut missions[i], now).unwrap_or(true);
         if done {
             let m = missions.remove(i);
-            with(m.faction_h, |com| {
+            with(m.seller_h, |com| {
                 if let Ok(sq) = com.invoke("GetSquad", &json!([m.squad_id])) {
                     if let Some(sq_h) = handle_of(&sq) {
                         let _ = com.invoke("RemoveSquad", &json!([{ "handle": sq_h }]));
                     }
                 }
             });
-            // The mission's three handles go back to the table.
-            drop(own(m.faction_h));
-            drop(own(m.target_h));
-            drop(own(m.thief_h));
+            drop(own(m.seller_h));
+            drop(own(m.host_h));
+            drop(own(m.trader_h));
         } else {
             i += 1;
         }
@@ -417,19 +426,19 @@ fn advance_missions(now: f32) {
 
 /// One mission step. Ok(true) = mission over, clean up.
 fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
-    let alive = with(m.thief_h, |t| t.invoke("get_AliveAndNotZombie", &json!([])))? == json!(true);
+    let alive = with(m.trader_h, |t| t.invoke("get_AliveAndNotZombie", &json!([])))? == json!(true);
     if !alive {
-        // The thief died out there: the strongest lesson against
-        // guile the collective can get (and the loot died too).
+        // A caravan lost on the road: caution failed to keep them
+        // safe, and the goods died with the trader.
         for &v in &m.voter_ids {
-            genome::reinforce_individual(v, Trait::Guile, false, 2.0);
+            genome::reinforce_individual(v, Trait::Defensiveness, false, 2.0);
         }
-        genome::reinforce(m.faction_id, Trait::Guile, false, 2.0);
+        genome::reinforce(m.seller_id, Trait::Defensiveness, false, 2.0);
         mono::log(
             LogLevel::Info,
             &format!(
-                "survivalist-mod: steal -- {}'s thief {} DIED on the job against {}; the camp grows warier",
-                m.faction_name, m.thief_name, m.target_name,
+                "survivalist-mod: trade -- {}'s trader {} DIED on the road to {}; the camp loses faith in the careful way",
+                m.seller_name, m.trader_name, m.host_name,
             ),
         );
         return Ok(true);
@@ -438,74 +447,48 @@ fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
         mono::log(
             LogLevel::Info,
             &format!(
-                "survivalist-mod: steal -- {}'s theft of {} fizzled (timeout); {} recalled",
-                m.faction_name, m.target_name, m.thief_name,
+                "survivalist-mod: trade -- {}'s caravan to {} fizzled (timeout); {} recalled",
+                m.seller_name, m.host_name, m.trader_name,
             ),
         );
         return Ok(true);
     }
 
-    // Tile is a property (expression-bodied), not a field.
-    let tile = with(m.thief_h, |t| t.invoke("get_Tile", &json!([])))?;
+    let tile = with(m.trader_h, |t| t.invoke("get_Tile", &json!([])))?;
     match m.stage {
         Stage::Going => {
-            let target_alive = with(m.target_h, |t| {
-                t.invoke("HasAnyLivingNonZombieMembers", &json!([]))
+            let host_alive = with(m.host_h, |h| {
+                h.invoke("HasAnyLivingNonZombieMembers", &json!([]))
             })
             .map(|v| v == json!(true))
             .unwrap_or(false);
-            if !target_alive {
-                // The mark died before the thief arrived; robbing a
-                // husk is scavenging, a different act. Recall.
-                return Ok(true);
+            if !host_alive {
+                return Ok(true); // the market died; go home
             }
-            let d = with(m.target_h, |t| {
-                t.invoke("GetDistSqToNearestBuilding", &json!([tile.clone()]))
+            let d = with(m.host_h, |h| {
+                h.invoke("GetDistSqToNearestBuilding", &json!([tile.clone()]))
             })?
             .as_f64()
             .unwrap_or(f64::MAX);
             if d > ARRIVE_DIST_SQ {
                 return Ok(false);
             }
-            // In the stores: take what one thief can carry, then
-            // let the GAME decide seen-or-clean (real line of
-            // sight; a witness shouts StopThief and the game sets
-            // the pair Hostile itself).
-            m.stolen = with(m.target_h, |t| {
-                carry_off_stored_goods(t, &[m.thief_h], STEAL_MAX_STACKS, GoodsFilter::Any)
+            // The exchange, all real hands and real containers:
+            // carried food into the host's stores, a non-food
+            // stack back as payment.
+            m.delivered = deliver_carried_food(m.trader_h, m.host_h, m.loaded)?;
+            m.paid = with(m.host_h, |h| {
+                carry_off_stored_goods(h, &[m.trader_h], TRADE_PAY_STACKS, GoodsFilter::NonFood)
             })?;
-            let caught = with(m.thief_h, |t| {
-                t.invoke(
-                    "OnStoleSomething",
-                    &json!([{ "handle": m.target_h }, null, 25.0 * m.stolen as f64, false]),
-                )
-            })? == json!(true);
-            m.caught = caught;
-            if caught {
-                for &v in &m.voter_ids {
-                    genome::reinforce_individual(v, Trait::Guile, false, 1.5);
-                }
-                genome::reinforce(m.faction_id, Trait::Guile, false, 1.5);
-                mono::log(
-                    LogLevel::Info,
-                    &format!(
-                        "survivalist-mod: steal -- {} was CAUGHT stealing from {} ({} stack(s) in hand); {} answers it the vanilla way",
-                        m.thief_name, m.target_name, m.stolen, m.target_name,
-                    ),
-                );
-            } else {
-                mono::log(
-                    LogLevel::Info,
-                    &format!(
-                        "survivalist-mod: steal -- {} slips out of {}'s stores unseen with {} stack(s)",
-                        m.thief_name, m.target_name, m.stolen,
-                    ),
-                );
-            }
-            // Home, either way: a caught thief flees, a clean one
-            // strolls.
+            mono::log(
+                LogLevel::Info,
+                &format!(
+                    "survivalist-mod: trade -- {} delivers {} food stack(s) to {} and takes {} stack(s) home as payment",
+                    m.trader_name, m.delivered, m.host_name, m.paid,
+                ),
+            );
             let home = json!({"x": m.home.0, "y": m.home.1});
-            with(m.faction_h, |com| -> Result<(), String> {
+            with(m.seller_h, |com| -> Result<(), String> {
                 if let Ok(sq) = com.invoke("GetSquad", &json!([m.squad_id])) {
                     if let Some(sq_h) = handle_of(&sq) {
                         let squad = own(sq_h);
@@ -522,7 +505,7 @@ fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
             Ok(false)
         }
         Stage::Returning => {
-            let d = with(m.faction_h, |com| {
+            let d = with(m.seller_h, |com| {
                 com.invoke("GetDistSqToNearestBuilding", &json!([tile]))
             })?
             .as_f64()
@@ -530,21 +513,99 @@ fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
             if d > ARRIVE_DIST_SQ {
                 return Ok(false);
             }
-            if !m.caught && m.stolen > 0 {
-                // A clean haul carried all the way home: guile paid.
+            if m.delivered > 0 {
+                // Home with the deal done: the careful way pays.
                 for &v in &m.voter_ids {
-                    genome::reinforce_individual(v, Trait::Guile, true, 1.0);
+                    genome::reinforce_individual(v, Trait::Defensiveness, true, 1.0);
                 }
-                genome::reinforce(m.faction_id, Trait::Guile, true, 1.0);
+                genome::reinforce(m.seller_id, Trait::Defensiveness, true, 1.0);
                 mono::log(
                     LogLevel::Info,
                     &format!(
-                        "survivalist-mod: steal -- {} makes it home to {} with {}'s goods; the camp grows bolder in its guile",
-                        m.thief_name, m.faction_name, m.target_name,
+                        "survivalist-mod: trade -- {} comes home to {}; the trade with {} paid, and the camp trusts the careful way more",
+                        m.trader_name, m.seller_name, m.host_name,
                     ),
                 );
             }
             Ok(true)
         }
     }
+}
+
+/// Move up to `max` FOOD stacks from the trader's carried
+/// inventory into the first host building that will hold them:
+/// the delivery half of the barter, on the same Take/Add calls as
+/// everything else.
+fn deliver_carried_food(trader_h: i32, host_h: i32, max: i64) -> Result<i64, String> {
+    // The receiving shelf: the host's first building with an
+    // inventory container.
+    let store: Option<(i32, i32)> = with(host_h, |host| {
+        let b_h = handle_of(&host.read_field("Buildings").ok()?)?;
+        let blist = own(b_h);
+        let nb = blist.invoke("get_Count", &json!([])).ok()?.as_i64()?;
+        for bi in 0..nb {
+            let Some(bh) = handle_of(&blist.invoke("get_Item", &json!([bi])).ok()?) else {
+                continue;
+            };
+            let building = own(bh);
+            if let Some(inv_h) = handle_of(&building.read_field("Inventory").ok()?) {
+                std::mem::forget(building);
+                return Some((bh, inv_h));
+            }
+        }
+        None
+    });
+    let Some((store_bh, store_inv_h)) = store else {
+        return Ok(0);
+    };
+
+    let trader_inv_h = with(trader_h, |t| handle_of(&t.read_field("Inventory")?).ok_or("trader has no inventory".to_string()))?;
+    let trader_inv = own(trader_inv_h);
+    let store_inv = own(store_inv_h);
+    let mut delivered = 0i64;
+    while delivered < max {
+        let count = trader_inv
+            .invoke("get_Count", &json!([]))
+            .ok()
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let mut pick: Option<(i32, i64)> = None;
+        for i in 0..count {
+            let Some(item_h) = handle_of(&trader_inv.invoke("GetItem", &json!([i]))?) else {
+                continue;
+            };
+            let item = own(item_h);
+            let food = item
+                .invoke("GetNutrition", &json!([]))
+                .ok()
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0)
+                > 0.0;
+            let amount = item
+                .invoke("GetAmount", &json!([]))
+                .ok()
+                .and_then(|v| v.as_i64())
+                .unwrap_or(1);
+            if food {
+                std::mem::forget(item);
+                pick = Some((item_h, amount));
+                break;
+            }
+        }
+        let Some((item_h, amount)) = pick else { break };
+        let taken = trader_inv.invoke(
+            "Take",
+            &json!([{ "handle": trader_h }, { "handle": item_h }, amount]),
+        )?;
+        let Some(taken_h) = handle_of(&taken) else { break };
+        store_inv.invoke(
+            "Add",
+            &json!([{ "handle": store_bh }, { "handle": taken_h }]),
+        )?;
+        delivered += 1;
+    }
+    drop(trader_inv);
+    drop(store_inv);
+    drop(own(store_bh));
+    Ok(delivered)
 }

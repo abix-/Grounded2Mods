@@ -32,7 +32,7 @@ use modforge::ops::{OP_REGISTRY, OpDef};
 use unityforge::mono::{self, LogLevel, MonoObject};
 
 use crate::common::{
-    ctype, display_name, for_each_community, handle_of, list_len, on_main_thread, own,
+    base_centre, ctype, display_name, for_each_community, handle_of, list_len, on_main_thread, own,
 };
 use crate::genome::{self, Trait};
 
@@ -292,18 +292,6 @@ struct Camp {
     for_raid: i64,
     effective_aggression: f64,
     voter_ids: Vec<i64>,
-}
-
-fn base_centre(com: &MonoObject) -> Option<(i64, i64)> {
-    let rect = com.read_field("BaseRect").ok()?;
-    let o = rect.as_object()?;
-    let min = o.get("min")?.as_object()?;
-    let max = o.get("max")?.as_object()?;
-    let g = |m: &serde_json::Map<String, Json>, k: &str| m.get(k).and_then(Json::as_i64);
-    Some((
-        (g(min, "x")? + g(max, "x")?) / 2,
-        (g(min, "y")? + g(max, "y")?) / 2,
-    ))
 }
 
 fn desperation_scan(now: f32) -> Result<(), String> {
@@ -575,6 +563,7 @@ fn survival_status(_args: &Json) -> Result<Json, String> {
                 "effective_aggression": (vote.effective_aggression * 100.0).round() / 100.0,
                 "raiding": invasion_target,
                 "stealing": crate::steal::active_target(id).unwrap_or(Json::Null),
+                "trading": crate::trade::active_target(id).unwrap_or(Json::Null),
             }));
             Ok(true)
         })?;
