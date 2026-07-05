@@ -25,7 +25,7 @@ game.
 | AI-vs-AI war | 8/10 | LIVE 2026-07-05: the FULL WAR LIFECYCLE observed in one day. Ignition: organic (a caught thief; the game's own ladder declared it) and by personality (two ambition wars: The Dirty Killers 9 of 10 on The Silent Bears; The Well-Regulated Bears 36 of 50 on Silent Valley Command). Sustain: the revenge loop two-way. END: Smiley Crow Militia, bled to 3 of 10, SURRENDERED to The Dirty Killers by unanimous peace ballot; the first ceasefire was re-broken by the still-fighting squads (the game's witnessed-attack path re-declares) and the second stuck once blades stopped. Remaining: allies dragged into an AI war watched live; ceasefire decay/re-escalation over days. | AI factions declare, wage, and settle wars with each other without player involvement: raids launched both ways, ceasefires/surrenders happen, allies drag each other in. Verifiable by spectating two camps. |
 | Town growth | 6/10 | LIVE 2026-07-05: the growth flywheel closed end to end. Two beds-full camps (Mercado's Army 10/10, Kirby's Co-operative 8/8) each planned a wire-fence annex with gate + shack; their builders consume the records (Kirby's queue 40 down to 25 mid-build); the shacks COMPLETED (beds 10 to 12 and 8 to 10; the 2026-07-04 probe shack at Crazy Hill Team finished too, 7 to 9: a shack adds 2 beds, not 1); the new beds were then filled by real recruits in the same session (press-gangs at five camps, refugees welcomed at The Dirty Punks). Remaining: a fence line watched to completion, attrition realism over days, growth tied to war posture. | REAL growth (operator, 2026-07-04): the settlement itself grows, MORE STRUCTURES and MORE PEOPLE, fed by a non-cheating economy: structures built by real hands from real hauled materials, people recruited from real arrivals, growth rate bound to their food/resource situation and war posture. |
 | Fight for control / PREDATION | 7/10 | LIVE 2026-07-05: predation OBSERVED. Jenna's Council beat The Dirty Punks down and CONSUMED them: 5 survivors absorbed (members 20 to 25), the loser extinct, its genome dropped from the pool; the absorbed appear as silenced conscripts in the vote (franchise rule under conquest verified: effective aggression unchanged at 0.63 while the camp swelled). The whole war traced back to a caught burglary: acts compose into consolidation. The loot pass ran but found 0 stored goods (honest zero, their stores were bare). Remaining: a stockpile-stripping observed with actual goods carried; ground-drop loot from the war dead. | Wars are ABOUT something: bases change hands on victory, territory feeds growth, and the wars CONVERGE: left to run, the map consolidates until ONE faction controls it. |
-| No cheating | 3/10 | LIVE 2026-07-04: cheat 1 of 3, the repopulator, is DISABLED in the running game (UpdateRepopulation prefix skip; install log confirmed; it had just conjured back a war casualty minutes earlier, and that healing is now impossible). Remaining cheats: raider spawn-point respawns; spawn-time arrival gear is ACCEPTED per the boundary. Trader-party + chicken refills also stopped as a side effect, pending the two operator boundary calls. | Every faction person walked onto the map or was recruited from it; every weapon/meal came from loot, trade, crafting, or harvest; destroying a faction's people/stores actually weakens it. |
+| No cheating | 5/10 | LIVE 2026-07-05: cheats 1 AND 2 of 3 are DISABLED in the running game (install logs confirmed). The repopulator (2026-07-04) and now raider spawn-point respawns: a conditional prefix on the spawn gate suppresses only REFILLS (a dead raider camp stays dead) while first spawns keep populating the world; growth_status counts suppressions. Cheat 3 (spawn-time arrival gear) is ACCEPTED per the boundary. Remaining: the two operator boundary calls (trader-party + chicken refills, both currently stopped as a side effect); watching the suppression counter climb. | Every faction person walked onto the map or was recruited from it; every weapon/meal came from loot, trade, crafting, or harvest; destroying a faction's people/stores actually weakens it. |
 | Factions can be destroyed | 8/10 | LIVE 2026-07-05: EXTINCTION OBSERVED. The Dirty Punks are GONE, consumed by Jenna's Council after losing the war their catching of a thief started: survivors absorbed, faction dead, and with the conjurer disabled it stays dead. The map went from 22 settlements to 21 by Darwinian consolidation, no player involved. Remaining: the husk visible as a claimable power vacuum (vanilla roamer reclamation exists; watch one happen). | A faction that loses its people or its base is GONE (or absorbed): no resurrection, its territory claimable, visible on the map as a power vacuum. |
 | Faction personality / EVOLUTION | 7/10 | LIVE 2026-07-05: personality is now VISIBLE IN BEHAVIOR. Every organic theft came from a Looter camp and the trade act belongs to the careful (Normal-leaning) franchise: the types act differently with zero hardcoded type checks, purely from seeded genomes + votes. Trait learning WATCHED shifting live: guile took -1.5/-2.0 lessons at Jenna's (caught thief, dead thief) and +1.0 at The Golden Dudes (clean haul); defensiveness has its loop armed via trade. Franchise-under-conquest verified (5 absorbed conscripts silenced, victor's will unchanged). Expansionism's loop FIRED live: the Bears' ambition war was judged "PAID OFF (dpop +2)" and 50 voters grew bolder in aggression AND expansionism. Pending live: aggression shift from famine raids; per-survivor heredity blending on absorption; role-weighted votes (operator's noted expansion). | Normal and Looter settlements are recognizably different actors: each type's war declarations, target picks, growth priorities, and dealings fit its identity, visible to a spectator without reading code. |
 
@@ -643,8 +643,19 @@ strike so the kill goal owns the operative, and a fresh squad
 walks them home. One murder in flight map-wide. Learning: clean
 kill +1.5 guile per voter; dead operative -2.0 guile -1.0
 aggression; blown attempt -1.0. survival_status gains a
-`murdering` field. NOT yet observed: the first plot (needs a
-warring camp with a dark franchise and a living enemy leader).
+`murdering` field.
+
+FIRST PLOT OBSERVED (2026-07-05), ending in blood the other way:
+Almighty Rock Family voted 5 of 9 for the knife (a genuinely
+split ballot) and sent Kiara Greer after Amber Hyde, leader of
+The Golden Dudes. Kiara DIED on the job; the franchise took the
+-2.0 guile lesson. Assassinating a leader inside a guarded camp
+SHOULD usually get the operative killed: the risk loop is
+honest. Known reload artifact: a hot reload forgets the plot
+record and the next scan may re-send one operative (single
+retry, paced by the 4-minute scan); the walking squad itself is
+reclaimed by the init sweep. NOT yet observed: a successful
+kill.
 
 ## Predation phase (2026-07-05): the selection event
 
@@ -727,13 +738,24 @@ Shipped + live (commits `efa02bcc` survival, `05af2bbb` genome):
 - HEREDITY seam: `genome::blend_into` ready for the conquest phase
   to pour a victor's genome into absorbed survivors.
 
-v1 limits (honest): genome lives for the SESSION, not across
-save/load (deterministic re-seed on reload; mid-session learning
-lost). Only aggression's learning loop is live; the other three
-traits are seeded/shown/propagate but their learning waits for
-the behaviors they drive to be survival-wired. The whole engine is
-gated on real famine (nutrition <= 0.5) to fire raids; the map is
-currently well-fed, so learning kicks in as food gets tight.
+GENOME MEMORY (commit `785c4e5b`, VERIFIED live 2026-07-05): the
+session-only limit is CLOSED. A sidecar file keyed by the save's
+world seed (`survivalist-mod.genomes.seed<seed>.json` next to
+Player.log) remembers every faction genome, per-survivor genome,
+lesson, and conscript flag: restored on the first tick with a
+live game, written at most every 30 seconds while dirty, flushed
+on every shutdown (hot reloads call shutdown, so a reload loses
+nothing), atomic temp+rename. Verified: generation 19 restored
+253 survivor genomes on its first tick. Honest cost of arriving
+late: conscript flags and lessons from BEFORE the memory shipped
+were already gone (17 generations of amnesia that day is exactly
+why it was built).
+
+Learning-loop status: all four traits now have live loops
+(aggression via raids, guile via theft/robbery/murder,
+defensiveness via trade, expansionism via ambition wars, the last
+two observed firing 2026-07-05). The famine-gated hunger raid
+still waits for real scarcity.
 
 ## NORTH STAR: settlements fighting to survive (operator, 2026-07-04)
 
