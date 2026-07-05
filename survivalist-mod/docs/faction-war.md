@@ -287,6 +287,30 @@ the matching intensity. Rungs (draft):
   vs `InitialMemberCount`/beds, the `Threats` list (zombie/enemy
   pressure), relationship + invasion state.
 
+### Live status (2026-07-04): assessment proven, responses to expand
+
+Survival engine shipped (survivalist-mod/src/survival.rs) and
+LIVE. `survival_status` reads the whole map onto the ladder:
+first snapshot was 16 comfortable / 5 strained / 1 desperate.
+The rung logic works: The Dirty Punks read DESPERATE from
+population collapse (3 of 10 left after the earlier war), not
+hunger.
+
+KEY REFINEMENT the live map forced: desperation has different
+CAUSES and "whatever it takes" means the RESPONSE must fit the
+cause, not just the intensity.
+
+| Cause | Desperate response (design) |
+|---|---|
+| Hunger (nutrition <= 0.5) | RAID the nearest well-fed neighbor for food. SHIPPED (armed; no famine on the map yet, so unfired, correctly). |
+| Population collapse (< half worldgen) | do NOT raid: recruit frantically, turtle, or flee/merge into a stronger faction. TODO. |
+| Threat pressure (zombies/enemies at the base) | fortify hard, or relocate the base. TODO. |
+| Terminal (starving + gutted + failing) | all-in attack, or abandon-and-flee via StartJourneyToExitMap. TODO. |
+
+So the hunger raid is one branch of one rung; the next build is
+the cause-specific responses (esp. the population-collapse branch,
+which is what The Dirty Punks need right now).
+
 ### Gap
 
 Vanilla desperation is a single mild rung aimed only at the
