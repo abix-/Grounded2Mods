@@ -432,16 +432,32 @@ namespace Unityforge.Shim
         public static Type Resolve(string name)
         {
             if (_byName.TryGetValue(name, out var t)) return t;
+            // Pass 1: exact (namespace-qualified) match across every
+            // assembly. A global-namespace game type ("Character")
+            // is an exact match here and can never be shadowed by a
+            // namespaced type sharing the short name. The old
+            // single-pass version short-name-scanned each assembly
+            // before trying the next one, so
+            // UnityEngine.TextCore.Character won over the game's
+            // Character and silently killed the AddInjury patch
+            // (survivalist, 2026-07-04).
             foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
             {
                 t = asm.GetType(name);
                 if (t != null) break;
-                // Try short-name match across the assembly's types.
-                foreach (var x in asm.GetTypes())
+            }
+            // Pass 2: short-name scan for callers naming a
+            // namespaced type by its short name.
+            if (t == null)
+            {
+                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
                 {
-                    if (x.Name == name) { t = x; break; }
+                    foreach (var x in asm.GetTypes())
+                    {
+                        if (x.Name == name) { t = x; break; }
+                    }
+                    if (t != null) break;
                 }
-                if (t != null) break;
             }
             if (t != null) _byName[name] = t;
             return t;

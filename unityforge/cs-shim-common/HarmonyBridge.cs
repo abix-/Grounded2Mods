@@ -423,8 +423,19 @@ namespace Unityforge.Shim
             var tname = Marshal.PtrToStringAnsi(typeNameUtf8);
             var mname = Marshal.PtrToStringAnsi(methodNameUtf8);
             var t = TypeCache.Resolve(tname);
-            if (t == null) return null;
-            return AccessTools.Method(t, mname);
+            if (t == null)
+            {
+                // Loud on the miss paths: a silent 0 here cost a
+                // full game-restart debug cycle (2026-07-04).
+                ShimLogger.Error($"HarmonyBridge: type '{tname}' not found");
+                return null;
+            }
+            var m = AccessTools.Method(t, mname);
+            if (m == null)
+            {
+                ShimLogger.Error($"HarmonyBridge: method '{mname}' not found on {t.FullName} (assembly {t.Assembly.GetName().Name})");
+            }
+            return m;
         }
 
         private static MethodPatches GetOrAddMethodPatches(MethodBase target)
