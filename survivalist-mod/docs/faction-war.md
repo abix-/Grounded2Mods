@@ -27,7 +27,7 @@ game.
 | Fight for control / PREDATION | 4/10 | Design corrected (operator 2026-07-05): NOT territorial takeover (`OccupyBase` rejected. It is a move-in model). Darwinian predation instead: a winner strips the beaten loser of people + goods, brings them home, leaves an empty husk. SHIPPED: people-absorption predation (beaten camp <=2 survivors -> absorbed into winner with their gear -> loser extinct -> genome selection). Pending: live-observed conquest; base-stockpile stripping (needs item-model verification). | Wars are ABOUT something: bases change hands on victory, territory feeds growth, and the wars CONVERGE: left to run, the map consolidates until ONE faction controls it. |
 | No cheating | 3/10 | LIVE 2026-07-04: cheat 1 of 3, the repopulator, is DISABLED in the running game (UpdateRepopulation prefix skip; install log confirmed; it had just conjured back a war casualty minutes earlier, and that healing is now impossible). Remaining cheats: raider spawn-point respawns; spawn-time arrival gear is ACCEPTED per the boundary. Trader-party + chicken refills also stopped as a side effect, pending the two operator boundary calls. | Every faction person walked onto the map or was recruited from it; every weapon/meal came from loot, trade, crafting, or harvest; destroying a faction's people/stores actually weakens it. |
 | Factions can be destroyed | 5/10 | Two forces now make death real: the conjurer is DISABLED (no resurrection) and PREDATION consumes beaten camps to extinction (survivors absorbed, husk dies). SHIPPED, pending live observation of an actual extinction. This is the mechanism that drives the map toward one faction. | A faction that loses its people or its base is GONE (or absorbed): no resurrection, its territory claimable, visible on the map as a power vacuum. |
-| Faction personality / EVOLUTION | 5/10 | LIVE 2026-07-05: every faction carries a trait GENOME (aggression/expansionism/defensiveness/guile), verified varied on the live map: all 22 seeded distinct, Looters aggressive (0.52-0.79) vs Normals cautious (0.23-0.49), no two identical. The desperate-raid choice READS aggression (bold camps raid, timid endure), and a learning loop reinforces/weakens aggression by raid outcome. Pending live: watching aggression actually shift (gated on real famine); the other three traits' learning loops; heredity via conquest. | Normal and Looter settlements are recognizably different actors: each type's war declarations, target picks, growth priorities, and dealings fit its identity, visible to a spectator without reading code. |
+| Faction personality / EVOLUTION | 6/10 | LIVE 2026-07-05: every faction carries a trait GENOME (aggression/expansionism/defensiveness/guile), verified varied on the live map: all 22 seeded distinct, Looters aggressive (0.52-0.79) vs Normals cautious (0.23-0.49), no two identical. The desperate-raid choice READS aggression (bold camps raid, timid endure), and a learning loop reinforces/weakens aggression by raid outcome. Pending live: watching aggression actually shift (gated on real famine); the other three traits' learning loops; heredity via conquest. | Normal and Looter settlements are recognizably different actors: each type's war declarations, target picks, growth priorities, and dealings fit its identity, visible to a spectator without reading code. |
 
 Update discipline: when work ships, update the row's score AND
 its "why" cell in the same commit as the live verification; never
@@ -339,6 +339,27 @@ Why this is powerful:
 - Learning is per-person: a survivor who survived a disastrous
   raid carries that caution into every future vote, and spreads it
   only if they live and (in a Normal camp) get to vote.
+
+LIVE STATUS (2026-07-05): the collective model is SHIPPED and
+verified live. Per-survivor genomes exist; the raid decision is a
+FRANCHISE VOTE. Observed on the live map via survival_status:
+Looter camps vote UNANIMOUSLY to raid (e.g. 50/50, 22/22) at ~0.6
+to 0.7 effective aggression; Normal camps split, only a bold
+minority in favor (e.g. 1/5, 9/15) at ~0.3 to 0.38. The
+type difference EMERGED from ~200 individual votes, not a
+hardcoded faction trait. `silenced` shows conscripts (0 until a
+Looter force-absorbs under this build; disenfranchisement then
+appears). Learning is per-voter; a dead survivor's genome + vote
+leave the pool (OnMemberDied).
+
+ROLES (operator 2026-07-05, expand later): every survivor already
+has a `Role` in the settlement (Farmer, Guard, Builder, Trader,
+Enforcer, Cook, Medic, Gatherer, Lumberjack, Miner, Trapper,
+Organizer, ...). Future expansion of the collective: weight votes
+by role (a Guard's opinion on raiding counts more; a Trader
+favors extortion/trade over war), let roles gate franchise
+further, and let individuals evolve toward the role their genome
++ experience suits. The vote engine is built to extend this way.
 
 Implementation path (later phases, big): promote the genome from
 faction-level to per-survivor (keyed by character), tally votes
