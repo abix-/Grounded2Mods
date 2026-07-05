@@ -76,6 +76,16 @@ const AMBITION_MIN_MEMBERS: i64 = 8;
 /// stays dramatic and paced, not a stampede.
 const AMBITION_COOLDOWN_SECS: f32 = 600.0;
 
+/// Suing for peace: a voter wants out of a losing war if their
+/// own aggression is at or below this. Meek franchises surrender
+/// and live (diminished); proud ones fight on and risk being
+/// consumed: selection acting on aggression itself.
+const SURRENDER_AGGRESSION_CEILING: f64 = 0.5;
+
+/// A war counts as LOST when the enemy is at least this many
+/// times stronger.
+const SURRENDER_ODDS: i64 = 2;
+
 /// A pending learning experiment: a raid whose outcome will
 /// reinforce or weaken, in every VOTER who chose it, the traits
 /// that drove the choice (aggression for hunger raids; aggression
@@ -310,6 +320,7 @@ struct Camp {
     ctype: String,
     nutrition: f64,
     members: i64,
+    initial: i64,
     threats: i64,
     rung: Rung,
     centre: Option<(i64, i64)>,
@@ -369,6 +380,7 @@ fn desperation_scan(now: f32) -> Result<(), String> {
             ctype: t,
             nutrition: sv.nutrition,
             members: sv.members,
+            initial: sv.initial,
             threats: sv.threats,
             rung: sv.rung,
             centre: base_centre(&com),
@@ -386,6 +398,9 @@ fn desperation_scan(now: f32) -> Result<(), String> {
         Ok(true)
     })?;
 
+    // Losing camps may sue for peace before new wars ignite.
+    sue_for_peace(&camps)?;
+
     // ONE war ignition per scan at most; hunger outranks ambition
     // (a starving camp's need beats a fed camp's appetite).
     if !hunger_raid(&camps, now)? {
@@ -394,6 +409,76 @@ fn desperation_scan(now: f32) -> Result<(), String> {
 
     release_camps(&camps);
     Ok(())
+}
+
+/// War end: a camp bled below half its worldgen size, facing a
+/// hostile at least SURRENDER_ODDS times its strength, holds a
+/// peace ballot. A majority of meek voters surrenders through the
+/// game's own ceasefire (`SetRelationship(loser, winner,
+/// Ceasefire)`: the first argument is recorded as the initiator,
+/// which is how the game marks WHO capitulated;
+/// `UpdateInvasionTarget` then drops the no-longer-hostile
+/// invasion on its own). One surrender per scan.
+fn sue_for_peace(camps: &[Camp]) -> Result<bool, String> {
+    for loser in camps {
+        // Bleeding, but not yet gutted: at 2 or fewer survivors
+        // predation decides their fate, not diplomacy.
+        let bleeding = loser.members >= 3
+            && (loser.members * 2 < loser.initial || loser.rung == Rung::Terminal);
+        if !bleeding {
+            continue;
+        }
+        // The strongest enemy they face.
+        let mut winner: Option<&Camp> = None;
+        for c in camps {
+            if c.handle == loser.handle || c.members < loser.members * SURRENDER_ODDS {
+                continue;
+            }
+            let rel = crate::common::with(loser.handle, |l| {
+                l.invoke("GetRelationship", &json!([{ "handle": c.handle }]))
+            })
+            .unwrap_or(json!("?"));
+            if rel != json!("Hostile") {
+                continue;
+            }
+            if winner.map(|w| c.members > w.members).unwrap_or(true) {
+                winner = Some(c);
+            }
+        }
+        let Some(winner) = winner else { continue };
+
+        // The peace ballot: a voter wants out when their own
+        // aggression is at or below the ceiling (score 1-a >= 0.5
+        // is exactly a <= 0.5).
+        let vote = crate::common::with(loser.handle, |com| {
+            tally_vote(com, &loser.ctype, 1.0 - SURRENDER_AGGRESSION_CEILING, |g| {
+                1.0 - g.get(Trait::Aggression)
+            })
+        })?;
+        if vote.franchise == 0 || vote.for_raid * 2 <= vote.franchise {
+            continue; // too proud; they fight on
+        }
+
+        let cm = crate::common::community_manager()?;
+        cm.invoke(
+            "SetRelationship",
+            &json!([{ "handle": loser.handle }, { "handle": winner.handle }, "Ceasefire"]),
+        )?;
+        mono::log(
+            LogLevel::Info,
+            &format!(
+                "survivalist-mod: survival -- {} (bled to {} of {}) SURRENDERS to {}: {} of {} voters wanted peace; ceasefire",
+                loser.name,
+                loser.members,
+                loser.initial,
+                winner.name,
+                vote.for_raid,
+                vote.franchise,
+            ),
+        );
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 /// The desperate hunger raid: among desperate, hungry, not-
