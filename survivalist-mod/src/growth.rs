@@ -41,7 +41,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use serde_json::{Value as Json, json};
 
 use modforge::ops::{OP_REGISTRY, OpDef};
-use unityforge::hook::{self, HOOK_REGISTRY};
+use unityforge::hook::{self, HOOK_REGISTRY, HookCtx};
 use unityforge::mono::{self, LogLevel, MonoObject};
 
 use crate::common::{
@@ -84,6 +84,55 @@ pub fn install() {
             );
         }
     }
+
+    // Cheat 2 of 3: ambient enemy spawn points REFILL raider camps
+    // after their people die. The gate method itself separates the
+    // first spawn (worldgen population, kept) from the respawn
+    // (LastDiedTime set, the conjure): suppress only the respawn.
+    // A skipped bool method returns false = cannot spawn.
+    match hook::patch_prefix_ctx(
+        "AmbientEnemySpawnPoint",
+        "CanSpawn",
+        HookCtx::Instance,
+        suppress_enemy_respawn,
+    ) {
+        Ok(h) => {
+            HOOK_REGISTRY.register(h);
+            mono::log(
+                LogLevel::Info,
+                "survivalist-mod: growth -- raider respawns DISABLED (AmbientEnemySpawnPoint.CanSpawn prefix; first spawns kept, refills suppressed)",
+            );
+        }
+        Err(e) => {
+            mono::log(
+                LogLevel::Error,
+                &format!("survivalist-mod: growth raider-respawn patch FAILED: {e}"),
+            );
+        }
+    }
+}
+
+/// How many raider-camp refills have been suppressed this
+/// generation (shown by growth_status; a log per attempt would
+/// spam since the game polls the gate).
+static RESPAWNS_SUPPRESSED: AtomicU32 = AtomicU32::new(0);
+
+extern "C" fn suppress_enemy_respawn(ctx: *const c_void) -> i32 {
+    let h = ctx as isize as i32;
+    if h == 0 {
+        return 0; // no instance; run the original
+    }
+    let point = own(h);
+    let died = point
+        .read_field("LastDiedTime")
+        .ok()
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+    if died > 0.0 {
+        RESPAWNS_SUPPRESSED.fetch_add(1, Ordering::Relaxed);
+        return 1; // skip: a dead raider camp stays dead
+    }
+    0 // first spawn: the world may feed the map
 }
 
 pub fn register_ops() {
@@ -401,5 +450,9 @@ fn collect_growth_status() -> Result<Json, String> {
         }));
         Ok(true)
     })?;
-    Ok(json!({"settlements": settlements, "refugee_groups_in_transit": arrivals}))
+    Ok(json!({
+        "settlements": settlements,
+        "refugee_groups_in_transit": arrivals,
+        "raider_respawns_suppressed": RESPAWNS_SUPPRESSED.load(Ordering::Relaxed),
+    }))
 }
