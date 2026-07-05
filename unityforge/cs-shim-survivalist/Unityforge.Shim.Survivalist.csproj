@@ -1,17 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- net472, not netstandard2.1: Lib.Harmony 2.0.4 ships
-         net4x targets only (NU1701 under netstandard), and the
-         game's own modding guide builds .NET Framework class
-         libraries (DisableHUD ships net40). Unity's Mono loads
-         net4x assemblies natively. -->
+    <!-- net472, matching the game's own modding guide (.NET
+         Framework class libraries; DisableHUD ships net40).
+         Unity's Mono loads net4x assemblies natively. -->
     <TargetFramework>net472</TargetFramework>
     <AssemblyName>Unityforge.Shim.Survivalist</AssemblyName>
     <Version>0.1.0</Version>
     <LangVersion>9.0</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <!-- true so 0Harmony.dll lands in the output dir for the
+         ILRepack merge below. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <!-- No RootNamespace: the game's loader looks up the type
          "Main" in the GLOBAL namespace (Story.LoadDLLs does
          assembly.GetType("Main")). -->
@@ -44,15 +44,21 @@
 
   <ItemGroup>
     <!--
-      Official pardeike Harmony 2.0.4 (the version the game's
-      Steam Workshop "Harmony 2.0.4" dependency mod ships), NOT
-      BepInEx's HarmonyX. Compile-only: at runtime the game loads
-      0Harmony.dll from the dependency mod's DLLs folder.
+      Modern pardeike Harmony, MERGED into this shim under our own
+      assembly identity (ILRepack target below, internalized). The
+      game's Workshop "Harmony 2.0.4" (a 2021 community upload)
+      predates the game's Unity 6 engine and cannot rebuild method
+      bodies containing generic calls (live-verified 2026-07-04:
+      Character.AddInjury's List<Injury>.Add). Merging under our
+      identity means no name fight with other mods' 0Harmony 2.0.4
+      (first-loaded wins for the plain "0Harmony" name) and no
+      workshop dependency needed.
 
       Unity references come from the game's Managed dir via
       -p:UnityDir like the other shims.
     -->
-    <PackageReference Include="Lib.Harmony" Version="2.0.4" PrivateAssets="all" />
+    <PackageReference Include="Lib.Harmony" Version="2.4.2" PrivateAssets="all" />
+    <PackageReference Include="ILRepack.Lib.MSBuild.Task" Version="2.0.43" PrivateAssets="all" />
     <Reference Include="UnityEngine" Condition="'$(UnityDir)' != ''">
       <Private>false</Private>
       <HintPath>$(UnityDir)\UnityEngine.dll</HintPath>
@@ -67,5 +73,10 @@
     </Reference>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" PrivateAssets="all" />
   </ItemGroup>
+
+  <!-- The 0Harmony merge lives in ILRepack.targets next to this
+       csproj (the ILRepack.Lib.MSBuild.Task override point; a
+       Target here in the csproj collides with the package's own
+       merge target and feeds the shim in twice). -->
 
 </Project>

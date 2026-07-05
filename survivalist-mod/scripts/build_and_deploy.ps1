@@ -74,7 +74,9 @@ if (-not (Test-Path $modDir)) {
 }
 
 $rustDll = Join-Path $repoRoot 'target\x86_64-pc-windows-msvc\release\survivalist_mod.dll'
-$shimDll = Join-Path $repoRoot 'unityforge\cs-shim-survivalist\bin\Release\net472\Unityforge.Shim.Survivalist.dll'
+# merged\ = the ILRepack output with Harmony 2.4.2 embedded; the
+# unmerged sibling one level up must NOT ship.
+$shimDll = Join-Path $repoRoot 'unityforge\cs-shim-survivalist\bin\Release\net472\merged\Unityforge.Shim.Survivalist.dll'
 
 if ($Hot) {
     # Generation-versioned hot reload. Find the highest existing
