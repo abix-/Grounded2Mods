@@ -203,6 +203,13 @@ pub struct BridgeTable {
     /// `MonoObject::from_handle`; Drop releases). NULL context
     /// object arrives as 0. Non-zero return = skip the original,
     /// same as `harmony_patch_prefix`.
+    ///
+    /// ctx_kind 1 only supports a REFERENCE-type first argument:
+    /// the C# dispatcher declares the Harmony indexed parameter
+    /// `__0` as `object`, and Harmony 2.0.4 loads arguments as-is
+    /// with no boxing (verified against MethodPatcher.cs at tag
+    /// v2.0.4.0). A value-type first argument would produce
+    /// invalid IL.
     pub harmony_patch_prefix_ctx: extern "C" fn(
         type_name_utf8: *const c_char,
         method_name_utf8: *const c_char,

@@ -210,10 +210,14 @@ namespace Unityforge.Shim
         }
 
         // `object __0` (indexed argument injection), NOT `object[]
-        // __args`: __args is a Harmony 2.1 feature; under the
-        // game's official Harmony 2.0.4 it parses as an invalid
-        // indexed parameter and Harmony.Patch throws "Parameter
-        // __args does not contain a valid index" (live, 2026-07-04).
+        // __args`: __args does not exist in Harmony 2.0.4 (verified
+        // against MethodPatcher.cs at tag v2.0.4.0; the parser
+        // strips "__" and int-parses the rest, so Harmony.Patch
+        // throws "Parameter __args does not contain a valid index";
+        // hit live 2026-07-04). Caveat from the same source: indexed
+        // args are loaded AS-IS, no boxing, so `object __0` is only
+        // valid for REFERENCE-type first arguments; a value-type
+        // first argument would need its exact type here.
         private static bool PrefixArg0CtxDispatcher(object __0, MethodBase __originalMethod)
         {
             RustPrefixDelegate[] snapshot = null;

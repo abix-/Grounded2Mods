@@ -128,13 +128,38 @@ patch-time failures came from assuming features it doesn't have:
 | `harmony.UnpatchSelf()` | Does not exist (HarmonyX name). Use per-target `Unpatch(original, patchMethodInfo)`. Caught at compile time. |
 | `object[] __args` patch parameter | Harmony 2.1 feature. 2.0.4 parses it as an invalid indexed parameter and `Harmony.Patch` throws "Parameter __args does not contain a valid index" AT PATCH TIME. Use indexed injection (`object __0`) instead. Runtime-parsed string, so the compiler can NOT catch this class. |
 
-Safe-parameter set for 2.0.4 patch methods: `__instance`,
-`__result`, `__state`, `__originalMethod`, `__0`/`__1`/...,
-`___fieldName`, and strongly-typed named parameters.
+The COMPLETE special-parameter set in 2.0.4, verified against the
+source at github.com/pardeike/Harmony tag `v2.0.4.0`,
+`Harmony/Internal/MethodPatcher.cs` (the string constants defined
+there; nothing else is special):
+
+| Name | Meaning |
+|---|---|
+| `__instance` | the instance of the patched (instance) method |
+| `__originalMethod` | the MethodBase being patched |
+| `__result` | the return value |
+| `__state` | prefix-to-postfix state |
+| `__exception` | finalizer exception |
+| `__N` (`__0`, `__1`, ...) | argument by index |
+| `___fieldName` | instance field access (three underscores) |
+| named parameters | must match the original's argument names |
+
+There is NO `__args` in 2.0.4 (it is a later-Harmony feature).
+The parser strips the `__` prefix and int-parses the rest, which
+is exactly the "Parameter __args does not contain a valid index"
+patch-time exception we hit.
+
+Indexed-parameter caveat (from the same source): the argument is
+loaded AS-IS with no conversion or boxing. Declaring the patch
+parameter as `object` is safe when the original argument is a
+REFERENCE type (our AddInjury case: `Injury` is a class); a
+VALUE-type argument must be declared with its exact type, never
+`object`. The bridge's arg0 ctx dispatcher therefore only
+supports reference-type first arguments.
 
 RULE (operator, 2026-07-04): do not guess at Harmony surface.
 Before using any Harmony feature here, verify it against the
-pardeike Harmony source at the 2.0.4 tag or against an existing
+pardeike Harmony source at tag `v2.0.4.0` or against an existing
 working Survivalist mod (DisableHUD on github, the dev's example
 mods, workshop mods like SISLootRespawn). This game has official
 mod support and plenty of working examples; build on top of them.
