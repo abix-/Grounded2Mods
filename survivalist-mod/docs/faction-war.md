@@ -23,7 +23,7 @@ game.
 | Pillar | Score | Why this score today | What 10/10 looks like |
 |---|---|---|---|
 | AI-vs-AI war | 5/10 | LIVE 2026-07-04: ignited war produced a real assault (attacker lost a member at the defender base, Funeral squads burying the dead) AND the generalized revenge trigger fired live ("Almighty Rock Family sets a revenge invasion on The Golden Dudes (member killed)"), re-arming the war without player involvement. NOT yet verified: organic ignition without war_ignite, counter-invasions in BOTH directions, how an AI war ends. | AI factions declare, wage, and settle wars with each other without player involvement: raids launched both ways, ceasefires/surrenders happen, allies drag each other in. Verifiable by spectating two camps. |
-| Town growth | 1/10 | Settlements only repair/rebuild their worldgen footprint; the only population growth is the conjuring repopulator. | Settlements visibly expand: new buildings beyond the worldgen footprint, population grown through recruitment, growth rate tied to their food/resource situation and war posture. |
+| Town growth | 1/10 | Settlements only repair/rebuild their worldgen footprint; the only population growth is the conjuring repopulator. | REAL growth (operator, 2026-07-04): the settlement itself grows, MORE STRUCTURES and MORE PEOPLE, fed by a non-cheating economy: structures built by real hands from real hauled materials, people recruited from real arrivals, growth rate bound to their food/resource situation and war posture. |
 | Fight for control | 2/10 | Research-corrected baseline: `OccupyBase` fully transfers a base (buildings, crops, animals) but only DEAD settlements can be occupied (reclamation by roamers or scripts), never conquest of a living one. | Wars are ABOUT something: bases/areas change hands on victory, controlling more territory feeds growth, and the map's power balance shifts over time. |
 | No cheating | 2/10 | Repopulator conjures people + gear in place; raider camps respawn via spawn points; small credit: squads stock real food/water before traveling. | Every faction person walked onto the map or was recruited from it; every weapon/meal came from loot, trade, crafting, or harvest; destroying a faction's people/stores actually weakens it. |
 | Factions can be destroyed | 3/10 | Extermination already ends a community and clears invasions against it, but the repopulator resurrects nearly-dead camps and capture-as-destruction does not exist. | A faction that loses its people or its base is GONE (or absorbed): no resurrection, its territory claimable, visible on the map as a power vacuum. |
@@ -325,6 +325,36 @@ DESTROYED.
    through the existing work goals.
 5. Control: capture/occupation as a war outcome; destruction
    rules that stick.
+
+## The economy: real vs cheated, per resource (audit 2026-07-04)
+
+Growth implies a non-cheating economy (operator). Audit verdict:
+the game's economy is MOSTLY REAL already; the cheating is
+concentrated in three places. Growth must be built ONLY on the
+real flows, and the three cheats are the no-cheat work list.
+
+| Resource | Verdict | Evidence |
+|---|---|---|
+| Food | REAL | Settlement nutrition = harvested stores + planted crops vs winter need per member (`CalcCommunityNutritionLevel`, Community.cs:6871); crops are real tile objects in real patches; crop reserves managed (`IsAllowedToEatCrops`); members eat from real inventories; squads carry real nutrition for journeys. |
+| Water | REAL | Real containers filled at wells/rivers; squads stock up before travel. |
+| Structures / materials | REAL system | Construction is Recipe + Ingredients with per-item consumption tracking (`UnderConstructionInfo.IngredientsUsed`, `HasUsedEnoughOfIngredient`); builders use real tools and chop real wood (BuildGoal); wood crafting capped by campfires. AI REBUILDS presumed on the same flow; verify live once expansion work starts. |
+| Gear | MIXED | Crafting (CraftGoal + recipes) and looting are real; extortion/trade transfer real items between communities. BUT all spawn-time gear is conjured (worldgen, template travellers, and the repopulator's kit). |
+| Gold | REAL transfers | Extortion moves gold between real holders (`OnShakedown`). |
+| People | CHEATED | The repopulator conjures members with conjured kit in place (CommunityManager.cs:740-793). The legitimate inflow exists: template-spawned travellers (refugees) arriving from outside. |
+
+The three cheats (the complete no-cheat work list):
+
+1. The in-place repopulator (people + kit from nothing).
+2. Ambient enemy spawn-point respawns (raider camps refill).
+3. Spawn-time gear conjuring for arrivals (ACCEPTED under the
+   boundary: the world may feed the map at its edge; a town may
+   not conjure in place).
+
+Growth design consequence: the "more structures" half rides the
+EXISTING real construction flow (new ConstructionRecords beyond
+the worldgen footprint + members hauling ingredients through
+BuildGoal); the "more people" half rides recruitment of real
+arrivals after cheat 1 is suppressed.
 
 ## Phase 1 status (2026-07-04)
 
