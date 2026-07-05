@@ -346,7 +346,7 @@ Shipped (commit `dba3992e` + framework fix `392bca8a`):
   (unityforge/src/mod_main.rs); needs one more hot-reload cycle
   to be verify-closed.
 
-LIVE-VERIFIED so far:
+LIVE-VERIFIED (all on 2026-07-04, one session):
 
 - Patch installs clean on Harmony 2.4.2 (log line at load).
 - `war_status` maps the whole world (22 AI settlements + roamers
@@ -354,17 +354,22 @@ LIVE-VERIFIED so far:
 - `war_ignite` -> Almighty Rock Family formed a Hunt squad of 12
   (of 15 members; matches the staffing clamp) and marched on The
   Golden Dudes with the invasion target set.
+- THE ASSAULT: the raid concluded with a Rock Family casualty at
+  the Golden Dudes base (15 -> 14 members) and Golden Dudes
+  Funeral squads burying the dead.
+- THE SUSTAIN LOOP: our revenge trigger fired live. Player log
+  "survivalist-mod: war. Almighty Rock Family sets a revenge
+  invasion on The Golden Dudes (member killed)". Re-arming the
+  invasion with zero player involvement. This is the exact
+  capability vanilla lacks between AI factions.
 
-NOT YET VERIFIED (do not claim the pillar works until these are
-watched happening):
+NOT YET VERIFIED (the pillar is not done until these are watched
+happening):
 
-- The assault: the squad actually attacking people/structures at
-  the target base.
-- The sustain loop: a Golden Dudes death by a Rock Family hand
-  firing OUR revenge trigger (log line "sets a revenge invasion
-  on") and producing the counter-invasion.
 - Organic ignition: an AI-vs-AI war starting WITHOUT `war_ignite`
   (provocation-driven hostility + a kill).
+- A counter-invasion in the OPPOSITE direction (needs a Golden
+  Dudes member killed by a Rock Family hand; none died yet).
 - War end: what Hostile-with-no-InvasionTarget settles into for
   AI pairs (ceasefire path untested).
 
