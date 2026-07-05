@@ -606,14 +606,34 @@ have learned caution calls off the shakedowns; an unrepentant one
 keeps squeezing. Flips are logged; steady states are silent.
 Personality expressed through the game's own lever.
 
-ROB LAUNCHES OBSERVED (2026-07-05): three camps' franchises
-independently voted robbery and all picked gold-rich trading
-parties: Almighty Rock Family (12 of 14), The Crazy Snakes (7 of
-7), Kirby's Co-operative (9 of 9). Fix from live evidence: a hot
-reload wiped the Rust mission list while a party marched, double-
-launching one camp; robbery dedup now reads the game's own squads
-list (one Ambush party in the field per camp). Outcome judgments
-pending.
+ROB: FIRST FULL ARC OBSERVED (2026-07-05): "Kirby's
+Co-operative's robbery of Trading Party: the loot is in camp
+hands; menace paid." Four looter franchises voted robbery within
+the hour, all picking gold-rich trading parties. Three fixes from
+live evidence: (1) hot-reload double-launch closed by reading the
+game's own squads list (one Ambush party per camp); (2) no
+robbery while the camp has a thief or caravan out (the vanilla
+ambush party-fill yanks members from OTHER squads and pulled
+Kirby's thief off his mission); (3) the verdict now measures GAIN
+(item count before vs after), so prior wealth cannot fake a
+successful heist.
+
+MURDER SHIPPED (commit `14b8530a`, survivalist-mod/src/murder.rs),
+same day: the darkest act. A camp AT WAR whose franchise votes
+for the knife (per-voter guile floor 0.6, the highest bar) sends
+its most guileful free member to assassinate the enemy LEADER: a
+decapitation strike instead of another raid. The walk out is the
+standard 1-member squad; the kill is the game's own assassination
+command (`Character.CommandChokeHold` with HoldType.SlitThroat,
+the exact entry the player UI issues), so the sneak, the grab,
+the throat-slit, the victim's struggle, stealth skill, witnesses,
+and secrecy are all vanilla; the squad is shed just before the
+strike so the kill goal owns the operative, and a fresh squad
+walks them home. One murder in flight map-wide. Learning: clean
+kill +1.5 guile per voter; dead operative -2.0 guile -1.0
+aggression; blown attempt -1.0. survival_status gains a
+`murdering` field. NOT yet observed: the first plot (needs a
+warring camp with a dark franchise and a living enemy leader).
 
 ## Predation phase (2026-07-05): the selection event
 
