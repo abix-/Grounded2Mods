@@ -24,9 +24,9 @@ game.
 |---|---|---|---|
 | AI-vs-AI war | 5/10 | LIVE 2026-07-04: ignited war produced a real assault (attacker lost a member at the defender base, Funeral squads burying the dead) AND the generalized revenge trigger fired live ("Almighty Rock Family sets a revenge invasion on The Golden Dudes (member killed)"), re-arming the war without player involvement. NOT yet verified: organic ignition without war_ignite, counter-invasions in BOTH directions, how an AI war ends. | AI factions declare, wage, and settle wars with each other without player involvement: raids launched both ways, ceasefires/surrenders happen, allies drag each other in. Verifiable by spectating two camps. |
 | Town growth | 4/10 | LIVE 2026-07-04, both halves moving: first organic recruitment fired and Crazy Hill Team EXCEEDS its worldgen size (7 members, initial 6, conjurer off); the structures primitive is verified through site creation (dev_place order -> their Builder consumed it -> a real construction site stands, building_now=1). Remaining: watching a completion (beds rise), the annex planner, attrition realism over days, growth tied to war posture. | REAL growth (operator, 2026-07-04): the settlement itself grows, MORE STRUCTURES and MORE PEOPLE, fed by a non-cheating economy: structures built by real hands from real hauled materials, people recruited from real arrivals, growth rate bound to their food/resource situation and war posture. |
-| Fight for control | 2/10 | Research-corrected baseline: `OccupyBase` fully transfers a base (buildings, crops, animals) but only DEAD settlements can be occupied (reclamation by roamers or scripts), never conquest of a living one. | Wars are ABOUT something: bases change hands on victory, territory feeds growth, and the wars CONVERGE: left to run, the map consolidates until ONE faction controls it. |
+| Fight for control / PREDATION | 4/10 | Design corrected (operator 2026-07-05): NOT territorial takeover (`OccupyBase` rejected. It is a move-in model). Darwinian predation instead: a winner strips the beaten loser of people + goods, brings them home, leaves an empty husk. SHIPPED: people-absorption predation (beaten camp <=2 survivors -> absorbed into winner with their gear -> loser extinct -> genome selection). Pending: live-observed conquest; base-stockpile stripping (needs item-model verification). | Wars are ABOUT something: bases change hands on victory, territory feeds growth, and the wars CONVERGE: left to run, the map consolidates until ONE faction controls it. |
 | No cheating | 3/10 | LIVE 2026-07-04: cheat 1 of 3, the repopulator, is DISABLED in the running game (UpdateRepopulation prefix skip; install log confirmed; it had just conjured back a war casualty minutes earlier, and that healing is now impossible). Remaining cheats: raider spawn-point respawns; spawn-time arrival gear is ACCEPTED per the boundary. Trader-party + chicken refills also stopped as a side effect, pending the two operator boundary calls. | Every faction person walked onto the map or was recruited from it; every weapon/meal came from loot, trade, crafting, or harvest; destroying a faction's people/stores actually weakens it. |
-| Factions can be destroyed | 3/10 | Extermination already ends a community and clears invasions against it, but the repopulator resurrects nearly-dead camps and capture-as-destruction does not exist. | A faction that loses its people or its base is GONE (or absorbed): no resurrection, its territory claimable, visible on the map as a power vacuum. |
+| Factions can be destroyed | 5/10 | Two forces now make death real: the conjurer is DISABLED (no resurrection) and PREDATION consumes beaten camps to extinction (survivors absorbed, husk dies). SHIPPED, pending live observation of an actual extinction. This is the mechanism that drives the map toward one faction. | A faction that loses its people or its base is GONE (or absorbed): no resurrection, its territory claimable, visible on the map as a power vacuum. |
 | Faction personality / EVOLUTION | 5/10 | LIVE 2026-07-05: every faction carries a trait GENOME (aggression/expansionism/defensiveness/guile), verified varied on the live map: all 22 seeded distinct, Looters aggressive (0.52-0.79) vs Normals cautious (0.23-0.49), no two identical. The desperate-raid choice READS aggression (bold camps raid, timid endure), and a learning loop reinforces/weakens aggression by raid outcome. Pending live: watching aggression actually shift (gated on real famine); the other three traits' learning loops; heredity via conquest. | Normal and Looter settlements are recognizably different actors: each type's war declarations, target picks, growth priorities, and dealings fit its identity, visible to a spectator without reading code. |
 
 Update discipline: when work ships, update the row's score AND
@@ -326,6 +326,40 @@ let conquest/absorption blend the victor's traits into survivors,
 add small drift, and let selection do the rest. Then the map does
 not just SELECT, it EVOLVES: the trait mix of the surviving
 factions shifts over a playthrough toward what the world rewards.
+
+## Predation phase (2026-07-05): the selection event
+
+Operator-corrected model: Darwinian predation, NOT territorial
+takeover. Vanilla `OccupyBase` is a MOVE-IN (occupier inherits the
+dead base's rect/perimeter/buildings/identity), which is wrong for
+this vision. Predation instead: strip the loser of everything
+portable, bring it home, leave a husk that dies. No real estate
+changes hands; only life and material.
+
+Shipped (commit `876e8b2c`, survivalist-mod/src/predation.rs), on
+the survival tick:
+
+- TRIGGER: a faction whose invasion target is beaten to <= 2
+  living members (or nobody conscious) consumes it. One conquest
+  per scan, dramatic and paced.
+- CONSUME THE PEOPLE: survivors absorbed into the winner via the
+  game's own SetCommunity; they walk to the winner carrying their
+  inventories (portable wealth home for free).
+- EXTINCTION: emptied of people, the loser hits 0 and the game's
+  own death fires; with the conjurer dead it STAYS gone.
+- SELECTION + HEREDITY: `genome::remove` drops the loser's trait
+  set from the pool; the winner's genome lives and spreads (more
+  bodies carry it). The evolution loop closes: variation ->
+  selection -> heredity, all turning.
+
+DEFERRED (honest, no guessed APIs): stripping the loser's BASE
+STOCKPILE (stored food/materials beyond what people carry) needs
+one live verification of the game's item-enumeration API before
+wiring. People + their carried gear ship now; base goods next.
+
+NOT YET VERIFIED live: an actual predation event firing (needs a
+war beaten down to <=2 survivors; the map is currently healthy).
+Watch for "PREDATION. X consumed Y ... Y is EXTINCT" in the log.
 
 ## Evolution engine status (2026-07-05)
 
