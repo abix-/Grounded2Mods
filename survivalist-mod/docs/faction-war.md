@@ -23,11 +23,11 @@ game.
 | Pillar | Score | Why this score today | What 10/10 looks like |
 |---|---|---|---|
 | AI-vs-AI war | 5/10 | LIVE 2026-07-04: ignited war produced a real assault (attacker lost a member at the defender base, Funeral squads burying the dead) AND the generalized revenge trigger fired live ("Almighty Rock Family sets a revenge invasion on The Golden Dudes (member killed)"), re-arming the war without player involvement. NOT yet verified: organic ignition without war_ignite, counter-invasions in BOTH directions, how an AI war ends. | AI factions declare, wage, and settle wars with each other without player involvement: raids launched both ways, ceasefires/surrenders happen, allies drag each other in. Verifiable by spectating two camps. |
-| Town growth | 1/10 | Growth does not exist in vanilla AT ALL: the repopulator only heals losses back toward worldgen headcount (capped at min(initial members, beds)), and structures only repair/rebuild the worldgen footprint. Our growth work adds a capability the game never had, not restores one. | REAL growth (operator, 2026-07-04): the settlement itself grows, MORE STRUCTURES and MORE PEOPLE, fed by a non-cheating economy: structures built by real hands from real hauled materials, people recruited from real arrivals, growth rate bound to their food/resource situation and war posture. |
+| Town growth | 3/10 | LIVE 2026-07-04: the first organic recruitment fired ("Crazy Hill Team takes in 1 refugee(s) who arrived at their gate") and the settlement now EXCEEDS its worldgen size (7 members, initial 6), an event vanilla could never produce, with the conjurer off. Remaining: the structures half (expansion construction) not started; population attrition realism over days unobserved; growth not yet tied to war posture. | REAL growth (operator, 2026-07-04): the settlement itself grows, MORE STRUCTURES and MORE PEOPLE, fed by a non-cheating economy: structures built by real hands from real hauled materials, people recruited from real arrivals, growth rate bound to their food/resource situation and war posture. |
 | Fight for control | 2/10 | Research-corrected baseline: `OccupyBase` fully transfers a base (buildings, crops, animals) but only DEAD settlements can be occupied (reclamation by roamers or scripts), never conquest of a living one. | Wars are ABOUT something: bases change hands on victory, territory feeds growth, and the wars CONVERGE: left to run, the map consolidates until ONE faction controls it. |
 | No cheating | 3/10 | LIVE 2026-07-04: cheat 1 of 3, the repopulator, is DISABLED in the running game (UpdateRepopulation prefix skip; install log confirmed; it had just conjured back a war casualty minutes earlier, and that healing is now impossible). Remaining cheats: raider spawn-point respawns; spawn-time arrival gear is ACCEPTED per the boundary. Trader-party + chicken refills also stopped as a side effect, pending the two operator boundary calls. | Every faction person walked onto the map or was recruited from it; every weapon/meal came from loot, trade, crafting, or harvest; destroying a faction's people/stores actually weakens it. |
 | Factions can be destroyed | 3/10 | Extermination already ends a community and clears invasions against it, but the repopulator resurrects nearly-dead camps and capture-as-destruction does not exist. | A faction that loses its people or its base is GONE (or absorbed): no resurrection, its territory claimable, visible on the map as a power vacuum. |
-| Faction personality | 2/10 | Vanilla differentiates Looters only tactically: extortion behavior, looter gear loadouts, the worldgen looter percentage, and the nemesis flag. Normal settlements have no strategic identity at all; neither type makes type-appropriate WAR or GROWTH choices. | Normal and Looter settlements are recognizably different actors: each type's war declarations, target picks, growth priorities, and dealings fit its identity, visible to a spectator without reading code. |
+| Faction personality | 3/10 | LIVE 2026-07-04: the growth doctrine differentiates the types in the running game: a Normal camp welcomed a refugee at its gate while Looter camps took nobody through the same window. Press-ganging (looters seize refugees near base or roaming squads) is shipped; the first observed seizure is pending. War/peace/target-pick doctrines still undifferentiated. | Normal and Looter settlements are recognizably different actors: each type's war declarations, target picks, growth priorities, and dealings fit its identity, visible to a spectator without reading code. |
 
 Update discipline: when work ships, update the row's score AND
 its "why" cell in the same commit as the live verification; never
@@ -490,14 +490,18 @@ Rock Family had been healed 14 -> 15 by the repopulator BEFORE
 the disable landed, confirming the cheat was active until the
 moment it stopped.
 
-NOT YET VERIFIED (growth row stays 1/10 until watched):
+VERIFIED 2026-07-04, minutes after shipping: "Crazy Hill Team
+takes in 1 refugee(s) who arrived at their gate (0 bed(s)
+left)" in the player log, and growth_status then showed 7
+members vs initial 6: a settlement exceeded its worldgen size
+through a real arrival. Press-ganging shipped in the same hour
+(looters seize refugees near base or any roaming squad leader;
+beds required, food not checked; log verb "press-gangs");
+first observed seizure pending.
 
-- A recruitment actually firing: refugee group at a gate, the
-  join log line ("takes in N refugee(s)"), member count rising
-  past... first past headroom use, eventually past
-  InitialMemberCount (the never-before-possible event).
-- Population attrition realism over days with the repopulator
-  off (war losses now stay lost until someone walks in).
+STILL PENDING: population attrition realism over days with the
+repopulator off (war losses now stay lost until someone walks
+in); the structures half of growth.
 
 ## Phase 1 status (2026-07-04)
 
