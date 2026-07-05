@@ -240,6 +240,10 @@ fn desperation_scan(now: f32) -> Result<(), String> {
     // half): reinforce/weaken the aggression that drove them.
     evaluate_experiments(now)?;
 
+    // Then resolve any war whose loser is beaten to a husk: the
+    // Darwinian selection event (winner consumes loser).
+    crate::predation::check_conquests()?;
+
     // Snapshot every AI settlement once.
     let mut camps: Vec<Camp> = Vec::new();
     for_each_community(|com| {

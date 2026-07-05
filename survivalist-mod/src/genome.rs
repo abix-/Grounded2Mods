@@ -161,6 +161,16 @@ pub fn blend_into(survivor_id: i64, victor: Genome, victor_weight: f64) {
     s.guile = mix(s.guile, victor.guile);
 }
 
+/// A faction died (consumed / extinct): its genome dies with it.
+/// This is the SELECTION half of evolution: unfit trait sets are
+/// removed from the map's gene pool.
+pub fn remove(id: i64) {
+    let mut g = GENOMES.lock();
+    if let Some(map) = g.as_mut() {
+        map.remove(&id);
+    }
+}
+
 /// Snapshot every seeded genome (for the status op).
 pub fn snapshot() -> Vec<(i64, Genome)> {
     let g = GENOMES.lock();

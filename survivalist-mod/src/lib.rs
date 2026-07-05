@@ -24,6 +24,7 @@ mod development;
 mod genome;
 mod growth;
 mod infection;
+mod predation;
 mod survival;
 mod war;
 
