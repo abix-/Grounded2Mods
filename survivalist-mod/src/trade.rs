@@ -298,7 +298,7 @@ fn launch(camp: &Camp, host: &Camp, now: f32) -> Result<(), String> {
         // defensiveness, conscious, not the leader, not squadded).
         let leader_id = handle_of(&com.read_field("Leader")?)
             .map(|h| own(h).read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1));
-        let mut trader: Option<(i32, String, f64)> = None;
+        let mut trader: Option<(i32, i64, String, f64)> = None;
         if let Some(m_h) = handle_of(&com.read_field("Members")?) {
             let mlist = own(m_h);
             let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
@@ -327,27 +327,48 @@ fn launch(camp: &Camp, host: &Camp, now: f32) -> Result<(), String> {
                     continue;
                 }
                 let d = genome::individual(id, &camp.ctype).get(Trait::Defensiveness);
-                if trader.as_ref().map(|(_, _, bd)| d > *bd).unwrap_or(true) {
+                if trader.as_ref().map(|(_, _, _, bd)| d > *bd).unwrap_or(true) {
                     let name = member
                         .invoke("GetDisplayNameString", &json!([]))
                         .ok()
                         .and_then(|v| v.as_str().map(str::to_string))
                         .unwrap_or_else(|| "<unnamed>".into());
-                    if let Some((old_h, ..)) = trader.replace((h, name, d)) {
+                    if let Some((old_h, ..)) = trader.replace((h, id, name, d)) {
                         drop(own(old_h));
                     }
                     std::mem::forget(member);
                 }
             }
         }
-        let Some((trader_h, trader_name, _)) = trader else {
-            return Ok(()); // nobody free to send
+        let Some((trader_h, trader_id, trader_name, _)) = trader else {
+            mono::log(
+                LogLevel::Info,
+                &format!(
+                    "survivalist-mod: trade -- {} voted to trade with {} but has no free member to send",
+                    camp.name, host.name,
+                ),
+            );
+            return Ok(());
         };
 
-        // Load the caravan from the home stores BEFORE leaving.
-        // Nothing to sell = no trip (and no squad to clean up).
-        let loaded = carry_off_stored_goods(com, &[trader_h], TRADE_FOOD_STACKS, GoodsFilter::Food)?;
+        // Load the caravan BEFORE leaving: building stores first,
+        // then campmates' carried surplus (real hand-offs at home;
+        // every donor keeps a stack for themselves). Camps keep
+        // most food planted and carried, not warehoused, so the
+        // member top-up is usually the real source.
+        let mut loaded =
+            carry_off_stored_goods(com, &[trader_h], TRADE_FOOD_STACKS, GoodsFilter::Food)?;
+        if loaded < TRADE_FOOD_STACKS {
+            loaded += load_food_from_members(com, trader_h, trader_id, TRADE_FOOD_STACKS - loaded)?;
+        }
         if loaded == 0 {
+            mono::log(
+                LogLevel::Info,
+                &format!(
+                    "survivalist-mod: trade -- {} voted to trade with {} but has no spare food to load",
+                    camp.name, host.name,
+                ),
+            );
             drop(own(trader_h));
             return Ok(());
         }
@@ -530,6 +551,101 @@ fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
             Ok(true)
         }
     }
+}
+
+/// Top up the caravan from campmates' carried food: a real
+/// hand-off at home via the same Take/Add transfer. Each donor
+/// keeps at least one food stack for themselves.
+fn load_food_from_members(
+    com: &unityforge::mono::MonoObject,
+    trader_h: i32,
+    trader_id: i64,
+    need: i64,
+) -> Result<i64, String> {
+    let mut gained = 0i64;
+    let Some(m_h) = handle_of(&com.read_field("Members")?) else {
+        return Ok(0);
+    };
+    let mlist = own(m_h);
+    let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+    'members: for i in 0..count {
+        if gained >= need {
+            break;
+        }
+        let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+            continue;
+        };
+        let member = own(h);
+        // Handles from separate bridge calls never match; the
+        // trader is skipped by character Id.
+        let id = member.read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1);
+        if id == trader_id
+            || member
+                .invoke("get_AliveAndNotZombie", &json!([]))
+                .map(|v| v != json!(true))
+                .unwrap_or(true)
+        {
+            continue;
+        }
+        let Some(inv_h) = handle_of(&member.read_field("Inventory")?) else {
+            continue;
+        };
+        let inv = own(inv_h);
+        loop {
+            let n = inv
+                .invoke("get_Count", &json!([]))
+                .ok()
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            // Count the donor's food stacks and find one to give.
+            let mut food_stacks = 0i64;
+            let mut pick: Option<(i32, i64)> = None;
+            for j in 0..n {
+                let Some(item_h) = handle_of(&inv.invoke("GetItem", &json!([j]))?) else {
+                    continue;
+                };
+                let item = own(item_h);
+                let food = item
+                    .invoke("GetNutrition", &json!([]))
+                    .ok()
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0)
+                    > 0.0;
+                if food {
+                    food_stacks += 1;
+                    if pick.is_none() {
+                        let amount = item
+                            .invoke("GetAmount", &json!([]))
+                            .ok()
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(1);
+                        std::mem::forget(item);
+                        pick = Some((item_h, amount));
+                    }
+                }
+            }
+            // Leave the donor their last stack.
+            let Some((item_h, amount)) = pick else { continue 'members };
+            if food_stacks <= 1 || gained >= need {
+                continue 'members;
+            }
+            let taken = inv.invoke(
+                "Take",
+                &json!([{ "handle": h }, { "handle": item_h }, amount]),
+            )?;
+            let Some(taken_h) = handle_of(&taken) else {
+                continue 'members;
+            };
+            let trader = own(trader_h);
+            let _ = trader.invoke(
+                "Add",
+                &json!([{ "handle": trader_h }, { "handle": taken_h }]),
+            );
+            std::mem::forget(trader);
+            gained += 1;
+        }
+    }
+    Ok(gained)
 }
 
 /// Move up to `max` FOOD stacks from the trader's carried
