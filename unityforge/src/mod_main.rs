@@ -54,10 +54,8 @@ macro_rules! unityforge_mod {
             if bridge.is_null() {
                 return -1;
             }
-            // SAFETY: the shim guarantees the pointer is valid
-            // for the duration of this call; we copy by value
-            // into the OnceLock.
-            let bridge = unsafe { &*bridge };
+            // install() reads the raw table (it must inspect the
+            // version before deciding how many bytes to copy).
             if !$crate::bridge::install(bridge) {
                 return -2;
             }

@@ -52,6 +52,7 @@ namespace Unityforge.Shim
         public IntPtr ReadField => Marshal.GetFunctionPointerForDelegate(Il2CppBridge.ReadFieldDelegate);
         public IntPtr WriteField => Marshal.GetFunctionPointerForDelegate(Il2CppBridge.WriteFieldDelegate);
         public IntPtr InvokeMethod => Marshal.GetFunctionPointerForDelegate(Il2CppBridge.InvokeMethodDelegate);
+        public IntPtr InvokeStatic => Marshal.GetFunctionPointerForDelegate(Il2CppBridge.InvokeStaticDelegate);
         public IntPtr ReleaseHandle => Marshal.GetFunctionPointerForDelegate(Il2CppBridge.ReleaseHandleDelegate);
     }
 
@@ -112,6 +113,12 @@ namespace Unityforge.Shim
         public static readonly ReadFieldFn ReadFieldDelegate = ReadField;
         public static readonly WriteFieldFn WriteFieldDelegate = WriteField;
         public static readonly InvokeMethodFn InvokeMethodDelegate = InvokeMethod;
+        public delegate int InvokeStaticFn(IntPtr classNameUtf8, IntPtr methodNameUtf8, IntPtr argsJsonUtf8, IntPtr outBuf, int cap);
+        public static readonly InvokeStaticFn InvokeStaticDelegate = InvokeStatic;
+        private static int InvokeStatic(IntPtr classNameUtf8, IntPtr methodNameUtf8, IntPtr argsJsonUtf8, IntPtr outBuf, int cap)
+        {
+            return -1; // static invoke is not implemented on the IL2CPP backend yet
+        }
         public static readonly ReleaseHandleFn ReleaseHandleDelegate = ReleaseHandle;
 
         // ---- implementations -------------------------------------------

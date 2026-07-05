@@ -209,6 +209,48 @@ impl Drop for MonoObject {
     }
 }
 
+/// Invoke a STATIC method on a named class (bridge v6+). On a
+/// pre-v6 shim (loaded before the upgrade; the game has not been
+/// restarted yet) this returns Err naming the restart.
+pub fn invoke_static(class: &str, method: &str, args: &Json) -> Result<Json, String> {
+    let bridge = bridge::try_get()?;
+    let Some(f) = bridge.invoke_static else {
+        return Err(format!(
+            "invoke_static '{class}.{method}': the running shim is pre-v6; restart the game to load the upgraded shim"
+        ));
+    };
+    let class_c = CString::new(class).map_err(|e| format!("bad class: {e}"))?;
+    let method_c = CString::new(method).map_err(|e| format!("bad method: {e}"))?;
+    let args_s = serde_json::to_string(args).map_err(|e| format!("bad args: {e}"))?;
+    let args_c = CString::new(args_s).map_err(|e| format!("bad args: {e}"))?;
+    let mut buf = vec![0u8; 8192];
+    let r = f(
+        class_c.as_ptr(),
+        method_c.as_ptr(),
+        args_c.as_ptr(),
+        buf.as_mut_ptr() as *mut _,
+        buf.len() as i32,
+    );
+    let len = if r >= 0 {
+        r as usize
+    } else {
+        if r == -3 {
+            let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+            let s = std::str::from_utf8(&buf[..end])
+                .map_err(|e| format!("invoke_static: bad utf-8 on error path: {e}"))?;
+            return Err(s.to_string());
+        }
+        return Err(match r {
+            -1 => format!("invoke_static '{class}.{method}': class or method not found"),
+            -2 => format!("invoke_static '{class}.{method}': arg mismatch"),
+            _ => format!("invoke_static '{class}.{method}': unexpected code {r}"),
+        });
+    };
+    let end = len.min(buf.len());
+    let s = std::str::from_utf8(&buf[..end]).map_err(|e| format!("invoke_static: bad utf-8: {e}"))?;
+    serde_json::from_str(s).map_err(|e| format!("invoke_static: bad json: {e}"))
+}
+
 /// Convenience: log a line through the shim's BepInEx sink.
 pub fn log(level: LogLevel, msg: &str) {
     let Some(bridge) = bridge::get() else { return };

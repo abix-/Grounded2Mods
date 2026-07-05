@@ -17,7 +17,7 @@ namespace Unityforge.Shim
     public static class BridgeConstants
     {
         public const uint Magic = 0x52424655u; // "UFBR"
-        public const uint Version = 5u;        // bumped: added HarmonyPatchPrefixCtx
+        public const uint Version = 6u;        // bumped: added InvokeStatic
     }
 
     public enum RuntimeKind : uint
@@ -62,6 +62,9 @@ namespace Unityforge.Shim
         // harmony (v5+; prefix that passes a context object handle
         // to the Rust callback: __instance or args[0])
         public IntPtr HarmonyPatchPrefixCtx;
+
+        // ---- v6 ----------------------------------------------------
+        public IntPtr InvokeStatic;
     }
 
     /// <summary>
@@ -82,6 +85,7 @@ namespace Unityforge.Shim
         IntPtr InvokeMethod { get; }
         IntPtr ReleaseHandle { get; }
         IntPtr ListMethods { get; }
+        IntPtr InvokeStatic { get; }
     }
 
     public static class Bridge
@@ -116,6 +120,8 @@ namespace Unityforge.Shim
                 ListMethods = backend.ListMethods,
 
                 HarmonyPatchPrefixCtx = Marshal.GetFunctionPointerForDelegate(HarmonyBridge.PatchPrefixCtxDelegate),
+
+                InvokeStatic = backend.InvokeStatic,
             };
         }
     }

@@ -36,6 +36,7 @@ namespace Unityforge.Shim
         public IntPtr InvokeMethod => Marshal.GetFunctionPointerForDelegate(MonoBridge.InvokeMethodDelegate);
         public IntPtr ReleaseHandle => Marshal.GetFunctionPointerForDelegate(MonoBridge.ReleaseHandleDelegate);
         public IntPtr ListMethods => Marshal.GetFunctionPointerForDelegate(MonoBridge.ListMethodsDelegate);
+        public IntPtr InvokeStatic => Marshal.GetFunctionPointerForDelegate(MonoBridge.InvokeStaticDelegate);
     }
 
     public static class MonoBridge
@@ -98,6 +99,8 @@ namespace Unityforge.Shim
         public static readonly ReadFieldFn ReadFieldDelegate = ReadField;
         public static readonly WriteFieldFn WriteFieldDelegate = WriteField;
         public static readonly InvokeMethodFn InvokeMethodDelegate = InvokeMethod;
+        public delegate int InvokeStaticFn(IntPtr classNameUtf8, IntPtr methodNameUtf8, IntPtr argsJsonUtf8, IntPtr outBuf, int cap);
+        public static readonly InvokeStaticFn InvokeStaticDelegate = InvokeStatic;
         public static readonly ReleaseHandleFn ReleaseHandleDelegate = ReleaseHandle;
         public static readonly ListMethodsFn ListMethodsDelegate = ListMethods;
 
@@ -261,6 +264,47 @@ namespace Unityforge.Shim
                 try
                 {
                     var ret = mi.Invoke(obj, callArgs);
+                    return WriteJson(outBuf, cap, JsonValue(ret));
+                }
+                catch (Exception e)
+                {
+                    return WriteJsonReturn(outBuf, cap, new JObject { ["error"] = e.Message }, -3);
+                }
+            }
+            return -2;
+        }
+
+        // v6: invoke a STATIC method on a named class. Mirrors
+        // InvokeMethod (same arg conversion, same result marshal,
+        // same return codes) with a type-name resolve and a null
+        // invocation target.
+        private static int InvokeStatic(IntPtr classNameUtf8, IntPtr methodNameUtf8, IntPtr argsJsonUtf8, IntPtr outBuf, int cap)
+        {
+            var className = Marshal.PtrToStringAnsi(classNameUtf8);
+            var method = Marshal.PtrToStringAnsi(methodNameUtf8);
+            var argsJson = Marshal.PtrToStringAnsi(argsJsonUtf8) ?? "[]";
+            if (string.IsNullOrEmpty(className) || string.IsNullOrEmpty(method)) return -1;
+            var t = TypeCache.Resolve(className);
+            if (t == null) return -1;
+            var argTokens = JArray.Parse(argsJson);
+            var candidates = t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic
+                | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+            foreach (var mi in candidates)
+            {
+                if (mi.Name != method) continue;
+                var pars = mi.GetParameters();
+                if (pars.Length != argTokens.Count) continue;
+                object[] callArgs;
+                try
+                {
+                    callArgs = new object[pars.Length];
+                    for (int i = 0; i < pars.Length; i++)
+                        callArgs[i] = ConvertFromJsonToken(argTokens[i], pars[i].ParameterType);
+                }
+                catch { continue; }
+                try
+                {
+                    var ret = mi.Invoke(null, callArgs);
                     return WriteJson(outBuf, cap, JsonValue(ret));
                 }
                 catch (Exception e)

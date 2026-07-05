@@ -26,8 +26,10 @@ use std::sync::OnceLock;
 pub const BRIDGE_MAGIC: u32 = 0x52424655;
 
 /// Current ABI version. v4 added `list_methods`; v5 added
-/// `harmony_patch_prefix_ctx`.
-pub const BRIDGE_VERSION: u32 = 5;
+/// `harmony_patch_prefix_ctx`; v6 added `invoke_static` (the
+/// Rust side also accepts a v5 table and leaves the new tail
+/// None until the game restarts on the upgraded shim).
+pub const BRIDGE_VERSION: u32 = 6;
 
 /// Unity runtime backend. Stored in the bridge struct at init;
 /// read via [`runtime_kind`] for code that must branch on
@@ -216,6 +218,21 @@ pub struct BridgeTable {
         ctx_kind: i32,
         prefix_fn: extern "C" fn(*const c_void) -> i32,
     ) -> PatchHandle,
+
+    // ---- v6 ---------------------------------------------------------
+    /// Invoke a STATIC method on a named class. None when the
+    /// running shim is pre-v6 (install() accepts a v5 table and
+    /// leaves this tail None until the game restarts on the
+    /// upgraded shim).
+    pub invoke_static: Option<
+        extern "C" fn(
+            class_utf8: *const c_char,
+            method_utf8: *const c_char,
+            args_utf8: *const c_char,
+            out_buf: *mut u8,
+            cap: i32,
+        ) -> i32,
+    >,
 }
 
 static BRIDGE: OnceLock<BridgeTable> = OnceLock::new();
@@ -223,17 +240,42 @@ static BRIDGE: OnceLock<BridgeTable> = OnceLock::new();
 /// Install the bridge table (called from the C# shim via
 /// `unityforge_init`). Verifies magic + version + runtime_kind;
 /// refuses on mismatch. Idempotent.
-pub fn install(bridge: &BridgeTable) -> bool {
-    if bridge.magic != BRIDGE_MAGIC {
+pub fn install(bridge: *const BridgeTable) -> bool {
+    if bridge.is_null() {
         return false;
     }
-    if bridge.version != BRIDGE_VERSION {
+    // SAFETY: magic/version/runtime_kind live in the first 12
+    // bytes of every table version; read them raw before deciding
+    // how many bytes the shim actually allocated.
+    let head = bridge as *const u32;
+    let (magic, version, runtime_kind) = unsafe { (*head, *head.add(1), *head.add(2)) };
+    if magic != BRIDGE_MAGIC {
         return false;
     }
-    if RuntimeKind::from_u32(bridge.runtime_kind).is_none() {
+    if version != BRIDGE_VERSION && version != BRIDGE_VERSION - 1 {
         return false;
     }
-    BRIDGE.set(*bridge).is_ok() || BRIDGE.get().is_some()
+    if RuntimeKind::from_u32(runtime_kind).is_none() {
+        return false;
+    }
+    let table = if version == BRIDGE_VERSION {
+        // SAFETY: a current-version shim allocated the full table.
+        unsafe { *bridge }
+    } else {
+        let mut mu = std::mem::MaybeUninit::<BridgeTable>::zeroed();
+        // SAFETY: the previous version's table is a byte prefix of
+        // this layout ending right before `invoke_static`; the
+        // zeroed tail is a valid None for the Option fn pointer.
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                bridge as *const u8,
+                mu.as_mut_ptr() as *mut u8,
+                std::mem::offset_of!(BridgeTable, invoke_static),
+            );
+            mu.assume_init()
+        }
+    };
+    BRIDGE.set(table).is_ok() || BRIDGE.get().is_some()
 }
 
 pub fn get() -> Option<&'static BridgeTable> {

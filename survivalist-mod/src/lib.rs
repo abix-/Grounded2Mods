@@ -24,6 +24,7 @@ mod common;
 mod development;
 mod genome;
 mod growth;
+mod horde;
 mod infection;
 mod murder;
 mod predation;
@@ -54,6 +55,7 @@ fn on_tick(now: f32) {
     trade::tick(now);
     rob::tick(now);
     murder::tick(now);
+    horde::tick(now);
 }
 
 unityforge::unityforge_mod!(MOD_INFO);
