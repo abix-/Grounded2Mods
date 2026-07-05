@@ -59,6 +59,10 @@ struct Mission {
     lead_h: i32,
     lead_name: String,
     proto_h: i32,
+    /// Stacks of the wanted type the camp held at launch, so the
+    /// verdict measures GAIN, not prior wealth (a camp that
+    /// already owned gold must not get credit for a failed heist).
+    held_before: i64,
     eval_at: f32,
     voter_ids: Vec<i64>,
 }
@@ -307,6 +311,13 @@ fn launch_scan(now: f32) -> Result<(), String> {
         )
     })?;
 
+    let held_before = with(robber_h, |com| {
+        com.invoke("CountInventoryItemsOfType", &json!([{ "handle": proto_h }]))
+    })
+    .ok()
+    .and_then(|v| v.as_i64())
+    .unwrap_or(0);
+
     let franchise = voter_ids.len();
     MISSIONS.lock().push(Mission {
         robber_h,
@@ -316,6 +327,7 @@ fn launch_scan(now: f32) -> Result<(), String> {
         lead_h,
         lead_name: lead_name.clone(),
         proto_h,
+        held_before,
         eval_at: now + OUTCOME_DELAY_SECS,
         voter_ids,
     });
@@ -397,15 +409,13 @@ fn judge_missions(now: f32) {
         let lead_alive = with(m.lead_h, |l| l.invoke("get_AliveAndNotZombie", &json!([])))
             .map(|v| v == json!(true))
             .unwrap_or(false);
-        let got_it = with(m.robber_h, |com| {
-            com.invoke(
-                "FindInventoryItemOfType",
-                &json!([{ "handle": m.proto_h }, false]),
-            )
+        let held_now = with(m.robber_h, |com| {
+            com.invoke("CountInventoryItemsOfType", &json!([{ "handle": m.proto_h }]))
         })
         .ok()
-        .and_then(|v| handle_of(&v))
-        .is_some();
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+        let got_it = held_now > m.held_before;
 
         let (up, magnitude, verdict) = if !lead_alive {
             (false, 2.0, "the lead DIED for it; the camp sobers")
