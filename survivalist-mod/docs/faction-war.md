@@ -417,6 +417,43 @@ add small drift, and let selection do the rest. Then the map does
 not just SELECT, it EVOLVES: the trait mix of the surviving
 factions shifts over a playthrough toward what the world rewards.
 
+## Multidimensional factions: the act repertoire (operator, 2026-07-05)
+
+Operator mandate: factions must DO THINGS THAT MAKE SENSE, and be
+multidimensional: scavenge, steal, murder, trade, extort, raid.
+Not one lever (war) but a repertoire of acts, each chosen because
+it fits who the faction is (genome + franchise vote) and what its
+situation calls for, with outcomes feeding the per-voter learning
+loop. Consequences flow through the GAME'S OWN systems, so acts
+generate organic drama (a caught thief ignites a war through the
+vanilla caught-stealing path, no mod ignition needed).
+
+Research pass 2026-07-05 (fresh ilspycmd dump; every seam below
+read in the decompile, none guessed):
+
+| Act | Trait affinity | What the game already gives (verified) | What the mod adds |
+|---|---|---|---|
+| Trade | cautious, defensive | Trade squads travel to any non-hostile settlement with beds (GoToNextTradeDestination, Community.cs:5792) and HANG OUT there (SquadAction.Trade = SetHangoutLocation, Community.cs:3529). Goods exchange exists ONLY in the player trade UI; AI-to-AI trade is cosmetic today. | The actual exchange: when a trade squad idles at a friendly camp, surplus moves for need (real items via the proven Take/Add carry pattern, both sides gain). The peaceful acquisition dimension. |
+| Scavenge | expansionist | Loot locations exist as map data (LootLocationDef); predation leaves dead-camp husks with stockpiles nobody owns; the carry-home pattern is proven (predation looting). | Scavenge parties: a small squad walks to a husk or ruin, collects, walks home. The baseline low-risk acquisition act; vultures on the map's corpses. |
+| Steal | guile | Picking up another community's property IS theft (IsStealingToPickUp, Character.cs:19043); OnStoleSomething (Character.cs:7327) runs the whole consequence ladder when seen, up to war. | A high-guile camp sends a thief into a neighbor's stores for food/gear. Unseen: free wealth. Seen: the VANILLA path ignites the fallout. This is the organic-war-ignition vector. |
+| Extort | aggressive, guile | Looters already extort weaker AI settlements on a hardcoded cadence (ExtortAISettlements). | Move the choice into the franchise vote; personality picks the targets and the cadence, not the community type alone. |
+| Rob (ambush) | aggression, guile | Community.Ambush (Community.cs:8080) sends a squad after a character CARRYING a wanted item type: demand it (SpeechSituation.Ambush), fight on refusal; SearchForAmbushItem (4720) scans who holds it. | Aim it AI-vs-AI: item-hungry camps rob travelers and rich neighbors of the thing they need. |
+| Murder | high aggression, guile | A real stealth-assassination attack path with secrecy handling exists (assassinate + stealthy melee, Character.cs:10798; witness/sound attribution decides if it is pinned). | A lone operative kills a rival camp's member quietly: weaken before a war, or revenge without one. Risky: attribution through the game's own witness systems means it can ignite. |
+| Raid / war | aggression, expansionism | SHIPPED: the hunger raid (famine-gated) + the two-way revenge loop. | Ambition ignition: comfortable but aggressive + expansionist camps vote to prey on a weaker, richer neighbor. Wars that start because of WHO a faction is, not only how hungry it is. |
+
+Decision shape (extends what is already live): on the survival
+scan, enumerate the acts the situation makes eligible (surplus to
+trade, a husk to scavenge, a rich weak neighbor to steal from /
+rob / raid), put the choice to the franchise vote with weights
+from each voter's genome, run the winner as a squad mission, and
+judge the outcome later into the voters' traits exactly like the
+raid learning loop. One engine, many acts, personalities visible
+in which acts each camp keeps choosing.
+
+Proposed build order (one act per increment, live-verified before
+the next): steal (new dimension AND organic ignition), trade
+exchange, ambition raid, rob, murder, extortion into the vote.
+
 ## Predation phase (2026-07-05): the selection event
 
 Operator-corrected model: Darwinian predation, NOT territorial
