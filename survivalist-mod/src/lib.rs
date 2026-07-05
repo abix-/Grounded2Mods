@@ -32,10 +32,15 @@ static MOD_INFO: ModDef = ModDef {
     version: "0.1.0",
     http_port: 17173,
     on_init: Some(on_init),
-    on_tick: Some(growth::tick),
+    on_tick: Some(on_tick),
     on_shutdown: Some(on_shutdown),
     tabs: &[],
 };
+
+fn on_tick(now: f32) {
+    growth::tick(now);
+    development::tick(now);
+}
 
 unityforge::unityforge_mod!(MOD_INFO);
 
