@@ -527,20 +527,46 @@ expansion uses the same prototypes worldgen uses, and per-type
 wall doctrine falls out naturally (Looters favor harder
 perimeters; Normal camps wood).
 
-Pre-build research checks (extends the four from the non-cheating
-structure plan):
+Pre-build research checks: ALL SIX ANSWERED (2026-07-04).
 
-1. AI rebuild construction consumes ingredients like player
-   construction (else route through real construction sites).
-2. Creating a construction site programmatically + members
-   picking it up unprompted.
-3. Placement-legality API for annex tiles.
-4. Recipes for fence post, gate, sleeping hut, crop patch (what
-   the economy must produce per annex).
-5. BaseRect/Perimeter representation and runtime mutability
-   (OccupyBase already adopts a BaseRect at runtime; precedent).
-6. Gate placement rules (worldgen's GenerateCommunityBuilding
-   picks gate spots on the perimeter).
+1. CONFIRMED, fully real: a Builder-role member picks a
+   ConstructionRecord, the settlement resolves the RECIPE
+   (`GameImpl.FindRecipeByProduct`), and the build runs through
+   `Session.PlaceBuildingDuringGameplay` -> a real construction
+   site (`UnderConstructionInfo(recipe)`) -> BuildGoal with
+   hauled ingredients (Community.cs:6326-6352). Bonus: the game
+   auto-assigns Builder to the highest-Construction-skill member
+   whenever records exist, and its record-picking already
+   PRIORITIZES accommodation buildings.
+2. CONFIRMED: `Session.PlaceBuildingDuringGameplay(character,
+   recipe, tile, orientation, checkCanBuildHere)` is the exact
+   programmatic API; the AI rebuild path itself uses it.
+3. CONFIRMED: `GameCursor.CanBuildHere(...)` overloads +
+   `ConstructionRecord.CanRebuildHere(community)` gate every
+   record before building starts (a record on bad terrain simply
+   never builds; honest stall).
+4. Mechanism confirmed (`FindRecipeByProduct(propProto)`), and
+   `AddConstructionRecord` accepts fences/gates/huts (it filters
+   only graves/traps/crops). WHICH prototypes have recipes is
+   story DATA; verify live with a probe op at implementation.
+5. CONFIRMED writable data: `public TerrainRect BaseRect` +
+   `public List<TerrainCoord> Perimeter` fields; OccupyBase
+   mutates them at runtime. IMPLEMENTATION NOTE: our bridge
+   cannot yet marshal game structs (TerrainCoord/TerrainRect) as
+   invoke args or field writes; the shim's JSON conversion needs
+   a generic value-type path (construct + set fields via
+   reflection, same pattern as its Vector2/3/4 special cases).
+   One shim change, one game restart.
+6. CONFIRMED pattern: worldgen places gates at perimeter segment
+   midpoints with orientation from polygon-inside tests
+   (GameTerrain.cs:6990-7000); the annex mirrors it on its outer
+   edge.
+
+Implementation consequence: the development brain is mostly a
+PLANNER. It appends ConstructionRecords (fence line, gate, then
+interior structures) and adopts the annex into BaseRect; the
+game's own builder assignment, recipe resolution, ingredient
+hauling, and legality gating do everything else.
 
 ## Phase 1 status (2026-07-04)
 
