@@ -19,6 +19,7 @@
 //!    every frame; `Main.Unload()` (story switch) shuts the
 //!    generation down and a later `Load()` re-arms it.
 
+mod growth;
 mod infection;
 mod war;
 
@@ -29,7 +30,7 @@ static MOD_INFO: ModDef = ModDef {
     version: "0.1.0",
     http_port: 17173,
     on_init: Some(on_init),
-    on_tick: None,
+    on_tick: Some(growth::tick),
     on_shutdown: Some(on_shutdown),
     tabs: &[],
 };
@@ -53,6 +54,11 @@ fn on_init() {
     // + war_status / war_ignite ops. docs/faction-war.md.
     war::install();
     war::register_ops();
+
+    // REAL growth, people half: repopulator disabled (operator-
+    // locked) + refugee recruitment on the tick + growth_status.
+    growth::install();
+    growth::register_ops();
 
     unityforge::mono::log(
         unityforge::mono::LogLevel::Info,
