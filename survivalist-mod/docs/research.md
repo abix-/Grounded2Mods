@@ -117,11 +117,59 @@ belongs in the SurvivalistTweaks mod folder as XML, not in Rust.
   (the game has debug menus; F8 opens the debug menu per the
   dev's model guide).
 
-## Harmony 2.0.4 constraints (both live-verified the hard way, 2026-07-04)
+## Embedded Harmony 2.4.2 (shipped 2026-07-04)
 
-The game's official Harmony is pardeike 2.0.4 (the workshop
-dependency mod), NOT a current Harmony and NOT HarmonyX. Two
-patch-time failures came from assuming features it doesn't have:
+The shim embeds Lib.Harmony 2.4.2 (ILRepack, internalized, under
+the shim's own assembly identity). Decision trail:
+
+- "Harmony 2.0.4" on the Workshop (id 2366696532) is a COMMUNITY
+  upload from August 2021, not a developer artifact; the dev guide
+  just says get 0Harmony.dll from the Harmony site. It predates
+  the game's Unity 6 engine and CANNOT rebuild method bodies
+  containing generic calls: patching Character.AddInjury dies at
+  the copied `List<Injury>.Add` with "Invalid IL code in (wrapper
+  dynamic-method) ... call 0x...". Existing mods (SISLootRespawn,
+  DisableHUD) work only because their targets rebuild cleanly.
+- Shipping a loose newer 0Harmony.dll does NOT work reliably:
+  0Harmony is not strong-named, Mono binds the plain name to the
+  FIRST-loaded copy, and other mods' 2.0.4 loads before ours.
+  Hence the merge under our own identity (SISLootRespawn itself
+  bundles its own 0Harmony copy; embedding is normal practice
+  here, just collision-proof).
+- Live-verified on 2.4.2: the AddInjury patch installs, and the
+  `harmony_probe` op (try-patch + unpatch any target, errors land
+  in the player log) is green on `Character.RemoveInjuryAt` and
+  `ZombieAlertGoal.Update`. Method patching is broadly unblocked.
+- Build gotchas: ILRepack must NOT merge over $(TargetPath) (the
+  next incremental build re-merges the merged dll and dies on
+  duplicate types; output to merged/ instead, deploy ships
+  merged/). The merge Target must live in the project-local
+  `ILRepack.targets` file, not the csproj (the
+  ILRepack.Lib.MSBuild.Task package runs its own target and feeds
+  the shim in twice).
+
+OPEN (2026-07-04): hot-reloading a new Rust generation leaves the
+control plane answering from the OLD generation (an op present in
+the new dll reported "unknown op"). Suspect: the old generation's
+HTTP listener keeps the port; the new generation's bind fails
+silently behind the "listening" log line. Investigate the server
+rebind across generations.
+
+OPEN (2026-07-04): infection-off is NOT yet effective in play.
+The AddInjury prefix installs and its field writes log no
+failures, but a live zombie bite still infected the player. Next
+steps: inspect the bitten character's Injuries live over the
+control plane (is InfectionType actually None on the new injury?),
+then hunt other infection writers (OnDamaged side effects beyond
+the Injury object, the prediction/replay paths around
+PredictedObjectManager, direct Injuries.Add call sites that bypass
+AddInjury, InfectionProgression bumps elsewhere).
+
+## Harmony 2.0.4 constraints (kept for other mods' reference)
+
+These applied while we ran the game's Workshop Harmony 2.0.4 and
+still apply to any mod using it. Our shim now embeds 2.4.2, where
+none of these bite:
 
 | Wanted | 2.0.4 reality |
 |---|---|
