@@ -96,6 +96,25 @@ static MISSIONS: Mutex<Vec<Mission>> = Mutex::new(Vec::new());
 static LAST_SCAN_BITS: AtomicU32 = AtomicU32::new(0);
 static LAST_TICK_BITS: AtomicU32 = AtomicU32::new(0);
 
+/// A camp's voted-but-could-not-launch line logs at most once per
+/// this window; a gutted camp re-voting every scan was spamming
+/// the log (Smiley Crow Militia, live 2026-07-05).
+const FAILED_LAUNCH_LOG_COOLDOWN_SECS: f32 = 1800.0;
+static FAILED_LAUNCH_LOGGED: Mutex<Vec<(i64, f32)>> = Mutex::new(Vec::new());
+
+fn should_log_failed_launch(faction_id: i64, now: f32) -> bool {
+    let mut seen = FAILED_LAUNCH_LOGGED.lock();
+    if let Some((_, at)) = seen.iter_mut().find(|(id, _)| *id == faction_id) {
+        if now - *at < FAILED_LAUNCH_LOG_COOLDOWN_SECS {
+            return false;
+        }
+        *at = now;
+        return true;
+    }
+    seen.push((faction_id, now));
+    true
+}
+
 /// The active trade a faction is running, for survival_status.
 pub fn active_target(faction_id: i64) -> Option<Json> {
     MISSIONS.lock().iter().find(|m| m.seller_id == faction_id).map(|m| {
@@ -341,13 +360,15 @@ fn launch(camp: &Camp, host: &Camp, now: f32) -> Result<(), String> {
             }
         }
         let Some((trader_h, trader_id, trader_name, _)) = trader else {
-            mono::log(
-                LogLevel::Info,
-                &format!(
-                    "survivalist-mod: trade -- {} voted to trade with {} but has no free member to send",
-                    camp.name, host.name,
-                ),
-            );
+            if should_log_failed_launch(camp.id, now) {
+                mono::log(
+                    LogLevel::Info,
+                    &format!(
+                        "survivalist-mod: trade -- {} voted to trade with {} but has no free member to send",
+                        camp.name, host.name,
+                    ),
+                );
+            }
             return Ok(());
         };
 
@@ -362,13 +383,15 @@ fn launch(camp: &Camp, host: &Camp, now: f32) -> Result<(), String> {
             loaded += load_food_from_members(com, trader_h, trader_id, TRADE_FOOD_STACKS - loaded)?;
         }
         if loaded == 0 {
-            mono::log(
-                LogLevel::Info,
-                &format!(
-                    "survivalist-mod: trade -- {} voted to trade with {} but has no spare food to load",
-                    camp.name, host.name,
-                ),
-            );
+            if should_log_failed_launch(camp.id, now) {
+                mono::log(
+                    LogLevel::Info,
+                    &format!(
+                        "survivalist-mod: trade -- {} voted to trade with {} but has no spare food to load",
+                        camp.name, host.name,
+                    ),
+                );
+            }
             drop(own(trader_h));
             return Ok(());
         }
