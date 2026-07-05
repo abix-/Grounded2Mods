@@ -61,6 +61,18 @@ macro_rules! unityforge_mod {
             if !$crate::bridge::install(bridge) {
                 return -2;
             }
+            // Wire modforge's shutdown handlers (HTTP listener
+            // join at order 200, settings watcher, scanner).
+            // Without this, `unityforge_shutdown`'s
+            // SHUTDOWN_REGISTRY.run_all() runs an EMPTY registry:
+            // the old generation's HTTP listener survives every
+            // hot reload, keeps the port, and answers with its
+            // STALE op registry (live-verified on Survivalist
+            // 2026-07-04; ueforge always did this in its own
+            // shutdown::register_builtins, unityforge never did).
+            // Once-guarded: a re-init after unload/rollback must
+            // not double-register.
+            $crate::mod_main::register_shutdown_builtins_once();
             $crate::mod_main::log_init_line(&$mod_info);
             if let Some(cb) = $mod_info.on_init {
                 let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(cb));
@@ -101,6 +113,15 @@ macro_rules! unityforge_mod {
             }));
         }
     };
+}
+
+/// Register modforge's shutdown handlers exactly once per loaded
+/// generation (each generation is its own dll image with its own
+/// statics). See the call site in `unityforge_mod!` for why this
+/// is load-bearing for hot reload.
+pub fn register_shutdown_builtins_once() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(modforge::shutdown::register_modforge_builtins);
 }
 
 /// Start the modforge HTTP listener on `127.0.0.1:<port>`,
