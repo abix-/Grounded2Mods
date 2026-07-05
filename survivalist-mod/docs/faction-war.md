@@ -147,9 +147,17 @@ LastEncounteredTime); Defend squads are raised against threats
   extortion demands, what payment does, `OnCeaseFire` effects).
 - `Occupy` behavior: takeover of bases/areas (ties to
   CaptureGoal + area ownership).
-- Whether AI-vs-AI hunts happen (extortion targets AI; the
-  revenge trigger requires a player/ally killer; do two AI
-  settlements ever fully war?).
+- ANSWERED (2026-07-04): organized invasions are PLAYER-CENTRIC.
+  Every `SetInvasionTarget` site with a target: the revenge
+  trigger (Community.cs:1430) fires only when the killer is the
+  player community or a player ally; the ambush-item chain
+  (Community.cs:4746, 21 days) can set an AI-vs-AI invasion when
+  a hostile community carries a wanted item; story scripts can
+  command ANY community to invade ANY other (StoryEvent.cs:2068).
+  There is NO systemic revenge loop between two AI settlements,
+  so no self-sustaining AI-vs-AI war: AI-AI conflict is ambient
+  (hostile-on-contact fights, looter extortion of weaker AI
+  settlements, worldgen hostility) rather than organized raids.
 - How a ceasefire decays or re-escalates.
 - `Exfil`, `Ambush` (AmbushForEquipmentType suggests item-driven
   ambushes), `Funeral` interactions with war.
