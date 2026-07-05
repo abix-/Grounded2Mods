@@ -155,15 +155,12 @@ shutdown handlers (the SHUTDOWN_REGISTRY ran empty; ueforge always
 registered them). Fixed once-guarded at unityforge_init. Verify on
 the next hot-reload cycle: new-generation ops must answer.
 
-OPEN (2026-07-04): infection-off is NOT yet effective in play.
-The AddInjury prefix installs and its field writes log no
-failures, but a live zombie bite still infected the player. Next
-steps: inspect the bitten character's Injuries live over the
-control plane (is InfectionType actually None on the new injury?),
-then hunt other infection writers (OnDamaged side effects beyond
-the Injury object, the prediction/replay paths around
-PredictedObjectManager, direct Injuries.Add call sites that bypass
-AddInjury, InfectionProgression bumps elsewhere).
+OPEN (2026-07-04): infection-off AWAITS the live bite test. The
+first version silently mutated a boxed COPY (Injury is a struct;
+see the indexed-parameter caveat below) and the operator got
+infected. The Args0 write-back fix is deployed and the prefix
+installs clean; nobody has been bitten since. Verified only when
+a live bite leaves an uninfected injury.
 
 ## Harmony 2.0.4 constraints (kept for other mods' reference)
 
