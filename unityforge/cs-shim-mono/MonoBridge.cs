@@ -353,8 +353,37 @@ namespace Unityforge.Shim
                     var t = v.GetType();
                     if (t.IsEnum) return new JValue(v.ToString());
                     if (t.IsClass) return new JObject { ["handle"] = Acquire(v), ["type"] = t.Name };
-                    return new JValue(v.ToString());
+                    return StructToJson(v, 0);
             }
+        }
+
+        /// <summary>
+        /// Generic value-type serialization: a JSON object of the
+        /// struct's public instance fields (recursive, depth-
+        /// capped). Covers game structs like TerrainCoord /
+        /// TerrainRect so Rust can read them as data instead of
+        /// parsing ToString.
+        /// </summary>
+        private static JToken StructToJson(object v, int depth)
+        {
+            var t = v.GetType();
+            if (depth >= 3) return new JValue(v.ToString());
+            var fields = t.GetFields(BindingFlags.Public | BindingFlags.Instance);
+            if (fields.Length == 0) return new JValue(v.ToString());
+            var o = new JObject();
+            foreach (var f in fields)
+            {
+                var fv = f.GetValue(v);
+                if (fv == null) { o[f.Name] = JValue.CreateNull(); continue; }
+                var ft = fv.GetType();
+                if (ft.IsPrimitive || fv is string || ft.IsEnum)
+                    o[f.Name] = JsonValue(fv);
+                else if (ft.IsValueType)
+                    o[f.Name] = StructToJson(fv, depth + 1);
+                else
+                    o[f.Name] = JsonValue(fv);
+            }
+            return o;
         }
 
         private static object ConvertFromJson(string json, Type t)
@@ -364,6 +393,9 @@ namespace Unityforge.Shim
 
         private static object ConvertFromJsonToken(JToken tok, Type t)
         {
+            // JSON null -> null argument (e.g. the trailing object
+            // params of GameTerrain.IsImpassable).
+            if (tok == null || tok.Type == JTokenType.Null) return null;
             if (t == typeof(bool)) return tok.Value<bool>();
             if (t == typeof(int)) return tok.Value<int>();
             if (t == typeof(uint)) return (uint)tok.Value<long>();
@@ -399,6 +431,24 @@ namespace Unityforge.Shim
             {
                 var h = jo["handle"].Value<int>();
                 return Lookup(h);
+            }
+            // Generic value-type path: construct the struct and set
+            // its public fields from a JSON object (mirror of
+            // StructToJson; covers game structs like TerrainCoord /
+            // TerrainRect as invoke args and field writes).
+            if (t.IsValueType && tok is JObject sobj)
+            {
+                var boxed = Activator.CreateInstance(t);
+                foreach (var prop in sobj.Properties())
+                {
+                    var f = t.GetField(prop.Name,
+                        BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+                    if (f != null)
+                    {
+                        f.SetValue(boxed, ConvertFromJsonToken(prop.Value, f.FieldType));
+                    }
+                }
+                return boxed;
             }
             throw new InvalidOperationException("unsupported target type: " + t.FullName);
         }

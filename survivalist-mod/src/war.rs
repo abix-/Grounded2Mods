@@ -27,10 +27,12 @@ use std::ffi::c_void;
 use serde_json::{Value as Json, json};
 
 use modforge::ops::{OP_REGISTRY, OpDef};
-use unityforge::bridge::MonoHandle;
 use unityforge::hook::{self, HOOK_REGISTRY, HookCtx};
-use unityforge::main_thread_queue::MAIN_QUEUE;
-use unityforge::mono::{self, LogLevel, MonoObject, MonoType};
+use unityforge::mono::{self, LogLevel, MonoObject};
+
+use crate::common::{
+    community_manager, ctype, display_name, for_each_community, handle_of, on_main_thread, own,
+};
 
 pub fn install() {
     match hook::patch_prefix_ctx("Community", "OnMemberDied", HookCtx::Arg0, on_member_died) {
@@ -65,19 +67,6 @@ pub fn register_ops() {
             war_ignite,
         ),
     ]);
-}
-
-/// Wrap a handle we own; Drop releases it back to the shim table.
-///
-/// SAFETY: caller asserts the handle came fresh out of a bridge
-/// response (read_field / invoke / ctx dispatcher) and is not
-/// wrapped anywhere else.
-fn own(h: i32) -> MonoObject {
-    unsafe { MonoObject::from_handle(MonoHandle(h)) }
-}
-
-fn handle_of(v: &Json) -> Option<i32> {
-    v.get("handle").and_then(Json::as_i64).map(|h| h as i32)
 }
 
 // ---- the generalized revenge trigger --------------------------------------
@@ -152,72 +141,7 @@ fn try_ai_revenge(member: &MonoObject) -> Result<(), String> {
     Ok(())
 }
 
-fn display_name(com: &MonoObject) -> String {
-    com.invoke("GetDisplayNameString", &json!([]))
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_string))
-        .unwrap_or_else(|| "<unnamed>".to_string())
-}
-
 // ---- ops -------------------------------------------------------------------
-
-/// Run `f` on the Unity main thread and wait for its result
-/// (same oneshot shape as unityforge's write_field op).
-fn on_main_thread<F>(f: F) -> Result<Json, String>
-where
-    F: FnOnce() -> Result<Json, String> + Send + 'static,
-{
-    use std::sync::Arc;
-
-    use parking_lot::Mutex;
-    let result: Arc<Mutex<Option<Result<Json, String>>>> = Arc::new(Mutex::new(None));
-    let r2 = result.clone();
-    MAIN_QUEUE.push(move || {
-        *r2.lock() = Some(f());
-    });
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    loop {
-        if let Some(r) = result.lock().take() {
-            return r;
-        }
-        if std::time::Instant::now() >= deadline {
-            return Err("war op: main-thread queue timed out".into());
-        }
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
-}
-
-fn community_manager() -> Result<MonoObject, String> {
-    let session = MonoType::find("Session")
-        .and_then(|t| t.singleton_instance())
-        .ok_or("Session.Instance not found (no game loaded?)")?;
-    let cm_h = handle_of(&session.read_field("CommunityManager")?)
-        .ok_or("Session.CommunityManager is null")?;
-    Ok(own(cm_h))
-}
-
-/// Visit every community. `f` takes OWNERSHIP of each wrapper:
-/// dropping it releases the handle; `std::mem::forget` keeps the
-/// handle alive for use after the loop. Returns true to keep
-/// iterating.
-fn for_each_community(mut f: impl FnMut(MonoObject) -> Result<bool, String>) -> Result<(), String> {
-    let cm = community_manager()?;
-    let list_h = handle_of(&cm.read_field("Communities")?).ok_or("Communities list is null")?;
-    let list = own(list_h);
-    let count = list
-        .invoke("get_Count", &json!([]))?
-        .as_i64()
-        .ok_or("get_Count did not return a number")?;
-    for i in 0..count {
-        let Some(item_h) = handle_of(&list.invoke("get_Item", &json!([i]))?) else {
-            continue;
-        };
-        if !f(own(item_h))? {
-            break;
-        }
-    }
-    Ok(())
-}
 
 fn war_status(_args: &Json) -> Result<Json, String> {
     on_main_thread(|| {
@@ -225,10 +149,7 @@ fn war_status(_args: &Json) -> Result<Json, String> {
         for_each_community(|com| {
             let com = &com;
             let name = display_name(com);
-            let ctype = com
-                .read_field("CommunityType")
-                .map(|v| v.as_str().unwrap_or("?").to_string())
-                .unwrap_or_else(|_| "?".to_string());
+            let ctype = ctype(com);
             let members = com
                 .invoke("GetLivingNonZombieMemberCount", &json!([]))?
                 .as_i64()

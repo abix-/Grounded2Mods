@@ -19,6 +19,8 @@
 //!    every frame; `Main.Unload()` (story switch) shuts the
 //!    generation down and a later `Load()` re-arms it.
 
+mod common;
+mod development;
 mod growth;
 mod infection;
 mod war;
@@ -59,6 +61,9 @@ fn on_init() {
     // locked) + refugee recruitment on the tick + growth_status.
     growth::install();
     growth::register_ops();
+
+    // Structure growth (annex model): dev_status + dev_place probe.
+    development::register_ops();
 
     unityforge::mono::log(
         unityforge::mono::LogLevel::Info,

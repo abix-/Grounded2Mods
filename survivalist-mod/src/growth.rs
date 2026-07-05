@@ -41,9 +41,12 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use serde_json::{Value as Json, json};
 
 use modforge::ops::{OP_REGISTRY, OpDef};
-use unityforge::bridge::MonoHandle;
 use unityforge::hook::{self, HOOK_REGISTRY};
-use unityforge::mono::{self, LogLevel, MonoObject, MonoType};
+use unityforge::mono::{self, LogLevel, MonoObject};
+
+use crate::common::{
+    ctype, display_name, for_each_community, handle_of, list_len, own, pos_of,
+};
 
 /// Seconds between recruitment scans (real time; the scan is a
 /// few dozen reflection reads on the main thread).
@@ -94,90 +97,6 @@ pub fn register_ops() {
 
 extern "C" fn suppress_repopulation(_ctx: *const c_void) -> i32 {
     1 // skip the original: the conjurer never runs
-}
-
-// ---- shared helpers (same conventions as war.rs) ---------------------------
-
-/// SAFETY: caller asserts the handle came fresh out of a bridge
-/// response and is not wrapped anywhere else; Drop releases it.
-fn own(h: i32) -> MonoObject {
-    unsafe { MonoObject::from_handle(MonoHandle(h)) }
-}
-
-fn handle_of(v: &Json) -> Option<i32> {
-    v.get("handle").and_then(Json::as_i64).map(|h| h as i32)
-}
-
-fn community_manager() -> Result<MonoObject, String> {
-    let session = MonoType::find("Session")
-        .and_then(|t| t.singleton_instance())
-        .ok_or("Session.Instance not found (no game loaded?)")?;
-    let cm_h = handle_of(&session.read_field("CommunityManager")?)
-        .ok_or("Session.CommunityManager is null")?;
-    Ok(own(cm_h))
-}
-
-fn for_each_community(mut f: impl FnMut(MonoObject) -> Result<bool, String>) -> Result<(), String> {
-    let cm = community_manager()?;
-    let list_h = handle_of(&cm.read_field("Communities")?).ok_or("Communities list is null")?;
-    let list = own(list_h);
-    let count = list
-        .invoke("get_Count", &json!([]))?
-        .as_i64()
-        .ok_or("get_Count did not return a number")?;
-    for i in 0..count {
-        let Some(item_h) = handle_of(&list.invoke("get_Item", &json!([i]))?) else {
-            continue;
-        };
-        if !f(own(item_h))? {
-            break;
-        }
-    }
-    Ok(())
-}
-
-fn display_name(com: &MonoObject) -> String {
-    com.invoke("GetDisplayNameString", &json!([]))
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_string))
-        .unwrap_or_else(|| "<unnamed>".to_string())
-}
-
-fn ctype(com: &MonoObject) -> String {
-    com.read_field("CommunityType")
-        .map(|v| v.as_str().unwrap_or("?").to_string())
-        .unwrap_or_else(|_| "?".to_string())
-}
-
-fn list_len(owner: &MonoObject, field: &str) -> i64 {
-    match owner.read_field(field).ok().as_ref().and_then(handle_of) {
-        Some(h) => own(h)
-            .invoke("get_Count", &json!([]))
-            .ok()
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0),
-        None => 0,
-    }
-}
-
-/// Parse a struct's ToString of the shape "(x, y)" (Vector2 /
-/// TerrainCoord); the bridge serializes value types that way.
-fn parse_xy(v: &Json) -> Option<(f32, f32)> {
-    let s = v.as_str()?;
-    let s = s.trim().trim_start_matches('(').trim_end_matches(')');
-    let mut it = s.split(',');
-    let x = it.next()?.trim().parse::<f32>().ok()?;
-    let y = it.next()?.trim().parse::<f32>().ok()?;
-    Some((x, y))
-}
-
-fn pos_of(obj: &MonoObject) -> Option<(f32, f32)> {
-    if let Ok(v) = obj.read_field("PosXZ") {
-        if let Some(p) = parse_xy(&v) {
-            return Some(p);
-        }
-    }
-    obj.read_field("Tile").ok().and_then(|v| parse_xy(&v))
 }
 
 // ---- recruitment tick -------------------------------------------------------
@@ -428,24 +347,7 @@ fn absorb_group(group: &MonoObject, door: &mut OpenDoor) -> Result<i64, String> 
 // ---- observability ----------------------------------------------------------
 
 fn growth_status(_args: &Json) -> Result<Json, String> {
-    use std::sync::Arc;
-
-    use parking_lot::Mutex;
-    let result: Arc<Mutex<Option<Result<Json, String>>>> = Arc::new(Mutex::new(None));
-    let r2 = result.clone();
-    unityforge::main_thread_queue::MAIN_QUEUE.push(move || {
-        *r2.lock() = Some(collect_growth_status());
-    });
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    loop {
-        if let Some(r) = result.lock().take() {
-            return r;
-        }
-        if std::time::Instant::now() >= deadline {
-            return Err("growth_status: main-thread queue timed out".into());
-        }
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
+    crate::common::on_main_thread(collect_growth_status)
 }
 
 fn collect_growth_status() -> Result<Json, String> {
