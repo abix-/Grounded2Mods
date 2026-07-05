@@ -488,6 +488,29 @@ Design consequences:
 - Selection sharpens: the fittest faction is no longer just the
   biggest; it is the one that can carry its size.
 
+SHIPPED (commit `5307d866`, survivalist-mod/src/horde.rs): every
+5 minutes the LARGEST settlement above 16 members (player
+included: first place is first place) draws a pack from the
+game's own spawner (`ZombieSpawnPoint.SpawnAmbientZombies`, null
+spawn point = roaming hunter zombies with no respawn ties),
+tiered by size: 4-6 Green at 16+, 6-8 Blue at 24+, 8-10 Red at
+34+, 10-12 White at 44+ (the game's own strains, ascending
+menace). The pack appears on a 70-tile ring at a hashed angle and
+each zombie gets its own MoveToTile walk order at the walls; from
+there senses and the camp's real defenses take over. At most two
+packs roam at once, pruned when put down; the chronicle announces
+the massing.
+
+Carried by bridge ABI v6: `invoke_static` added UPSTREAM in
+unityforge (shared table + Mono shim implementation + IL2CPP stub
++ Rust wrapper; the missing-feature-goes-upstream doctrine). The
+Rust side accepts a v5 table by prefix-copy, so the running
+session keeps working after a hot reload; the horde holds back
+with a one-line restart notice (verified live on generation 22)
+and ARMS on the first game restart that loads the v6 shim. On
+today's map the first target will be The Well-Regulated Bears
+(50+ strong: White-tier packs).
+
 ### The player joins the ecosystem (operator-locked 2026-07-05)
 
 The factions treat the player's community as just another camp on
