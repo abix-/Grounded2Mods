@@ -467,6 +467,27 @@ chronicle tells the true story (the organic caught-thief path
 still shows the vanilla banner, a known quirk worth a patch
 later).
 
+### NO ALLIANCES; the horde is the counterweight (operator-locked 2026-07-05)
+
+Alliances between factions are REJECTED (operator): this is a
+fight for survival in a zombie apocalypse, not a diplomacy game.
+The counter to the alpha settlement is the world itself, the
+operator's Mario Kart point: being in first place is a detriment.
+As a settlement grows, zombies attack it more often, and the
+zombies scale in strength with the settlement's size: more and
+stronger zombies come for the alpha tribe. Success buys attention
+from the dead; the map's balancing force is the horde, not
+treaties.
+
+Design consequences:
+- Growth becomes a real tradeoff: every bed built and every
+  conscript absorbed raises the camp's pull on the horde.
+- Consolidation stays possible but expensive: an alpha that keeps
+  winning wars must ALSO keep winning sieges, or bleed until the
+  pack catches it.
+- Selection sharpens: the fittest faction is no longer just the
+  biggest; it is the one that can carry its size.
+
 ### The player joins the ecosystem (operator-locked 2026-07-05)
 
 The factions treat the player's community as just another camp on
