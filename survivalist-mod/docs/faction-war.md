@@ -24,7 +24,7 @@ game.
 |---|---|---|---|
 | AI-vs-AI war | 2/10 | Machinery is pair-agnostic and extortion/ambient hostility touch AI pairs, but organized invasions only ever target the player; no systemic AI-AI war exists. | AI factions declare, wage, and settle wars with each other without player involvement: raids launched both ways, ceasefires/surrenders happen, allies drag each other in. Verifiable by spectating two camps. |
 | Town growth | 1/10 | Settlements only repair/rebuild their worldgen footprint; the only population growth is the conjuring repopulator. | Settlements visibly expand: new buildings beyond the worldgen footprint, population grown through recruitment, growth rate tied to their food/resource situation and war posture. |
-| Fight for control | 1/10 | Occupy/CaptureGoal exist in code but unresearched; no known territory or base transfer through war. | Wars are ABOUT something: bases/areas change hands on victory, controlling more territory feeds growth, and the map's power balance shifts over time. |
+| Fight for control | 2/10 | Research-corrected baseline: `OccupyBase` fully transfers a base (buildings, crops, animals) but only DEAD settlements can be occupied (reclamation by roamers or scripts), never conquest of a living one. | Wars are ABOUT something: bases/areas change hands on victory, controlling more territory feeds growth, and the map's power balance shifts over time. |
 | No cheating | 2/10 | Repopulator conjures people + gear in place; raider camps respawn via spawn points; small credit: squads stock real food/water before traveling. | Every faction person walked onto the map or was recruited from it; every weapon/meal came from loot, trade, crafting, or harvest; destroying a faction's people/stores actually weakens it. |
 | Factions can be destroyed | 3/10 | Extermination already ends a community and clears invasions against it, but the repopulator resurrects nearly-dead camps and capture-as-destruction does not exist. | A faction that loses its people or its base is GONE (or absorbed): no resurrection, its territory claimable, visible on the map as a power vacuum. |
 
@@ -158,15 +158,74 @@ LastEncounteredTime); Defend squads are raised against threats
 (Community.cs:3790) and squad-vs-threat assignment is tracked
 (`GetNumberOfSquadMembersAssignedToThreat`). Partially mapped.
 
-## Open questions (next research passes)
+## Research pass findings (2026-07-04)
 
-- `StartPillaging` internals: exactly what a Hunt squad does at
-  your base (PillageObjectId targeting, when they attack
-  defenses vs steal vs kill, retreat conditions).
+### What a raid actually does (StartPillaging, ANSWERED)
+
+`StartPillaging` (Community.cs:5638) ->
+`FindRandomEnemyBuildingToAttack` (generic over
+`squad.EnemyCommunityId`: works against ANY community, so
+AI-vs-AI raids need no pathing work):
+
+- Squads can demolish a building ONLY with carried gear: RPG /
+  pipe bomb vs non-explosion-proof buildings, molotov vs
+  flammable ones. No demolition gear = they target PEOPLE
+  instead (members inside or within ~15 tiles of a building).
+  Psycho communities always hunt the nearest person.
+- The leader gets an `Attack` command per target; members follow;
+  once at the base the squad re-scans an 8-tile radius per pass
+  and keeps attacking pillageable enemy objects
+  (Community.cs:3956-3998).
+- Raids are REAL-GEAR-DRIVEN (no conjured bombs), which fits the
+  no-cheat pillar; food/water stock-up before travel is also
+  computed from real carried nutrition vs journey length
+  (Community.cs:5694).
+- Quirk: while a squad's BEHAVIOR is Occupy, the pillage scan
+  hard-codes the player community as the enemy
+  (Community.cs:3980).
+
+### Occupation (ANSWERED): full base transfer EXISTS, for dead bases only
+
+- `Community.OccupyBase(target)` (Community.cs:4820) is a
+  complete property-transfer routine: crop patches and plants,
+  every base object (`SetCommunity`), animals, other squads'
+  Occupy references repointed, the base rect adopted; small
+  cheat inside: missing seeds are conjured
+  (`SpawnEquipmentIfSpaceIsAvailable`).
+- Gate: `CanBeOccupiedBy` (Community.cs:4772) requires an AI
+  settlement with NO active members and a real base rect. So
+  today occupation = RECLAMATION of dead/abandoned bases, never
+  conquest of a living one.
+- Who occupies today: roaming groups (RovingRefugee /
+  HunterLooter templates with `CanOccupyEmptyBases`,
+  Template.cs:1172) pick an occupiable base while traveling
+  (`GoToNextTradeDestination(canOccupyBases: true)`,
+  Community.cs:5792) and convert to an Occupy squad; story
+  events can order it directly (`StoryEventType.OccupyBase`,
+  StoryEvent.cs:3720).
+- There is already a settlement LIFECYCLE: camp dies -> roaming
+  group claims the base. Conquest is "lower the CanBeOccupiedBy
+  bar for wartime victors + reuse OccupyBase", not new
+  machinery.
+
+### Ambient inflow (ANSWERED): script templates feed the map
+
+- Travellers (RovingRefugee, RovingTrader, HunterLooter, quest
+  groups) are spawned by TEMPLATES in the story-script system
+  (`Template : BaseScriptObject`), i.e. the Sandbox story's
+  DATA, editable in the in-game Script editor; densities
+  (RefugeeDensity etc.) are difficulty knobs consumed at
+  worldgen/UI.
+- Spawned travellers arrive with GENERATED gear scaled by
+  LootDensity (Template.cs:1012). Under the no-cheat boundary
+  (the world may feed the map at its edge; towns may not conjure
+  in place) this is the acceptable inflow, and it is the natural
+  recruitment pool to replace the in-place repopulator.
+
+## Open questions (remaining)
+
 - The surrender/ceasefire negotiation flow (speech nodes,
   extortion demands, what payment does, `OnCeaseFire` effects).
-- `Occupy` behavior: takeover of bases/areas (ties to
-  CaptureGoal + area ownership).
 - ANSWERED (2026-07-04): organized invasions are PLAYER-CENTRIC.
   Every `SetInvasionTarget` site with a target: the revenge
   trigger (Community.cs:1430) fires only when the killer is the
