@@ -280,6 +280,73 @@ How the existing pillars serve selection:
 - Factions destroyed + "eventually one faction" = the
   EQUILIBRIUM selection drives toward (and can be re-disrupted).
 
+### A settlement is a COLLECTIVE, not an entity (operator, 2026-07-05)
+
+The deepest reframe: a settlement is not one actor with one
+genome. It is a COLLECTION OF COOPERATING SURVIVORS, each a
+Darwinian individual, and what the settlement DOES emerges from
+them voting. This is more lifelike and more truly Darwinian:
+selection acts on INDIVIDUALS; the faction's "personality" is an
+emergent aggregate that shifts as its people live, die, learn, and
+change.
+
+Model:
+
+- INDIVIDUAL GENOME: every survivor carries their own trait
+  genome (aggression / expansionism / defensiveness / guile / ...)
+  that VARIES at birth, LEARNS from what that person lived through,
+  and dies with them. The faction-level genome shipped so far is a
+  v1 APPROXIMATION of this; the target is per-survivor.
+- ROLES + RELATIONSHIPS already exist in the game and are the raw
+  social structure: `Rank` (Leader / Captive / None), `Role`
+  (Farmer, Guard, Builder, Trader, Enforcer, Cook, Medic, ...),
+  and `Relationship` (parent/child/sibling/married/in-love, i.e.
+  families and friends). Build the collective on these, do not
+  invent parallel structures.
+- COLLECTIVE DECISION BY VOTE: when the settlement must choose
+  (raid vs endure, expand vs turtle, ally vs go it alone, flee vs
+  stand), its VOTING MEMBERS each "vote" their own genome +
+  situation, and the aggregate is the settlement's choice. So the
+  same hunger produces a raid in a camp of bold survivors and
+  endurance in a camp of cautious ones, and it can shift as the
+  population changes. Even more emergent variation: the survivors
+  collectively figure out what keeps them alive.
+
+THE FRANCHISE RULE (the killer differentiator):
+
+- NORMAL settlements: EVERYONE votes. The collective personality
+  is FLUID: absorb survivors and the newcomers get a voice, so the
+  camp's character drifts toward whoever joins. A Normal camp is
+  what its current people are.
+- LOOTER settlements: ONLY THE CORE LOOTERS vote. Press-ganged /
+  absorbed members (the conquered) are voiceless, a natural fit
+  for `Rank.Captive` or a "conscript, not core" flag. So Looter
+  identity is STABLE under conquest: a Looter faction can swell
+  with absorbed pacifists and stay ruthless, because the original
+  predators still decide. It is what its CONQUERORS are, not its
+  conquered.
+
+Why this is powerful:
+
+- Two axes of personality now: the genome MIX of a camp's people,
+  AND who is allowed to vote. A Normal and a Looter camp with
+  identical populations behave differently because of the
+  franchise alone.
+- Conquest gains new meaning: a Normal victor is CHANGED by whom
+  it absorbs (diluted or radicalized); a Looter victor is only
+  FED by it (bigger, unchanged in will). Selection and heredity
+  now play out at the level of who holds the vote.
+- Learning is per-person: a survivor who survived a disastrous
+  raid carries that caution into every future vote, and spreads it
+  only if they live and (in a Normal camp) get to vote.
+
+Implementation path (later phases, big): promote the genome from
+faction-level to per-survivor (keyed by character), tally votes
+among the franchise for each settlement decision, and gate the
+franchise by type + rank. The current faction-genome + desperation
+engine is the scaffolding; the collective/vote model is the deep
+version of the same idea.
+
 ### Learning: personality shaped by experience (operator, 2026-07-05)
 
 Evolution here runs on TWO timescales, and both matter:
