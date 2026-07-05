@@ -36,14 +36,11 @@ const TRAIT_MAX: f64 = 0.95;
 pub enum Trait {
     /// Raid / attack appetite.
     Aggression,
-    // The two below are SEEDED + shown + propagate on conquest,
-    // but their learning loops wait for the behaviors they drive
-    // (annexing, fortify/flee) to be survival-wired.
-    /// Grow / annex appetite.
-    #[allow(dead_code)]
+    /// Grow / annex / prey appetite. Drives the ambition war
+    /// (with aggression) and learns from its outcomes.
     Expansionism,
-    /// Fortify / turtle / flee appetite.
-    #[allow(dead_code)]
+    /// Fortify / turtle / careful-dealings appetite. Drives the
+    /// trade act (trade.rs) and learns from its outcomes.
     Defensiveness,
     /// Steal / extort / manipulate appetite. Drives the theft act
     /// (steal.rs) and learns from its outcomes.

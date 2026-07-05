@@ -59,11 +59,31 @@ const RAID_AGGRESSION_FLOOR: f64 = 0.4;
 /// and fight).
 const OUTCOME_DELAY_SECS: f32 = 200.0;
 
+/// The ambition war: a COMFORTABLE camp preys on a much weaker
+/// neighbor because of who it is, not because it is starving. A
+/// voter favors it if their aggression/expansionism blend clears
+/// this (a higher bar than hunger's 0.4: unprovoked war takes
+/// real appetite).
+const AMBITION_FLOOR: f64 = 0.55;
+
+/// Prey must be at most half the predator's size.
+const AMBITION_PREY_RATIO: i64 = 2;
+
+/// A predator needs enough people to raid and still hold home.
+const AMBITION_MIN_MEMBERS: i64 = 8;
+
+/// Real seconds between ambition wars map-wide: consolidation
+/// stays dramatic and paced, not a stampede.
+const AMBITION_COOLDOWN_SECS: f32 = 600.0;
+
 /// A pending learning experiment: a raid whose outcome will
-/// reinforce or weaken the aggression of the VOTERS who chose it.
+/// reinforce or weaken, in every VOTER who chose it, the traits
+/// that drove the choice (aggression for hunger raids; aggression
+/// + expansionism for ambition wars).
 struct Experiment {
     faction_id: i64,
     voter_ids: Vec<i64>,
+    traits: Vec<Trait>,
     before_members: i64,
     before_nutrition: f64,
     eval_at: f32,
@@ -79,17 +99,23 @@ struct Vote {
     voter_ids: Vec<i64>,
 }
 
-/// Tally a settlement's raid vote. Franchise = who may vote:
+/// Tally a settlement's franchise vote. Franchise = who may vote:
 /// NORMAL camps enfranchise everyone (fluid identity); LOOTER
 /// camps enfranchise only the core (non-conscript) survivors, so
 /// the press-ganged are voiceless (stable identity under
-/// conquest). Each voter votes to raid if their OWN aggression
-/// clears the floor.
-fn tally_vote(com: &MonoObject, ctype: &str) -> Result<Vote, String> {
+/// conquest). Each voter votes yes if `score(their genome)`
+/// clears `floor`: the hunger raid scores raw aggression, the
+/// ambition war the aggression/expansionism blend.
+fn tally_vote(
+    com: &MonoObject,
+    ctype: &str,
+    floor: f64,
+    score: impl Fn(&genome::Genome) -> f64,
+) -> Result<Vote, String> {
     let looter = ctype == "Looter";
     let mut franchise = 0i64;
     let mut for_raid = 0i64;
-    let mut sum_aggr = 0.0f64;
+    let mut sum_score = 0.0f64;
     let mut voter_ids = Vec::new();
 
     if let Some(m_h) = handle_of(&com.read_field("Members")?) {
@@ -117,16 +143,16 @@ fn tally_vote(com: &MonoObject, ctype: &str) -> Result<Vote, String> {
                 continue;
             }
             let g = genome::individual(char_id, ctype);
-            let a = g.get(Trait::Aggression);
+            let s = score(&g);
             franchise += 1;
-            sum_aggr += a;
-            if a >= RAID_AGGRESSION_FLOOR {
+            sum_score += s;
+            if s >= floor {
                 for_raid += 1;
             }
             voter_ids.push(char_id);
         }
     }
-    let effective = if franchise > 0 { sum_aggr / franchise as f64 } else { 0.0 };
+    let effective = if franchise > 0 { sum_score / franchise as f64 } else { 0.0 };
     Ok(Vote {
         franchise,
         for_raid,
@@ -284,14 +310,21 @@ struct Camp {
     ctype: String,
     nutrition: f64,
     members: i64,
+    threats: i64,
     rung: Rung,
     centre: Option<(i64, i64)>,
     already_at_war: bool,
-    /// The collective's raid decision (franchise vote).
+    /// The collective's hunger-raid decision (aggression vote).
     voted_to_raid: bool,
     for_raid: i64,
     effective_aggression: f64,
     voter_ids: Vec<i64>,
+    /// The collective's ambition-war decision (aggression +
+    /// expansionism blend).
+    voted_ambition: bool,
+    ambition_for: i64,
+    effective_ambition: f64,
+    ambition_voter_ids: Vec<i64>,
 }
 
 fn desperation_scan(now: f32) -> Result<(), String> {
@@ -319,9 +352,15 @@ fn desperation_scan(now: f32) -> Result<(), String> {
         }
         let id = com.read_field("Id")?.as_i64().unwrap_or(-1);
         // The COLLECTIVE decides, not a single faction trait: the
-        // enfranchised survivors vote their own genomes.
-        let vote = tally_vote(&com, &t)?;
+        // enfranchised survivors vote their own genomes. Two
+        // ballots per scan: the hunger raid (raw aggression) and
+        // the ambition war (aggression/expansionism blend).
+        let vote = tally_vote(&com, &t, RAID_AGGRESSION_FLOOR, |g| g.get(Trait::Aggression))?;
         let voted_to_raid = vote.franchise > 0 && vote.for_raid * 2 > vote.franchise;
+        let ambition = tally_vote(&com, &t, AMBITION_FLOOR, |g| {
+            (g.get(Trait::Aggression) + g.get(Trait::Expansionism)) / 2.0
+        })?;
+        let voted_ambition = ambition.franchise > 0 && ambition.for_raid * 2 > ambition.franchise;
         let already_at_war = handle_of(&com.read_field("InvasionTarget")?).is_some();
         camps.push(Camp {
             handle: com.handle().0,
@@ -330,6 +369,7 @@ fn desperation_scan(now: f32) -> Result<(), String> {
             ctype: t,
             nutrition: sv.nutrition,
             members: sv.members,
+            threats: sv.threats,
             rung: sv.rung,
             centre: base_centre(&com),
             already_at_war,
@@ -337,16 +377,31 @@ fn desperation_scan(now: f32) -> Result<(), String> {
             for_raid: vote.for_raid,
             effective_aggression: vote.effective_aggression,
             voter_ids: vote.voter_ids,
+            voted_ambition,
+            ambition_for: ambition.for_raid,
+            effective_ambition: ambition.effective_aggression,
+            ambition_voter_ids: ambition.voter_ids,
         });
         std::mem::forget(com); // handles reused across the two passes below
         Ok(true)
     })?;
 
-    // Choose the raider: among desperate, hungry, not-already-
-    // warring camps whose COLLECTIVE VOTED to raid, pick the one
-    // with the most bloodthirsty franchise. A camp of cautious
-    // survivors endures instead. One per scan keeps escalation
-    // organic.
+    // ONE war ignition per scan at most; hunger outranks ambition
+    // (a starving camp's need beats a fed camp's appetite).
+    if !hunger_raid(&camps, now)? {
+        ambition_war(&camps, now)?;
+    }
+
+    release_camps(&camps);
+    Ok(())
+}
+
+/// The desperate hunger raid: among desperate, hungry, not-
+/// already-warring camps whose COLLECTIVE VOTED to raid, the most
+/// bloodthirsty franchise raids the nearest well-fed neighbor. A
+/// camp of cautious survivors endures instead. Returns true if a
+/// raid ignited.
+fn hunger_raid(camps: &[Camp], now: f32) -> Result<bool, String> {
     let raider = camps
         .iter()
         .filter(|c| {
@@ -363,15 +418,14 @@ fn desperation_scan(now: f32) -> Result<(), String> {
                 .unwrap()
         });
     let Some(raider) = raider else {
-        release_camps(&camps);
-        return Ok(());
+        return Ok(false);
     };
     let (rx, ry) = raider.centre.unwrap();
 
     // Best target: well-fed, not the raider, nearest by base
     // centre.
     let mut best: Option<(&Camp, i64)> = None;
-    for c in &camps {
+    for c in camps {
         if c.handle == raider.handle || c.nutrition < TARGET_MIN_NUTRITION {
             continue;
         }
@@ -382,35 +436,10 @@ fn desperation_scan(now: f32) -> Result<(), String> {
         }
     }
     let Some((target, _)) = best else {
-        release_camps(&camps);
-        return Ok(());
+        return Ok(false);
     };
 
-    // Drive it through the game's own machinery (same as war.rs's
-    // war_ignite): hostile + invasion.
-    let raider_obj = own(raider.handle);
-    let target_h = target.handle;
-    let cm = crate::common::community_manager()?;
-    cm.invoke(
-        "SetRelationship",
-        &json!([{ "handle": raider.handle }, { "handle": target_h }, "Hostile"]),
-    )?;
-    raider_obj.invoke(
-        "SetInvasionTarget",
-        &json!([{ "handle": target_h }, 7.0, false]),
-    )?;
-    std::mem::forget(raider_obj);
-
-    // Record the experiment: judge this raid's outcome later and
-    // let it teach every survivor who VOTED for it.
-    EXPERIMENTS.lock().push(Experiment {
-        faction_id: raider.id,
-        voter_ids: raider.voter_ids.clone(),
-        before_members: raider.members,
-        before_nutrition: raider.nutrition,
-        eval_at: now + OUTCOME_DELAY_SECS,
-    });
-
+    ignite(raider, target, vec![Trait::Aggression], &raider.voter_ids, now)?;
     mono::log(
         LogLevel::Info,
         &format!(
@@ -424,8 +453,124 @@ fn desperation_scan(now: f32) -> Result<(), String> {
             raider.effective_aggression,
         ),
     );
+    Ok(true)
+}
 
-    release_camps(&camps);
+static AMBITION_LAST_BITS: AtomicU32 = AtomicU32::new(0);
+
+/// The ambition war: a comfortable, unthreatened camp whose
+/// franchise votes appetite (aggression + expansionism) preys on
+/// the nearest neighbor at most half its size. War because of WHO
+/// the faction is; with predation downstream, this is the
+/// consolidation engine. Paced by a map-wide cooldown.
+fn ambition_war(camps: &[Camp], now: f32) -> Result<bool, String> {
+    let last = f32::from_bits(AMBITION_LAST_BITS.load(Ordering::Relaxed));
+    if last != 0.0 && now - last < AMBITION_COOLDOWN_SECS {
+        return Ok(false);
+    }
+    let predator = camps
+        .iter()
+        .filter(|c| {
+            c.rung == Rung::Comfortable
+                && !c.already_at_war
+                && c.threats == 0
+                && c.members >= AMBITION_MIN_MEMBERS
+                && c.centre.is_some()
+                && c.voted_ambition
+        })
+        .max_by(|a, b| {
+            a.effective_ambition
+                .partial_cmp(&b.effective_ambition)
+                .unwrap()
+        });
+    let Some(predator) = predator else {
+        return Ok(false);
+    };
+    let (px, py) = predator.centre.unwrap();
+
+    // Prey: nearest camp at most half the predator's size that it
+    // is not already at war with.
+    let mut best: Option<(&Camp, i64)> = None;
+    for c in camps {
+        if c.handle == predator.handle
+            || c.members * AMBITION_PREY_RATIO > predator.members
+            || c.members == 0
+        {
+            continue;
+        }
+        let Some((cx, cy)) = c.centre else { continue };
+        let rel = crate::common::with(predator.handle, |p| {
+            p.invoke("GetRelationship", &json!([{ "handle": c.handle }]))
+        })
+        .unwrap_or(json!("?"));
+        if rel == json!("Hostile") || rel == json!("Allied") {
+            continue;
+        }
+        let d = (cx - px) * (cx - px) + (cy - py) * (cy - py);
+        if best.map(|(_, bd)| d < bd).unwrap_or(true) {
+            best = Some((c, d));
+        }
+    }
+    let Some((prey, _)) = best else {
+        return Ok(false);
+    };
+
+    ignite(
+        predator,
+        prey,
+        vec![Trait::Aggression, Trait::Expansionism],
+        &predator.ambition_voter_ids,
+        now,
+    )?;
+    AMBITION_LAST_BITS.store(now.to_bits(), Ordering::Relaxed);
+    mono::log(
+        LogLevel::Info,
+        &format!(
+            "survivalist-mod: survival -- {} ({}, comfortable, {} strong) VOTES to prey on {} ({} members): {} of {} voters hungry for more (effective ambition {:.2})",
+            predator.name,
+            predator.ctype,
+            predator.members,
+            prey.name,
+            prey.members,
+            predator.ambition_for,
+            predator.ambition_voter_ids.len(),
+            predator.effective_ambition,
+        ),
+    );
+    Ok(true)
+}
+
+/// Drive a war through the game's own machinery (same as war.rs's
+/// war_ignite): hostile + invasion, and record the learning
+/// experiment so the outcome teaches every voter the traits that
+/// chose it.
+fn ignite(
+    raider: &Camp,
+    target: &Camp,
+    traits: Vec<Trait>,
+    voter_ids: &[i64],
+    now: f32,
+) -> Result<(), String> {
+    let raider_obj = own(raider.handle);
+    let cm = crate::common::community_manager()?;
+    cm.invoke(
+        "SetRelationship",
+        &json!([{ "handle": raider.handle }, { "handle": target.handle }, "Hostile"]),
+    )?;
+    raider_obj.invoke(
+        "SetInvasionTarget",
+        &json!([{ "handle": target.handle }, 7.0, false]),
+    )?;
+    std::mem::forget(raider_obj);
+
+    EXPERIMENTS.lock().push(Experiment {
+        faction_id: raider.id,
+        voter_ids: voter_ids.to_vec(),
+        traits,
+        before_members: raider.members,
+        before_nutrition: raider.nutrition,
+        eval_at: now + OUTCOME_DELAY_SECS,
+    });
     Ok(())
 }
 
@@ -476,7 +621,9 @@ fn evaluate_experiments(now: f32) -> Result<(), String> {
             // The faction died since the raid: the ultimate
             // negative outcome. Its genome dies with it; nothing
             // to reinforce.
-            genome::reinforce(e.faction_id, Trait::Aggression, false, 2.0);
+            for &t in &e.traits {
+                genome::reinforce(e.faction_id, t, false, 2.0);
+            }
             continue;
         };
 
@@ -490,13 +637,16 @@ fn evaluate_experiments(now: f32) -> Result<(), String> {
         if up || down {
             // Every survivor who VOTED for this raid learns from
             // how it went: the individuals, not the faction,
-            // carry the lesson (and it dies or spreads with them).
-            for &voter in &e.voter_ids {
-                genome::reinforce_individual(voter, Trait::Aggression, up, magnitude);
+            // carry the lesson (and it dies or spreads with them),
+            // in every trait that drove the choice.
+            for &t in &e.traits {
+                for &voter in &e.voter_ids {
+                    genome::reinforce_individual(voter, t, up, magnitude);
+                }
+                // Keep the faction-level aggregate roughly in step
+                // for the status display.
+                genome::reinforce(e.faction_id, t, up, magnitude);
             }
-            // Keep the faction-level aggregate roughly in step for
-            // the status display.
-            genome::reinforce(e.faction_id, Trait::Aggression, up, magnitude);
             mono::log(
                 LogLevel::Info,
                 &format!(
@@ -546,7 +696,7 @@ fn survival_status(_args: &Json) -> Result<Json, String> {
             // raiding, and the effective (voted) aggression. In a
             // Looter camp the franchise excludes conscripts, so
             // silenced-vs-total shows the disenfranchised.
-            let vote = tally_vote(&com, &t)?;
+            let vote = tally_vote(&com, &t, RAID_AGGRESSION_FLOOR, |g| g.get(Trait::Aggression))?;
             let silenced = sv.members - vote.franchise;
             out.push(json!({
                 "name": display_name(&com),
