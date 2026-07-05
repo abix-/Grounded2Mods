@@ -27,7 +27,7 @@ game.
 | Fight for control / PREDATION | 7/10 | LIVE 2026-07-05: predation OBSERVED. Jenna's Council beat The Dirty Punks down and CONSUMED them: 5 survivors absorbed (members 20 to 25), the loser extinct, its genome dropped from the pool; the absorbed appear as silenced conscripts in the vote (franchise rule under conquest verified: effective aggression unchanged at 0.63 while the camp swelled). The whole war traced back to a caught burglary: acts compose into consolidation. The loot pass ran but found 0 stored goods (honest zero, their stores were bare). Remaining: a stockpile-stripping observed with actual goods carried; ground-drop loot from the war dead. | Wars are ABOUT something: bases change hands on victory, territory feeds growth, and the wars CONVERGE: left to run, the map consolidates until ONE faction controls it. |
 | No cheating | 3/10 | LIVE 2026-07-04: cheat 1 of 3, the repopulator, is DISABLED in the running game (UpdateRepopulation prefix skip; install log confirmed; it had just conjured back a war casualty minutes earlier, and that healing is now impossible). Remaining cheats: raider spawn-point respawns; spawn-time arrival gear is ACCEPTED per the boundary. Trader-party + chicken refills also stopped as a side effect, pending the two operator boundary calls. | Every faction person walked onto the map or was recruited from it; every weapon/meal came from loot, trade, crafting, or harvest; destroying a faction's people/stores actually weakens it. |
 | Factions can be destroyed | 8/10 | LIVE 2026-07-05: EXTINCTION OBSERVED. The Dirty Punks are GONE, consumed by Jenna's Council after losing the war their catching of a thief started: survivors absorbed, faction dead, and with the conjurer disabled it stays dead. The map went from 22 settlements to 21 by Darwinian consolidation, no player involved. Remaining: the husk visible as a claimable power vacuum (vanilla roamer reclamation exists; watch one happen). | A faction that loses its people or its base is GONE (or absorbed): no resurrection, its territory claimable, visible on the map as a power vacuum. |
-| Faction personality / EVOLUTION | 7/10 | LIVE 2026-07-05: personality is now VISIBLE IN BEHAVIOR. Every organic theft came from a Looter camp and the trade act belongs to the careful (Normal-leaning) franchise: the types act differently with zero hardcoded type checks, purely from seeded genomes + votes. Trait learning WATCHED shifting live: guile took -1.5/-2.0 lessons at Jenna's (caught thief, dead thief) and +1.0 at The Golden Dudes (clean haul); defensiveness has its loop armed via trade. Franchise-under-conquest verified (5 absorbed conscripts silenced, victor's will unchanged). Pending live: aggression shift (famine-gated raids), expansionism's loop, per-survivor heredity blending on absorption. | Normal and Looter settlements are recognizably different actors: each type's war declarations, target picks, growth priorities, and dealings fit its identity, visible to a spectator without reading code. |
+| Faction personality / EVOLUTION | 7/10 | LIVE 2026-07-05: personality is now VISIBLE IN BEHAVIOR. Every organic theft came from a Looter camp and the trade act belongs to the careful (Normal-leaning) franchise: the types act differently with zero hardcoded type checks, purely from seeded genomes + votes. Trait learning WATCHED shifting live: guile took -1.5/-2.0 lessons at Jenna's (caught thief, dead thief) and +1.0 at The Golden Dudes (clean haul); defensiveness has its loop armed via trade. Franchise-under-conquest verified (5 absorbed conscripts silenced, victor's will unchanged). Expansionism's loop FIRED live: the Bears' ambition war was judged "PAID OFF (dpop +2)" and 50 voters grew bolder in aggression AND expansionism. Pending live: aggression shift from famine raids; per-survivor heredity blending on absorption; role-weighted votes (operator's noted expansion). | Normal and Looter settlements are recognizably different actors: each type's war declarations, target picks, growth priorities, and dealings fit its identity, visible to a spectator without reading code. |
 
 Update discipline: when work ships, update the row's score AND
 its "why" cell in the same commit as the live verification; never
@@ -441,6 +441,17 @@ read in the decompile, none guessed):
 | Murder | high aggression, guile | A real stealth-assassination attack path with secrecy handling exists (assassinate + stealthy melee, Character.cs:10798; witness/sound attribution decides if it is pinned). | A lone operative kills a rival camp's member quietly: weaken before a war, or revenge without one. Risky: attribution through the game's own witness systems means it can ignite. |
 | Raid / war | aggression, expansionism | SHIPPED: the hunger raid (famine-gated) + the two-way revenge loop. | Ambition ignition: comfortable but aggressive + expansionist camps vote to prey on a weaker, richer neighbor. Wars that start because of WHO a faction is, not only how hungry it is. |
 
+SCAVENGE: BLOCKED on a shim feature (honest status 2026-07-05).
+Dead camps turn out to VANISH from the community list when
+consumed (no husk to loot), and the world's real scavenging
+grounds, town buildings full of lootable furniture, cannot be
+enumerated over the bridge yet: the game's prop queries
+(`GetObjectsInRect`) fill a caller-provided List and the finder
+logic lives inside Goal classes, both needing object construction
+the shim does not support. The upstream fix is a shim primitive
+(construct game objects / pass fresh List args), which requires a
+game RESTART to ship. Deferred rather than shipping a hollow act.
+
 Decision shape (extends what is already live): on the survival
 scan, enumerate the acts the situation makes eligible (surplus to
 trade, a husk to scavenge, a rich weak neighbor to steal from /
@@ -675,16 +686,21 @@ camp had ~2 items per storage building). Ground-drop loot from the
 war dead is a later refinement (needs the rect-enumeration
 infra).
 
-OBSERVED LIVE (2026-07-05): "PREDATION. Jenna's Council
+OBSERVED LIVE (2026-07-05), TWICE: "PREDATION. Jenna's Council
 (aggression 0.55) consumed The Dirty Punks: absorbed 5
 survivor(s) ... The Dirty Punks is EXTINCT." The war had grown
 out of a caught burglary (steal act), escalated through two-way
 revenge, and ended in consumption: the full selection event, no
 player, no ops. The absorbed five show as silenced conscripts in
 Jenna's franchise (will unchanged at 0.63 effective aggression).
-The loot pass ran but their stores were bare (0 goods, honest
-zero); a stockpile-stripping with actual goods is still to be
-watched.
+Hours later the map's apex predator did it again: The
+Well-Regulated Bears consumed Smiley Crow Militia (2 absorbed,
+extinct), a camp that had SURRENDERED its first war and then
+picked a revenge fight with the 50-strong Bears: pride selected
+against, exactly as designed. The map has consolidated 22 to 20
+settlements in one day. Both loot passes found bare stores
+(honest zeroes); a stockpile-stripping with actual goods is
+still to be watched.
 
 ## Evolution engine status (2026-07-05)
 
