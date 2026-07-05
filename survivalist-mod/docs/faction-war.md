@@ -23,7 +23,7 @@ game.
 | Pillar | Score | Why this score today | What 10/10 looks like |
 |---|---|---|---|
 | AI-vs-AI war | 5/10 | LIVE 2026-07-04: ignited war produced a real assault (attacker lost a member at the defender base, Funeral squads burying the dead) AND the generalized revenge trigger fired live ("Almighty Rock Family sets a revenge invasion on The Golden Dudes (member killed)"), re-arming the war without player involvement. NOT yet verified: organic ignition without war_ignite, counter-invasions in BOTH directions, how an AI war ends. | AI factions declare, wage, and settle wars with each other without player involvement: raids launched both ways, ceasefires/surrenders happen, allies drag each other in. Verifiable by spectating two camps. |
-| Town growth | 3/10 | LIVE 2026-07-04: the first organic recruitment fired ("Crazy Hill Team takes in 1 refugee(s) who arrived at their gate") and the settlement now EXCEEDS its worldgen size (7 members, initial 6), an event vanilla could never produce, with the conjurer off. Remaining: the structures half (expansion construction) not started; population attrition realism over days unobserved; growth not yet tied to war posture. | REAL growth (operator, 2026-07-04): the settlement itself grows, MORE STRUCTURES and MORE PEOPLE, fed by a non-cheating economy: structures built by real hands from real hauled materials, people recruited from real arrivals, growth rate bound to their food/resource situation and war posture. |
+| Town growth | 4/10 | LIVE 2026-07-04, both halves moving: first organic recruitment fired and Crazy Hill Team EXCEEDS its worldgen size (7 members, initial 6, conjurer off); the structures primitive is verified through site creation (dev_place order -> their Builder consumed it -> a real construction site stands, building_now=1). Remaining: watching a completion (beds rise), the annex planner, attrition realism over days, growth tied to war posture. | REAL growth (operator, 2026-07-04): the settlement itself grows, MORE STRUCTURES and MORE PEOPLE, fed by a non-cheating economy: structures built by real hands from real hauled materials, people recruited from real arrivals, growth rate bound to their food/resource situation and war posture. |
 | Fight for control | 2/10 | Research-corrected baseline: `OccupyBase` fully transfers a base (buildings, crops, animals) but only DEAD settlements can be occupied (reclamation by roamers or scripts), never conquest of a living one. | Wars are ABOUT something: bases change hands on victory, territory feeds growth, and the wars CONVERGE: left to run, the map consolidates until ONE faction controls it. |
 | No cheating | 3/10 | LIVE 2026-07-04: cheat 1 of 3, the repopulator, is DISABLED in the running game (UpdateRepopulation prefix skip; install log confirmed; it had just conjured back a war casualty minutes earlier, and that healing is now impossible). Remaining cheats: raider spawn-point respawns; spawn-time arrival gear is ACCEPTED per the boundary. Trader-party + chicken refills also stopped as a side effect, pending the two operator boundary calls. | Every faction person walked onto the map or was recruited from it; every weapon/meal came from loot, trade, crafting, or harvest; destroying a faction's people/stores actually weakens it. |
 | Factions can be destroyed | 3/10 | Extermination already ends a community and clears invasions against it, but the repopulator resurrects nearly-dead camps and capture-as-destruction does not exist. | A faction that loses its people or its base is GONE (or absorbed): no resurrection, its territory claimable, visible on the map as a power vacuum. |
@@ -484,13 +484,23 @@ changed):
     research says, a Builder member picks it up and builds it
     from hauled materials with NO further code.
 
-VERIFY NEXT (after restart, before the annex geometry planner is
-written): dev_status shows which prototypes are buildable; then
-`dev_place` a Shack just outside a fed settlement and WATCH a
-member build it and consume materials (dev_status rebuild_queue
-goes 0 -> 1 -> 0, a new hut stands). Only then is the append ->
-real-build primitive proven and the annex planner (fence line +
-gate + infill + BaseRect adoption) worth writing.
+VERIFIED LIVE (2026-07-04, same session):
+
+- dev_status: ALL SEVEN prototypes (WoodFence, WireFence,
+  ConcreteWall, WoodGate, WireGate, Shack, Tent) exist AND have
+  recipes in the operator's story. Base rects/centres read
+  correctly through the new struct marshalling.
+- dev_place Shack for Crazy Hill Team: queued (rebuild_queue 1)
+  -> record CONSUMED by their Builder (queue back to 0; the only
+  consumption path is site creation + BuildGoal assignment) ->
+  `building_now` = 1: a REAL construction site stands in their
+  camp, being built by their own member.
+
+PENDING: completion (beds 7 -> 8 when the shack finishes, or an
+honest stall if their wood runs short). Once observed, the
+append -> real-build primitive is fully proven and the annex
+planner (fence line + gate + infill + BaseRect adoption +
+per-type wall doctrine) is the next build.
 
 ## Growth phase status (people half, 2026-07-04)
 
