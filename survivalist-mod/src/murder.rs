@@ -369,6 +369,10 @@ fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
             genome::reinforce_individual(v, Trait::Aggression, false, 1.0);
         }
         genome::reinforce(m.camp_id, Trait::Guile, false, 2.0);
+        crate::chronicle::post(&format!(
+            "an assassin from {} was cut down in {}",
+            m.camp_name, m.victim_camp_name
+        ));
         mono::log(
             LogLevel::Info,
             &format!(
@@ -457,6 +461,10 @@ fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
                     genome::reinforce_individual(v, Trait::Guile, true, 1.5);
                 }
                 genome::reinforce(m.camp_id, Trait::Guile, true, 1.5);
+                crate::chronicle::post(&format!(
+                    "{}, leader of {}, has been assassinated",
+                    m.victim_name, m.victim_camp_name
+                ));
                 mono::log(
                     LogLevel::Info,
                     &format!(

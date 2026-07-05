@@ -515,8 +515,12 @@ fn sue_for_peace(camps: &[Camp]) -> Result<bool, String> {
         let cm = crate::common::community_manager()?;
         cm.invoke(
             "SetRelationship",
-            &json!([{ "handle": loser.handle }, { "handle": winner.handle }, "Ceasefire"]),
+            &json!([{ "handle": loser.handle }, { "handle": winner.handle }, "Ceasefire", false]),
         )?;
+        crate::chronicle::post(&format!(
+            "{} has surrendered to {}",
+            loser.name, winner.name
+        ));
         mono::log(
             LogLevel::Info,
             &format!(
@@ -578,6 +582,10 @@ fn hunger_raid(camps: &[Camp], now: f32) -> Result<bool, String> {
     };
 
     ignite(raider, target, vec![Trait::Aggression], &raider.voter_ids, now)?;
+    crate::chronicle::post(&format!(
+        "{}, starving, has declared war on {}",
+        raider.name, target.name
+    ));
     mono::log(
         LogLevel::Info,
         &format!(
@@ -661,6 +669,10 @@ fn ambition_war(camps: &[Camp], now: f32) -> Result<bool, String> {
         now,
     )?;
     AMBITION_LAST_BITS.store(now.to_bits(), Ordering::Relaxed);
+    crate::chronicle::post(&format!(
+        "{} has turned its eyes on {}",
+        predator.name, prey.name
+    ));
     mono::log(
         LogLevel::Info,
         &format!(
@@ -691,9 +703,12 @@ fn ignite(
 ) -> Result<(), String> {
     let raider_obj = own(raider.handle);
     let cm = crate::common::community_manager()?;
+    // showWarNotifications=false: the vanilla banner reads "You
+    // are at war with X" even for a war between two AI camps; the
+    // chronicle posts the true story instead.
     cm.invoke(
         "SetRelationship",
-        &json!([{ "handle": raider.handle }, { "handle": target.handle }, "Hostile"]),
+        &json!([{ "handle": raider.handle }, { "handle": target.handle }, "Hostile", false]),
     )?;
     raider_obj.invoke(
         "SetInvasionTarget",

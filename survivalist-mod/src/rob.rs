@@ -417,6 +417,12 @@ fn judge_missions(now: f32) {
         .unwrap_or(0);
         let got_it = held_now > m.held_before;
 
+        if lead_alive && got_it {
+            crate::chronicle::post(&format!(
+                "{}'s bandits robbed a {} on the road",
+                m.robber_name, m.victim_name
+            ));
+        }
         let (up, magnitude, verdict) = if !lead_alive {
             (false, 2.0, "the lead DIED for it; the camp sobers")
         } else if got_it {

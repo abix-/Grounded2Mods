@@ -486,6 +486,10 @@ fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
                     genome::reinforce_individual(v, Trait::Guile, false, 1.5);
                 }
                 genome::reinforce(m.faction_id, Trait::Guile, false, 1.5);
+                crate::chronicle::post(&format!(
+                    "a thief from {} was caught in {}'s stores",
+                    m.faction_name, m.target_name
+                ));
                 mono::log(
                     LogLevel::Info,
                     &format!(

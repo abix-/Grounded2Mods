@@ -19,6 +19,7 @@
 //!    every frame; `Main.Unload()` (story switch) shuts the
 //!    generation down and a later `Load()` re-arms it.
 
+mod chronicle;
 mod common;
 mod development;
 mod genome;

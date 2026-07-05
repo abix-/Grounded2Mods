@@ -167,6 +167,7 @@ fn consume(winner: MonoObject, loser: MonoObject) -> Result<(), String> {
         winner.read_field("Id")?.as_i64().unwrap_or(-1),
         &ctype(&winner),
     );
+    crate::chronicle::post(&format!("{winner_name} has wiped {loser_name} from the map"));
     mono::log(
         LogLevel::Info,
         &format!(
