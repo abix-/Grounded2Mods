@@ -207,13 +207,73 @@ pub fn tick(now: f32) {
 struct OpenDoor {
     com: MonoObject,
     name: String,
-    pos: (f32, f32),
+    /// The settlement's base anchor plus, for looters, every
+    /// roaming squad leader's position (press-gang reach).
+    anchors: Vec<(f32, f32)>,
     headroom: i64,
+    /// Looter press-gang vs Normal welcome (log wording +
+    /// doctrine gates differ).
+    press_gang: bool,
+}
+
+fn base_anchor(com: &MonoObject) -> Option<(f32, f32)> {
+    let b_h = com.read_field("Buildings").ok().as_ref().and_then(handle_of)?;
+    let blist = own(b_h);
+    if blist
+        .invoke("get_Count", &json!([]))
+        .ok()?
+        .as_i64()
+        .unwrap_or(0)
+        == 0
+    {
+        return None;
+    }
+    let anchor_h = handle_of(&blist.invoke("get_Item", &json!([0])).ok()?)?;
+    pos_of(&own(anchor_h))
+}
+
+/// Positions of every squad leader the community has in the
+/// field. This is the looter press-gang reach: they grow through
+/// activity, not hospitality.
+fn squad_anchors(com: &MonoObject) -> Vec<(f32, f32)> {
+    let mut out = Vec::new();
+    let Some(sq_h) = com.read_field("Squads").ok().as_ref().and_then(handle_of) else {
+        return out;
+    };
+    let sq_list = own(sq_h);
+    let n = sq_list
+        .invoke("get_Count", &json!([]))
+        .ok()
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    for i in 0..n {
+        let Some(s_h) = sq_list
+            .invoke("get_Item", &json!([i]))
+            .ok()
+            .as_ref()
+            .and_then(handle_of)
+        else {
+            continue;
+        };
+        let squad = own(s_h);
+        if let Ok(leader_j) = squad.invoke("GetLeader", &json!([])) {
+            if let Some(l_h) = handle_of(&leader_j) {
+                if let Some(p) = pos_of(&own(l_h)) {
+                    out.push(p);
+                }
+            }
+        }
+    }
+    out
 }
 
 fn recruit_scan() -> Result<(), String> {
-    // Pass 1: settlements with an open door (doctrine v1: Normal
-    // only, bed headroom, fed) and refugee groups in transit.
+    // Pass 1: settlements that can take people in, and refugee
+    // groups in transit. Doctrine (operator-locked): Normal camps
+    // WELCOME at the gate (beds + fed); Looter camps PRESS-GANG
+    // near their base or any roaming squad (beds required, food
+    // not checked: they take people hungry and raid for the
+    // rest).
     let mut doors: Vec<OpenDoor> = Vec::new();
     let mut refugees: Vec<MonoObject> = Vec::new();
     for_each_community(|com| {
@@ -229,9 +289,11 @@ fn recruit_scan() -> Result<(), String> {
             }
             return Ok(true);
         }
-        if t != "Normal" {
-            return Ok(true); // Looter doctrine: nobody welcome (v1)
-        }
+        let press_gang = match t.as_str() {
+            "Normal" => false,
+            "Looter" => true,
+            _ => return Ok(true),
+        };
         if com.invoke("IsAISettlement", &json!([]))? != json!(true) {
             return Ok(true);
         }
@@ -247,38 +309,32 @@ fn recruit_scan() -> Result<(), String> {
         if headroom <= 0 {
             return Ok(true);
         }
-        let nutrition = com
-            .invoke("CalcCommunityNutritionLevel", &json!([0.0]))?
-            .as_f64()
-            .unwrap_or(0.0);
-        if nutrition < RECRUIT_MIN_NUTRITION {
+        if !press_gang {
+            let nutrition = com
+                .invoke("CalcCommunityNutritionLevel", &json!([0.0]))?
+                .as_f64()
+                .unwrap_or(0.0);
+            if nutrition < RECRUIT_MIN_NUTRITION {
+                return Ok(true);
+            }
+        }
+        let mut anchors = Vec::new();
+        if let Some(p) = base_anchor(&com) {
+            anchors.push(p);
+        }
+        if press_gang {
+            anchors.extend(squad_anchors(&com));
+        }
+        if anchors.is_empty() {
             return Ok(true);
         }
-        // Anchor position: the first building.
-        let Some(b_h) = com
-            .read_field("Buildings")
-            .ok()
-            .as_ref()
-            .and_then(handle_of)
-        else {
-            return Ok(true);
-        };
-        let blist = own(b_h);
-        if blist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0) == 0 {
-            return Ok(true);
-        }
-        let Some(anchor_h) = handle_of(&blist.invoke("get_Item", &json!([0]))?) else {
-            return Ok(true);
-        };
-        let Some(pos) = pos_of(&own(anchor_h)) else {
-            return Ok(true);
-        };
         let name = display_name(&com);
         doors.push(OpenDoor {
             com,
             name,
-            pos,
+            anchors,
             headroom,
+            press_gang,
         });
         Ok(true)
     })?;
@@ -286,7 +342,7 @@ fn recruit_scan() -> Result<(), String> {
         return Ok(());
     }
 
-    // Pass 2: any refugee group standing near an open door walks
+    // Pass 2: any refugee group within reach of a door is taken
     // in (as many as there are beds).
     for group in refugees {
         let lead_h = match handle_of(&group.read_field("Leader")?) {
@@ -300,19 +356,25 @@ fn recruit_scan() -> Result<(), String> {
             if door.headroom <= 0 {
                 continue;
             }
-            let (dx, dy) = (gpos.0 - door.pos.0, gpos.1 - door.pos.1);
-            if dx * dx + dy * dy > RECRUIT_RANGE * RECRUIT_RANGE {
+            let in_reach = door.anchors.iter().any(|(ax, ay)| {
+                let (dx, dy) = (gpos.0 - ax, gpos.1 - ay);
+                dx * dx + dy * dy <= RECRUIT_RANGE * RECRUIT_RANGE
+            });
+            if !in_reach {
                 continue;
             }
             let moved = absorb_group(&group, door)?;
             if moved > 0 {
+                let verb = if door.press_gang {
+                    "press-gangs"
+                } else {
+                    "takes in"
+                };
                 mono::log(
                     LogLevel::Info,
                     &format!(
-                        "survivalist-mod: growth -- {} takes in {} refugee(s) who arrived at their gate ({} bed(s) left)",
-                        door.name,
-                        moved,
-                        door.headroom
+                        "survivalist-mod: growth -- {} {} {} refugee(s) ({} bed(s) left)",
+                        door.name, verb, moved, door.headroom
                     ),
                 );
             }
