@@ -22,7 +22,7 @@ game.
 
 | Pillar | Score | Why this score today | What 10/10 looks like |
 |---|---|---|---|
-| AI-vs-AI war | 7/10 | LIVE 2026-07-05: ORGANIC IGNITION VERIFIED. Kirby's Co-operative's thief was caught in Crazy Hill Team's stores and the GAME's own caught-stealing ladder declared the war ("War declared between Kirby's Co-operative and Crazy Hill Team"): no ignite op, no mod relationship write; the war grew out of an act's consequence. Same day: the revenge loop verified TWO-WAY (Cherry's Army and Jenna's Council each avenged a loss onto the other, no player); the ambition war shipped and launched live (The Dirty Killers, 9 of 10, preying on The Silent Bears); the surrender path shipped (ceasefire via peace ballot, loser as initiator). NOT yet verified: a surrender observed live. | AI factions declare, wage, and settle wars with each other without player involvement: raids launched both ways, ceasefires/surrenders happen, allies drag each other in. Verifiable by spectating two camps. |
+| AI-vs-AI war | 8/10 | LIVE 2026-07-05: the FULL WAR LIFECYCLE observed in one day. Ignition: organic (a caught thief; the game's own ladder declared it) and by personality (two ambition wars: The Dirty Killers 9 of 10 on The Silent Bears; The Well-Regulated Bears 36 of 50 on Silent Valley Command). Sustain: the revenge loop two-way. END: Smiley Crow Militia, bled to 3 of 10, SURRENDERED to The Dirty Killers by unanimous peace ballot; the first ceasefire was re-broken by the still-fighting squads (the game's witnessed-attack path re-declares) and the second stuck once blades stopped. Remaining: allies dragged into an AI war watched live; ceasefire decay/re-escalation over days. | AI factions declare, wage, and settle wars with each other without player involvement: raids launched both ways, ceasefires/surrenders happen, allies drag each other in. Verifiable by spectating two camps. |
 | Town growth | 6/10 | LIVE 2026-07-05: the growth flywheel closed end to end. Two beds-full camps (Mercado's Army 10/10, Kirby's Co-operative 8/8) each planned a wire-fence annex with gate + shack; their builders consume the records (Kirby's queue 40 down to 25 mid-build); the shacks COMPLETED (beds 10 to 12 and 8 to 10; the 2026-07-04 probe shack at Crazy Hill Team finished too, 7 to 9: a shack adds 2 beds, not 1); the new beds were then filled by real recruits in the same session (press-gangs at five camps, refugees welcomed at The Dirty Punks). Remaining: a fence line watched to completion, attrition realism over days, growth tied to war posture. | REAL growth (operator, 2026-07-04): the settlement itself grows, MORE STRUCTURES and MORE PEOPLE, fed by a non-cheating economy: structures built by real hands from real hauled materials, people recruited from real arrivals, growth rate bound to their food/resource situation and war posture. |
 | Fight for control / PREDATION | 7/10 | LIVE 2026-07-05: predation OBSERVED. Jenna's Council beat The Dirty Punks down and CONSUMED them: 5 survivors absorbed (members 20 to 25), the loser extinct, its genome dropped from the pool; the absorbed appear as silenced conscripts in the vote (franchise rule under conquest verified: effective aggression unchanged at 0.63 while the camp swelled). The whole war traced back to a caught burglary: acts compose into consolidation. The loot pass ran but found 0 stored goods (honest zero, their stores were bare). Remaining: a stockpile-stripping observed with actual goods carried; ground-drop loot from the war dead. | Wars are ABOUT something: bases change hands on victory, territory feeds growth, and the wars CONVERGE: left to run, the map consolidates until ONE faction controls it. |
 | No cheating | 3/10 | LIVE 2026-07-04: cheat 1 of 3, the repopulator, is DISABLED in the running game (UpdateRepopulation prefix skip; install log confirmed; it had just conjured back a war casualty minutes earlier, and that healing is now impossible). Remaining cheats: raider spawn-point respawns; spawn-time arrival gear is ACCEPTED per the boundary. Trader-party + chicken refills also stopped as a side effect, pending the two operator boundary calls. | Every faction person walked onto the map or was recruited from it; every weapon/meal came from loot, trade, crafting, or harvest; destroying a faction's people/stores actually weakens it. |
@@ -586,8 +586,34 @@ surrenders through the game's own ceasefire, loser as initiator
 (exactly how the game records who capitulated); the winner's
 invasion drops on its own since the pair is no longer hostile.
 Proud franchises fight on and risk being consumed: selection
-acting on aggression itself. NOT yet observed: the first
-surrender (needs a war to bleed someone below half).
+acting on aggression itself.
+
+OBSERVED (2026-07-05, within the hour): "Smiley Crow Militia
+(bled to 3 of 10) SURRENDERS to The Dirty Killers: 3 of 3 voters
+wanted peace; ceasefire." It fired twice, 90 seconds apart: the
+first ceasefire was RE-BROKEN because the winner's squads were
+still mid-fight and the game's own witnessed-attack path
+re-declared hostility; the second stuck once the fighting
+stopped, and no re-fires since. Peace talks failing while blood
+still flows, then holding: emergent, and honest.
+
+EXTORTION INTO THE VOTE SHIPPED (commit `bfef8cf9`, survival.rs),
+same day: vanilla gates the shakedown racket on the Looter type
+plus the per-camp `ExtortAISettlements` knob (a public field,
+default true). The knob now follows the franchise's menace ballot
+(aggression/guile blend, floor 0.5): a Looter camp whose people
+have learned caution calls off the shakedowns; an unrepentant one
+keeps squeezing. Flips are logged; steady states are silent.
+Personality expressed through the game's own lever.
+
+ROB LAUNCHES OBSERVED (2026-07-05): three camps' franchises
+independently voted robbery and all picked gold-rich trading
+parties: Almighty Rock Family (12 of 14), The Crazy Snakes (7 of
+7), Kirby's Co-operative (9 of 9). Fix from live evidence: a hot
+reload wiped the Rust mission list while a party marched, double-
+launching one camp; robbery dedup now reads the game's own squads
+list (one Ambush party in the field per camp). Outcome judgments
+pending.
 
 ## Predation phase (2026-07-05): the selection event
 
