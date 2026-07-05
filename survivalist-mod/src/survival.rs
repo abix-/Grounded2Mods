@@ -86,6 +86,12 @@ const SURRENDER_AGGRESSION_CEILING: f64 = 0.5;
 /// times stronger.
 const SURRENDER_ODDS: i64 = 2;
 
+/// Extortion by vote: a Looter camp keeps its shakedown racket
+/// (the game's own ExtortAISettlements knob) only while its
+/// franchise votes menace (aggression/guile blend at or above
+/// this).
+const EXTORTION_MENACE_FLOOR: f64 = 0.5;
+
 /// A pending learning experiment: a raid whose outcome will
 /// reinforce or weaken, in every VOTER who chose it, the traits
 /// that drove the choice (aggression for hunger raids; aggression
@@ -398,6 +404,10 @@ fn desperation_scan(now: f32) -> Result<(), String> {
         Ok(true)
     })?;
 
+    // Looter rackets run on the franchise's menace, not the type
+    // alone: the vote sets the game's own extortion knob.
+    extortion_by_vote(&camps)?;
+
     // Losing camps may sue for peace before new wars ignite.
     sue_for_peace(&camps)?;
 
@@ -408,6 +418,49 @@ fn desperation_scan(now: f32) -> Result<(), String> {
     }
 
     release_camps(&camps);
+    Ok(())
+}
+
+/// Extortion into the vote: vanilla gates the shakedown racket on
+/// the Looter TYPE plus the per-camp `ExtortAISettlements` knob
+/// (public field, default true). The knob now follows the
+/// franchise's menace ballot, so a Looter camp whose people have
+/// learned caution calls off the shakedowns, and an unrepentant
+/// one keeps squeezing. Personality expressed through the game's
+/// own lever; flips are logged, steady states are silent.
+fn extortion_by_vote(camps: &[Camp]) -> Result<(), String> {
+    for c in camps {
+        if c.ctype != "Looter" {
+            continue;
+        }
+        let vote = crate::common::with(c.handle, |com| {
+            tally_vote(com, &c.ctype, EXTORTION_MENACE_FLOOR, |g| {
+                (g.get(Trait::Aggression) + g.get(Trait::Guile)) / 2.0
+            })
+        })?;
+        if vote.franchise == 0 {
+            continue;
+        }
+        let menacing = vote.for_raid * 2 > vote.franchise;
+        let current = crate::common::with(c.handle, |com| com.read_field("ExtortAISettlements"))
+            .unwrap_or(json!(true))
+            == json!(true);
+        if menacing != current {
+            crate::common::with(c.handle, |com| {
+                com.write_field("ExtortAISettlements", &json!(menacing))
+            })?;
+            mono::log(
+                LogLevel::Info,
+                &format!(
+                    "survivalist-mod: survival -- {}'s franchise {} the shakedown racket ({} of {} menacing)",
+                    c.name,
+                    if menacing { "resumes" } else { "calls off" },
+                    vote.for_raid,
+                    vote.franchise,
+                ),
+            );
+        }
+    }
     Ok(())
 }
 

@@ -115,6 +115,22 @@ fn launch_scan(now: f32) -> Result<(), String> {
         {
             return Ok(true);
         }
+        // One party in the field at a time, judged from GAME
+        // state, not the Rust mission list: a hot reload wipes the
+        // list while the ambush squad marches on (which double-
+        // launched Almighty Rock Family, live 2026-07-05).
+        if let Some(s_h) = handle_of(&com.read_field("Squads")?) {
+            let slist = own(s_h);
+            let n = slist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+            for i in 0..n {
+                let Some(h) = handle_of(&slist.invoke("get_Item", &json!([i]))?) else {
+                    continue;
+                };
+                if own(h).read_field("Behaviour").ok() == Some(json!("Ambush")) {
+                    return Ok(true);
+                }
+            }
+        }
         // The menace ballot: aggression/guile blend.
         let looter = t == "Looter";
         let mut votes = 0i64;
