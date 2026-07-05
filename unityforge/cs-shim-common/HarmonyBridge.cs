@@ -209,7 +209,12 @@ namespace Unityforge.Shim
             return DispatchPrefixCtx(snapshot, __instance);
         }
 
-        private static bool PrefixArg0CtxDispatcher(object[] __args, MethodBase __originalMethod)
+        // `object __0` (indexed argument injection), NOT `object[]
+        // __args`: __args is a Harmony 2.1 feature; under the
+        // game's official Harmony 2.0.4 it parses as an invalid
+        // indexed parameter and Harmony.Patch throws "Parameter
+        // __args does not contain a valid index" (live, 2026-07-04).
+        private static bool PrefixArg0CtxDispatcher(object __0, MethodBase __originalMethod)
         {
             RustPrefixDelegate[] snapshot = null;
             lock (_lock)
@@ -222,8 +227,7 @@ namespace Unityforge.Shim
                 }
             }
             if (snapshot == null) return true;
-            object ctx = (__args != null && __args.Length > 0) ? __args[0] : null;
-            return DispatchPrefixCtx(snapshot, ctx);
+            return DispatchPrefixCtx(snapshot, __0);
         }
 
         private static bool DispatchPrefixCtx(RustPrefixDelegate[] snapshot, object ctx)
