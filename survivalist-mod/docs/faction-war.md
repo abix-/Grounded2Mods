@@ -317,6 +317,30 @@ Sharpened (operator, same day):
 
 ### Faction personality (Normal vs Looter)
 
+GROWTH DOCTRINE (operator-locked 2026-07-04): Normal camps grow
+by WELCOME, Looters grow by FORCE AND FEAR.
+
+- Normal: refugees choose them; join at the gate when there are
+  beds and food (nutrition >= 0.5). Passive, steady, fragile in
+  war. SHIPPED.
+- Looter, three mechanisms:
+  1. PRESS-GANGING (SHIPPED): refugees encountered near a looter
+     base OR near any of their roaming squads are seized as
+     conscripts (full members, not captives; the captive rank is
+     for hostages and does not work or fight). Beds required,
+     food NOT checked: looters take people hungry and raid for
+     the rest. Looters must be out in the field to grow.
+  2. ABSORBING THE DEFEATED (lands with the control pillar):
+     survivors of a settlement a looter faction defeats are taken,
+     converting conquest directly into population.
+  3. Protection defections (later, optional): extorted
+     settlements occasionally lose a member to the extorter.
+
+The texture this buys: Normal factions are resilient accretors,
+Looter factions are violent expanders whose population spikes
+after victories and starves during peace; a spectator can tell
+the types apart from behavior alone.
+
 - HAVE: `CommunityType.Normal` vs `Looter` exists on every
   settlement; Looters get extortion behavior
   (`UpdateInvasionTarget` step 5), looter gear loadouts
