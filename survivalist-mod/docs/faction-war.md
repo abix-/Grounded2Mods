@@ -27,7 +27,7 @@ game.
 | Fight for control / PREDATION | 7/10 | LIVE 2026-07-05: predation OBSERVED. Jenna's Council beat The Dirty Punks down and CONSUMED them: 5 survivors absorbed (members 20 to 25), the loser extinct, its genome dropped from the pool; the absorbed appear as silenced conscripts in the vote (franchise rule under conquest verified: effective aggression unchanged at 0.63 while the camp swelled). The whole war traced back to a caught burglary: acts compose into consolidation. The loot pass ran but found 0 stored goods (honest zero, their stores were bare). Remaining: a stockpile-stripping observed with actual goods carried; ground-drop loot from the war dead. | Wars are ABOUT something: bases change hands on victory, territory feeds growth, and the wars CONVERGE: left to run, the map consolidates until ONE faction controls it. |
 | No cheating | 5/10 | LIVE 2026-07-05: cheats 1 AND 2 of 3 are DISABLED in the running game (install logs confirmed). The repopulator (2026-07-04) and now raider spawn-point respawns: a conditional prefix on the spawn gate suppresses only REFILLS (a dead raider camp stays dead) while first spawns keep populating the world; growth_status counts suppressions. Cheat 3 (spawn-time arrival gear) is ACCEPTED per the boundary. Remaining: the two operator boundary calls (trader-party + chicken refills, both currently stopped as a side effect); watching the suppression counter climb. | Every faction person walked onto the map or was recruited from it; every weapon/meal came from loot, trade, crafting, or harvest; destroying a faction's people/stores actually weakens it. |
 | Factions can be destroyed | 8/10 | LIVE 2026-07-05: EXTINCTION OBSERVED. The Dirty Punks are GONE, consumed by Jenna's Council after losing the war their catching of a thief started: survivors absorbed, faction dead, and with the conjurer disabled it stays dead. The map went from 22 settlements to 21 by Darwinian consolidation, no player involved. Remaining: the husk visible as a claimable power vacuum (vanilla roamer reclamation exists; watch one happen). | A faction that loses its people or its base is GONE (or absorbed): no resurrection, its territory claimable, visible on the map as a power vacuum. |
-| Faction personality / EVOLUTION | 7/10 | LIVE 2026-07-05: personality is now VISIBLE IN BEHAVIOR. Every organic theft came from a Looter camp and the trade act belongs to the careful (Normal-leaning) franchise: the types act differently with zero hardcoded type checks, purely from seeded genomes + votes. Trait learning WATCHED shifting live: guile took -1.5/-2.0 lessons at Jenna's (caught thief, dead thief) and +1.0 at The Golden Dudes (clean haul); defensiveness has its loop armed via trade. Franchise-under-conquest verified (5 absorbed conscripts silenced, victor's will unchanged). Expansionism's loop FIRED live: the Bears' ambition war was judged "PAID OFF (dpop +2)" and 50 voters grew bolder in aggression AND expansionism. Pending live: aggression shift from famine raids; per-survivor heredity blending on absorption; role-weighted votes (operator's noted expansion). | Normal and Looter settlements are recognizably different actors: each type's war declarations, target picks, growth priorities, and dealings fit its identity, visible to a spectator without reading code. |
+| Faction personality / EVOLUTION | 7/10 | LIVE 2026-07-05: personality is now VISIBLE IN BEHAVIOR. Every organic theft came from a Looter camp and the trade act belongs to the careful (Normal-leaning) franchise: the types act differently with zero hardcoded type checks, purely from seeded genomes + votes. Trait learning WATCHED shifting live: guile took -1.5/-2.0 lessons at Jenna's (caught thief, dead thief) and +1.0 at The Golden Dudes (clean haul); defensiveness has its loop armed via trade. Franchise-under-conquest verified (5 absorbed conscripts silenced, victor's will unchanged). Expansionism's loop FIRED live: the Bears' ambition war was judged "PAID OFF (dpop +2)" and 50 voters grew bolder in aggression AND expansionism. Pending live: aggression shift from famine raids; per-survivor heredity blending on absorption. | Normal and Looter settlements are recognizably different actors: each type's war declarations, target picks, growth priorities, and dealings fit its identity, visible to a spectator without reading code. |
 
 Update discipline: when work ships, update the row's score AND
 its "why" cell in the same commit as the live verification; never
@@ -354,14 +354,12 @@ exactly those 3 as silenced (franchise 6 of 9 members). Learning
 is per-voter; a dead survivor's genome + vote leave the pool
 (OnMemberDied).
 
-ROLES (operator 2026-07-05, expand later): every survivor already
-has a `Role` in the settlement (Farmer, Guard, Builder, Trader,
-Enforcer, Cook, Medic, Gatherer, Lumberjack, Miner, Trapper,
-Organizer, ...). Future expansion of the collective: weight votes
-by role (a Guard's opinion on raiding counts more; a Trader
-favors extortion/trade over war), let roles gate franchise
-further, and let individuals evolve toward the role their genome
-+ experience suits. The vote engine is built to extend this way.
+VOTES ARE EQUAL (operator-locked 2026-07-05): every enfranchised
+survivor's vote counts the same. NO role weighting; a Guard's
+ballot is worth exactly a Cook's. The only frontier is WHO holds
+voting rights (the franchise rule above). An earlier note here
+proposing role-weighted votes was wrongly attributed to the
+operator and is retracted.
 
 Implementation path (later phases, big): promote the genome from
 faction-level to per-survivor (keyed by character), tally votes
