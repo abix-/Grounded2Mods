@@ -60,7 +60,7 @@ const TRADE_PAY_STACKS: i64 = 1;
 const ARRIVE_DIST_SQ: f64 = 25.0;
 
 /// A mission that has not resolved by then is abandoned.
-const MISSION_TIMEOUT_SECS: f32 = 900.0;
+const MISSION_TIMEOUT_SECS: f32 = 1800.0;
 
 /// At most this many caravans on the road map-wide.
 const MAX_ACTIVE_MISSIONS: usize = 3;
