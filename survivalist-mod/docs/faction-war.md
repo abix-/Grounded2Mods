@@ -25,7 +25,7 @@ game.
 | AI-vs-AI war | 5/10 | LIVE 2026-07-04: ignited war produced a real assault (attacker lost a member at the defender base, Funeral squads burying the dead) AND the generalized revenge trigger fired live ("Almighty Rock Family sets a revenge invasion on The Golden Dudes (member killed)"), re-arming the war without player involvement. NOT yet verified: organic ignition without war_ignite, counter-invasions in BOTH directions, how an AI war ends. | AI factions declare, wage, and settle wars with each other without player involvement: raids launched both ways, ceasefires/surrenders happen, allies drag each other in. Verifiable by spectating two camps. |
 | Town growth | 1/10 | Growth does not exist in vanilla AT ALL: the repopulator only heals losses back toward worldgen headcount (capped at min(initial members, beds)), and structures only repair/rebuild the worldgen footprint. Our growth work adds a capability the game never had, not restores one. | REAL growth (operator, 2026-07-04): the settlement itself grows, MORE STRUCTURES and MORE PEOPLE, fed by a non-cheating economy: structures built by real hands from real hauled materials, people recruited from real arrivals, growth rate bound to their food/resource situation and war posture. |
 | Fight for control | 2/10 | Research-corrected baseline: `OccupyBase` fully transfers a base (buildings, crops, animals) but only DEAD settlements can be occupied (reclamation by roamers or scripts), never conquest of a living one. | Wars are ABOUT something: bases change hands on victory, territory feeds growth, and the wars CONVERGE: left to run, the map consolidates until ONE faction controls it. |
-| No cheating | 2/10 | Repopulator conjures people + gear in place; raider camps respawn via spawn points; small credit: squads stock real food/water before traveling. | Every faction person walked onto the map or was recruited from it; every weapon/meal came from loot, trade, crafting, or harvest; destroying a faction's people/stores actually weakens it. |
+| No cheating | 3/10 | LIVE 2026-07-04: cheat 1 of 3, the repopulator, is DISABLED in the running game (UpdateRepopulation prefix skip; install log confirmed; it had just conjured back a war casualty minutes earlier, and that healing is now impossible). Remaining cheats: raider spawn-point respawns; spawn-time arrival gear is ACCEPTED per the boundary. Trader-party + chicken refills also stopped as a side effect, pending the two operator boundary calls. | Every faction person walked onto the map or was recruited from it; every weapon/meal came from loot, trade, crafting, or harvest; destroying a faction's people/stores actually weakens it. |
 | Factions can be destroyed | 3/10 | Extermination already ends a community and clears invasions against it, but the repopulator resurrects nearly-dead camps and capture-as-destruction does not exist. | A faction that loses its people or its base is GONE (or absorbed): no resurrection, its territory claimable, visible on the map as a power vacuum. |
 | Faction personality | 2/10 | Vanilla differentiates Looters only tactically: extortion behavior, looter gear loadouts, the worldgen looter percentage, and the nemesis flag. Normal settlements have no strategic identity at all; neither type makes type-appropriate WAR or GROWTH choices. | Normal and Looter settlements are recognizably different actors: each type's war declarations, target picks, growth priorities, and dealings fit its identity, visible to a spectator without reading code. |
 
@@ -436,6 +436,44 @@ EXISTING real construction flow (new ConstructionRecords beyond
 the worldgen footprint + members hauling ingredients through
 BuildGoal); the "more people" half rides recruitment of real
 arrivals after cheat 1 is suppressed.
+
+## Growth phase status (people half, 2026-07-04)
+
+Shipped (commit `c5ad12fa`), all live in the running game:
+
+- REPOPULATOR DISABLED (operator-locked): prefix skip on
+  `CommunityManager.UpdateRepopulation`; the conjurer can never
+  run. Side effect pending the two boundary calls: roving trader
+  and chicken refills are also stopped (same method).
+- RECRUITMENT of real arrivals (survivalist-mod/src/growth.rs,
+  scans every 15s on the tick): a roving refugee group whose
+  leader stands within 48 world units of a settlement's building
+  joins it through the game's own path (`Character.SetCommunity`
+  -> `AddMember`, then `UpdateRoles`, the vanilla repopulator's
+  own wiring). Doctrine v1 per type: Normal settlements welcome
+  refugees when they have bed headroom AND nutrition >= 0.5;
+  Looter settlements take nobody (their recruitment personality
+  is an open doctrine question). Population is now capped by REAL
+  BEDS, not worldgen headcount: the first mechanism that can grow
+  a camp past its starting size.
+- `growth_status` op: per-settlement members/beds/initial/
+  nutrition/rebuild/repair + refugee groups in transit.
+
+First live snapshot (operator's session): 22 settlements mapped;
+The Dirty Punks at 3/11 beds after war losses (the prime
+recruitment candidate); one refugee pair in transit; Almighty
+Rock Family had been healed 14 -> 15 by the repopulator BEFORE
+the disable landed, confirming the cheat was active until the
+moment it stopped.
+
+NOT YET VERIFIED (growth row stays 1/10 until watched):
+
+- A recruitment actually firing: refugee group at a gate, the
+  join log line ("takes in N refugee(s)"), member count rising
+  past... first past headroom use, eventually past
+  InitialMemberCount (the never-before-possible event).
+- Population attrition realism over days with the repopulator
+  off (war losses now stay lost until someone walks in).
 
 ## Phase 1 status (2026-07-04)
 
