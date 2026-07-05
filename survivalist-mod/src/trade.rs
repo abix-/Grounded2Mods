@@ -486,7 +486,20 @@ fn advance_missions(now: f32) {
     let mut missions = MISSIONS.lock();
     let mut i = 0;
     while i < missions.len() {
-        let done = advance(&mut missions[i], now).unwrap_or(true);
+        let done = match advance(&mut missions[i], now) {
+            Ok(d) => d,
+            Err(e) => {
+                let m = &missions[i];
+                mono::log(
+                    LogLevel::Warn,
+                    &format!(
+                        "survivalist-mod: trade -- mission for {} ABORTED on error: {e}",
+                        m.seller_name
+                    ),
+                );
+                true
+            }
+        };
         if done {
             let m = missions.remove(i);
             with(m.seller_h, |com| {

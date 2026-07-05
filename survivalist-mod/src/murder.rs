@@ -350,7 +350,19 @@ fn pick_operative(
 fn advance_mission(now: f32) {
     let mut slot = MISSION.lock();
     let Some(m) = slot.as_mut() else { return };
-    let done = advance(m, now).unwrap_or(true);
+    let done = match advance(m, now) {
+        Ok(d) => d,
+        Err(e) => {
+            mono::log(
+                LogLevel::Warn,
+                &format!(
+                    "survivalist-mod: murder -- {}'s plot against {} ABORTED on error: {e}",
+                    m.camp_name, m.victim_name
+                ),
+            );
+            true
+        }
+    };
     if done {
         let m = slot.take().unwrap();
         with(m.camp_h, |com| {
