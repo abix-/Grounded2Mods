@@ -154,8 +154,22 @@ loaded AS-IS with no conversion or boxing. Declaring the patch
 parameter as `object` is safe when the original argument is a
 REFERENCE type (our AddInjury case: `Injury` is a class); a
 VALUE-type argument must be declared with its exact type, never
-`object`. The bridge's arg0 ctx dispatcher therefore only
-supports reference-type first arguments.
+`object`. The bridge's arg0 ctx path therefore only supports
+reference-type first arguments.
+
+THIRD constraint (live 2026-07-04, mechanism verified against the
+same source): `MethodBase __originalMethod` compiles and is a
+legal 2.0.4 parameter, but 2.0.4 emits it as `Ldtoken original` +
+`Call MethodBase.GetMethodFromHandle`, and this game's Mono
+(Unity 6000) cannot resolve that call token inside the dynamic
+wrapper: patching throws "Invalid IL code in (wrapper
+dynamic-method) ... call 0x00000005" AT PATCH TIME. So on this
+stack a patch method may not use `__originalMethod` at all. The
+bridge therefore routes each Rust patch through a PRE-COMPILED
+STATIC SLOT METHOD (16 per kind in HarmonyBridge.cs) whose
+signatures use only token-free `ldarg` emissions: `()`,
+`(object __instance)`, `(object __0)`. Those are the shapes the
+game's working mods (DisableHUD, SISLootRespawn) also use.
 
 RULE (operator, 2026-07-04): do not guess at Harmony surface.
 Before using any Harmony feature here, verify it against the
