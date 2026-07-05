@@ -461,6 +461,37 @@ the worldgen footprint + members hauling ingredients through
 BuildGoal); the "more people" half rides recruitment of real
 arrivals after cheat 1 is suppressed.
 
+## Structure growth phase 1 (2026-07-04): planner + shim primitive
+
+Shipped (commit `10e1f502`, needs a game RESTART; the shim
+changed):
+
+- Shim game-struct marshalling: TerrainCoord / TerrainRect now
+  cross the bridge as `{"x":..,"y":..}` objects BOTH ways
+  (generic value-type serialize + reconstruct in MonoBridge.cs),
+  plus null args. This unblocks passing tiles/rects to game
+  methods; needed by every geometry op from here on.
+- `common.rs`: shared bridge helpers, deduped out of war + growth
+  at the third consumer.
+- `development.rs`: the planner foundation.
+  - `dev_status`: per-settlement base rect + centre, buildable
+    prototype availability (does WoodFence/Shack/... have a
+    recipe in this story?), construction queues.
+  - `dev_place {community, prototype, dx, dy, orientation?}`: the
+    LIVE PROBE. Appends ONE real `ConstructionRecord` at a tile
+    offset from the base centre via the game's own
+    `AddConstructionRecord`. If the execution layer is as the
+    research says, a Builder member picks it up and builds it
+    from hauled materials with NO further code.
+
+VERIFY NEXT (after restart, before the annex geometry planner is
+written): dev_status shows which prototypes are buildable; then
+`dev_place` a Shack just outside a fed settlement and WATCH a
+member build it and consume materials (dev_status rebuild_queue
+goes 0 -> 1 -> 0, a new hut stands). Only then is the append ->
+real-build primitive proven and the annex planner (fence line +
+gate + infill + BaseRect adoption) worth writing.
+
 ## Growth phase status (people half, 2026-07-04)
 
 Shipped (commit `c5ad12fa`), all live in the running game:
