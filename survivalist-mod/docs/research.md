@@ -148,12 +148,12 @@ the shim's own assembly identity). Decision trail:
   ILRepack.Lib.MSBuild.Task package runs its own target and feeds
   the shim in twice).
 
-OPEN (2026-07-04): hot-reloading a new Rust generation leaves the
-control plane answering from the OLD generation (an op present in
-the new dll reported "unknown op"). Suspect: the old generation's
-HTTP listener keeps the port; the new generation's bind fails
-silently behind the "listening" log line. Investigate the server
-rebind across generations.
+RESOLVED (2026-07-04, commit 392bca8a): hot reloads left the OLD
+generation's HTTP listener holding the port and answering with a
+stale op registry because unityforge never registered modforge's
+shutdown handlers (the SHUTDOWN_REGISTRY ran empty; ueforge always
+registered them). Fixed once-guarded at unityforge_init. Verify on
+the next hot-reload cycle: new-generation ops must answer.
 
 OPEN (2026-07-04): infection-off is NOT yet effective in play.
 The AddInjury prefix installs and its field writes log no

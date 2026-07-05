@@ -22,7 +22,7 @@ game.
 
 | Pillar | Score | Why this score today | What 10/10 looks like |
 |---|---|---|---|
-| AI-vs-AI war | 2/10 | Machinery is pair-agnostic and extortion/ambient hostility touch AI pairs, but organized invasions only ever target the player; no systemic AI-AI war exists. | AI factions declare, wage, and settle wars with each other without player involvement: raids launched both ways, ceasefires/surrenders happen, allies drag each other in. Verifiable by spectating two camps. |
+| AI-vs-AI war | 3/10 | LIVE 2026-07-04: `war_ignite` set Almighty Rock Family hostile+invading The Golden Dudes and a Hunt squad of 12 formed and marched (verified via war_status). NOT yet verified: the assault itself, the generalized revenge trigger firing (the sustain loop), organic ignition without the op. | AI factions declare, wage, and settle wars with each other without player involvement: raids launched both ways, ceasefires/surrenders happen, allies drag each other in. Verifiable by spectating two camps. |
 | Town growth | 1/10 | Settlements only repair/rebuild their worldgen footprint; the only population growth is the conjuring repopulator. | Settlements visibly expand: new buildings beyond the worldgen footprint, population grown through recruitment, growth rate tied to their food/resource situation and war posture. |
 | Fight for control | 2/10 | Research-corrected baseline: `OccupyBase` fully transfers a base (buildings, crops, animals) but only DEAD settlements can be occupied (reclamation by roamers or scripts), never conquest of a living one. | Wars are ABOUT something: bases/areas change hands on victory, controlling more territory feeds growth, and the map's power balance shifts over time. |
 | No cheating | 2/10 | Repopulator conjures people + gear in place; raider camps respawn via spawn points; small credit: squads stock real food/water before traveling. | Every faction person walked onto the map or was recruited from it; every weapon/meal came from loot, trade, crafting, or harvest; destroying a faction's people/stores actually weakens it. |
@@ -325,6 +325,48 @@ DESTROYED.
    through the existing work goals.
 5. Control: capture/occupation as a war outcome; destruction
    rules that stick.
+
+## Phase 1 status (2026-07-04)
+
+Shipped (commit `dba3992e` + framework fix `392bca8a`):
+
+- Generalized revenge trigger: prefix on `Community.OnMemberDied`
+  (survivalist-mod/src/war.rs). When an AI settlement's member is
+  killed by another AI settlement's member while Hostile, the
+  victim invokes the game's own `SetInvasionTarget(killer, 7d)`,
+  mirroring the vanilla player-only path. Purely additive
+  (player/ally killers stay on the vanilla path).
+- `war_status` op: every community with type, members, nemesis,
+  invasion target, squads. `war_ignite {attacker, defender}` op:
+  forces Hostile + invasion through the game's own methods.
+- Framework fix that this work surfaced: unityforge never
+  registered modforge's shutdown handlers, so every hot reload
+  left the OLD generation's HTTP listener holding the port and
+  answering with a stale op registry. Fixed at init
+  (unityforge/src/mod_main.rs); needs one more hot-reload cycle
+  to be verify-closed.
+
+LIVE-VERIFIED so far:
+
+- Patch installs clean on Harmony 2.4.2 (log line at load).
+- `war_status` maps the whole world (22 AI settlements + roamers
+  in the operator's session).
+- `war_ignite` -> Almighty Rock Family formed a Hunt squad of 12
+  (of 15 members; matches the staffing clamp) and marched on The
+  Golden Dudes with the invasion target set.
+
+NOT YET VERIFIED (do not claim the pillar works until these are
+watched happening):
+
+- The assault: the squad actually attacking people/structures at
+  the target base.
+- The sustain loop: a Golden Dudes death by a Rock Family hand
+  firing OUR revenge trigger (log line "sets a revenge invasion
+  on") and producing the counter-invasion.
+- Organic ignition: an AI-vs-AI war starting WITHOUT `war_ignite`
+  (provocation-driven hostility + a kill).
+- War end: what Hostile-with-no-InvasionTarget settles into for
+  AI pairs (ceasefire path untested).
 
 ## Enhancement seams (where changes plug in)
 
