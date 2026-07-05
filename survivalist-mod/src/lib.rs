@@ -20,6 +20,7 @@
 //!    generation down and a later `Load()` re-arms it.
 
 mod infection;
+mod war;
 
 use unityforge::ModDef;
 
@@ -47,6 +48,11 @@ fn on_init() {
     // No infections (operator directive): every injury enters
     // uninfected via a Character.AddInjury prefix.
     infection::install();
+
+    // Faction war: generalized revenge trigger (AI-vs-AI wars)
+    // + war_status / war_ignite ops. docs/faction-war.md.
+    war::install();
+    war::register_ops();
 
     unityforge::mono::log(
         unityforge::mono::LogLevel::Info,

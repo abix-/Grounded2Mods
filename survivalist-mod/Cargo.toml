@@ -20,6 +20,7 @@ name = "survivalist_mod"
 modforge = { path = "../modforge" }
 unityforge = { path = "../unityforge" }
 serde_json = { workspace = true }
+parking_lot = { workspace = true }
 
 # Deploy convention: the shim looks for `*.unityforge.dll` in the
 # MOD FOLDER (one level above DLLs/, so the game's loader doesn't
