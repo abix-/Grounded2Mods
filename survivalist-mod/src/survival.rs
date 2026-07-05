@@ -549,6 +549,7 @@ fn survival_status(_args: &Json) -> Result<Json, String> {
             if sv.members == 0 {
                 return Ok(true);
             }
+            let id = com.read_field("Id")?.as_i64().unwrap_or(-1);
             let invasion_target = match handle_of(&com.read_field("InvasionTarget")?) {
                 Some(h) => Json::String(display_name(&own(h))),
                 None => Json::Null,
@@ -573,6 +574,7 @@ fn survival_status(_args: &Json) -> Result<Json, String> {
                 "votes_to_raid": vote.for_raid,
                 "effective_aggression": (vote.effective_aggression * 100.0).round() / 100.0,
                 "raiding": invasion_target,
+                "stealing": crate::steal::active_target(id).unwrap_or(Json::Null),
             }));
             Ok(true)
         })?;

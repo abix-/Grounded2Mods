@@ -152,7 +152,8 @@ fn consume(winner: MonoObject, loser: MonoObject) -> Result<(), String> {
     let goods = if carriers.is_empty() {
         0
     } else {
-        loot_buildings(&loser, &carriers)?
+        // 500 is a safety cap; a camp never holds this much.
+        carry_off_stored_goods(&loser, &carriers, 500)?
     };
 
     // 3. Selection: the loser's genome dies with it. (The people it
@@ -174,14 +175,19 @@ fn consume(winner: MonoObject, loser: MonoObject) -> Result<(), String> {
     Ok(())
 }
 
-/// Move the loser's building-stored items into the absorbed
-/// survivors' inventories, round-robin, via the game's own
+/// Move a community's building-stored items into the carriers'
+/// inventories, round-robin, via the game's own
 /// `EquipmentContainer.Take` (removes from source) + `Add` (gives
-/// to carrier, honoring real carry capacity). Returns how many
-/// items were carried off. Buildings/crops stay with the husk;
-/// only portable stored goods move, and only as far as living
-/// hands can carry them.
-fn loot_buildings(loser: &MonoObject, carriers: &[i32]) -> Result<i64, String> {
+/// to carrier, honoring real carry capacity), up to `max_stacks`
+/// stacks. Returns how many stacks were carried off. Predation
+/// drains the husk (high cap); steal.rs takes a burglar's armful.
+/// Buildings/crops stay put; only portable stored goods move, and
+/// only as far as living hands can carry them.
+pub(crate) fn carry_off_stored_goods(
+    loser: &MonoObject,
+    carriers: &[i32],
+    max_stacks: i64,
+) -> Result<i64, String> {
     let Some(b_h) = handle_of(&loser.read_field("Buildings")?) else {
         return Ok(0);
     };
@@ -239,8 +245,8 @@ fn loot_buildings(loser: &MonoObject, carriers: &[i32]) -> Result<i64, String> {
             std::mem::forget(carrier);
             carrier_ix += 1;
             carried += 1;
-            if carried >= 500 {
-                return Ok(carried); // safety cap; a camp never holds this much
+            if carried >= max_stacks {
+                return Ok(carried);
             }
         }
     }
