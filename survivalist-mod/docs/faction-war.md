@@ -22,7 +22,7 @@ game.
 
 | Pillar | Score | Why this score today | What 10/10 looks like |
 |---|---|---|---|
-| AI-vs-AI war | 7/10 | LIVE 2026-07-05: ORGANIC IGNITION VERIFIED. Kirby's Co-operative's thief was caught in Crazy Hill Team's stores and the GAME's own caught-stealing ladder declared the war ("War declared between Kirby's Co-operative and Crazy Hill Team"): no ignite op, no mod relationship write; the war grew out of an act's consequence. Same day: the revenge loop verified TWO-WAY (Cherry's Army and Jenna's Council each avenged a loss onto the other, no player). NOT yet verified: how an AI war ends. | AI factions declare, wage, and settle wars with each other without player involvement: raids launched both ways, ceasefires/surrenders happen, allies drag each other in. Verifiable by spectating two camps. |
+| AI-vs-AI war | 7/10 | LIVE 2026-07-05: ORGANIC IGNITION VERIFIED. Kirby's Co-operative's thief was caught in Crazy Hill Team's stores and the GAME's own caught-stealing ladder declared the war ("War declared between Kirby's Co-operative and Crazy Hill Team"): no ignite op, no mod relationship write; the war grew out of an act's consequence. Same day: the revenge loop verified TWO-WAY (Cherry's Army and Jenna's Council each avenged a loss onto the other, no player); the ambition war shipped and launched live (The Dirty Killers, 9 of 10, preying on The Silent Bears); the surrender path shipped (ceasefire via peace ballot, loser as initiator). NOT yet verified: a surrender observed live. | AI factions declare, wage, and settle wars with each other without player involvement: raids launched both ways, ceasefires/surrenders happen, allies drag each other in. Verifiable by spectating two camps. |
 | Town growth | 6/10 | LIVE 2026-07-05: the growth flywheel closed end to end. Two beds-full camps (Mercado's Army 10/10, Kirby's Co-operative 8/8) each planned a wire-fence annex with gate + shack; their builders consume the records (Kirby's queue 40 down to 25 mid-build); the shacks COMPLETED (beds 10 to 12 and 8 to 10; the 2026-07-04 probe shack at Crazy Hill Team finished too, 7 to 9: a shack adds 2 beds, not 1); the new beds were then filled by real recruits in the same session (press-gangs at five camps, refugees welcomed at The Dirty Punks). Remaining: a fence line watched to completion, attrition realism over days, growth tied to war posture. | REAL growth (operator, 2026-07-04): the settlement itself grows, MORE STRUCTURES and MORE PEOPLE, fed by a non-cheating economy: structures built by real hands from real hauled materials, people recruited from real arrivals, growth rate bound to their food/resource situation and war posture. |
 | Fight for control / PREDATION | 7/10 | LIVE 2026-07-05: predation OBSERVED. Jenna's Council beat The Dirty Punks down and CONSUMED them: 5 survivors absorbed (members 20 to 25), the loser extinct, its genome dropped from the pool; the absorbed appear as silenced conscripts in the vote (franchise rule under conquest verified: effective aggression unchanged at 0.63 while the camp swelled). The whole war traced back to a caught burglary: acts compose into consolidation. The loot pass ran but found 0 stored goods (honest zero, their stores were bare). Remaining: a stockpile-stripping observed with actual goods carried; ground-drop loot from the war dead. | Wars are ABOUT something: bases change hands on victory, territory feeds growth, and the wars CONVERGE: left to run, the map consolidates until ONE faction controls it. |
 | No cheating | 3/10 | LIVE 2026-07-04: cheat 1 of 3, the repopulator, is DISABLED in the running game (UpdateRepopulation prefix skip; install log confirmed; it had just conjured back a war casualty minutes earlier, and that healing is now impossible). Remaining cheats: raider spawn-point respawns; spawn-time arrival gear is ACCEPTED per the boundary. Trader-party + chicken refills also stopped as a side effect, pending the two operator boundary calls. | Every faction person walked onto the map or was recruited from it; every weapon/meal came from loot, trade, crafting, or harvest; destroying a faction's people/stores actually weakens it. |
@@ -520,7 +520,53 @@ Take/Add (vanilla AI-to-AI trade was cosmetic: squads only hung
 out; this is the first real exchange). Defensiveness gets the
 third live learning loop: deal done +1.0 per voter, trader lost
 on the road -2.0. survival_status shows a `trading` field.
-NOT yet observed: the first caravan's full arc.
+
+LOADING MODEL (fixed live 2026-07-05): camps keep food PLANTED
+and CARRIED, not warehoused, so building-only loading found
+nothing (the engine voted and paired for 15+ minutes with zero
+launches, invisible until no-load log lines shipped). The caravan
+now loads from building stores first, then campmates' carried
+surplus: real hand-offs at home, each donor keeping their last
+stack. First caravan then launched immediately: "Smiley Skull
+Army (Normal, fed 1.36, 7 of 8 voters careful) sends Abraham
+Bowers with 2 food stack(s) to hungry The Golden Dudes (1.14)",
+while Maxwell's Posse honestly declined for lack of spare food.
+The type split is now complete on the live map: Normal camps
+trade, Looter camps steal, from the same genomes with zero type
+checks. NOT yet observed: the delivery + payment + return half.
+
+AMBITION WAR SHIPPED (commit `9a03efe7`, survival.rs), same day:
+wars because of WHO a faction is. A comfortable, unthreatened
+camp of 8+ whose franchise votes appetite (per-voter aggression/
+expansionism blend, floor 0.55, majority) preys on the nearest
+non-hostile non-allied neighbor at most HALF its size, through
+the same hostile+invasion ignition as the hunger raid. Hunger
+outranks ambition (one ignition per scan) and a 600-second
+map-wide cooldown keeps consolidation paced. The learning
+experiment now carries the traits that drove the choice, so an
+ambition war's outcome teaches BOTH aggression and expansionism
+per voter: expansionism's learning loop is armed. LIVE-VERIFIED
+launches: "The Dirty Killers (Looter, comfortable, 10 strong)
+VOTES to prey on The Silent Bears (5 members): 9 of 10 voters
+hungry for more (effective ambition 0.61)", then one cooldown
+later "The Well-Regulated Bears (Looter, comfortable, 50 strong)
+VOTES to prey on Silent Valley Command (16 members): 36 of 50".
+The map's apex predator has picked its next meal; the pacing
+cooldown is doing its job. Outcomes (and the learning they feed)
+pending observation.
+
+SURRENDER SHIPPED (commit `2b39069c`, survival.rs), same day:
+wars can now END short of extinction. A camp bled below half its
+worldgen size (or terminal), still 3+ strong (at 2 or fewer
+predation decides its fate, not diplomacy), facing a hostile at
+least twice its strength, holds a peace ballot: a voter wants
+out when their own aggression is at or below 0.5. A majority
+surrenders through the game's own ceasefire, loser as initiator
+(exactly how the game records who capitulated); the winner's
+invasion drops on its own since the pair is no longer hostile.
+Proud franchises fight on and risk being consumed: selection
+acting on aggression itself. NOT yet observed: the first
+surrender (needs a war to bleed someone below half).
 
 ## Predation phase (2026-07-05): the selection event
 
