@@ -12,6 +12,26 @@ marked. Everything below is read from the decompiled game
 (Assembly-CSharp; line numbers from the ilspycmd dump; re-derive
 any file with `ilspycmd -t <Type> Assembly-CSharp.dll`).
 
+## Scorecard: the authoritative progress tracker
+
+THE place to see where faction war stands and what to work on
+next. One row per vision pillar; scores move ONLY on
+live-verified changes (watched happening in a running game, not
+code-landed). Baseline scored 2026-07-04 against the vanilla
+game.
+
+| Pillar | Score | Why this score today | What 10/10 looks like |
+|---|---|---|---|
+| AI-vs-AI war | 2/10 | Machinery is pair-agnostic and extortion/ambient hostility touch AI pairs, but organized invasions only ever target the player; no systemic AI-AI war exists. | AI factions declare, wage, and settle wars with each other without player involvement: raids launched both ways, ceasefires/surrenders happen, allies drag each other in. Verifiable by spectating two camps. |
+| Town growth | 1/10 | Settlements only repair/rebuild their worldgen footprint; the only population growth is the conjuring repopulator. | Settlements visibly expand: new buildings beyond the worldgen footprint, population grown through recruitment, growth rate tied to their food/resource situation and war posture. |
+| Fight for control | 1/10 | Occupy/CaptureGoal exist in code but unresearched; no known territory or base transfer through war. | Wars are ABOUT something: bases/areas change hands on victory, controlling more territory feeds growth, and the map's power balance shifts over time. |
+| No cheating | 2/10 | Repopulator conjures people + gear in place; raider camps respawn via spawn points; small credit: squads stock real food/water before traveling. | Every faction person walked onto the map or was recruited from it; every weapon/meal came from loot, trade, crafting, or harvest; destroying a faction's people/stores actually weakens it. |
+| Factions can be destroyed | 3/10 | Extermination already ends a community and clears invasions against it, but the repopulator resurrects nearly-dead camps and capture-as-destruction does not exist. | A faction that loses its people or its base is GONE (or absorbed): no resurrection, its territory claimable, visible on the map as a power vacuum. |
+
+Update discipline: when work ships, update the row's score AND
+its "why" cell in the same commit as the live verification; never
+move a score on code-landed-only work.
+
 ## The flow, end to end
 
 1. Every community pair sits in one of six relationship states;
