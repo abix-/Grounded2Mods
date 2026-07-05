@@ -21,6 +21,7 @@
 
 mod common;
 mod development;
+mod genome;
 mod growth;
 mod infection;
 mod survival;
