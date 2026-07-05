@@ -503,6 +503,45 @@ STILL PENDING: population attrition realism over days with the
 repopulator off (war losses now stay lost until someone walks
 in); the structures half of growth.
 
+## Structure growth design: the annex model (operator-locked 2026-07-04)
+
+Settlements use walls to surround the SAFE area; all structures
+live inside the fenced area, with gates to the outside. Expansion
+therefore happens ONE FENCED AREA AT A TIME:
+
+1. Plan an annex: a rectangle adjacent to the existing perimeter,
+   on legal terrain.
+2. Fence it FIRST: order the fence segments and gate(s) along the
+   annex's new outer edge (members build them from real
+   materials; the annex is not safe until enclosed).
+3. THEN infill: order interior structures (sleeping huts, crop
+   patches, per-type doctrine) inside the enclosed annex.
+4. Adopt it: the settlement's base area (BaseRect / Perimeter)
+   grows to include the annex, so defense, diplomacy-at-the-gate,
+   and prison logic all treat it as home ground.
+
+This mirrors worldgen exactly (camps generate as a perimeter of
+fence posts + gates with structures inside; wall material varies
+by camp: concrete for the nemesis, wire/wood elsewhere), so the
+expansion uses the same prototypes worldgen uses, and per-type
+wall doctrine falls out naturally (Looters favor harder
+perimeters; Normal camps wood).
+
+Pre-build research checks (extends the four from the non-cheating
+structure plan):
+
+1. AI rebuild construction consumes ingredients like player
+   construction (else route through real construction sites).
+2. Creating a construction site programmatically + members
+   picking it up unprompted.
+3. Placement-legality API for annex tiles.
+4. Recipes for fence post, gate, sleeping hut, crop patch (what
+   the economy must produce per annex).
+5. BaseRect/Perimeter representation and runtime mutability
+   (OccupyBase already adopts a BaseRect at runtime; precedent).
+6. Gate placement rules (worldgen's GenerateCommunityBuilding
+   picks gate spots on the perimeter).
+
 ## Phase 1 status (2026-07-04)
 
 Shipped (commit `dba3992e` + framework fix `392bca8a`):
