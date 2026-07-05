@@ -352,10 +352,20 @@ the survival tick:
   bodies carry it). The evolution loop closes: variation ->
   selection -> heredity, all turning.
 
-DEFERRED (honest, no guessed APIs): stripping the loser's BASE
-STOCKPILE (stored food/materials beyond what people carry) needs
-one live verification of the game's item-enumeration API before
-wiring. People + their carried gear ship now; base goods next.
+REAL LOOTING (operator-locked "carried not cheated", shipped
+commit `7a93dc01`): the loser's building-stored goods are LOOTED,
+not ownership-flipped. Absorbed survivors move each stored item
+into their OWN inventory via the game's own
+`EquipmentContainer.Take` (removes from the building) + `Add`
+(gives to the carrier, honoring REAL carry capacity), then
+physically walk the loot to the winner's base. Nothing is
+duplicated or teleported; wealth is conserved and hands do the
+carrying. If nobody survives to carry, the stockpile stays in the
+husk. APIs verified live before wiring (Buildings -> Prop.Inventory
+-> GetItem -> GetAmount -> Take -> carrier.Inventory.Add; a real
+camp had ~2 items per storage building). Ground-drop loot from the
+war dead is a later refinement (needs the rect-enumeration
+infra).
 
 NOT YET VERIFIED live: an actual predation event firing (needs a
 war beaten down to <=2 survivors; the map is currently healthy).
