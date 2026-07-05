@@ -22,7 +22,7 @@ game.
 
 | Pillar | Score | Why this score today | What 10/10 looks like |
 |---|---|---|---|
-| AI-vs-AI war | 6/10 | LIVE 2026-07-05: the revenge loop is TWO-WAY. Cherry's Army and Jenna's Council each lost a member to the other and each set a revenge invasion back, in one session, with zero player involvement and no war_ignite that mod generation: an AI war now sustains itself in both directions. Earlier (2026-07-04): ignited war produced a real assault. NOT yet verified: organic ignition without war_ignite (the Cherry/Jenna hostility predates the session log, origin unknown), how an AI war ends. | AI factions declare, wage, and settle wars with each other without player involvement: raids launched both ways, ceasefires/surrenders happen, allies drag each other in. Verifiable by spectating two camps. |
+| AI-vs-AI war | 7/10 | LIVE 2026-07-05: ORGANIC IGNITION VERIFIED. Kirby's Co-operative's thief was caught in Crazy Hill Team's stores and the GAME's own caught-stealing ladder declared the war ("War declared between Kirby's Co-operative and Crazy Hill Team"): no ignite op, no mod relationship write; the war grew out of an act's consequence. Same day: the revenge loop verified TWO-WAY (Cherry's Army and Jenna's Council each avenged a loss onto the other, no player). NOT yet verified: how an AI war ends. | AI factions declare, wage, and settle wars with each other without player involvement: raids launched both ways, ceasefires/surrenders happen, allies drag each other in. Verifiable by spectating two camps. |
 | Town growth | 6/10 | LIVE 2026-07-05: the growth flywheel closed end to end. Two beds-full camps (Mercado's Army 10/10, Kirby's Co-operative 8/8) each planned a wire-fence annex with gate + shack; their builders consume the records (Kirby's queue 40 down to 25 mid-build); the shacks COMPLETED (beds 10 to 12 and 8 to 10; the 2026-07-04 probe shack at Crazy Hill Team finished too, 7 to 9: a shack adds 2 beds, not 1); the new beds were then filled by real recruits in the same session (press-gangs at five camps, refugees welcomed at The Dirty Punks). Remaining: a fence line watched to completion, attrition realism over days, growth tied to war posture. | REAL growth (operator, 2026-07-04): the settlement itself grows, MORE STRUCTURES and MORE PEOPLE, fed by a non-cheating economy: structures built by real hands from real hauled materials, people recruited from real arrivals, growth rate bound to their food/resource situation and war posture. |
 | Fight for control / PREDATION | 4/10 | Design corrected (operator 2026-07-05): NOT territorial takeover (`OccupyBase` rejected. It is a move-in model). Darwinian predation instead: a winner strips the beaten loser of people + goods, brings them home, leaves an empty husk. SHIPPED: people-absorption predation (beaten camp <=2 survivors -> absorbed into winner with their gear -> loser extinct -> genome selection). Pending: live-observed conquest; base-stockpile stripping (needs item-model verification). | Wars are ABOUT something: bases change hands on victory, territory feeds growth, and the wars CONVERGE: left to run, the map consolidates until ONE faction controls it. |
 | No cheating | 3/10 | LIVE 2026-07-04: cheat 1 of 3, the repopulator, is DISABLED in the running game (UpdateRepopulation prefix skip; install log confirmed; it had just conjured back a war casualty minutes earlier, and that healing is now impossible). Remaining cheats: raider spawn-point respawns; spawn-time arrival gear is ACCEPTED per the boundary. Trader-party + chicken refills also stopped as a side effect, pending the two operator boundary calls. | Every faction person walked onto the map or was recruited from it; every weapon/meal came from loot, trade, crafting, or harvest; destroying a faction's people/stores actually weakens it. |
@@ -480,12 +480,19 @@ live status 2026-07-05:
   (target, thief, going/returning); every beat logs as
   "survivalist-mod: steal".
 
-LIVE-VERIFIED (2026-07-05): the first scan after hot-deploy
-launched a theft on its own: The Crazy Snakes (Looter, 6 of 7
-voters guileful) sent Colby Grant (guile 0.72) at The Smiley
-Cobras; war_status shows the real 1-member Trade squad walking.
-NOT yet observed: the take at the stores, a clean return home, a
-CAUGHT confrontation, and the resulting organic war.
+LIVE-VERIFIED (2026-07-05, within the first hour): three thefts
+launched on their own, all from Looter camps (the guile seeding
+makes them the burglars with zero type checks): The Crazy Snakes
+at The Smiley Cobras, Kirby's Co-operative at Crazy Hill Team,
+The Golden Dudes at Samantha's Gang. The Kirby's mission ran the
+WHOLE arc: Ellie Carey (guile 0.71) walked over, took 2 stacks,
+was CAUGHT by the game's real line-of-sight check, and the
+vanilla ladder itself declared the war ("War declared between
+Kirby's Co-operative and Crazy Hill Team"): the first ORGANIC
+war ignition, an act's consequence rather than an op. She made
+it home alive with the loot; her camp's franchise took the
+guile lesson (-1.5 per voter). NOT yet observed: a CLEAN getaway
+carried home (the +guile branch).
 
 ## Predation phase (2026-07-05): the selection event
 
@@ -1090,13 +1097,14 @@ Council then lost a member to Cherry's Army and set a revenge
 invasion straight back. Both directions of the loop, one session,
 zero player involvement, no war_ignite that mod generation.
 
+VERIFIED LATER (2026-07-05, steal act): ORGANIC IGNITION. A
+caught thief (steal.rs) tripped the game's own caught-stealing
+ladder and the game itself declared Kirby's Co-operative vs
+Crazy Hill Team. No ignite op, no mod relationship write.
+
 NOT YET VERIFIED (the pillar is not done until these are watched
 happening):
 
-- Organic ignition: an AI-vs-AI war starting WITHOUT `war_ignite`
-  (provocation-driven hostility + a kill). The Cherry/Jenna
-  hostility is a candidate but its origin predates the session
-  log (likely carried in the save), so it cannot be claimed.
 - War end: what Hostile-with-no-InvasionTarget settles into for
   AI pairs (ceasefire path untested).
 
