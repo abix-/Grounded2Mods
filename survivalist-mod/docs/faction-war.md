@@ -511,15 +511,23 @@ today's map the first target will be The Well-Regulated Bears
 
 ### The player joins the ecosystem (operator-locked 2026-07-05)
 
-The factions treat the player's community as just another camp on
-the map, with two hard exclusions the operator set:
+FULL SYMMETRY (operator-locked 2026-07-05, superseding the first
+ruling): ALL actions the AI factions do to each other they can do
+to the player, with ONE exception: STEAL stays out for now (the
+operator: not ready yet, but eventually). Gameplay is gameplay.
 
 | Act vs the player | Ruling |
 |---|---|
-| Trade | IN. A careful surplus camp whose franchise votes it walks real food to the player's gate when the player's camp is meaningfully hungrier. NOTHING is ever taken as payment: the caravan delivers and leaves (goodwill; the operator's stores are untouchable). |
-| Rob | IN. A menacing franchise may vote to ambush a player survivor crossing the map with goods worth taking; the game's own ambush conversation gives the player the choice: hand it over or fight. Paced by a dedicated player-robbery cooldown so it stays drama, not harassment. |
-| Steal | OUT (operator: "except for my stuff getting thieved"). Thieves never target the player's stores. |
-| Murder | OUT for v1 (a knifed leader can be run-ending). A warring AI camp never sends the knife at the player's leader; revisit later behind an explicit knob if wanted. |
+| Trade | IN, symmetric. Caravans deliver food to the player's gate when the player is meaningfully hungrier AND take one non-food stack home as payment, exactly like any host. |
+| Rob | IN. Road ambushes with the game's own demand conversation; dedicated cooldown. |
+| Hunger raid | IN. A starving camp whose franchise votes it can declare on a well-fed player camp. |
+| Ambition war | IN. A comfortable predator at least twice the player's size can vote to prey on the player's camp: walls, guards, and bleeding them into a peace vote all matter now. |
+| Murder | IN. A camp at war with the player whose franchise votes the knife sends an operative for the PLAYER'S leader, through the game's own assassination mission. Sleep with guards posted. |
+| Surrender | IN. An AI camp the player bleeds below half sues the PLAYER for peace via the game's own ceasefire; the player's own surrenders stay in the vanilla dialog where the player decides. |
+| Extortion | Already vanilla against the player (aggro-driven); unchanged. |
+| Horde | Already symmetric: if the player's camp is the alpha, the dead come for it. |
+| Steal | OUT for now (operator: not ready yet; eventually). Thieves never target the player's stores. |
+| Predation | Technical exception, not a taste ruling: a beaten player camp is never CONSUMED (absorbing the player's community through SetCommunity would likely corrupt the player's game state). Wars against the player still cost people and goods the vanilla way; only the extinction-absorb step skips the player. |
 
 Decision shape (extends what is already live): on the survival
 scan, enumerate the acts the situation makes eligible (surplus to

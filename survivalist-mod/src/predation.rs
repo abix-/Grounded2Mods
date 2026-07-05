@@ -66,6 +66,13 @@ pub fn check_conquests() -> Result<(), String> {
             return Ok(true);
         };
         let target = own(target_h);
+        // Technical exception (docs/faction-war.md full-symmetry
+        // table): the player's community is never CONSUMED;
+        // absorbing it via SetCommunity would likely corrupt the
+        // player's game state.
+        if ctype(&target) == "Player" {
+            return Ok(true);
+        }
         let loser_members = target
             .invoke("GetLivingNonZombieMemberCount", &json!([]))?
             .as_i64()

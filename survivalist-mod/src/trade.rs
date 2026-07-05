@@ -571,16 +571,11 @@ fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
             // carried food into the host's stores, a non-food
             // stack back as payment.
             m.delivered = deliver_carried_food(m.trader_h, m.host_h, m.loaded)?;
-            // OPERATOR-LOCKED: nothing is ever taken from the
-            // player's stores; a caravan to the player delivers
-            // and leaves.
-            m.paid = if m.host_is_player {
-                0
-            } else {
-                with(m.host_h, |h| {
-                    carry_off_stored_goods(h, &[m.trader_h], TRADE_PAY_STACKS, GoodsFilter::NonFood)
-                })?
-            };
+            // Full symmetry (operator-locked): the player pays
+            // like any host, one non-food stack.
+            m.paid = with(m.host_h, |h| {
+                carry_off_stored_goods(h, &[m.trader_h], TRADE_PAY_STACKS, GoodsFilter::NonFood)
+            })?;
             if m.host_is_player && m.delivered > 0 {
                 crate::chronicle::post(&format!(
                     "{} has sent {} to your gate with food",

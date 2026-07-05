@@ -353,10 +353,42 @@ fn desperation_scan(now: f32) -> Result<(), String> {
     // Darwinian selection event (winner consumes loser).
     crate::predation::check_conquests()?;
 
-    // Snapshot every AI settlement once.
+    // Snapshot every AI settlement once; the PLAYER's camp joins
+    // as a TARGET-ONLY entry (full symmetry, operator-locked: it
+    // can be raided and preyed on, but it never votes to act).
     let mut camps: Vec<Camp> = Vec::new();
     for_each_community(|com| {
         let t = ctype(&com);
+        if t == "Player" {
+            let sv = assess(&com)?;
+            if sv.members == 0 {
+                return Ok(true);
+            }
+            let id = com.read_field("Id")?.as_i64().unwrap_or(-1);
+            camps.push(Camp {
+                handle: com.handle().0,
+                id,
+                name: display_name(&com),
+                ctype: t,
+                nutrition: sv.nutrition,
+                members: sv.members,
+                initial: sv.initial,
+                threats: sv.threats,
+                rung: sv.rung,
+                centre: base_centre(&com),
+                already_at_war: true, // never an actor
+                voted_to_raid: false,
+                for_raid: 0,
+                effective_aggression: 0.0,
+                voter_ids: Vec::new(),
+                voted_ambition: false,
+                ambition_for: 0,
+                effective_ambition: 0.0,
+                ambition_voter_ids: Vec::new(),
+            });
+            std::mem::forget(com);
+            return Ok(true);
+        }
         if t != "Normal" && t != "Looter" {
             return Ok(true);
         }
@@ -474,6 +506,11 @@ fn extortion_by_vote(camps: &[Camp]) -> Result<(), String> {
 /// invasion on its own). One surrender per scan.
 fn sue_for_peace(camps: &[Camp]) -> Result<bool, String> {
     for loser in camps {
+        // The player never auto-surrenders: their peace is their
+        // own to make in the vanilla dialog.
+        if loser.ctype == "Player" {
+            continue;
+        }
         // Bleeding, but not yet gutted: at 2 or fewer survivors
         // predation decides their fate, not diplomacy.
         let bleeding = loser.members >= 3
@@ -513,9 +550,11 @@ fn sue_for_peace(camps: &[Camp]) -> Result<bool, String> {
         }
 
         let cm = crate::common::community_manager()?;
+        // Surrendering TO the player shows the vanilla banner (it
+        // is the player's own news); AI pairs stay chronicle-only.
         cm.invoke(
             "SetRelationship",
-            &json!([{ "handle": loser.handle }, { "handle": winner.handle }, "Ceasefire", false]),
+            &json!([{ "handle": loser.handle }, { "handle": winner.handle }, "Ceasefire", winner.ctype == "Player"]),
         )?;
         crate::chronicle::post(&format!(
             "{} has surrendered to {}",
@@ -703,12 +742,14 @@ fn ignite(
 ) -> Result<(), String> {
     let raider_obj = own(raider.handle);
     let cm = crate::common::community_manager()?;
-    // showWarNotifications=false: the vanilla banner reads "You
-    // are at war with X" even for a war between two AI camps; the
-    // chronicle posts the true story instead.
+    // AI-vs-AI wars silence the vanilla banner (it reads "You are
+    // at war with X" regardless of who declared) and let the
+    // chronicle tell the true story; a war ON THE PLAYER keeps
+    // the vanilla banner, because there it is aimed correctly.
+    let player_involved = target.ctype == "Player";
     cm.invoke(
         "SetRelationship",
-        &json!([{ "handle": raider.handle }, { "handle": target.handle }, "Hostile", false]),
+        &json!([{ "handle": raider.handle }, { "handle": target.handle }, "Hostile", player_involved]),
     )?;
     raider_obj.invoke(
         "SetInvasionTarget",
