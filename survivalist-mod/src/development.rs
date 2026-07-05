@@ -129,6 +129,7 @@ fn dev_status(_args: &Json) -> Result<Json, String> {
                 "base_centre": base_centre(&com).map(|(x,y)| json!({"x":x,"y":y})).unwrap_or(Json::Null),
                 "rebuild_queue": list_len(&com, "ConstructionRecords"),
                 "repair_queue": list_len(&com, "NeedsRepair"),
+                "building_now": list_len(&com, "UnderConstructionBuildings"),
             }));
             Ok(true)
         })?;
