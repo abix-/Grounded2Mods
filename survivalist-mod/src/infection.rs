@@ -16,6 +16,12 @@
 //! The body then sees an uninfected injury: no progression, no
 //! infection icon, no antigen-seeking, no infection death.
 //!
+//! `Injury` is a STRUCT, so the hook must use `HookCtx::Args0`
+//! (Harmony `__args` write-back): the plain arg0 variant hands a
+//! boxed COPY and every write is silently lost. That copy-write
+//! bug shipped first and the operator got infected by a live bite
+//! with the patch installed (2026-07-04).
+//!
 //! Fire/armor injury paths already carry InfectionType.None.
 //! Known secondary vector NOT covered here: `Injury.ApplyBandage`
 //! can re-infect an EXISTING injury from an infected bandage
@@ -32,7 +38,7 @@ use unityforge::hook::{self, HOOK_REGISTRY, HookCtx};
 use unityforge::mono::{self, LogLevel, MonoObject};
 
 pub fn install() {
-    match hook::patch_prefix_ctx("Character", "AddInjury", HookCtx::Arg0, zero_injury_infection) {
+    match hook::patch_prefix_ctx("Character", "AddInjury", HookCtx::Args0, zero_injury_infection) {
         Ok(h) => {
             HOOK_REGISTRY.register(h);
             mono::log(

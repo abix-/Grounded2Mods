@@ -197,13 +197,19 @@ The parser strips the `__` prefix and int-parses the rest, which
 is exactly the "Parameter __args does not contain a valid index"
 patch-time exception we hit.
 
-Indexed-parameter caveat (from the same source): the argument is
-loaded AS-IS with no conversion or boxing. Declaring the patch
-parameter as `object` is safe when the original argument is a
-REFERENCE type (our AddInjury case: `Injury` is a class); a
-VALUE-type argument must be declared with its exact type, never
-`object`. The bridge's arg0 ctx path therefore only supports
-reference-type first arguments.
+Indexed-parameter caveat: `object __N` binds a REFERENCE-type
+argument directly, but a VALUE-TYPE argument arrives as a boxed
+COPY: mutations are silently lost. This burned us for real:
+`Injury` is a STRUCT (I first wrote "class" here without
+checking; the operator got infected by a live bite while the
+"working" patch mutated a boxed copy, 2026-07-04). RULE: before
+patching around any argument, check `ilspycmd -t <Type>` for
+`class` vs `struct`. For value-type args use the bridge's Args0
+kind (Harmony `__args`, docs: "Editing the contents of that array
+(no ref needed) will automatically update the values of the
+corresponding arguments"); the shim REFUSES plain arg0 on a
+value-type first arg so this class of silent no-op cannot ship
+again.
 
 THIRD constraint (live 2026-07-04, mechanism verified against the
 same source): `MethodBase __originalMethod` compiles and is a

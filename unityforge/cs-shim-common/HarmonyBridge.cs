@@ -101,6 +101,17 @@ namespace Unityforge.Shim
             Postfix,
             PrefixInstanceCtx,
             PrefixArg0Ctx,
+            // args[0] via Harmony's __args array: the ONLY variant
+            // whose mutations reach a VALUE-TYPE argument. Harmony
+            // documents that editing __args elements writes back to
+            // the original arguments after the patch; mutating the
+            // boxed element's fields therefore lands in the real
+            // arg. Requires __args support (Harmony 2.1+; the
+            // survivalist shim embeds 2.4.2). Plain Arg0Ctx hands a
+            // boxed COPY for value types: writes are silently lost
+            // (live-verified 2026-07-04: Injury is a struct, the
+            // AddInjury infection zeroing did nothing in play).
+            PrefixArgs0Ctx,
         }
 
         private class PatchEntry
@@ -119,6 +130,7 @@ namespace Unityforge.Shim
         private static readonly RustPostfixDelegate[] _postfixSlots = new RustPostfixDelegate[SlotsPerKind];
         private static readonly RustPrefixDelegate[] _prefixInstanceSlots = new RustPrefixDelegate[SlotsPerKind];
         private static readonly RustPrefixDelegate[] _prefixArg0Slots = new RustPrefixDelegate[SlotsPerKind];
+        private static readonly RustPrefixDelegate[] _prefixArgs0Slots = new RustPrefixDelegate[SlotsPerKind];
 
         private static bool RunPrefixSlot(int i)
         {
@@ -221,6 +233,26 @@ namespace Unityforge.Shim
         private static bool PrefixInstanceSlot14(object __instance) => RunPrefixCtxSlot(_prefixInstanceSlots, 14, __instance);
         private static bool PrefixInstanceSlot15(object __instance) => RunPrefixCtxSlot(_prefixInstanceSlots, 15, __instance);
 
+        private static object Args0(object[] __args)
+            => (__args != null && __args.Length > 0) ? __args[0] : null;
+
+        private static bool PrefixArgs0Slot0(object[] __args) => RunPrefixCtxSlot(_prefixArgs0Slots, 0, Args0(__args));
+        private static bool PrefixArgs0Slot1(object[] __args) => RunPrefixCtxSlot(_prefixArgs0Slots, 1, Args0(__args));
+        private static bool PrefixArgs0Slot2(object[] __args) => RunPrefixCtxSlot(_prefixArgs0Slots, 2, Args0(__args));
+        private static bool PrefixArgs0Slot3(object[] __args) => RunPrefixCtxSlot(_prefixArgs0Slots, 3, Args0(__args));
+        private static bool PrefixArgs0Slot4(object[] __args) => RunPrefixCtxSlot(_prefixArgs0Slots, 4, Args0(__args));
+        private static bool PrefixArgs0Slot5(object[] __args) => RunPrefixCtxSlot(_prefixArgs0Slots, 5, Args0(__args));
+        private static bool PrefixArgs0Slot6(object[] __args) => RunPrefixCtxSlot(_prefixArgs0Slots, 6, Args0(__args));
+        private static bool PrefixArgs0Slot7(object[] __args) => RunPrefixCtxSlot(_prefixArgs0Slots, 7, Args0(__args));
+        private static bool PrefixArgs0Slot8(object[] __args) => RunPrefixCtxSlot(_prefixArgs0Slots, 8, Args0(__args));
+        private static bool PrefixArgs0Slot9(object[] __args) => RunPrefixCtxSlot(_prefixArgs0Slots, 9, Args0(__args));
+        private static bool PrefixArgs0Slot10(object[] __args) => RunPrefixCtxSlot(_prefixArgs0Slots, 10, Args0(__args));
+        private static bool PrefixArgs0Slot11(object[] __args) => RunPrefixCtxSlot(_prefixArgs0Slots, 11, Args0(__args));
+        private static bool PrefixArgs0Slot12(object[] __args) => RunPrefixCtxSlot(_prefixArgs0Slots, 12, Args0(__args));
+        private static bool PrefixArgs0Slot13(object[] __args) => RunPrefixCtxSlot(_prefixArgs0Slots, 13, Args0(__args));
+        private static bool PrefixArgs0Slot14(object[] __args) => RunPrefixCtxSlot(_prefixArgs0Slots, 14, Args0(__args));
+        private static bool PrefixArgs0Slot15(object[] __args) => RunPrefixCtxSlot(_prefixArgs0Slots, 15, Args0(__args));
+
         private static bool PrefixArg0Slot0(object __0) => RunPrefixCtxSlot(_prefixArg0Slots, 0, __0);
         private static bool PrefixArg0Slot1(object __0) => RunPrefixCtxSlot(_prefixArg0Slots, 1, __0);
         private static bool PrefixArg0Slot2(object __0) => RunPrefixCtxSlot(_prefixArg0Slots, 2, __0);
@@ -284,7 +316,7 @@ namespace Unityforge.Shim
             try
             {
                 if (_harmony == null || rustFnPtr == IntPtr.Zero) return 0;
-                if (ctxKind != 0 && ctxKind != 1) return 0;
+                if (ctxKind != 0 && ctxKind != 1 && ctxKind != 2) return 0;
                 var target = ResolveTarget(typeNameUtf8, methodNameUtf8);
                 if (target == null) return 0;
                 if (ctxKind == 0 && target.IsStatic)
@@ -292,13 +324,23 @@ namespace Unityforge.Shim
                     ShimLogger.Error("HarmonyBridge.PatchPrefixCtx: __instance ctx on static method " + target.Name);
                     return 0;
                 }
-                if (ctxKind == 1 && target.GetParameters().Length == 0)
+                if (ctxKind != 0 && target.GetParameters().Length == 0)
                 {
-                    ShimLogger.Error("HarmonyBridge.PatchPrefixCtx: arg0 ctx on parameterless method " + target.Name);
+                    ShimLogger.Error("HarmonyBridge.PatchPrefixCtx: arg ctx on parameterless method " + target.Name);
+                    return 0;
+                }
+                if (ctxKind == 1 && target.GetParameters()[0].ParameterType.IsValueType)
+                {
+                    // A boxed COPY would be handed to the callback and
+                    // every mutation silently lost. Force the caller to
+                    // the __args write-back variant.
+                    ShimLogger.Error("HarmonyBridge.PatchPrefixCtx: arg0 ctx on VALUE-TYPE first arg of " + target.Name + "; use ctx kind 2 (args0 write-back)");
                     return 0;
                 }
                 var del = (RustPrefixDelegate)Marshal.GetDelegateForFunctionPointer(rustFnPtr, typeof(RustPrefixDelegate));
-                var kind = (ctxKind == 0) ? PatchKind.PrefixInstanceCtx : PatchKind.PrefixArg0Ctx;
+                var kind = (ctxKind == 0) ? PatchKind.PrefixInstanceCtx
+                    : (ctxKind == 1) ? PatchKind.PrefixArg0Ctx
+                    : PatchKind.PrefixArgs0Ctx;
                 return ApplySlotPatch(target, kind, del, null);
             }
             catch (Exception e)
@@ -312,14 +354,7 @@ namespace Unityforge.Shim
         {
             lock (_lock)
             {
-                string namePrefix;
-                switch (kind)
-                {
-                    case PatchKind.Prefix: namePrefix = "PrefixSlot"; break;
-                    case PatchKind.Postfix: namePrefix = "PostfixSlot"; break;
-                    case PatchKind.PrefixInstanceCtx: namePrefix = "PrefixInstanceSlot"; break;
-                    default: namePrefix = "PrefixArg0Slot"; break;
-                }
+                string namePrefix = SlotNamePrefix(kind);
 
                 int slot = FindFreeSlot(kind);
                 if (slot < 0)
@@ -351,6 +386,18 @@ namespace Unityforge.Shim
             }
         }
 
+        private static string SlotNamePrefix(PatchKind kind)
+        {
+            switch (kind)
+            {
+                case PatchKind.Prefix: return "PrefixSlot";
+                case PatchKind.Postfix: return "PostfixSlot";
+                case PatchKind.PrefixInstanceCtx: return "PrefixInstanceSlot";
+                case PatchKind.PrefixArg0Ctx: return "PrefixArg0Slot";
+                default: return "PrefixArgs0Slot";
+            }
+        }
+
         private static int FindFreeSlot(PatchKind kind)
         {
             for (int i = 0; i < SlotsPerKind; i++)
@@ -361,7 +408,8 @@ namespace Unityforge.Shim
                     case PatchKind.Prefix: free = _prefixSlots[i] == null; break;
                     case PatchKind.Postfix: free = _postfixSlots[i] == null; break;
                     case PatchKind.PrefixInstanceCtx: free = _prefixInstanceSlots[i] == null; break;
-                    default: free = _prefixArg0Slots[i] == null; break;
+                    case PatchKind.PrefixArg0Ctx: free = _prefixArg0Slots[i] == null; break;
+                    default: free = _prefixArgs0Slots[i] == null; break;
                 }
                 if (free) return i;
             }
@@ -375,7 +423,8 @@ namespace Unityforge.Shim
                 case PatchKind.Prefix: _prefixSlots[slot] = prefixDel; break;
                 case PatchKind.Postfix: _postfixSlots[slot] = postfixDel; break;
                 case PatchKind.PrefixInstanceCtx: _prefixInstanceSlots[slot] = prefixDel; break;
-                default: _prefixArg0Slots[slot] = prefixDel; break;
+                case PatchKind.PrefixArg0Ctx: _prefixArg0Slots[slot] = prefixDel; break;
+                default: _prefixArgs0Slots[slot] = prefixDel; break;
             }
         }
 
@@ -391,14 +440,7 @@ namespace Unityforge.Shim
 
         private static void ReleaseEntry(PatchEntry entry)
         {
-            string namePrefix;
-            switch (entry.Kind)
-            {
-                case PatchKind.Prefix: namePrefix = "PrefixSlot"; break;
-                case PatchKind.Postfix: namePrefix = "PostfixSlot"; break;
-                case PatchKind.PrefixInstanceCtx: namePrefix = "PrefixInstanceSlot"; break;
-                default: namePrefix = "PrefixArg0Slot"; break;
-            }
+            string namePrefix = SlotNamePrefix(entry.Kind);
             try { _harmony?.Unpatch(entry.Target, SlotMi(namePrefix, entry.Slot)); }
             catch (Exception e) { ShimLogger.Error("HarmonyBridge.Unpatch: " + e); }
             SetSlot(entry.Kind, entry.Slot, null, null);

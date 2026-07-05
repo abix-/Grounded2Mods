@@ -72,8 +72,19 @@ pub fn patch_prefix(
 pub enum HookCtx {
     /// `__instance` of the patched (instance) method.
     Instance = 0,
-    /// The method's first argument.
+    /// The method's first argument, REFERENCE type only. For a
+    /// value-type first argument the shim refuses (a boxed copy
+    /// would be handed over and every mutation silently lost;
+    /// live-verified 2026-07-04 on the struct Injury). Use
+    /// `Args0` for value types.
     Arg0 = 1,
+    /// The method's first argument via Harmony's `__args` array,
+    /// which writes element changes back to the real arguments
+    /// after the patch. Works for value types (mutating the boxed
+    /// element's fields lands in the real argument on write-back).
+    /// Needs Harmony 2.1+ (`__args`); the survivalist shim embeds
+    /// 2.4.2.
+    Args0 = 2,
 }
 
 /// Install a prefix patch whose callback receives a context
