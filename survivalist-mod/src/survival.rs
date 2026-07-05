@@ -853,6 +853,7 @@ fn survival_status(_args: &Json) -> Result<Json, String> {
                 "stealing": crate::steal::active_target(id).unwrap_or(Json::Null),
                 "trading": crate::trade::active_target(id).unwrap_or(Json::Null),
                 "robbing": crate::rob::active_target(id).unwrap_or(Json::Null),
+                "murdering": crate::murder::active_target(id).unwrap_or(Json::Null),
             }));
             Ok(true)
         })?;

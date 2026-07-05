@@ -24,6 +24,7 @@ mod development;
 mod genome;
 mod growth;
 mod infection;
+mod murder;
 mod predation;
 mod rob;
 mod steal;
@@ -50,6 +51,7 @@ fn on_tick(now: f32) {
     steal::tick(now);
     trade::tick(now);
     rob::tick(now);
+    murder::tick(now);
 }
 
 unityforge::unityforge_mod!(MOD_INFO);
