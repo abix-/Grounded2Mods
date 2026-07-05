@@ -22,7 +22,7 @@
 //! the same starting genomes; only mid-session learning is lost
 //! on reload.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use parking_lot::Mutex;
 use serde_json::{Value as Json, json};
@@ -161,14 +161,76 @@ pub fn blend_into(survivor_id: i64, victor: Genome, victor_weight: f64) {
     s.guile = mix(s.guile, victor.guile);
 }
 
-/// A faction died (consumed / extinct): its genome dies with it.
-/// This is the SELECTION half of evolution: unfit trait sets are
-/// removed from the map's gene pool.
+/// A faction died (consumed / extinct): its faction-level genome
+/// dies with it.
 pub fn remove(id: i64) {
     let mut g = GENOMES.lock();
     if let Some(map) = g.as_mut() {
         map.remove(&id);
     }
+}
+
+// ---- per-survivor genomes (the collective model) ---------------------------
+//
+// The true unit of Darwinian selection is the INDIVIDUAL. Each
+// survivor carries their own genome, keyed by character Id, that
+// varies at birth (Id jitter), learns from what THAT person
+// lived, and dies with them. A settlement's decisions emerge from
+// its voting members' individual genomes (survival.rs franchise
+// vote). The faction-level genome above is the v1 aggregate; the
+// per-survivor map here is the deeper model.
+
+static INDIVIDUALS: Mutex<Option<HashMap<i64, Genome>>> = Mutex::new(None);
+
+/// Members taken BY FORCE (looter press-gang, predation absorb).
+/// In a Looter faction they are voiceless (franchise excludes
+/// them); a Normal faction lets everyone vote, so the flag only
+/// matters for Looters.
+static CONSCRIPTS: Mutex<Option<HashSet<i64>>> = Mutex::new(None);
+
+/// Genome for a survivor, seeding on first sight from faction type
+/// + the character's own Id jitter (individual variation).
+pub fn individual(char_id: i64, ctype: &str) -> Genome {
+    let mut g = INDIVIDUALS.lock();
+    let map = g.get_or_insert_with(HashMap::new);
+    *map.entry(char_id).or_insert_with(|| seed(char_id, ctype))
+}
+
+/// Reinforce one survivor's trait by an outcome they lived.
+pub fn reinforce_individual(char_id: i64, t: Trait, direction_up: bool, magnitude: f64) {
+    let mut g = INDIVIDUALS.lock();
+    let Some(map) = g.as_mut() else { return };
+    let Some(genome) = map.get_mut(&char_id) else { return };
+    let step = LEARN_RATE * magnitude.clamp(0.25, 2.0);
+    genome.adjust(t, if direction_up { step } else { -step });
+}
+
+/// A survivor died: their genome leaves the pool (individual
+/// selection).
+pub fn drop_individual(char_id: i64) {
+    if let Some(map) = INDIVIDUALS.lock().as_mut() {
+        map.remove(&char_id);
+    }
+    if let Some(set) = CONSCRIPTS.lock().as_mut() {
+        set.remove(&char_id);
+    }
+}
+
+/// Mark a survivor as taken by force (non-core).
+pub fn mark_conscript(char_id: i64) {
+    CONSCRIPTS
+        .lock()
+        .get_or_insert_with(HashSet::new)
+        .insert(char_id);
+}
+
+/// True if this survivor was taken by force (a Looter conscript).
+pub fn is_conscript(char_id: i64) -> bool {
+    CONSCRIPTS
+        .lock()
+        .as_ref()
+        .map(|s| s.contains(&char_id))
+        .unwrap_or(false)
 }
 
 /// Snapshot every seeded genome (for the status op).

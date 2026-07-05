@@ -338,6 +338,15 @@ fn absorb_group(group: &MonoObject, door: &mut OpenDoor) -> Result<i64, String> 
         let _ = door
             .com
             .invoke("UpdateRoles", &json!([{ "handle": member.handle().0 }]));
+        // Press-ganged = taken by force = conscript (voiceless in a
+        // Looter faction). A welcomed refugee at a Normal camp is
+        // NOT marked: they earned a voice. Only the seized are
+        // silenced.
+        if door.press_gang {
+            if let Some(id) = member.read_field("Id").ok().and_then(|v| v.as_i64()) {
+                crate::genome::mark_conscript(id);
+            }
+        }
         moved += 1;
         door.headroom -= 1;
     }

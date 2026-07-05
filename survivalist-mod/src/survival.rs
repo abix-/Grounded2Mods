@@ -60,12 +60,79 @@ const RAID_AGGRESSION_FLOOR: f64 = 0.4;
 const OUTCOME_DELAY_SECS: f32 = 200.0;
 
 /// A pending learning experiment: a raid whose outcome will
-/// reinforce or weaken the aggression that drove it.
+/// reinforce or weaken the aggression of the VOTERS who chose it.
 struct Experiment {
     faction_id: i64,
+    voter_ids: Vec<i64>,
     before_members: i64,
     before_nutrition: f64,
     eval_at: f32,
+}
+
+/// The result of a settlement's franchise voting on whether to
+/// raid: the collective decision emerges from its enfranchised
+/// survivors' individual genomes.
+struct Vote {
+    franchise: i64,
+    for_raid: i64,
+    effective_aggression: f64,
+    voter_ids: Vec<i64>,
+}
+
+/// Tally a settlement's raid vote. Franchise = who may vote:
+/// NORMAL camps enfranchise everyone (fluid identity); LOOTER
+/// camps enfranchise only the core (non-conscript) survivors, so
+/// the press-ganged are voiceless (stable identity under
+/// conquest). Each voter votes to raid if their OWN aggression
+/// clears the floor.
+fn tally_vote(com: &MonoObject, ctype: &str) -> Result<Vote, String> {
+    let looter = ctype == "Looter";
+    let mut franchise = 0i64;
+    let mut for_raid = 0i64;
+    let mut sum_aggr = 0.0f64;
+    let mut voter_ids = Vec::new();
+
+    if let Some(m_h) = handle_of(&com.read_field("Members")?) {
+        let mlist = own(m_h);
+        let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+        for i in 0..count {
+            let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+                continue;
+            };
+            let member = own(h);
+            let alive = member
+                .invoke("get_AliveAndNotZombie", &json!([]))
+                .map(|v| v == json!(true))
+                .unwrap_or(false);
+            let human = member
+                .invoke("GetBaseObjectType", &json!([]))
+                .map(|v| v == json!("Human"))
+                .unwrap_or(false);
+            if !alive || !human {
+                continue;
+            }
+            let char_id = member.read_field("Id")?.as_i64().unwrap_or(-1);
+            // The franchise rule: Looters exclude conscripts.
+            if looter && genome::is_conscript(char_id) {
+                continue;
+            }
+            let g = genome::individual(char_id, ctype);
+            let a = g.get(Trait::Aggression);
+            franchise += 1;
+            sum_aggr += a;
+            if a >= RAID_AGGRESSION_FLOOR {
+                for_raid += 1;
+            }
+            voter_ids.push(char_id);
+        }
+    }
+    let effective = if franchise > 0 { sum_aggr / franchise as f64 } else { 0.0 };
+    Ok(Vote {
+        franchise,
+        for_raid,
+        effective_aggression: effective,
+        voter_ids,
+    })
 }
 
 static EXPERIMENTS: Mutex<Vec<Experiment>> = Mutex::new(Vec::new());
@@ -220,7 +287,11 @@ struct Camp {
     rung: Rung,
     centre: Option<(i64, i64)>,
     already_at_war: bool,
-    aggression: f64,
+    /// The collective's raid decision (franchise vote).
+    voted_to_raid: bool,
+    for_raid: i64,
+    effective_aggression: f64,
+    voter_ids: Vec<i64>,
 }
 
 fn base_centre(com: &MonoObject) -> Option<(i64, i64)> {
@@ -259,7 +330,10 @@ fn desperation_scan(now: f32) -> Result<(), String> {
             return Ok(true);
         }
         let id = com.read_field("Id")?.as_i64().unwrap_or(-1);
-        let aggression = genome::get_or_seed(id, &t).get(Trait::Aggression);
+        // The COLLECTIVE decides, not a single faction trait: the
+        // enfranchised survivors vote their own genomes.
+        let vote = tally_vote(&com, &t)?;
+        let voted_to_raid = vote.franchise > 0 && vote.for_raid * 2 > vote.franchise;
         let already_at_war = handle_of(&com.read_field("InvasionTarget")?).is_some();
         camps.push(Camp {
             handle: com.handle().0,
@@ -271,16 +345,20 @@ fn desperation_scan(now: f32) -> Result<(), String> {
             rung: sv.rung,
             centre: base_centre(&com),
             already_at_war,
-            aggression,
+            voted_to_raid,
+            for_raid: vote.for_raid,
+            effective_aggression: vote.effective_aggression,
+            voter_ids: vote.voter_ids,
         });
         std::mem::forget(com); // handles reused across the two passes below
         Ok(true)
     })?;
 
     // Choose the raider: among desperate, hungry, not-already-
-    // warring camps willing to fight (aggression floor), pick the
-    // MOST AGGRESSIVE. Genome drives the decision; low-aggression
-    // camps endure instead. One per scan keeps escalation organic.
+    // warring camps whose COLLECTIVE VOTED to raid, pick the one
+    // with the most bloodthirsty franchise. A camp of cautious
+    // survivors endures instead. One per scan keeps escalation
+    // organic.
     let raider = camps
         .iter()
         .filter(|c| {
@@ -289,9 +367,13 @@ fn desperation_scan(now: f32) -> Result<(), String> {
                 && !c.already_at_war
                 && c.members >= 2
                 && c.centre.is_some()
-                && c.aggression >= RAID_AGGRESSION_FLOOR
+                && c.voted_to_raid
         })
-        .max_by(|a, b| a.aggression.partial_cmp(&b.aggression).unwrap());
+        .max_by(|a, b| {
+            a.effective_aggression
+                .partial_cmp(&b.effective_aggression)
+                .unwrap()
+        });
     let Some(raider) = raider else {
         release_camps(&camps);
         return Ok(());
@@ -332,9 +414,10 @@ fn desperation_scan(now: f32) -> Result<(), String> {
     std::mem::forget(raider_obj);
 
     // Record the experiment: judge this raid's outcome later and
-    // let it teach the raider whether aggression paid off.
+    // let it teach every survivor who VOTED for it.
     EXPERIMENTS.lock().push(Experiment {
         faction_id: raider.id,
+        voter_ids: raider.voter_ids.clone(),
         before_members: raider.members,
         before_nutrition: raider.nutrition,
         eval_at: now + OUTCOME_DELAY_SECS,
@@ -343,13 +426,14 @@ fn desperation_scan(now: f32) -> Result<(), String> {
     mono::log(
         LogLevel::Info,
         &format!(
-            "survivalist-mod: survival -- {} ({}, starving at {:.2}, aggression {:.2}) raids {} for food (well-fed at {:.2})",
+            "survivalist-mod: survival -- {} ({}, starving at {:.2}) VOTES to raid {} for food: {} of {} voters in favor (effective aggression {:.2})",
             raider.name,
             raider.ctype,
             raider.nutrition,
-            raider.aggression,
             target.name,
-            target.nutrition
+            raider.for_raid,
+            raider.voter_ids.len(),
+            raider.effective_aggression,
         ),
     );
 
@@ -416,17 +500,25 @@ fn evaluate_experiments(now: f32) -> Result<(), String> {
         let up = score > 0.15;
         let down = score < -0.15;
         if up || down {
+            // Every survivor who VOTED for this raid learns from
+            // how it went: the individuals, not the faction,
+            // carry the lesson (and it dies or spreads with them).
+            for &voter in &e.voter_ids {
+                genome::reinforce_individual(voter, Trait::Aggression, up, magnitude);
+            }
+            // Keep the faction-level aggregate roughly in step for
+            // the status display.
             genome::reinforce(e.faction_id, Trait::Aggression, up, magnitude);
-            let after = genome::get_or_seed(e.faction_id, "").get(Trait::Aggression);
             mono::log(
                 LogLevel::Info,
                 &format!(
-                    "survivalist-mod: learn -- {} raid {} (dpop {:+}, dfood {:+.2}); aggression -> {:.2}",
+                    "survivalist-mod: learn -- {}'s raid {} (dpop {:+}, dfood {:+.2}); {} voter(s) grow {}",
                     name,
                     if up { "PAID OFF" } else { "COST THEM" },
                     dmembers as i64,
                     dnutr,
-                    after
+                    e.voter_ids.len(),
+                    if up { "bolder" } else { "warier" },
                 ),
             );
         }
@@ -461,8 +553,12 @@ fn survival_status(_args: &Json) -> Result<Json, String> {
                 Some(h) => Json::String(display_name(&own(h))),
                 None => Json::Null,
             };
-            let id = com.read_field("Id")?.as_i64().unwrap_or(-1);
-            let aggression = genome::get_or_seed(id, &t).get(Trait::Aggression);
+            // The collective vote: franchise size, how many favor
+            // raiding, and the effective (voted) aggression. In a
+            // Looter camp the franchise excludes conscripts, so
+            // silenced-vs-total shows the disenfranchised.
+            let vote = tally_vote(&com, &t)?;
+            let silenced = sv.members - vote.franchise;
             out.push(json!({
                 "name": display_name(&com),
                 "type": t,
@@ -472,7 +568,10 @@ fn survival_status(_args: &Json) -> Result<Json, String> {
                 "initial": sv.initial,
                 "beds": sv.beds,
                 "threats": sv.threats,
-                "aggression": (aggression * 100.0).round() / 100.0,
+                "franchise": vote.franchise,
+                "silenced": silenced,
+                "votes_to_raid": vote.for_raid,
+                "effective_aggression": (vote.effective_aggression * 100.0).round() / 100.0,
                 "raiding": invasion_target,
             }));
             Ok(true)

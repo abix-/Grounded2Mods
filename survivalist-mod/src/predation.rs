@@ -126,6 +126,14 @@ fn consume(winner: MonoObject, loser: MonoObject) -> Result<(), String> {
                 .invoke("SetCommunity", &json!([{ "handle": winner.handle().0 }]))
                 .is_ok()
             {
+                // Absorbed by force = conscript. In a Looter victor
+                // they will never vote (its predatory will stays
+                // the conquerors'); a Normal victor lets everyone
+                // vote, so the flag only silences them under Looter
+                // rule.
+                if let Some(id) = member.read_field("Id").ok().and_then(|v| v.as_i64()) {
+                    genome::mark_conscript(id);
+                }
                 carriers.push(h);
             }
             std::mem::forget(member); // reused as a carrier below
