@@ -242,6 +242,54 @@ AI-vs-AI raids need no pathing work):
 - `Exfil`, `Ambush` (AmbushForEquipmentType suggests item-driven
   ambushes), `Funeral` interactions with war.
 
+## THE VISION: a Darwinian world (operator, 2026-07-05)
+
+The real vision, above everything below: encapsulate DARWINISM,
+survival of the fittest, and EVOLUTION. A static world is boring.
+A world that reacts and evolves not just to the player but TO
+ITSELF, that is a world worth playing in. The map is an ecosystem
+under natural selection, running whether or not the player is
+watching.
+
+Natural selection needs four things; the mod supplies each:
+
+| Darwinian element | Mechanism in the mod |
+|---|---|
+| VARIATION | Factions differ: Normal vs Looter personalities, and (to deepen) heritable strategic traits: aggression, defensiveness, expansion appetite, alliance tendency. No two factions play the same. |
+| SELECTION PRESSURE | Survival is genuinely hard and cheat-free (repopulator killed): finite food, finite people, zombie pressure, competition for the same land. Being unfit HURTS. |
+| DIFFERENTIAL SURVIVAL | The desperation ladder: unfit factions get desperate, take bigger risks, and often die for it; fit factions grow (annex), conquer, and absorb. Weakness is selected AGAINST, in real time. |
+| HEREDITY / PROPAGATION | Successful strategies must PROPAGATE, not just persist: a faction that conquers/absorbs another spreads its own traits into the survivors; a faction that dies takes its traits with it. Over time the map's surviving factions embody whatever worked. (Trait model is the deep TODO; see below.) |
+
+The emergent payoff: no scripted ending. The map self-organizes
+toward whatever configuration is fittest for the current
+conditions, a lone aggressive empire, a defensive coalition, a
+fragile multipolar balance, and it can tip when conditions change
+(a hard winter, a zombie surge, a war of attrition). The operator
+plays inside a world that is competing with itself.
+
+How the existing pillars serve selection:
+
+- Survival/desperation ladder = the selection ENGINE (fitness
+  gets tested continuously; the unfit act rashly and die).
+- Growth (people + annexes) = fitness EXPRESSION (the fit
+  visibly expand).
+- Fight for control / conquest = the SELECTION EVENT (the fit
+  consume the unfit; territory and people transfer).
+- Faction personality = VARIATION (the raw material selection
+  acts on).
+- Factions destroyed + "eventually one faction" = the
+  EQUILIBRIUM selection drives toward (and can be re-disrupted).
+
+The deep gap for true EVOLUTION (not just selection): factions
+have no HERITABLE TRAITS that vary, propagate through conquest,
+and mutate. Today "personality" is just the Normal/Looter type.
+The evolutionary layer (later phase): give each faction a small
+trait genome (aggression, expansionism, defensiveness, guile),
+let conquest/absorption blend the victor's traits into survivors,
+add small drift, and let selection do the rest. Then the map does
+not just SELECT, it EVOLVES: the trait mix of the surviving
+factions shifts over a playthrough toward what the world rewards.
+
 ## NORTH STAR: settlements fighting to survive (operator, 2026-07-04)
 
 This is post-apocalyptic zombie survival. Every faction is
