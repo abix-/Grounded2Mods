@@ -310,21 +310,32 @@ DESTROYED.
   repopulator can resurrect a nearly-dead faction (cheat
   interplay: no-cheat work also makes destruction stick).
 
-## Proposed build order
+## Build order (status as of 2026-07-04)
 
-1. Three research passes to ground the design: `StartPillaging`
-   (what a raid actually does), Occupy/CaptureGoal/area ownership
-   (what capture can transfer), ambient inflow (spawn points,
-   refugees: the legitimate population source).
-2. AI-vs-AI wars ignite and sustain (generalized revenge +
-   extortion escalation), live-verified by watching two AI camps
-   go to war without player involvement.
-3. No-cheat substrate: recruitment replaces conjuring; growth
-   consumes real resources.
-4. Growth brain: settlements expand buildings and population
-   through the existing work goals.
-5. Control: capture/occupation as a war outcome; destruction
-   rules that stick.
+1. DONE: three research passes (raids, occupation, inflow;
+   findings above) + the economy audit (mostly real; three
+   concentrated cheats).
+2. IN FLIGHT (scorecard 5/10): AI-vs-AI wars ignite and sustain.
+   Shipped + live-verified: generalized revenge trigger, ignited
+   war, real assault, self-re-arming invasion. Remaining: organic
+   ignition (extortion escalation or provocations), two-way
+   counter-invasion observed, war end behavior.
+3. NEXT (serves BOTH no-cheat and growth-people): `growth_status`
+   observability op (population, accommodation, nutrition,
+   construction activity, arrivals in transit), then suppress the
+   in-place repopulator for AI settlements (log every suppressed
+   conjure), then recruitment: roving arrivals absorbed by
+   settlements with room + food, via the same community-transfer
+   primitive OccupyBase uses.
+4. Growth-structures: expansion construction orders beyond the
+   worldgen footprint riding the EXISTING real construction flow
+   (ConstructionRecords + BuildGoal + Recipe ingredients).
+   Pre-req: live-verify that AI rebuilds consume ingredients like
+   player builds do.
+5. Control: capture/occupation as a war outcome (relax the
+   CanBeOccupiedBy dead-settlement gate for wartime victors,
+   reuse OccupyBase); destruction rules that stick (rides on the
+   repopulator suppression in 3).
 
 ## The economy: real vs cheated, per resource (audit 2026-07-04)
 
@@ -392,6 +403,17 @@ LIVE-VERIFIED (all on 2026-07-04, one session):
   invasion on The Golden Dudes (member killed)". Re-arming the
   invasion with zero player involvement. This is the exact
   capability vanilla lacks between AI factions.
+
+Op usage (the verification surface, run any time):
+
+```
+curl http://127.0.0.1:17173/op -d '{"op":"war_status"}'
+  -> every community: name, type, members, nemesis, invasion_target, squads
+curl http://127.0.0.1:17173/op -d '{"op":"war_ignite","args":{"attacker":"<name>","defender":"<name>","days":7}}'
+  -> forces Hostile + invasion via the game's own methods
+grep "survivalist-mod: war --" Player.log
+  -> every revenge-trigger firing, named both ways
+```
 
 NOT YET VERIFIED (the pillar is not done until these are watched
 happening):

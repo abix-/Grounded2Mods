@@ -105,6 +105,18 @@ loader) edited with the in-game editors (Edit Equipment, Edit
 Props, Script editor). A content tweak that only changes data
 belongs in the SurvivalistTweaks mod folder as XML, not in Rust.
 
+## Construction system (audited 2026-07-04)
+
+Building anything is Recipe-driven with REAL ingredient
+consumption: `UnderConstructionInfo` holds the Recipe plus
+`IngredientsUsed` with per-ingredient amount tracking
+(`HasUsedEnoughOfIngredient`); builders need real tools
+(toolbox/shovel) and chop real wood (BuildGoal). AI settlements
+keep a rebuild list (`Community.ConstructionRecords`) and a
+repair list (`NeedsRepair`). This is the foundation the
+faction-war growth work builds on; see
+docs/faction-war.md "The economy".
+
 ## Game plumbing worth knowing
 
 - `Session.Instance`: the running game session (holds
