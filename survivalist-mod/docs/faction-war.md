@@ -454,6 +454,39 @@ Proposed build order (one act per increment, live-verified before
 the next): steal (new dimension AND organic ignition), trade
 exchange, ambition raid, rob, murder, extortion into the vote.
 
+STEAL SHIPPED (commit `3a10136e`, survivalist-mod/src/steal.rs),
+live status 2026-07-05:
+
+- Launch scan every 2 minutes: camps that can spare a body (3+
+  members, no invasion, no threats) hold a guile franchise vote
+  (per-voter floor 0.5, majority carries; conscripts voiceless
+  under Looter rule as everywhere). The most guileful yes-camp
+  sends its highest-guile free non-leader member at the nearest
+  richer (nutrition + 0.15) non-hostile non-allied neighbor. One
+  launch per scan, four thefts in flight map-wide at most.
+- The thief travels as a REAL 1-member Trade-behaviour squad
+  through the game's own AddSquad / AddToSquad / SetSquadAction
+  path (how roving traders move), so pathing, gates, and combat
+  reactions are all vanilla.
+- At the stores: up to 2 stacks move by the predation-proven
+  Take/Add transfer (shared `carry_off_stored_goods`, now capped),
+  then the game's own `OnStoleSomething` runs its REAL
+  line-of-sight check: seen means StopThief plus the game itself
+  setting the pair Hostile (organic ignition through the vanilla
+  caught-stealing path); unseen means a clean getaway.
+- Learning is per-voter on guile, like the raid loop on
+  aggression: clean haul home +1.0, caught -1.5, thief died -2.0.
+- Observability: survival_status gains a `stealing` field
+  (target, thief, going/returning); every beat logs as
+  "survivalist-mod: steal".
+
+LIVE-VERIFIED (2026-07-05): the first scan after hot-deploy
+launched a theft on its own: The Crazy Snakes (Looter, 6 of 7
+voters guileful) sent Colby Grant (guile 0.72) at The Smiley
+Cobras; war_status shows the real 1-member Trade squad walking.
+NOT yet observed: the take at the stores, a clean return home, a
+CAUGHT confrontation, and the resulting organic war.
+
 ## Predation phase (2026-07-05): the selection event
 
 Operator-corrected model: Darwinian predation, NOT territorial
