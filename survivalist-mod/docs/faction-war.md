@@ -280,6 +280,43 @@ How the existing pillars serve selection:
 - Factions destroyed + "eventually one faction" = the
   EQUILIBRIUM selection drives toward (and can be re-disrupted).
 
+### Learning: personality shaped by experience (operator, 2026-07-05)
+
+Evolution here runs on TWO timescales, and both matter:
+
+1. WITHIN a faction's life (LEARNING / plasticity): a settlement
+   remembers what worked and what did not, and its personality
+   GROWS from its own experience. It is not born fixed by type;
+   it becomes who its history makes it.
+2. ACROSS factions (SELECTION + HEREDITY): fit factions survive
+   and propagate their (now-learned) traits through
+   conquest/absorption; unfit ones die with their traits.
+
+The learning loop, per faction:
+
+- It makes a choice driven by a trait (raid vs turtle vs expand
+  vs ally), because it was desperate or ambitious.
+- It observes the OUTCOME: raid won food and people, or lost
+  members for nothing; the annex filled, or got burned; the
+  alliance saved it, or dragged it into a losing war.
+- It REINFORCES the trait that led to a good outcome and weakens
+  the one that led to a bad one. Success makes a raider bolder;
+  a costly defeat makes it cautious.
+
+Over a playthrough this makes each faction's personality a
+DYNAMIC record of its life: two Looter camps that started
+identical diverge because one's raids paid off and the other's
+got its people killed. Then selection acts on those learned
+personalities, and conquest spreads the winners' learned traits
+into the survivors they absorb. The map does not just select
+among fixed types; it LEARNS and EVOLVES.
+
+Design consequence: the faction trait genome (below) is not just
+inherited, it is UPDATED by outcomes. Each faction carries
+trait values (aggression, expansionism, defensiveness, guile)
+that drift toward what its own experience rewarded, feed its
+next desperation-response choice, and propagate on conquest.
+
 The deep gap for true EVOLUTION (not just selection): factions
 have no HERITABLE TRAITS that vary, propagate through conquest,
 and mutate. Today "personality" is just the Normal/Looter type.
