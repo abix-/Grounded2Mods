@@ -467,6 +467,18 @@ chronicle tells the true story (the organic caught-thief path
 still shows the vanilla banner, a known quirk worth a patch
 later).
 
+### The player joins the ecosystem (operator-locked 2026-07-05)
+
+The factions treat the player's community as just another camp on
+the map, with two hard exclusions the operator set:
+
+| Act vs the player | Ruling |
+|---|---|
+| Trade | IN. A careful surplus camp whose franchise votes it walks real food to the player's gate when the player's camp is meaningfully hungrier. NOTHING is ever taken as payment: the caravan delivers and leaves (goodwill; the operator's stores are untouchable). |
+| Rob | IN. A menacing franchise may vote to ambush a player survivor crossing the map with goods worth taking; the game's own ambush conversation gives the player the choice: hand it over or fight. Paced by a dedicated player-robbery cooldown so it stays drama, not harassment. |
+| Steal | OUT (operator: "except for my stuff getting thieved"). Thieves never target the player's stores. |
+| Murder | OUT for v1 (a knifed leader can be run-ending). A warring AI camp never sends the knife at the player's leader; revisit later behind an explicit knob if wanted. |
+
 Decision shape (extends what is already live): on the survival
 scan, enumerate the acts the situation makes eligible (surplus to
 trade, a husk to scavenge, a rich weak neighbor to steal from /
