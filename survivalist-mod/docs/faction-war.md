@@ -555,6 +555,27 @@ The map's apex predator has picked its next meal; the pacing
 cooldown is doing its job. Outcomes (and the learning they feed)
 pending observation.
 
+ROB SHIPPED (commit `b910d815`, survivalist-mod/src/rob.rs),
+same day: armed robbery, riding the game's own ambush mission
+WHOLE. A peaceful camp of 5+ whose franchise votes menace
+(aggression/guile blend, floor 0.55, majority) picks a roving
+trader or refugee party carrying a stack worth taking and calls
+`Community.Ambush`: the game itself staffs a real party
+(Enforcers and Guards first), walks them over (the teleport
+stagecraft story ambushes use is disabled by an effectively
+infinite delay, so they WALK), demands the item in a real
+conversation, takes it by force from whoever holds it if
+refused, retreats if the fight turns, and walks home. The mod
+only makes the choice and judges the outcome later: loot in camp
+hands teaches aggression AND guile up per voter; a dead lead
+teaches both down hard; empty hands sting a little.
+survival_status gains a `robbing` field. NOT yet observed: the
+first robbery.
+
+Timeout correction (same day): steal/trade missions now get 30
+minutes, not 15; real cross-map walks were fizzling (Abraham
+Bowers' caravan, Colby Grant's trek).
+
 SURRENDER SHIPPED (commit `2b39069c`, survival.rs), same day:
 wars can now END short of extinction. A camp bled below half its
 worldgen size (or terminal), still 3+ strong (at 2 or fewer
