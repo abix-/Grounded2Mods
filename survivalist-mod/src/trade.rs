@@ -80,6 +80,7 @@ struct Mission {
     seller_name: String,
     host_h: i32,
     host_name: String,
+    host_is_player: bool,
     trader_h: i32,
     trader_name: String,
     squad_id: i64,
@@ -167,6 +168,41 @@ fn launch_scan(now: f32) -> Result<(), String> {
     let mut camps: Vec<Camp> = Vec::new();
     for_each_community(|com| {
         let t = ctype(&com);
+        // The player's camp is a HOST-ONLY candidate: caravans may
+        // arrive at the player's gate, but the player camp never
+        // sells (docs/faction-war.md "The player joins the
+        // ecosystem").
+        if t == "Player" {
+            let members = com
+                .invoke("GetLivingNonZombieMemberCount", &json!([]))?
+                .as_i64()
+                .unwrap_or(0);
+            let Some(centre) = base_centre(&com) else {
+                return Ok(true);
+            };
+            if members == 0 {
+                return Ok(true);
+            }
+            let nutrition = com
+                .invoke("CalcCommunityNutritionLevel", &json!([0.0]))?
+                .as_f64()
+                .unwrap_or(1.0);
+            camps.push(Camp {
+                handle: com.handle().0,
+                id: com.read_field("Id")?.as_i64().unwrap_or(-1),
+                name: display_name(&com),
+                ctype: t,
+                nutrition,
+                centre,
+                votes: 0,
+                franchise: 0,
+                effective_defensiveness: 0.0,
+                voter_ids: Vec::new(),
+                eligible_seller: false,
+            });
+            std::mem::forget(com);
+            return Ok(true);
+        }
         if t != "Normal" && t != "Looter" {
             return Ok(true);
         }
@@ -420,6 +456,7 @@ fn launch(camp: &Camp, host: &Camp, now: f32) -> Result<(), String> {
             seller_name: camp.name.clone(),
             host_h: host.handle,
             host_name: host.name.clone(),
+            host_is_player: host.ctype == "Player",
             trader_h,
             trader_name: trader_name.clone(),
             squad_id,
@@ -521,9 +558,22 @@ fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
             // carried food into the host's stores, a non-food
             // stack back as payment.
             m.delivered = deliver_carried_food(m.trader_h, m.host_h, m.loaded)?;
-            m.paid = with(m.host_h, |h| {
-                carry_off_stored_goods(h, &[m.trader_h], TRADE_PAY_STACKS, GoodsFilter::NonFood)
-            })?;
+            // OPERATOR-LOCKED: nothing is ever taken from the
+            // player's stores; a caravan to the player delivers
+            // and leaves.
+            m.paid = if m.host_is_player {
+                0
+            } else {
+                with(m.host_h, |h| {
+                    carry_off_stored_goods(h, &[m.trader_h], TRADE_PAY_STACKS, GoodsFilter::NonFood)
+                })?
+            };
+            if m.host_is_player && m.delivered > 0 {
+                crate::chronicle::post(&format!(
+                    "{} has sent {} to your gate with food",
+                    m.seller_name, m.trader_name
+                ));
+            }
             mono::log(
                 LogLevel::Info,
                 &format!(

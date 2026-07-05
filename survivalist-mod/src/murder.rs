@@ -138,6 +138,13 @@ fn launch_scan(now: f32) -> Result<(), String> {
         let Some(enemy_h) = handle_of(&com.read_field("InvasionTarget")?) else {
             return Ok(true);
         };
+        // OPERATOR-LOCKED: the knife is never sent at the player's
+        // leader (run-ending; docs/faction-war.md "The player
+        // joins the ecosystem").
+        if with(enemy_h, |e| ctype(e)) == "Player" {
+            drop(own(enemy_h));
+            return Ok(true);
+        }
         let id = com.read_field("Id")?.as_i64().unwrap_or(-1);
         let looter = t == "Looter";
         let mut votes = 0i64;

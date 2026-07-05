@@ -51,6 +51,14 @@ const OUTCOME_DELAY_SECS: f32 = 420.0;
 /// party walks (the teleport is story stagecraft, a cheat here).
 const NEVER_TELEPORT_SECS: f64 = 1.0e9;
 
+/// A player survivor counts as "on the road" (robbable) only this
+/// far from their own base, in squared tiles.
+const PLAYER_ROAD_DIST_SQ: f64 = 1600.0;
+
+/// Real seconds between robberies aimed at the player: drama, not
+/// harassment (operator-locked).
+const ROB_PLAYER_COOLDOWN_SECS: f32 = 1200.0;
+
 struct Mission {
     robber_h: i32,
     robber_id: i64,
@@ -69,6 +77,7 @@ struct Mission {
 
 static MISSIONS: Mutex<Vec<Mission>> = Mutex::new(Vec::new());
 static LAST_SCAN_BITS: AtomicU32 = AtomicU32::new(0);
+static ROB_PLAYER_LAST_BITS: AtomicU32 = AtomicU32::new(0);
 
 /// The active robbery a faction is running, for survival_status.
 pub fn active_target(faction_id: i64) -> Option<Json> {
@@ -209,20 +218,30 @@ fn launch_scan(now: f32) -> Result<(), String> {
     // The victim: a roving traveler (trader or refugee party)
     // whose people carry a stack worth taking. Nearest is not
     // worth computing for roamers; first rich one found wins.
-    let mut victim: Option<(i32, String, i32, String, i64)> = None; // (char_h, community name, proto_h, item name, amount)
+    // (char_h, community name, proto_h, item name, amount, is_player)
+    let mut victim: Option<(i32, String, i32, String, i64, bool)> = None;
+    let player_cooldown_ok = {
+        let last = f32::from_bits(ROB_PLAYER_LAST_BITS.load(Ordering::Relaxed));
+        last == 0.0 || now - last >= ROB_PLAYER_COOLDOWN_SECS
+    };
     for_each_community(|com| {
         let t = ctype(&com);
-        if t != "RovingTrader" && t != "RovingRefugee" {
+        let is_player = t == "Player";
+        if t != "RovingTrader" && t != "RovingRefugee" && !is_player {
             return Ok(true);
         }
-        // Never rob a party allied to us; the ambush itself
-        // resets Hostile pairs to Known.
+        if is_player && !player_cooldown_ok {
+            return Ok(true);
+        }
+        // Never rob the allied; never rob an active war enemy
+        // either (the ambush resets Hostile pairs to Known, which
+        // would quietly end a war).
         let victim_com_h = com.handle().0;
         let rel = with(robber_h, |r| {
             r.invoke("GetRelationship", &json!([{ "handle": victim_com_h }]))
         })
         .unwrap_or(json!("?"));
-        if rel == json!("Allied") {
+        if rel == json!("Allied") || rel == json!("Hostile") {
             return Ok(true);
         }
         let Some(m_h) = handle_of(&com.read_field("Members")?) else {
@@ -241,6 +260,23 @@ fn launch_scan(now: f32) -> Result<(), String> {
                 .unwrap_or(false);
             if !alive {
                 continue;
+            }
+            if is_player {
+                // Only a survivor OUT ON THE ROAD is fair game;
+                // nobody gets ambushed inside their own base.
+                let conscious = member
+                    .invoke("get_IsConscious", &json!([]))
+                    .map(|v| v == json!(true))
+                    .unwrap_or(false);
+                let tile = member.invoke("get_Tile", &json!([]))?;
+                let d = with(victim_com_h, |c| {
+                    c.invoke("GetDistSqToNearestBuilding", &json!([tile]))
+                })?
+                .as_f64()
+                .unwrap_or(0.0);
+                if !conscious || d < PLAYER_ROAD_DIST_SQ {
+                    continue;
+                }
             }
             let Some(inv_h) = handle_of(&member.read_field("Inventory")?) else {
                 continue;
@@ -276,14 +312,15 @@ fn launch_scan(now: f32) -> Result<(), String> {
                 }
             }
             if let Some((proto_h, iname, amount)) = best {
-                victim = Some((h, display_name(&com), proto_h, iname, amount));
+                victim = Some((h, display_name(&com), proto_h, iname, amount, is_player));
                 std::mem::forget(member);
                 return Ok(false); // first rich traveler wins
             }
         }
         Ok(true)
     })?;
-    let Some((victim_h, victim_community, proto_h, item_name, amount)) = victim else {
+    let Some((victim_h, victim_community, proto_h, item_name, amount, victim_is_player)) = victim
+    else {
         drop(own(robber_h));
         return Ok(());
     };
@@ -311,6 +348,9 @@ fn launch_scan(now: f32) -> Result<(), String> {
         )
     })?;
 
+    if victim_is_player {
+        ROB_PLAYER_LAST_BITS.store(now.to_bits(), Ordering::Relaxed);
+    }
     let held_before = with(robber_h, |com| {
         com.invoke("CountInventoryItemsOfType", &json!([{ "handle": proto_h }]))
     })
