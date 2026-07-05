@@ -66,6 +66,12 @@ pub fn register_ops() {
             "{attacker: str, defender: str, days?: number}",
             war_ignite,
         ),
+        OpDef::new(
+            "war_end",
+            "End a war between two named communities via the game's own Ceasefire (first name is recorded as the side that sued). Operator relief valve; the invasion drops on its own once the pair is no longer hostile.",
+            "{loser: str, winner: str}",
+            war_end,
+        ),
     ]);
 }
 
@@ -255,5 +261,40 @@ fn war_ignite(args: &Json) -> Result<Json, String> {
             &format!("survivalist-mod: war_ignite -- {aname} vs {dname} ({days} days)"),
         );
         Ok(json!({"ignited": true, "attacker": aname, "defender": dname, "days": days}))
+    })
+}
+
+fn war_end(args: &Json) -> Result<Json, String> {
+    let loser = args.get("loser").and_then(Json::as_str).ok_or("war_end: needs `loser`")?.to_string();
+    let winner = args.get("winner").and_then(Json::as_str).ok_or("war_end: needs `winner`")?.to_string();
+    on_main_thread(move || {
+        let mut loser_h: Option<i32> = None;
+        let mut winner_h: Option<i32> = None;
+        for_each_community(|com| {
+            let name = display_name(&com);
+            if name == loser {
+                loser_h = Some(com.handle().0);
+                std::mem::forget(com);
+            } else if name == winner {
+                winner_h = Some(com.handle().0);
+                std::mem::forget(com);
+            }
+            Ok(true)
+        })?;
+        let (Some(lh), Some(wh)) = (loser_h, winner_h) else {
+            return Err(format!("war_end: could not find both '{loser}' and '{winner}'"));
+        };
+        let cm = community_manager()?;
+        cm.invoke(
+            "SetRelationship",
+            &json!([{ "handle": lh }, { "handle": wh }, "Ceasefire", true]),
+        )?;
+        drop(crate::common::own(lh));
+        drop(crate::common::own(wh));
+        mono::log(
+            LogLevel::Info,
+            &format!("survivalist-mod: war -- operator ceasefire: {loser} sues {winner} for peace"),
+        );
+        Ok(json!({"ceasefire": true, "loser": loser, "winner": winner}))
     })
 }

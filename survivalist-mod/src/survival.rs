@@ -72,6 +72,12 @@ const AMBITION_PREY_RATIO: i64 = 2;
 /// A predator needs enough people to raid and still hold home.
 const AMBITION_MIN_MEMBERS: i64 = 8;
 
+/// BENEATH NOTICE (the other half of the Mario Kart rule): a camp
+/// smaller than this never has a war DECLARED on it by the mod's
+/// ignitions (hunger or ambition), player and AI alike. A gas
+/// station with two people is not worth a war; a town is.
+const PREY_MIN_MEMBERS: i64 = 6;
+
 /// Real seconds between ambition wars map-wide: consolidation
 /// stays dramatic and paced, not a stampede.
 const AMBITION_COOLDOWN_SECS: f32 = 600.0;
@@ -607,7 +613,10 @@ fn hunger_raid(camps: &[Camp], now: f32) -> Result<bool, String> {
     // centre.
     let mut best: Option<(&Camp, i64)> = None;
     for c in camps {
-        if c.handle == raider.handle || c.nutrition < TARGET_MIN_NUTRITION {
+        if c.handle == raider.handle
+            || c.nutrition < TARGET_MIN_NUTRITION
+            || c.members < PREY_MIN_MEMBERS
+        {
             continue;
         }
         let Some((cx, cy)) = c.centre else { continue };
@@ -679,7 +688,7 @@ fn ambition_war(camps: &[Camp], now: f32) -> Result<bool, String> {
     for c in camps {
         if c.handle == predator.handle
             || c.members * AMBITION_PREY_RATIO > predator.members
-            || c.members == 0
+            || c.members < PREY_MIN_MEMBERS
         {
             continue;
         }
