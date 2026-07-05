@@ -45,6 +45,7 @@ static MOD_INFO: ModDef = ModDef {
 };
 
 fn on_tick(now: f32) {
+    genome::persistence_tick(now);
     growth::tick(now);
     development::tick(now);
     survival::tick(now);
@@ -96,6 +97,8 @@ fn on_init() {
 }
 
 fn on_shutdown() {
+    // Flush the genome memory so a hot reload loses no lessons.
+    genome::persist_now();
     unityforge::mono::log(
         unityforge::mono::LogLevel::Info,
         "survivalist-mod: shutdown",

@@ -18,6 +18,18 @@ pub fn handle_of(v: &Json) -> Option<i32> {
     v.get("handle").and_then(Json::as_i64).map(|h| h as i32)
 }
 
+/// The running world's seed (Session.RandomSeed, persisted in the
+/// save): the identity key for the genome memory sidecar.
+pub fn session_seed() -> Result<i64, String> {
+    let session = MonoType::find("Session")
+        .and_then(|t| t.singleton_instance())
+        .ok_or("Session.Instance not found (no game loaded?)")?;
+    session
+        .read_field("RandomSeed")?
+        .as_i64()
+        .ok_or_else(|| "RandomSeed is not a number".into())
+}
+
 pub fn community_manager() -> Result<MonoObject, String> {
     let session = MonoType::find("Session")
         .and_then(|t| t.singleton_instance())

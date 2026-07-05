@@ -15,12 +15,11 @@
 //!   faction dies its genome dies with it. `blend_into` is the
 //!   seam.
 //!
-//! Storage is Rust-side, keyed by the stable community `Id`. v1
-//! limitation (documented): the genome lives for the SESSION, not
-//! across a save/load reload (that would need writing into the
-//! game's save). Seeding is deterministic, so a reload re-seeds
-//! the same starting genomes; only mid-session learning is lost
-//! on reload.
+//! Storage is Rust-side, keyed by the stable community `Id`, and
+//! PERSISTED: a sidecar file keyed by the save's world seed
+//! remembers every genome, lesson, and conscript across hot
+//! reloads and game restarts (see the persistence section below).
+//! Seeding stays deterministic for anyone the file has never met.
 
 use std::collections::{HashMap, HashSet};
 
@@ -141,6 +140,7 @@ pub fn reinforce(id: i64, t: Trait, direction_up: bool, magnitude: f64) {
     let Some(genome) = map.get_mut(&id) else { return };
     let step = LEARN_RATE * magnitude.clamp(0.25, 2.0);
     genome.adjust(t, if direction_up { step } else { -step });
+    mark_dirty();
 }
 
 /// HEREDITY seam (for the conquest phase): blend a victor's
@@ -156,6 +156,7 @@ pub fn blend_into(survivor_id: i64, victor: Genome, victor_weight: f64) {
     s.expansionism = mix(s.expansionism, victor.expansionism);
     s.defensiveness = mix(s.defensiveness, victor.defensiveness);
     s.guile = mix(s.guile, victor.guile);
+    mark_dirty();
 }
 
 /// A faction died (consumed / extinct): its faction-level genome
@@ -165,6 +166,7 @@ pub fn remove(id: i64) {
     if let Some(map) = g.as_mut() {
         map.remove(&id);
     }
+    mark_dirty();
 }
 
 // ---- per-survivor genomes (the collective model) ---------------------------
@@ -200,6 +202,7 @@ pub fn reinforce_individual(char_id: i64, t: Trait, direction_up: bool, magnitud
     let Some(genome) = map.get_mut(&char_id) else { return };
     let step = LEARN_RATE * magnitude.clamp(0.25, 2.0);
     genome.adjust(t, if direction_up { step } else { -step });
+    mark_dirty();
 }
 
 /// A survivor died: their genome leaves the pool (individual
@@ -211,6 +214,7 @@ pub fn drop_individual(char_id: i64) {
     if let Some(set) = CONSCRIPTS.lock().as_mut() {
         set.remove(&char_id);
     }
+    mark_dirty();
 }
 
 /// Mark a survivor as taken by force (non-core).
@@ -219,6 +223,7 @@ pub fn mark_conscript(char_id: i64) {
         .lock()
         .get_or_insert_with(HashSet::new)
         .insert(char_id);
+    mark_dirty();
 }
 
 /// True if this survivor was taken by force (a Looter conscript).
@@ -240,5 +245,192 @@ pub fn snapshot() -> Vec<(i64, Genome)> {
             v
         }
         None => Vec::new(),
+    }
+}
+
+// ---- persistence (the genome memory) ----------------------------------------
+//
+// Learning only matters if it SURVIVES. Everything above is
+// session memory: a hot reload or a game restart re-seeds the
+// deterministic starting genomes and forgets every lesson and
+// every conscript. The sidecar file below is the world's memory:
+// keyed by the save's world seed (Session.RandomSeed), restored
+// on the first tick with a live game, written at most every 30
+// seconds while dirty, and flushed on every shutdown (hot reloads
+// call shutdown, so a reload loses nothing).
+
+use std::path::PathBuf;
+
+const PERSIST_WRITE_COOLDOWN_SECS: f32 = 30.0;
+const SCHEMA_VERSION: i64 = 1;
+
+static PERSIST_SEED: Mutex<Option<i64>> = Mutex::new(None);
+static PERSIST_DIRTY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static PERSIST_LAST_WRITE_BITS: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(0);
+
+fn mark_dirty() {
+    PERSIST_DIRTY.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn store_path(seed: i64) -> Option<PathBuf> {
+    let profile = std::env::var("USERPROFILE").ok()?;
+    Some(
+        PathBuf::from(profile)
+            .join("AppData/LocalLow/Ginormocorp Industries/Survivalist Invisible Strain")
+            .join(format!("survivalist-mod.genomes.seed{seed}.json")),
+    )
+}
+
+/// Full-precision genome json (to_json rounds for display; the
+/// memory must not).
+fn genome_to_store(g: &Genome) -> Json {
+    json!({
+        "aggression": g.aggression,
+        "expansionism": g.expansionism,
+        "defensiveness": g.defensiveness,
+        "guile": g.guile,
+    })
+}
+
+fn genome_from_store(v: &Json) -> Option<Genome> {
+    let f = |k: &str| v.get(k).and_then(Json::as_f64);
+    Some(Genome {
+        aggression: f("aggression")?,
+        expansionism: f("expansionism")?,
+        defensiveness: f("defensiveness")?,
+        guile: f("guile")?,
+    })
+}
+
+/// Called every tick from lib.rs. Restores once per generation as
+/// soon as a game is up; writes while dirty on a cooldown.
+pub fn persistence_tick(now: f32) {
+    let seed = {
+        let mut s = PERSIST_SEED.lock();
+        match *s {
+            Some(seed) => seed,
+            None => {
+                let Ok(seed) = crate::common::session_seed() else {
+                    return; // menu; try again next tick
+                };
+                *s = Some(seed);
+                restore(seed);
+                seed
+            }
+        }
+    };
+    if !PERSIST_DIRTY.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    let last = f32::from_bits(PERSIST_LAST_WRITE_BITS.load(std::sync::atomic::Ordering::Relaxed));
+    if last != 0.0 && now - last < PERSIST_WRITE_COOLDOWN_SECS {
+        return;
+    }
+    PERSIST_LAST_WRITE_BITS.store(now.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    write_store(seed);
+}
+
+/// Final flush; wired into on_shutdown so hot reloads keep every
+/// lesson.
+pub fn persist_now() {
+    let seed = { *PERSIST_SEED.lock() };
+    if let Some(seed) = seed {
+        if PERSIST_DIRTY.load(std::sync::atomic::Ordering::Relaxed) {
+            write_store(seed);
+        }
+    }
+}
+
+fn restore(seed: i64) {
+    let Some(path) = store_path(seed) else { return };
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return; // fresh world; nothing to remember yet
+    };
+    let Ok(v) = serde_json::from_str::<Json>(&text) else {
+        return;
+    };
+    let mut factions = 0usize;
+    let mut individuals = 0usize;
+    let mut conscripts = 0usize;
+    if let Some(map) = v.get("factions").and_then(Json::as_object) {
+        let mut g = GENOMES.lock();
+        let store = g.get_or_insert_with(HashMap::new);
+        for (k, gv) in map {
+            if let (Ok(id), Some(genome)) = (k.parse::<i64>(), genome_from_store(gv)) {
+                store.insert(id, genome);
+                factions += 1;
+            }
+        }
+    }
+    if let Some(map) = v.get("individuals").and_then(Json::as_object) {
+        let mut g = INDIVIDUALS.lock();
+        let store = g.get_or_insert_with(HashMap::new);
+        for (k, gv) in map {
+            if let (Ok(id), Some(genome)) = (k.parse::<i64>(), genome_from_store(gv)) {
+                store.insert(id, genome);
+                individuals += 1;
+            }
+        }
+    }
+    if let Some(list) = v.get("conscripts").and_then(Json::as_array) {
+        let mut c = CONSCRIPTS.lock();
+        let store = c.get_or_insert_with(HashSet::new);
+        for idv in list {
+            if let Some(id) = idv.as_i64() {
+                store.insert(id);
+                conscripts += 1;
+            }
+        }
+    }
+    unityforge::mono::log(
+        unityforge::mono::LogLevel::Info,
+        &format!(
+            "survivalist-mod: genome memory restored ({factions} faction(s), {individuals} survivor(s), {conscripts} conscript(s)) for world seed {seed}"
+        ),
+    );
+}
+
+fn write_store(seed: i64) {
+    let Some(path) = store_path(seed) else { return };
+    let factions: serde_json::Map<String, Json> = GENOMES
+        .lock()
+        .as_ref()
+        .map(|m| {
+            m.iter()
+                .map(|(id, g)| (id.to_string(), genome_to_store(g)))
+                .collect()
+        })
+        .unwrap_or_default();
+    let individuals: serde_json::Map<String, Json> = INDIVIDUALS
+        .lock()
+        .as_ref()
+        .map(|m| {
+            m.iter()
+                .map(|(id, g)| (id.to_string(), genome_to_store(g)))
+                .collect()
+        })
+        .unwrap_or_default();
+    let conscripts: Vec<Json> = CONSCRIPTS
+        .lock()
+        .as_ref()
+        .map(|s| {
+            let mut ids: Vec<i64> = s.iter().copied().collect();
+            ids.sort_unstable();
+            ids.into_iter().map(Json::from).collect()
+        })
+        .unwrap_or_default();
+    let doc = json!({
+        "schema_version": SCHEMA_VERSION,
+        "factions": factions,
+        "individuals": individuals,
+        "conscripts": conscripts,
+    });
+    // Atomic save: temp + rename, so a crash mid-write never
+    // truncates the world's memory.
+    let tmp = path.with_extension("json.tmp");
+    let Ok(text) = serde_json::to_string(&doc) else { return };
+    if std::fs::write(&tmp, text).is_ok() && std::fs::rename(&tmp, &path).is_ok() {
+        PERSIST_DIRTY.store(false, std::sync::atomic::Ordering::Relaxed);
     }
 }
