@@ -6,19 +6,23 @@
 //! When the director fires this, it CLAIMS one of those real groups,
 //! rolls a HIDDEN intent toward the nearest camp or the player, and
 //! announces only that strangers are approaching. The truth is
-//! revealed when they reach the gate:
+//! revealed when they reach the gate, and it has real shades so the
+//! unknown never goes stale:
 //!
-//! - FRIENDLY: they came in peace and join the camp (real
-//!   recruitment, the same SetCommunity join growth.rs uses).
+//! - FRIENDLY: they came in peace, and either JOIN the camp (real
+//!   recruitment) or, as passing traders, SHARE some of their own
+//!   supplies and move on.
 //! - AGGRESSIVE: they came for blood; the group is set hostile and
 //!   the game's own combat AI takes over.
-//! - WARY: they size up the camp and move on.
+//! - WARY: they size up the camp and move on, or SHAKE IT DOWN for
+//!   a stack of tribute first.
 //!
 //! Nothing is conjured: the group is real, the intent roll is fair
 //! because a stranger has no prior relationship to fabricate, and
-//! every outcome runs through the game's own machinery. The not-
-//! knowing is the point; growth.rs skips a claimed group so this
-//! system owns its fate.
+//! every outcome runs through the game's own machinery (real goods
+//! move by the same Take/Add transfer everything else uses). The
+//! not-knowing is the point; growth.rs skips a claimed group so
+//! this system owns its fate.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -28,7 +32,8 @@ use serde_json::json;
 use unityforge::mono::{self, LogLevel, MonoObject};
 
 use crate::common::{
-    community_manager, ctype, display_name, for_each_community, handle_of, own, pos_of, with,
+    GoodsFilter, carry_off_stored_goods, community_manager, ctype, display_name,
+    for_each_community, handle_of, own, pos_of, with,
 };
 use crate::storyteller::{Outcome, Rule};
 
@@ -56,17 +61,19 @@ const MISSION_TIMEOUT_SECS: f32 = 900.0;
 /// At most this many bands in play map-wide.
 const MAX_STRANGERS: usize = 2;
 
-/// Intent roll weights out of 100: friendly, then aggressive, then
-/// wary is the remainder. The unknown is the fear, so aggression is
-/// a real chance.
-const FRIENDLY_PCT: u64 = 45;
-const AGGRESSIVE_PCT: u64 = 30; // wary = the remaining 25
+/// Non-food stacks a friendly trader shares / a shakedown takes.
+const SHARE_STACKS: i64 = 2;
+const TRIBUTE_STACKS: i64 = 1;
 
+/// The rolled outcome, hidden until the band reaches the gate. The
+/// unknown is the fear, so aggression is a real chance.
 #[derive(Clone, Copy)]
 enum Intent {
-    Friendly,
+    FriendlyJoin,
+    FriendlyShare,
     Aggressive,
-    Wary,
+    WaryLeave,
+    Shakedown,
 }
 
 struct Mission {
@@ -193,7 +200,6 @@ fn try_launch(groups: &[Group], camps: &[Camp], now: f32) -> Result<Outcome, Str
     if groups.is_empty() || camps.is_empty() {
         return Ok(Outcome::Passed);
     }
-    // The closest (band, camp) pair already within arriving range.
     let mut best: Option<(&Group, &Camp, f32)> = None;
     for g in groups {
         for c in camps {
@@ -232,13 +238,14 @@ fn try_launch(groups: &[Group], camps: &[Camp], now: f32) -> Result<Outcome, Str
 }
 
 fn roll_intent(id: i64, now: f32) -> Intent {
-    let r = hash_pick(id, now, 100);
-    if r < FRIENDLY_PCT {
-        Intent::Friendly
-    } else if r < FRIENDLY_PCT + AGGRESSIVE_PCT {
-        Intent::Aggressive
-    } else {
-        Intent::Wary
+    // Out of 100: join 30, share 12, aggressive 30, leave 13,
+    // shakedown 15.
+    match hash_pick(id, now, 100) {
+        0..=29 => Intent::FriendlyJoin,
+        30..=41 => Intent::FriendlyShare,
+        42..=71 => Intent::Aggressive,
+        72..=84 => Intent::WaryLeave,
+        _ => Intent::Shakedown,
     }
 }
 
@@ -328,13 +335,24 @@ fn resolve(m: &Mission, now: f32) -> Result<bool, String> {
     }
 
     match m.intent {
-        Intent::Friendly => {
+        Intent::FriendlyJoin => {
             let joined = join_target(m)?;
             crate::chronicle::post(&reveal_friendly(&m.target_name, joined));
             mono::log(
                 LogLevel::Info,
                 &format!(
                     "survivalist-mod: stranger -- FRIENDLY: {joined} joined {}",
+                    m.target_name
+                ),
+            );
+        }
+        Intent::FriendlyShare => {
+            let shared = gift_from_band(m, SHARE_STACKS)?;
+            crate::chronicle::post(&reveal_share(m.group_id, &m.target_name, shared));
+            mono::log(
+                LogLevel::Info,
+                &format!(
+                    "survivalist-mod: stranger -- FRIENDLY (trader): shared {shared} good(s) with {}",
                     m.target_name
                 ),
             );
@@ -350,12 +368,23 @@ fn resolve(m: &Mission, now: f32) -> Result<bool, String> {
                 ),
             );
         }
-        Intent::Wary => {
+        Intent::WaryLeave => {
             crate::chronicle::post(&reveal_wary(m.group_id, &m.target_name));
             mono::log(
                 LogLevel::Info,
                 &format!(
                     "survivalist-mod: stranger -- WARY: a band sized up {} and left",
+                    m.target_name
+                ),
+            );
+        }
+        Intent::Shakedown => {
+            let took = take_tribute(m)?;
+            crate::chronicle::post(&reveal_shakedown(m.group_id, &m.target_name, took));
+            mono::log(
+                LogLevel::Info,
+                &format!(
+                    "survivalist-mod: stranger -- SHAKEDOWN: took {took} stack(s) as tribute from {}",
                     m.target_name
                 ),
             );
@@ -417,6 +446,148 @@ fn join_target(m: &Mission) -> Result<i64, String> {
     Ok(moved)
 }
 
+/// A friendly trader band: move up to `max` non-food goods from the
+/// band's members' own inventories into the camp's first building.
+/// Returns how many stacks were shared (0 if the band had nothing).
+fn gift_from_band(m: &Mission, max: i64) -> Result<i64, String> {
+    let store: Option<(i32, i32)> = with(m.target_h, |camp| {
+        let b_h = handle_of(&camp.read_field("Buildings").ok()?)?;
+        let blist = own(b_h);
+        let nb = blist.invoke("get_Count", &json!([])).ok()?.as_i64()?;
+        for bi in 0..nb {
+            let Some(bh) = handle_of(&blist.invoke("get_Item", &json!([bi])).ok()?) else {
+                continue;
+            };
+            let building = own(bh);
+            if let Some(inv_h) = handle_of(&building.read_field("Inventory").ok()?) {
+                std::mem::forget(building);
+                return Some((bh, inv_h));
+            }
+        }
+        None
+    });
+    let Some((store_bh, store_inv_h)) = store else {
+        return Ok(0);
+    };
+    let store_inv = own(store_inv_h);
+
+    let member_hs: Vec<i32> = with(m.group_h, |g| {
+        let mut out = Vec::new();
+        if let Some(mlist_h) = g.read_field("Members").ok().as_ref().and_then(handle_of) {
+            let mlist = own(mlist_h);
+            let n = mlist
+                .invoke("get_Count", &json!([]))
+                .ok()
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            for i in 0..n {
+                if let Some(h) = mlist
+                    .invoke("get_Item", &json!([i]))
+                    .ok()
+                    .as_ref()
+                    .and_then(handle_of)
+                {
+                    out.push(h);
+                }
+            }
+        }
+        out
+    });
+
+    let mut moved = 0i64;
+    for mh in member_hs {
+        let member = own(mh);
+        if moved < max {
+            if let Some(inv_h) = member.read_field("Inventory").ok().as_ref().and_then(handle_of) {
+                let inv = own(inv_h);
+                while moved < max {
+                    let count = inv
+                        .invoke("get_Count", &json!([]))
+                        .ok()
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0);
+                    let mut pick: Option<(i32, i64)> = None;
+                    for j in 0..count {
+                        let Some(item_h) = inv
+                            .invoke("GetItem", &json!([j]))
+                            .ok()
+                            .as_ref()
+                            .and_then(handle_of)
+                        else {
+                            continue;
+                        };
+                        let item = own(item_h);
+                        let nonfood = item
+                            .invoke("GetNutrition", &json!([]))
+                            .ok()
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                            <= 0.0;
+                        let amount = item
+                            .invoke("GetAmount", &json!([]))
+                            .ok()
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(1);
+                        if nonfood {
+                            std::mem::forget(item);
+                            pick = Some((item_h, amount));
+                            break;
+                        }
+                    }
+                    let Some((item_h, amount)) = pick else { break };
+                    let taken = inv.invoke(
+                        "Take",
+                        &json!([{ "handle": mh }, { "handle": item_h }, amount]),
+                    )?;
+                    let Some(taken_h) = handle_of(&taken) else { break };
+                    store_inv.invoke(
+                        "Add",
+                        &json!([{ "handle": store_bh }, { "handle": taken_h }]),
+                    )?;
+                    moved += 1;
+                }
+            }
+        }
+        drop(member);
+    }
+    drop(store_inv);
+    drop(own(store_bh));
+    Ok(moved)
+}
+
+/// A shakedown: the band takes up to `TRIBUTE_STACKS` non-food
+/// stacks from the CAMP's own stores into a band member, then
+/// leaves. Returns how many stacks were taken.
+fn take_tribute(m: &Mission) -> Result<i64, String> {
+    let carrier = with(m.group_h, |g| -> Option<i32> {
+        if let Some(h) = handle_of(&g.read_field("Leader").ok()?) {
+            return Some(h);
+        }
+        let mlist_h = handle_of(&g.read_field("Members").ok()?)?;
+        let mlist = own(mlist_h);
+        let n = mlist.invoke("get_Count", &json!([])).ok()?.as_i64()?;
+        for i in 0..n {
+            if let Some(h) = mlist
+                .invoke("get_Item", &json!([i]))
+                .ok()
+                .as_ref()
+                .and_then(handle_of)
+            {
+                return Some(h);
+            }
+        }
+        None
+    });
+    let Some(carrier) = carrier else {
+        return Ok(0);
+    };
+    let took = with(m.target_h, |camp| {
+        carry_off_stored_goods(camp, &[carrier], TRIBUTE_STACKS, GoodsFilter::NonFood)
+    })?;
+    drop(own(carrier));
+    Ok(took)
+}
+
 /// Set the band hostile to the target and, best-effort, make them
 /// actively invade (the same calls war_ignite uses). The game's own
 /// combat AI carries it from here.
@@ -454,6 +625,18 @@ fn reveal_friendly(camp: &str, n: i64) -> String {
     }
 }
 
+fn reveal_share(id: i64, camp: &str, n: i64) -> String {
+    if n > 0 {
+        const L: &[&str] = &[
+            "the strangers proved traders: they left {} some supplies and moved on",
+            "the band shared what they could spare with {} and kept walking",
+        ];
+        L[hash_pick(id, 7.0, L.len() as u64) as usize].replace("{}", camp)
+    } else {
+        format!("the strangers were friendly but had nothing to spare for {camp}")
+    }
+}
+
 fn reveal_aggressive(id: i64, camp: &str) -> String {
     const L: &[&str] = &[
         "the strangers came for blood: {} is under attack",
@@ -470,4 +653,16 @@ fn reveal_wary(id: i64, camp: &str) -> String {
         "the newcomers thought better of {} and left",
     ];
     L[hash_pick(id, 7.0, L.len() as u64) as usize].replace("{}", camp)
+}
+
+fn reveal_shakedown(id: i64, camp: &str, n: i64) -> String {
+    if n > 0 {
+        const L: &[&str] = &[
+            "the strangers demanded tribute: {} paid a stack to see them gone",
+            "the band shook {} down for goods and left",
+        ];
+        L[hash_pick(id, 7.0, L.len() as u64) as usize].replace("{}", camp)
+    } else {
+        format!("the strangers menaced {camp} for tribute but found nothing worth taking")
+    }
 }
