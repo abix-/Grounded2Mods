@@ -30,6 +30,7 @@ mod murder;
 mod predation;
 mod rob;
 mod steal;
+mod storyteller;
 mod survival;
 mod trade;
 mod war;
@@ -55,7 +56,7 @@ fn on_tick(now: f32) {
     trade::tick(now);
     rob::tick(now);
     murder::tick(now);
-    horde::tick(now);
+    storyteller::tick(now);
 }
 
 unityforge::unityforge_mod!(MOD_INFO);
@@ -88,6 +89,10 @@ fn on_init() {
 
     // Survival-driven behavior: desperation ladder + survival_status.
     survival::register_ops();
+
+    // The storyteller: the director that paces drama, with the horde
+    // as its first rule. storyteller_status + storyteller_config ops.
+    storyteller::register_ops();
 
     // A hot reload empties the steal/trade mission lists while
     // their squads survive in the game; reclaim the orphans.
