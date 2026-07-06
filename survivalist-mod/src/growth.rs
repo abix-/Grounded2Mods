@@ -247,12 +247,14 @@ fn recruit_scan() -> Result<(), String> {
     for_each_community(|com| {
         let t = ctype(&com);
         if t == "RovingRefugee" {
-            if com
+            let members = com
                 .invoke("GetLivingNonZombieMemberCount", &json!([]))?
                 .as_i64()
-                .unwrap_or(0)
-                > 0
-            {
+                .unwrap_or(0);
+            let id = com.read_field("Id")?.as_i64().unwrap_or(-1);
+            // A band the stranger system has claimed is its to
+            // resolve; do not recruit it out from under the roll.
+            if members > 0 && !crate::stranger::is_claimed(id) {
                 refugees.push(com);
             }
             return Ok(true);

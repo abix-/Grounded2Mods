@@ -31,6 +31,7 @@ mod predation;
 mod rob;
 mod steal;
 mod storyteller;
+mod stranger;
 mod survival;
 mod trade;
 mod vendor;
@@ -58,6 +59,7 @@ fn on_tick(now: f32) {
     rob::tick(now);
     murder::tick(now);
     vendor::tick(now);
+    stranger::tick(now);
     storyteller::tick(now);
 }
 
