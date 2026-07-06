@@ -33,6 +33,7 @@ mod steal;
 mod storyteller;
 mod survival;
 mod trade;
+mod vendor;
 mod war;
 
 use unityforge::ModDef;
@@ -56,6 +57,7 @@ fn on_tick(now: f32) {
     trade::tick(now);
     rob::tick(now);
     murder::tick(now);
+    vendor::tick(now);
     storyteller::tick(now);
 }
 
