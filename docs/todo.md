@@ -228,10 +228,11 @@ those listed above are the immediate path forward.
   `survivalist-mod/docs/research.md` (live-access recipe,
   difficulty knob cluster, class maps, Harmony constraints) plus
   `survivalist-mod/docs/faction-war.md` (the active front: the
-  operator's faction-war vision, an x/10 scorecard as the
-  authoritative progress tracker, full mechanics documentation,
+  operator's faction-war vision, full mechanics documentation,
   and phase 1 live-verified: AI-vs-AI war ignition, a real
-  assault, and the self-sustaining revenge loop).
+  assault, and the self-sustaining revenge loop). The x/10 status
+  tracker now lives in `survivalist-mod/docs/status.md`, the single
+  home for every score.
 
 ### Definition of done
 
