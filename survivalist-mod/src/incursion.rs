@@ -17,11 +17,13 @@
 //! 4. ESCALATION. The longer the world turns, the more the signs
 //!    pay off and the more ominous they get.
 //!
-//! v1 pays off on PROVEN ground only: false alarms (chronicle) and
-//! stranger arrivals (the strangers system, which now fires ONLY
-//! through this loop, so every arrival is foreshadowed). The big
-//! threats (mega-horde, off-map raiders, military) plug in here as
-//! new payoff kinds once their foundations are verified.
+//! Payoff kinds: false alarms (chronicle), stranger arrivals (the
+//! strangers system, which now fires ONLY through this loop, so
+//! every arrival is foreshadowed), off-map raiders (forced hostile),
+//! military remnants (hostile to everything, purpose never
+//! explained), and the traveling mega-horde. The hostile payoffs
+//! rest on foundations not yet verified live (a group actually
+//! attacking; the horde spawner needs the game restart).
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -54,6 +56,7 @@ enum Payoff {
     FalseAlarm,
     Arrival,
     Raiders,
+    Military,
     MegaHorde,
 }
 
@@ -96,6 +99,10 @@ fn run(now: f32) -> Result<Outcome, String> {
     } else if resolved >= 6 && rng(now, 6, 100) < 15 {
         // Rare and late: the tide of the dead from beyond the map.
         Payoff::MegaHorde
+    } else if resolved >= 4 && rng(now, 7, 100) < 20 {
+        // Late and rare: a military remnant crossing on a mission,
+        // hostile to everything it passes, purpose never explained.
+        Payoff::Military
     } else {
         // Among real payoffs, raiders grow likelier as it escalates:
         // early arrivals are mostly benign, late ones mean to fight.
@@ -121,6 +128,7 @@ fn run(now: f32) -> Result<Outcome, String> {
                 Payoff::FalseAlarm => "false-alarm",
                 Payoff::Arrival => "arrival",
                 Payoff::Raiders => "raiders",
+                Payoff::Military => "military",
                 Payoff::MegaHorde => "mega-horde",
             },
             gap,
@@ -181,6 +189,27 @@ fn resolve(now: f32) {
                 mono::log(
                     LogLevel::Info,
                     "survivalist-mod: incursion -- raiders rolled, but no band was near enough to cross",
+                );
+            }
+        }
+        Payoff::Military => {
+            // A remnant unit crossing on a mission, hostile to
+            // everything it passes; its purpose is never explained.
+            if crate::stranger::launch_military(now) {
+                crate::chronicle::post(
+                    "soldiers have crossed onto the map, and they are not here to help anyone",
+                );
+                mono::log(
+                    LogLevel::Info,
+                    "survivalist-mod: incursion -- MILITARY; a remnant unit crossed the edge on a mission",
+                );
+            } else {
+                crate::chronicle::post(
+                    "the soldiers passed beyond the edge; no one learned their mission",
+                );
+                mono::log(
+                    LogLevel::Info,
+                    "survivalist-mod: incursion -- military rolled, but no unit was near enough to cross",
                 );
             }
         }
