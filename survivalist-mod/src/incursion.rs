@@ -23,13 +23,14 @@
 //! military remnants (hostile to everything, purpose never
 //! explained), a settling faction (a real group claims a dead base
 //! via the game's own reclamation), the mysterious stranger (a lone
-//! figure whose meaning is never learned), and the traveling
-//! mega-horde.
+//! figure whose meaning is never learned), a refugee wave (real
+//! groups seek shelter and what they fled arrives on the next
+//! sign), and the traveling mega-horde.
 //! The hostile payoffs rest on foundations not yet verified live (a
 //! group actually attacking; the horde spawner needs the game
 //! restart).
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use parking_lot::Mutex;
 
@@ -63,6 +64,7 @@ enum Payoff {
     Military,
     Settlers,
     MysteriousStranger,
+    RefugeeWave,
     MegaHorde,
 }
 
@@ -75,6 +77,9 @@ static PENDING: Mutex<Option<Pending>> = Mutex::new(None);
 static LAST_TICK_BITS: AtomicU32 = AtomicU32::new(0);
 /// Incursions resolved this generation; drives escalation.
 static RESOLVED: AtomicU32 = AtomicU32::new(0);
+/// Set when a refugee wave lands: what they fled FOLLOWS them, so
+/// the next sign's payoff is forced to a real threat.
+static NEXT_IS_REAL: AtomicBool = AtomicBool::new(false);
 
 /// True while a sign is out and its payoff has not landed (for the
 /// storyteller status readout).
@@ -100,7 +105,17 @@ fn run(now: f32) -> Result<Outcome, String> {
     // Escalation: early on most signs are false alarms; as the story
     // goes on, more of them pay off (60% false down to a 20% floor).
     let false_pct = 60u64.saturating_sub(resolved as u64 * 5).max(20);
-    let payoff = if rng(now, 0, 100) < false_pct {
+    let payoff = if NEXT_IS_REAL.swap(false, Ordering::Relaxed) {
+        // A refugee wave landed: what they fled arrives next, never
+        // a false alarm and never harmless.
+        if resolved >= 6 && rng(now, 6, 100) < 30 {
+            Payoff::MegaHorde
+        } else if resolved >= 4 && rng(now, 7, 100) < 40 {
+            Payoff::Military
+        } else {
+            Payoff::Raiders
+        }
+    } else if rng(now, 0, 100) < false_pct {
         Payoff::FalseAlarm
     } else if resolved >= 6 && rng(now, 6, 100) < 15 {
         // Rare and late: the tide of the dead from beyond the map.
@@ -117,6 +132,10 @@ fn run(now: f32) -> Result<Outcome, String> {
         // Any time at all: a lone figure whose meaning is never
         // learned. The lingering mystery is the point.
         Payoff::MysteriousStranger
+    } else if rng(now, 10, 100) < 12 {
+        // A wave of real survivors running from something beyond
+        // the edge; what they fled comes for the map next.
+        Payoff::RefugeeWave
     } else {
         // Among real payoffs, raiders grow likelier as it escalates:
         // early arrivals are mostly benign, late ones mean to fight.
@@ -145,6 +164,7 @@ fn run(now: f32) -> Result<Outcome, String> {
                 Payoff::Military => "military",
                 Payoff::Settlers => "settlers",
                 Payoff::MysteriousStranger => "mysterious-stranger",
+                Payoff::RefugeeWave => "refugee-wave",
                 Payoff::MegaHorde => "mega-horde",
             },
             gap,
@@ -268,6 +288,31 @@ fn resolve(now: f32) {
                 mono::log(
                     LogLevel::Info,
                     "survivalist-mod: incursion -- mysterious stranger rolled, but no lone figure was near",
+                );
+            }
+        }
+        Payoff::RefugeeWave => {
+            // Real groups cross and seek shelter; the wave arms the
+            // foreshadow so what they fled arrives on the NEXT sign.
+            let n = crate::stranger::launch_refugees(now);
+            if n > 0 {
+                NEXT_IS_REAL.store(true, Ordering::Relaxed);
+                crate::chronicle::post(
+                    "refugees are crossing onto the map, fleeing something they will not name",
+                );
+                mono::log(
+                    LogLevel::Info,
+                    &format!(
+                        "survivalist-mod: incursion -- REFUGEE WAVE; {n} group(s) crossed, fleeing something off-map"
+                    ),
+                );
+            } else {
+                crate::chronicle::post(
+                    "a trickle of refugees passed the map by; whatever drives them is far away, for now",
+                );
+                mono::log(
+                    LogLevel::Info,
+                    "survivalist-mod: incursion -- refugee wave rolled, but no groups were near enough to cross",
                 );
             }
         }

@@ -65,6 +65,21 @@ pub fn launch_mysterious(now: f32) -> bool {
     matches!(launch_with(now, Some(Intent::Mysterious)), Ok(Outcome::Fired))
 }
 
+/// Force-launch a refugee wave: up to WAVE_MAX real groups steered
+/// to camps as shelter-seekers who will not say what they fled.
+/// Returns how many groups crossed. The incursion loop drives this
+/// and follows it with a real threat: the wave is the foreshadow.
+pub fn launch_refugees(now: f32) -> usize {
+    let mut launched = 0;
+    for _ in 0..WAVE_MAX {
+        if !matches!(launch_with(now, Some(Intent::Refugee)), Ok(Outcome::Fired)) {
+            break;
+        }
+        launched += 1;
+    }
+    launched
+}
+
 /// Seconds between resolve passes (arrival checks).
 const MISSION_TICK_SECS: f32 = 5.0;
 
@@ -82,6 +97,10 @@ const MISSION_TIMEOUT_SECS: f32 = 900.0;
 /// At most this many bands in play map-wide.
 const MAX_STRANGERS: usize = 2;
 
+/// At most this many refugee-wave groups in play map-wide (a wave
+/// has its own cap so it can cross while a band is already out).
+const WAVE_MAX: usize = 3;
+
 /// Non-food stacks a friendly trader shares / a shakedown takes.
 const SHARE_STACKS: i64 = 2;
 const TRIBUTE_STACKS: i64 = 1;
@@ -95,6 +114,7 @@ enum Intent {
     Aggressive,
     Military,
     Mysterious,
+    Refugee,
     WaryLeave,
     Shakedown,
 }
@@ -145,8 +165,20 @@ struct Group {
 }
 
 fn launch_with(now: f32, forced: Option<Intent>) -> Result<Outcome, String> {
-    if MISSIONS.lock().len() >= MAX_STRANGERS {
-        return Ok(Outcome::Passed);
+    {
+        let ms = MISSIONS.lock();
+        let refugees = ms
+            .iter()
+            .filter(|m| matches!(m.intent, Intent::Refugee))
+            .count();
+        let bands = ms.len() - refugees;
+        if matches!(forced, Some(Intent::Refugee)) {
+            if refugees >= WAVE_MAX {
+                return Ok(Outcome::Passed);
+            }
+        } else if bands >= MAX_STRANGERS {
+            return Ok(Outcome::Passed);
+        }
     }
 
     // The mysterious stranger is a LONE figure: only a one-member
@@ -261,25 +293,28 @@ fn try_launch(
         intent,
         deadline: now + MISSION_TIMEOUT_SECS,
     });
-    if matches!(intent, Intent::Mysterious) {
-        crate::chronicle::post(&announce_lone_line(group.id, &target.name));
-        mono::log(
-            LogLevel::Info,
-            &format!(
-                "survivalist-mod: stranger -- a lone figure nears {} (meaning hidden)",
-                target.name
-            ),
-        );
-    } else {
-        crate::chronicle::post(&announce_line(group.id, &target.name));
-        mono::log(
-            LogLevel::Info,
-            &format!(
-                "survivalist-mod: stranger -- an unknown band nears {} (intent hidden)",
-                target.name
-            ),
-        );
-    }
+    let (announce, log_shape) = match intent {
+        Intent::Mysterious => (
+            announce_lone_line(group.id, &target.name),
+            "a lone figure nears {} (meaning hidden)",
+        ),
+        Intent::Refugee => (
+            announce_refugee_line(group.id, &target.name),
+            "refugees near {} (fleeing something off-map)",
+        ),
+        _ => (
+            announce_line(group.id, &target.name),
+            "an unknown band nears {} (intent hidden)",
+        ),
+    };
+    crate::chronicle::post(&announce);
+    mono::log(
+        LogLevel::Info,
+        &format!(
+            "survivalist-mod: stranger -- {}",
+            log_shape.replace("{}", &target.name)
+        ),
+    );
     Ok(Outcome::Fired)
 }
 
@@ -356,16 +391,19 @@ fn resolve(m: &Mission, now: f32) -> Result<bool, String> {
         return Ok(true);
     }
     if now >= m.deadline {
-        if matches!(m.intent, Intent::Mysterious) {
-            crate::chronicle::post(&format!(
+        match m.intent {
+            Intent::Mysterious => crate::chronicle::post(&format!(
                 "the lone figure never reached {}; perhaps it was never coming",
                 m.target_name
-            ));
-        } else {
-            crate::chronicle::post(&format!(
+            )),
+            Intent::Refugee => crate::chronicle::post(&format!(
+                "the refugees scattered before reaching {}",
+                m.target_name
+            )),
+            _ => crate::chronicle::post(&format!(
                 "the strangers never reached {} and moved on",
                 m.target_name
-            ));
+            )),
         }
         return Ok(true);
     }
@@ -474,6 +512,20 @@ fn resolve(m: &Mission, now: f32) -> Result<bool, String> {
                     );
                 }
             }
+        }
+        Intent::Refugee => {
+            // Shelter through the same real join path recruitment
+            // uses; what they fled is never named here (the loop
+            // that sent them delivers it next).
+            let joined = join_target(m)?;
+            crate::chronicle::post(&reveal_refugees(&m.target_name, joined));
+            mono::log(
+                LogLevel::Info,
+                &format!(
+                    "survivalist-mod: stranger -- REFUGEES: {joined} sheltered at {}",
+                    m.target_name
+                ),
+            );
         }
         Intent::WaryLeave => {
             crate::chronicle::post(&reveal_wary(m.group_id, &m.target_name));
@@ -755,6 +807,23 @@ fn announce_lone_line(id: i64, camp: &str) -> String {
         "a single traveller nears {}, saying nothing",
     ];
     L[hash_pick(id, 0.0, L.len() as u64) as usize].replace("{}", camp)
+}
+
+fn announce_refugee_line(id: i64, camp: &str) -> String {
+    const L: &[&str] = &[
+        "refugees are coming down the road toward {}, looking behind them",
+        "a ragged band nears {}, running from something",
+        "families on the road make for {}, carrying what they could",
+    ];
+    L[hash_pick(id, 0.0, L.len() as u64) as usize].replace("{}", camp)
+}
+
+fn reveal_refugees(camp: &str, n: i64) -> String {
+    if n > 0 {
+        format!("refugees found shelter at {camp}; they will not speak of what they fled")
+    } else {
+        format!("refugees begged at {camp}'s gate, but there was no room, and they moved on")
+    }
 }
 
 fn reveal_mystery_gift(camp: &str, n: i64) -> String {
