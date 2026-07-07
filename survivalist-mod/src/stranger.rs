@@ -58,6 +58,13 @@ pub fn launch_military(now: f32) -> bool {
     matches!(launch_with(now, Some(Intent::Military)), Ok(Outcome::Fired))
 }
 
+/// Force-launch the mysterious stranger: a LONE figure (a one-member
+/// group) whose meaning is never learned. Same arrival machinery;
+/// the reveal is real but never explained.
+pub fn launch_mysterious(now: f32) -> bool {
+    matches!(launch_with(now, Some(Intent::Mysterious)), Ok(Outcome::Fired))
+}
+
 /// Seconds between resolve passes (arrival checks).
 const MISSION_TICK_SECS: f32 = 5.0;
 
@@ -87,6 +94,7 @@ enum Intent {
     FriendlyShare,
     Aggressive,
     Military,
+    Mysterious,
     WaryLeave,
     Shakedown,
 }
@@ -141,6 +149,9 @@ fn launch_with(now: f32, forced: Option<Intent>) -> Result<Outcome, String> {
         return Ok(Outcome::Passed);
     }
 
+    // The mysterious stranger is a LONE figure: only a one-member
+    // group can carry it.
+    let lone = matches!(forced, Some(Intent::Mysterious));
     let mut camps: Vec<Camp> = Vec::new();
     let mut groups: Vec<Group> = Vec::new();
     for_each_community(|com| {
@@ -151,7 +162,11 @@ fn launch_with(now: f32, forced: Option<Intent>) -> Result<Outcome, String> {
                 .as_i64()
                 .unwrap_or(0);
             let id = com.read_field("Id")?.as_i64().unwrap_or(-1);
-            if members > 0 && !is_claimed(id) && !crate::settler::is_claimed(id) {
+            if members > 0
+                && (!lone || members == 1)
+                && !is_claimed(id)
+                && !crate::settler::is_claimed(id)
+            {
                 if let Some(lead_h) = handle_of(&com.read_field("Leader")?) {
                     if let Some(pos) = pos_of(&own(lead_h)) {
                         groups.push(Group {
@@ -246,14 +261,25 @@ fn try_launch(
         intent,
         deadline: now + MISSION_TIMEOUT_SECS,
     });
-    crate::chronicle::post(&announce_line(group.id, &target.name));
-    mono::log(
-        LogLevel::Info,
-        &format!(
-            "survivalist-mod: stranger -- an unknown band nears {} (intent hidden)",
-            target.name
-        ),
-    );
+    if matches!(intent, Intent::Mysterious) {
+        crate::chronicle::post(&announce_lone_line(group.id, &target.name));
+        mono::log(
+            LogLevel::Info,
+            &format!(
+                "survivalist-mod: stranger -- a lone figure nears {} (meaning hidden)",
+                target.name
+            ),
+        );
+    } else {
+        crate::chronicle::post(&announce_line(group.id, &target.name));
+        mono::log(
+            LogLevel::Info,
+            &format!(
+                "survivalist-mod: stranger -- an unknown band nears {} (intent hidden)",
+                target.name
+            ),
+        );
+    }
     Ok(Outcome::Fired)
 }
 
@@ -330,10 +356,17 @@ fn resolve(m: &Mission, now: f32) -> Result<bool, String> {
         return Ok(true);
     }
     if now >= m.deadline {
-        crate::chronicle::post(&format!(
-            "the strangers never reached {} and moved on",
-            m.target_name
-        ));
+        if matches!(m.intent, Intent::Mysterious) {
+            crate::chronicle::post(&format!(
+                "the lone figure never reached {}; perhaps it was never coming",
+                m.target_name
+            ));
+        } else {
+            crate::chronicle::post(&format!(
+                "the strangers never reached {} and moved on",
+                m.target_name
+            ));
+        }
         return Ok(true);
     }
 
@@ -398,6 +431,49 @@ fn resolve(m: &Mission, now: f32) -> Result<bool, String> {
                     m.target_name
                 ),
             );
+        }
+        Intent::Mysterious => {
+            // The outcome is real, but no line ever explains it:
+            // the lingering mystery IS the payoff.
+            match hash_pick(m.group_id, 9.0, 3) {
+                0 => {
+                    let left = gift_from_band(m, 1)?;
+                    crate::chronicle::post(&reveal_mystery_gift(&m.target_name, left));
+                    mono::log(
+                        LogLevel::Info,
+                        &format!(
+                            "survivalist-mod: stranger -- MYSTERIOUS: the lone figure left {left} good(s) at {}",
+                            m.target_name
+                        ),
+                    );
+                }
+                1 => {
+                    crate::chronicle::post(&format!(
+                        "a lone figure watched {} from a distance for hours; by nightfall there was no trace",
+                        m.target_name
+                    ));
+                    mono::log(
+                        LogLevel::Info,
+                        &format!(
+                            "survivalist-mod: stranger -- MYSTERIOUS: the lone figure watched {} and vanished",
+                            m.target_name
+                        ),
+                    );
+                }
+                _ => {
+                    crate::chronicle::post(&format!(
+                        "the stranger spoke a single sentence at {}'s gate and left; no two retellings agree",
+                        m.target_name
+                    ));
+                    mono::log(
+                        LogLevel::Info,
+                        &format!(
+                            "survivalist-mod: stranger -- MYSTERIOUS: the lone figure spoke at {} and left",
+                            m.target_name
+                        ),
+                    );
+                }
+            }
         }
         Intent::WaryLeave => {
             crate::chronicle::post(&reveal_wary(m.group_id, &m.target_name));
@@ -670,6 +746,23 @@ fn announce_line(id: i64, camp: &str) -> String {
         "figures on the road near {}, their intent unclear",
     ];
     L[hash_pick(id, 0.0, L.len() as u64) as usize].replace("{}", camp)
+}
+
+fn announce_lone_line(id: i64, camp: &str) -> String {
+    const L: &[&str] = &[
+        "a lone figure is walking toward {}",
+        "someone approaches {} alone, and no one knows them",
+        "a single traveller nears {}, saying nothing",
+    ];
+    L[hash_pick(id, 0.0, L.len() as u64) as usize].replace("{}", camp)
+}
+
+fn reveal_mystery_gift(camp: &str, n: i64) -> String {
+    if n > 0 {
+        format!("the stranger left something at {camp}'s gate and walked away without a word")
+    } else {
+        format!("the stranger stood a while at {camp}'s gate, said nothing, and moved on")
+    }
 }
 
 fn reveal_friendly(camp: &str, n: i64) -> String {

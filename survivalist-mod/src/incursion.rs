@@ -22,7 +22,9 @@
 //! every arrival is foreshadowed), off-map raiders (forced hostile),
 //! military remnants (hostile to everything, purpose never
 //! explained), a settling faction (a real group claims a dead base
-//! via the game's own reclamation), and the traveling mega-horde.
+//! via the game's own reclamation), the mysterious stranger (a lone
+//! figure whose meaning is never learned), and the traveling
+//! mega-horde.
 //! The hostile payoffs rest on foundations not yet verified live (a
 //! group actually attacking; the horde spawner needs the game
 //! restart).
@@ -60,6 +62,7 @@ enum Payoff {
     Raiders,
     Military,
     Settlers,
+    MysteriousStranger,
     MegaHorde,
 }
 
@@ -110,6 +113,10 @@ fn run(now: f32) -> Result<Outcome, String> {
         // An off-map offshoot comes to STAY: a new camp on a dead
         // base rewrites the balance, so the map is never solved.
         Payoff::Settlers
+    } else if rng(now, 9, 100) < 15 {
+        // Any time at all: a lone figure whose meaning is never
+        // learned. The lingering mystery is the point.
+        Payoff::MysteriousStranger
     } else {
         // Among real payoffs, raiders grow likelier as it escalates:
         // early arrivals are mostly benign, late ones mean to fight.
@@ -137,6 +144,7 @@ fn run(now: f32) -> Result<Outcome, String> {
                 Payoff::Raiders => "raiders",
                 Payoff::Military => "military",
                 Payoff::Settlers => "settlers",
+                Payoff::MysteriousStranger => "mysterious-stranger",
                 Payoff::MegaHorde => "mega-horde",
             },
             gap,
@@ -239,6 +247,27 @@ fn resolve(now: f32) {
                 mono::log(
                     LogLevel::Info,
                     "survivalist-mod: incursion -- settlers rolled, but no group and claimable base matched",
+                );
+            }
+        }
+        Payoff::MysteriousStranger => {
+            // A lone figure crosses the edge; whatever they do at
+            // the gate, the meaning is never explained.
+            if crate::stranger::launch_mysterious(now) {
+                crate::chronicle::post(
+                    "someone crossed the edge alone; no one knows what they want",
+                );
+                mono::log(
+                    LogLevel::Info,
+                    "survivalist-mod: incursion -- MYSTERIOUS STRANGER; a lone figure crossed the edge",
+                );
+            } else {
+                crate::chronicle::post(
+                    "the watchers swore someone stood at the map's edge; there was no one",
+                );
+                mono::log(
+                    LogLevel::Info,
+                    "survivalist-mod: incursion -- mysterious stranger rolled, but no lone figure was near",
                 );
             }
         }
