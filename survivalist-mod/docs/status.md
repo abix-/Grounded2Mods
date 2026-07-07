@@ -22,11 +22,13 @@ attrition should push the player to the edge and force real
 choices, but never close off every road out.
 
 This goal bounds every pressure mechanic in the table below. The
-horde and the storyteller raise the stakes on whoever is winning,
-but their target is tension and drama, not annihilation: an alpha
-camp under a heavy siege should have to fight, adapt, or give
-ground to survive, not simply be deleted. Brutal but survivable is
-the line.
+storyteller is the director over the WHOLE story, and it runs two
+layers: Randy Random (unpredictable events, the incursions) and
+Mario Kart (keeping the leader in check, the horde drawing pressure
+to whoever is winning). Both aim at tension and drama, not
+annihilation: an alpha camp under a heavy siege should have to
+fight, adapt, or give ground to survive, not simply be deleted.
+Brutal but survivable is the line.
 
 ## How we prioritize
 
@@ -38,14 +40,24 @@ cosmetics, and nice-to-haves come AFTER the gameplay that makes the
 world feel alive.
 
 The guiding star for "fun" is the RimWorld storyteller model: a
-solid base simulation plus a director layer on top that watches the
-world's variables and injects events and pressure so the game stays
-unpredictable and dramatic, scaling to how well things are going.
-This mod chases the same anti-boredom goal from two directions at
-once: a bottom-up emergent world that surprises on its own (the
-Darwinian simulation running whether or not the player watches) and
-a top-down director that paces the drama (the horde today, a fuller
-storyteller later). Neither should smother the other.
+solid base simulation plus a director on top. Our storyteller runs
+TWO layers, both already decided (do not confuse or merge them):
+
+- RANDY RANDOM: unpredictable events thrown regardless of how the
+  player is doing (the incursions and the dread loop). Random by
+  design; it delivers variety and not-knowing. It is NOT adaptive
+  and must never be made to scale to the player's safety (that
+  would be Cassandra, a different storyteller). Randy rolls WHAT
+  and WHEN.
+- MARIO KART: keeping the leader in check. Adaptive pressure on
+  whoever is winning (the alpha, AI or player). Today this is the
+  horde: the biggest camp draws scaled zombie packs. Mario Kart is
+  the adaptive layer; it targets the leader.
+
+The storyteller is the umbrella over both. This mod chases the
+anti-boredom goal from two directions: a bottom-up emergent
+Darwinian world that surprises on its own, and this top-down
+director. Neither should smother the other.
 
 GAMEPLAY IS WHAT THE PLAYER FEELS, not what the simulation does. The
 Darwinian world grinding away AI-vs-AI is the backdrop, not the
@@ -70,6 +82,36 @@ Priority (how much a pillar matters) is a SEPARATE axis from score
 (how done it is). A high-priority, low-score row is exactly where to
 work next: it matters a lot and is barely built.
 
+FOCUSED COMPLETION (operator-locked 2026-07-07). Drive ONE item to
+10/10 at a time. Take the highest-priority row that is not yet
+10/10, do the focused work to FINISH it, then move to the next. No
+scope creep, no jumping between rows, no inventing features that are
+not already decided in this file. The job is to flesh out and
+complete what is already documented, one pillar at a time, until
+every row reads 10/10. When in doubt about what to build, the
+answer is: the next thing that moves the current top item toward
+10/10, nothing else.
+
+Priority order (top = do first), and UP NEXT is the top row below
+10/10:
+
+1. Storyteller / director  <- UP NEXT
+2. The horde (adaptive pressure) = the storyteller's Mario Kart layer
+3. The act repertoire
+4. Faction personality / evolution
+5. AI-vs-AI war
+6. Fight for control / predation
+7. Factions can be destroyed
+8. Town growth
+9. No cheating
+10. Player joins the ecosystem
+11. Chronicle / in-game narration (Polish)
+
+The storyteller (1) and the horde (2) are one job: the horde IS the
+storyteller's Mario Kart layer, so finishing the storyteller means
+finishing both its layers to live-verified 10/10, the Randy
+incursions AND the Mario Kart horde. That is the current focus.
+
 ## Scoring discipline
 
 A score moves ONLY on a live-verified change: something watched
@@ -90,7 +132,7 @@ important for fun), which is independent of the current score.
 
 | Pillar | Class | Score | Where it stands now, and next | What 10/10 looks like |
 |---|---|---|---|---|
-| Storyteller / director | Gameplay | 4/10 (proposed) | SHIPPED and armed live (2026-07-06). The director is a real module (Randy Random, config-driven and swappable, tweakable live), pacing drama on an irregular cadence with a survivable guard. THREE on-map rules: the horde, the traveling vendor (a real camp sells wares to a camp or the player), and strangers of unknown intent (a real arriving group with a hidden rolled outcome: join, share goods, attack, leave, or shake the camp down for tribute). The VISION now reaches past on-map events to OFF-MAP INCURSIONS (backlog below), the real anti-boredom engine and the way a comfortable player stays challenged. The full incursion set is BUILT (code-landed 2026-07-07): the dread loop plus mega-horde, raiders, military remnants, settling faction, mysterious stranger, refugee wave, and signal, all in incursion.rs/stranger.rs. FIRST LIVE FIRING watched 2026-07-07 (deployed via gen29 hot reload): the dread loop runs on its own (dread signs scheduling payoffs, a false alarm, and the off-map SIGNAL completing its full arc, chronicle line and all). So the loop mechanism and the signal payoff are LIVE-VERIFIED. Everything else is still code-landed only, unwatched: the aggressive-stranger/raiders branch (a roll came up but no roving group was near the edge to convert, so the hostile-attack foundation stays unproven), military remnants, the settling faction, the mysterious stranger, the refugee wave, and the mega-horde. Next: keep verifying (a hostile arrival actually attacking is the highest-value watch, since raiders/military/aggressive all rest on it; the rare payoffs are gated behind the escalation counter and need playtime). Note the identified BUILD gap that remains here: the incursions target the nearest camp neutrally and escalate on a global counter, so they do not yet come FOR the player or scale to how safe the player is (the vision's "they come for the PLAYER"); extending the horde's Mario Kart rule to the incursions is the next storyteller build. | The storyteller tells the STORY of a pocket of survivors on an island in a collapsing world, and its greatest tool is the UNKNOWN BEYOND THE MAP EDGE. The finite map gets solved and safe; the edge is the infinite unknown, and the director decides what crosses it and when: a traveling mega-horde flattening settlements in its path, off-map warbands and scavengers, military remnants killing everything they pass, whole factions arriving to settle, a mysterious stranger whose meaning is never fully learned. Each is telegraphed with dread (smoke on the horizon, refugees speaking of soldiers to the north) and escalates as the map goes quiet. They come for the PLAYER, so a bored player behind safe walls never coasts: something worse is always out there. |
+| Storyteller / director | Gameplay | 4/10 (proposed) | SHIPPED and armed live (2026-07-06). The director is a real module (Randy Random, config-driven and swappable, tweakable live), pacing drama on an irregular cadence with a survivable guard. THREE on-map rules: the horde, the traveling vendor (a real camp sells wares to a camp or the player), and strangers of unknown intent (a real arriving group with a hidden rolled outcome: join, share goods, attack, leave, or shake the camp down for tribute). The VISION now reaches past on-map events to OFF-MAP INCURSIONS (backlog below), the real anti-boredom engine and the way a comfortable player stays challenged. The full incursion set is BUILT (code-landed 2026-07-07): the dread loop plus mega-horde, raiders, military remnants, settling faction, mysterious stranger, refugee wave, and signal, all in incursion.rs/stranger.rs. FIRST LIVE FIRING watched 2026-07-07 (deployed via gen29 hot reload): the dread loop runs on its own (dread signs scheduling payoffs, a false alarm, and the off-map SIGNAL completing its full arc, chronicle line and all). So the loop mechanism and the signal payoff are LIVE-VERIFIED. Everything else is still code-landed only, unwatched: the aggressive-stranger/raiders branch (a roll came up but no roving group was near the edge to convert, so the hostile-attack foundation stays unproven), military remnants, the settling faction, the mysterious stranger, the refugee wave, and the mega-horde. Next (the focused path to 10/10, both layers): RANDY layer, finish the incursions. The one real BUILD gap is an already-decided design from the backlog below, hostile groups SPAWNED at the edge and pointed inward: today raiders/military instead try to convert an ambient roving group, so they no-op when none is near the edge (watched twice live), leaving the hostile-attack foundation unproven. Build that, then live-verify every payoff (a hostile arrival actually attacking is the highest-value watch; the rare ones are escalation-gated and need playtime). MARIO KART layer, watch the horde pack mass on the alpha. NOT on the table: making the random incursions adaptive to the player (that is Cassandra, rejected 2026-07-07); the leader-check is the horde's job and the incursions stay random. |  The storyteller tells the STORY of a pocket of survivors on an island in a collapsing world, and its greatest tool is the UNKNOWN BEYOND THE MAP EDGE. The finite map gets solved and safe; the edge is the infinite unknown, and the director decides what crosses it and when: a traveling mega-horde flattening settlements in its path, off-map warbands and scavengers, military remnants killing everything they pass, whole factions arriving to settle, a mysterious stranger whose meaning is never fully learned. Each is telegraphed with dread (smoke on the horizon, refugees speaking of soldiers to the north) and escalates as the map goes quiet. They come for the PLAYER, so a bored player behind safe walls never coasts: something worse is always out there. |
 | The horde (adaptive pressure) | Gameplay | 3/10 (proposed) | Operator-locked as the counterweight to the alpha settlement (the Mario Kart rule: first place should hurt). The biggest camp draws scaled zombie packs, tiered by size, so growth is a real tradeoff and a snowballing winner must keep winning sieges or bleed. SHIPPED, and now the storyteller's FIRST RULE: the director paces it on Randy's cadence (its old five-minute self-timer is gone), and the director is confirmed watching the alpha (The Well-Regulated Bears, 51) live 2026-07-06. The pack draws from the game's own spawner, at most two roam at once, carried by bridge ABI v6. The game WAS restarted 2026-07-07 with the v6 shim loaded (deploy verified: gen29 Rust + fresh shim in the mod folder, load confirmed in Player.log), so the spawner is now ARMED. But no pack has been watched massing yet in the running game. Next: watch a pack actually mass on the alpha and the walls answer. | The alpha camp visibly draws stronger and more frequent zombie packs as it grows; the biggest faction is not automatically the safest; success buys danger, watched over real time. |
 | The act repertoire | Gameplay | 7/10 (proposed) | The multidimensional-factions mandate: factions do many things (scavenge, steal, trade, rob, murder, extort, raid), each chosen from who the faction is (genome plus franchise vote) and what its situation calls for, with consequences flowing through the game's own systems. SHIPPED and mostly watched live 2026-07-05: theft (every branch observed, and a caught thief organically ignited a war through the vanilla caught-stealing path), trade (the first real AI-to-AI exchange; launch seen, delivery and return not yet), the ambition war (launches seen, outcomes pending), robbery (a full arc observed), moving extortion into the franchise vote, and suing for peace (observed, including a ceasefire re-broken then holding). Murder shipped; a plot was observed but no successful kill yet. Scavenge is now BUILT too (code-landed 2026-07-07, scavenge.rs): an expansionist franchise vote sends a party to loot the nearest ownerless building (found by walking the game's own public props list, PropManager.AllProps, no shim and no restart), carries the goods home in real packs, and the voters learn expansionism from the haul. The party SIZE is emergent (eager yes-voters, capped by what the camp can spare and by the loot found). Next: all acts are code-landed; what remains is VERIFICATION. Watch the not-yet-seen arcs live: a scavenge party walk-loot-return, trade delivery and payment, a successful murder, ambition-war outcomes feeding learning. | Every act including scavenge runs live, each act's full arc and its learning feedback observed, and a spectator can tell camps apart by which acts they keep choosing. |
 | Faction personality / evolution | Gameplay | 7/10 | LIVE 2026-07-05: personality is visible in behavior with zero hardcoded type checks. Each faction has a trait genome (aggression, expansionism, defensiveness, guile), and decisions are a per-survivor franchise vote: Normal camps let everyone vote and drift toward whoever joins; Looter camps let only core looters vote and stay ruthless under conquest. Looter camps vote near-unanimously to raid and steal; Normal camps split and become the traders, all emergent from around 200 individual votes. All four traits now have live learning loops, and genomes persist across restarts (a seed-keyed sidecar restored 253 survivor genomes on one reload). Next: nothing to build here for its own sake; this engine only shows up through the visible acts it drives (Looters raiding, Normal camps trading), so its progress is the act repertoire's. Deeper genome mechanics (per-survivor heredity blending, trait drift) are simulation the player never sees, and are CUT as scope creep per the bored-player test above. | Normal and Looter settlements are recognizably different actors whose war, growth, and dealing choices fit their identity and shift as their people live, die, learn, and are absorbed, visible to a spectator without reading code. |
