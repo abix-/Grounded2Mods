@@ -426,8 +426,13 @@ read in the decompile, none guessed):
 | Murder | high aggression, guile | A real stealth-assassination attack path with secrecy handling exists (assassinate + stealthy melee, Character.cs:10798; witness/sound attribution decides if it is pinned). | A lone operative kills a rival camp's member quietly: weaken before a war, or revenge without one. Risky: attribution through the game's own witness systems means it can ignite. |
 | Raid / war | aggression, expansionism | SHIPPED: the hunger raid (famine-gated) + the two-way revenge loop. | Ambition ignition: comfortable but aggressive + expansionist camps vote to prey on a weaker, richer neighbor. Wars that start because of WHO a faction is, not only how hungry it is. |
 
-SCAVENGE: UNBLOCKED by research 2026-07-07; the 2026-07-05 block
-was WRONG. The old claim said town loot cannot be enumerated over
+SCAVENGE: BUILT 2026-07-07 (scavenge.rs), code-landed, not yet
+live-verified. An expansionist franchise vote sends a party to the
+nearest ownerless building; the party size is emergent (eager
+yes-voters, capped by what the camp can spare and by the loot
+found); goods ride home in real packs and the voters learn
+expansionism from the haul. It was UNBLOCKED by research 2026-07-07;
+the 2026-07-05 block was WRONG. The old claim said town loot cannot be enumerated over
 the bridge because `GetObjectsInRect` fills a caller-provided
 List and the finder logic lives inside Goal classes, so a shim
 primitive plus a game restart were needed. The decompile says
