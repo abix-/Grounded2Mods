@@ -30,6 +30,7 @@ mod infection;
 mod murder;
 mod predation;
 mod rob;
+mod scavenge;
 mod settler;
 mod steal;
 mod storyteller;
@@ -59,6 +60,7 @@ fn on_tick(now: f32) {
     steal::tick(now);
     trade::tick(now);
     rob::tick(now);
+    scavenge::tick(now);
     murder::tick(now);
     vendor::tick(now);
     stranger::tick(now);
