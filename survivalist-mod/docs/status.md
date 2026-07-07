@@ -47,6 +47,16 @@ Darwinian simulation running whether or not the player watches) and
 a top-down director that paces the drama (the horde today, a fuller
 storyteller later). Neither should smother the other.
 
+GAMEPLAY IS WHAT THE PLAYER FEELS, not what the simulation does. The
+Darwinian world grinding away AI-vs-AI is the backdrop, not the
+game. A change only counts as gameplay if a bored player, safe
+behind their walls, would sit up: something coming for them, a
+choice that costs them, stakes that rise. Trait genomes drifting in
+a camp across the map is simulation the player never sees; a war
+band massing on their gate is gameplay. Apply the bored-player test
+to every feature: would they notice, and would they care? If not,
+it is scope creep, no matter how clever the simulation.
+
 Two things in the table carry the priority:
 
 - ROW ORDER. Rows are ranked by how much closing the gap improves
@@ -80,7 +90,7 @@ important for fun), which is independent of the current score.
 
 | Pillar | Class | Score | Where it stands now, and next | What 10/10 looks like |
 |---|---|---|---|---|
-| Storyteller / director | Gameplay | 4/10 (proposed) | SHIPPED and armed live (2026-07-06). The director is a real module (Randy Random storyteller, config-driven and swappable, tweakable live), reading the world and pacing drama on an irregular cadence with a survivable guard so it never stacks pressure. THREE rules registered: the horde (rule one), the traveling vendor (a real camp's surplus sold by a real caravan), and strangers of unknown intent (real arriving groups, hidden rolled intent: friendly, aggressive, or wary). Confirmed armed live via the status readout: seeded from the world seed, alpha selected (The Well-Regulated Bears, 51), first event scheduled. NOT yet watched: an event actually firing, the horde arming (needs the game restart for the v6 shim), and whether the aggressive-stranger branch attacks rather than flees. Next: watch the vendor and strangers fire, restart to arm the horde, confirm aggressive strangers bite. | A director sits above the simulation, reads how well things are going and how long since anything happened, and paces events and pressure so the game stays unpredictable and dramatic, scaling to success, without smothering the emergent world underneath. |
+| Storyteller / director | Gameplay | 4/10 (proposed) | SHIPPED and armed live (2026-07-06). The director is a real module (Randy Random, config-driven and swappable, tweakable live), pacing drama on an irregular cadence with a survivable guard. THREE on-map rules: the horde, the traveling vendor (a real camp sells wares to a camp or the player), and strangers of unknown intent (a real arriving group with a hidden rolled outcome: join, share goods, attack, leave, or shake the camp down for tribute). Confirmed armed live (seeded, alpha selected, first event scheduled), but NO event watched firing yet, the horde still needs the game restart, and the aggressive-stranger branch is unverified. The VISION now reaches past on-map events to OFF-MAP INCURSIONS (backlog below), the real anti-boredom engine and the way a comfortable player stays challenged. Next: verify the on-map three, then build the incursions from the edge. | The storyteller tells the STORY of a pocket of survivors on an island in a collapsing world, and its greatest tool is the UNKNOWN BEYOND THE MAP EDGE. The finite map gets solved and safe; the edge is the infinite unknown, and the director decides what crosses it and when: a traveling mega-horde flattening settlements in its path, off-map warbands and scavengers, military remnants killing everything they pass, whole factions arriving to settle, a mysterious stranger whose meaning is never fully learned. Each is telegraphed with dread (smoke on the horizon, refugees speaking of soldiers to the north) and escalates as the map goes quiet. They come for the PLAYER, so a bored player behind safe walls never coasts: something worse is always out there. |
 | The horde (adaptive pressure) | Gameplay | 3/10 (proposed) | Operator-locked as the counterweight to the alpha settlement (the Mario Kart rule: first place should hurt). The biggest camp draws scaled zombie packs, tiered by size, so growth is a real tradeoff and a snowballing winner must keep winning sieges or bleed. SHIPPED, and now the storyteller's FIRST RULE: the director paces it on Randy's cadence (its old five-minute self-timer is gone), and the director is confirmed watching the alpha (The Well-Regulated Bears, 51) live 2026-07-06. The pack draws from the game's own spawner, at most two roam at once, carried by bridge ABI v6. But the pack itself has still NEVER run: it holds back until the first game restart loads the v6 shim, then arms. Next: restart to arm it, then watch a pack actually mass on the alpha and the walls answer. | The alpha camp visibly draws stronger and more frequent zombie packs as it grows; the biggest faction is not automatically the safest; success buys danger, watched over real time. |
 | The act repertoire | Gameplay | 7/10 (proposed) | The multidimensional-factions mandate: factions do many things (scavenge, steal, trade, rob, murder, extort, raid), each chosen from who the faction is (genome plus franchise vote) and what its situation calls for, with consequences flowing through the game's own systems. SHIPPED and mostly watched live 2026-07-05: theft (every branch observed, and a caught thief organically ignited a war through the vanilla caught-stealing path), trade (the first real AI-to-AI exchange; launch seen, delivery and return not yet), the ambition war (launches seen, outcomes pending), robbery (a full arc observed), moving extortion into the franchise vote, and suing for peace (observed, including a ceasefire re-broken then holding). Murder shipped; a plot was observed but no successful kill yet. Scavenge is BLOCKED on a game-side change (consumed camps vanish rather than leaving lootable husks, and enumerating town loot needs a shim primitive plus a restart). Next: unblock scavenge, and watch the not-yet-seen halves (trade delivery and payment, a successful murder, ambition-war outcomes feeding learning). | Every act including scavenge runs live, each act's full arc and its learning feedback observed, and a spectator can tell camps apart by which acts they keep choosing. |
 | Faction personality / evolution | Gameplay | 7/10 | LIVE 2026-07-05: personality is visible in behavior with zero hardcoded type checks. Each faction has a trait genome (aggression, expansionism, defensiveness, guile), and decisions are a per-survivor franchise vote: Normal camps let everyone vote and drift toward whoever joins; Looter camps let only core looters vote and stay ruthless under conquest. Looter camps vote near-unanimously to raid and steal; Normal camps split and become the traders, all emergent from around 200 individual votes. All four traits now have live learning loops, and genomes persist across restarts (a seed-keyed sidecar restored 253 survivor genomes on one reload). Next: per-survivor heredity blending on absorption, and aggression shifts from real famine (no famine on the map yet). | Normal and Looter settlements are recognizably different actors whose war, growth, and dealing choices fit their identity and shift as their people live, die, learn, and are absorbed, visible to a spectator without reading code. |
@@ -92,13 +102,39 @@ important for fun), which is independent of the current score.
 | Player joins the ecosystem | Gameplay | 4/10 (proposed) | Operator-locked full symmetry: every act the factions do to each other they can do to the player, with two carve-outs. STEAL stays out for now (not ready yet; eventually), and a beaten player camp is never absorbed because flipping the player's community would likely corrupt the save (wars still cost the player people and goods the normal way; only the extinction-absorb step skips the player). Trade caravans at the gate, road robberies, hunger raids, ambition wars, assassinations of the player's leader, and AI camps suing the player for peace are all ruled in and ride the same engines as the AI-vs-AI acts. But landing ON the player is largely unverified live so far. Next: watch each act happen to the player camp (a caravan at the gate, a robber on the road, an assassin at night, a camp suing for peace). | Each act is observed happening to the player's camp; the player trades with, defends against, and makes peace with the factions on the same terms the factions use with each other. |
 | Chronicle / in-game narration | Polish | 6/10 (proposed) | The living world made visible in-game: dramatic beats (wars declared, surrenders, extinctions, caught thieves, robberies, assassinations) post to the game's own status banner, phrased as word spreading, with only PUBLIC events shown (a clean getaway stays secret). SHIPPED and verified live 2026-07-05. This is presentation, so it ranks below the gameplay above it. Known quirk: the vanilla banner still says "You are at war" for the organic caught-thief path; a patch is deferred. Next (low priority): silence that last vanilla-banner case; richer phrasing as more acts ship. | The player can follow the world's story from in-game messages alone: who is at war, who fell, who robbed whom, phrased naturally, with no false or leaking lines. |
 
-## Pending migration (needs your go)
+## Storyteller backlog: off-map incursions (2026-07-06 vision)
 
-`faction-war.md` still holds the old scorecard at its top, and a
-stale "5/10" line lower in that file (in the build-order section)
-that contradicts the AI-vs-AI war score above. Until those are
-removed, a score still lives in two places. I have NOT touched
-`faction-war.md`. Once you confirm the (proposed) scores here, the
-cleanup is: delete the scorecard from `faction-war.md`, neutralize
-that stale line, and leave that doc as vision and design only, so
-this file is genuinely the sole home for every score.
+The map is a finite box a good player eventually solves; the EDGE is
+the border of an infinite unknown, and the storyteller's biggest
+tool is deciding what crosses it. These are the incursions from
+beyond, the real anti-boredom engine: they come FOR the player, they
+are telegraphed with dread but not explained, and they ESCALATE as
+the map goes quiet and the outside notices this pocket of life.
+Ordered by build feasibility; most reuse tech already in the tree.
+
+- Traveling mega-horde: a wall of the dead crossing the map on a
+  line, flattening every settlement in its path (not aimed at the
+  biggest camp; a blind force of nature). Extends the horde's own
+  spawner.
+- Off-map raiders and scavengers: a hostile warband that raids and
+  leaves or attacks and stays; scavengers who strip what they can
+  and vanish. Hostile groups spawned at the edge, pointed inward
+  (the aggressive-stranger shape).
+- Military remnants: government or special-forces teams crossing on
+  a mission, killing everything they see, purpose never explained.
+  A themed hostile group.
+- The mysterious stranger: a lone figure with a hidden meaning the
+  player never fully learns. A special variant of the strangers
+  system.
+- Off-map signals and plagues: a radio broadcast luring factions and
+  the player toward the edge; a group carrying a worse strain, so
+  taking them in may doom the camp. Chronicle plus strain hooks.
+- A settling faction: an off-map offshoot founds a new camp,
+  rewriting the balance and keeping the map from ever being fully
+  known. The hard one: needs creating a community and a base from
+  nothing (uncertain feasibility).
+- Dread signs: smoke on the horizon, refugees speaking of what is
+  coming. Chronicle lines that plant an incursion before it lands.
+
+None built yet. This is the storyteller's next horizon once the
+three on-map events are verified.
