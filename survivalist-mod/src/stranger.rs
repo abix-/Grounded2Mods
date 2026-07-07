@@ -35,14 +35,14 @@ use crate::common::{
     GoodsFilter, carry_off_stored_goods, community_manager, ctype, display_name,
     for_each_community, handle_of, own, pos_of, with,
 };
-use crate::storyteller::{Outcome, Rule};
+use crate::storyteller::Outcome;
 
-/// Strangers as a storyteller rule; the director paces it.
-pub const RULE: Rule = Rule {
-    name: "stranger",
-    weight: 1,
-    run,
-};
+/// Force-launch a stranger now, reporting whether a group was near
+/// enough to actually cross. The incursion loop drives this, so
+/// every stranger now arrives foreshadowed by off-map dread.
+pub fn launch_now(now: f32) -> bool {
+    matches!(run(now), Ok(Outcome::Fired))
+}
 
 /// Seconds between resolve passes (arrival checks).
 const MISSION_TICK_SECS: f32 = 5.0;

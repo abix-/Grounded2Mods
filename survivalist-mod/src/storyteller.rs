@@ -46,7 +46,7 @@ pub enum Outcome {
 }
 
 /// The registered rules. The horde is rule one; append here.
-static RULES: &[Rule] = &[crate::horde::RULE, crate::vendor::RULE, crate::stranger::RULE];
+static RULES: &[Rule] = &[crate::horde::RULE, crate::vendor::RULE, crate::incursion::RULE];
 
 #[derive(Clone, Copy)]
 enum Storyteller {
@@ -272,6 +272,7 @@ fn storyteller_status(_args: &Json) -> Result<Json, String> {
             "packs_live": crate::horde::live_pack_count(),
             "vendors_live": crate::vendor::active_count(),
             "strangers_live": crate::stranger::active_count(),
+            "incursion_pending": crate::incursion::pending(),
             "last_event": last,
             "alpha": alpha,
         }))

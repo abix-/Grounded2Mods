@@ -25,6 +25,7 @@ mod development;
 mod genome;
 mod growth;
 mod horde;
+mod incursion;
 mod infection;
 mod murder;
 mod predation;
@@ -60,6 +61,7 @@ fn on_tick(now: f32) {
     murder::tick(now);
     vendor::tick(now);
     stranger::tick(now);
+    incursion::tick(now);
     storyteller::tick(now);
 }
 
