@@ -29,6 +29,7 @@ use parking_lot::Mutex;
 
 use unityforge::mono::{self, LogLevel};
 
+use crate::common::{base_centre, ctype, for_each_community};
 use crate::storyteller::{Outcome, Rule};
 
 /// The dread loop as a storyteller rule; the director paces when a
@@ -53,6 +54,7 @@ enum Payoff {
     FalseAlarm,
     Arrival,
     Raiders,
+    MegaHorde,
 }
 
 struct Pending {
@@ -91,6 +93,9 @@ fn run(now: f32) -> Result<Outcome, String> {
     let false_pct = 60u64.saturating_sub(resolved as u64 * 5).max(20);
     let payoff = if rng(now, 0, 100) < false_pct {
         Payoff::FalseAlarm
+    } else if resolved >= 6 && rng(now, 6, 100) < 15 {
+        // Rare and late: the tide of the dead from beyond the map.
+        Payoff::MegaHorde
     } else {
         // Among real payoffs, raiders grow likelier as it escalates:
         // early arrivals are mostly benign, late ones mean to fight.
@@ -116,6 +121,7 @@ fn run(now: f32) -> Result<Outcome, String> {
                 Payoff::FalseAlarm => "false-alarm",
                 Payoff::Arrival => "arrival",
                 Payoff::Raiders => "raiders",
+                Payoff::MegaHorde => "mega-horde",
             },
             gap,
         ),
@@ -178,6 +184,37 @@ fn resolve(now: f32) {
                 );
             }
         }
+        Payoff::MegaHorde => match mega_horde(now) {
+            Ok(true) => {
+                crate::chronicle::post(
+                    "a tide of the dead is crossing the map, and nothing in its path will stand",
+                );
+                mono::log(
+                    LogLevel::Info,
+                    "survivalist-mod: incursion -- MEGA-HORDE; a tide of the dead crosses the map",
+                );
+            }
+            Ok(false) => {
+                crate::chronicle::post("the horizon holds, for now");
+                mono::log(
+                    LogLevel::Info,
+                    "survivalist-mod: incursion -- mega-horde rolled, but there was nowhere to cross toward",
+                );
+            }
+            Err(e) if e.contains("pre-v6") => {
+                crate::chronicle::post("something vast stirs at the edge, but does not come; not yet");
+                mono::log(
+                    LogLevel::Info,
+                    "survivalist-mod: incursion -- mega-horde held back (a game restart arms the spawner)",
+                );
+            }
+            Err(e) => {
+                mono::log(
+                    LogLevel::Warn,
+                    &format!("survivalist-mod: incursion -- mega-horde failed: {e}"),
+                );
+            }
+        },
     }
 }
 
@@ -188,6 +225,59 @@ fn rng(now: f32, salt: u64, n: u64) -> u64 {
         ^ salt.wrapping_mul(0xD1B5_4A32_D192_ED03);
     h ^= h >> 29;
     h % n.max(1)
+}
+
+/// The centroid of all settlements and the spread (max distance
+/// from the centroid to any of them): the populated heart of the
+/// map and roughly how wide it is, in tile coordinates. None when
+/// there is nothing to threaten. Scale-independent, so it works
+/// without knowing the map's absolute bounds.
+fn map_centroid_and_spread() -> Result<Option<((i64, i64), i64)>, String> {
+    let mut sum = (0i64, 0i64);
+    let mut centres: Vec<(i64, i64)> = Vec::new();
+    for_each_community(|com| {
+        let t = ctype(&com);
+        if (t == "Normal" || t == "Looter" || t == "Player")
+            && let Some(c) = base_centre(&com)
+        {
+            sum.0 += c.0;
+            sum.1 += c.1;
+            centres.push(c);
+        }
+        Ok(true)
+    })?;
+    if centres.is_empty() {
+        return Ok(None);
+    }
+    let n = centres.len() as i64;
+    let centroid = (sum.0 / n, sum.1 / n);
+    let spread = centres
+        .iter()
+        .map(|c| {
+            let (dx, dy) = (c.0 - centroid.0, c.1 - centroid.1);
+            (((dx * dx + dy * dy) as f64).sqrt()) as i64
+        })
+        .max()
+        .unwrap_or(0)
+        .max(200);
+    Ok(Some((centroid, spread)))
+}
+
+/// The traveling mega-horde: a large pack of the worst strain spawns
+/// beyond every camp in a random direction and walks THROUGH the
+/// populated heart of the map, crossing whatever is in its path.
+/// Reuses the horde's spawner. Returns whether it spawned; errs
+/// "pre-v6" until a game restart arms the spawner.
+fn mega_horde(now: f32) -> Result<bool, String> {
+    let Some((centroid, spread)) = map_centroid_and_spread()? else {
+        return Ok(false);
+    };
+    let angle = rng(now, 5, 6283) as f64 / 1000.0;
+    let radius = spread as f64 * 1.6 + 200.0;
+    let sx = centroid.0 + (angle.cos() * radius) as i64;
+    let sy = centroid.1 + (angle.sin() * radius) as i64;
+    let pointed = crate::horde::spawn_traveling_pack(sx, sy, centroid, 16, 24, "White")?;
+    Ok(pointed > 0)
 }
 
 /// The telegraph line. Never hints at the payoff (uncertainty is

@@ -240,6 +240,49 @@ pub fn live_pack_count() -> usize {
     PACKS.lock().len()
 }
 
+/// Spawn a pack of `min..=max` zombies of `strain` at (sx, sy) and
+/// point every one of them at `dest` with its own walk order.
+/// Returns how many were pointed. The game's own spawner, reused so
+/// the incursion loop's traveling mega-horde does not duplicate the
+/// bridge plumbing. Errs with "pre-v6" when the running shim cannot
+/// static-invoke (needs a game restart, same as the horde).
+pub fn spawn_traveling_pack(
+    sx: i64,
+    sy: i64,
+    dest: (i64, i64),
+    min: i64,
+    max: i64,
+    strain: &str,
+) -> Result<i64, String> {
+    let pack = mono::invoke_static(
+        "ZombieSpawnPoint",
+        "SpawnAmbientZombies",
+        &json!([{"x": sx, "y": sy}, min, max, strain, null]),
+    )?;
+    let Some(pack_h) = handle_of(&pack) else {
+        return Ok(0);
+    };
+    let d = json!({"x": dest.0, "y": dest.1});
+    let mut pointed = 0i64;
+    with(pack_h, |com| -> Result<(), String> {
+        if let Some(m_h) = handle_of(&com.read_field("Members")?) {
+            let mlist = own(m_h);
+            let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+            for i in 0..count {
+                let Some(zh) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+                    continue;
+                };
+                let zombie = own(zh);
+                if zombie.invoke("MoveToTile", &json!(["Walk", d.clone()])).is_ok() {
+                    pointed += 1;
+                }
+            }
+        }
+        Ok(())
+    })?;
+    Ok(pointed)
+}
+
 fn any_member_alive(com: &MonoObject) -> bool {
     let Some(m_h) = com.read_field("Members").ok().as_ref().and_then(handle_of) else {
         return false;
