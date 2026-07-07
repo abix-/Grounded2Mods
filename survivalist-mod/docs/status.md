@@ -114,6 +114,19 @@ incursions AND the Mario Kart horde. That is the current focus.
 
 ## Scoring discipline
 
+WHAT 10/10 MEANS (operator-locked 2026-07-07). 10/10 is the ultimate
+bar: this is shipped on the Steam Workshop and used by 1000 players
+for 10 years without any bug fixes, everybody is happy, and
+everything works perfectly. That is the definition for EVERY row.
+The per-row "What 10/10 looks like" column says what the feature
+does; reaching 10/10 means that feature is shipped and has survived
+that bar, flawless and loved, needing no further fixes. So nothing
+is 10/10 until it has earned it in the wild. Live verification
+(watching it work in a running game) moves a score UP toward the
+bar, but it cannot reach 10: only shipping plus years of flawless
+real-world use closes the last stretch. Every score below 10 is an
+honest measure of the distance still left to that ceiling.
+
 A score moves ONLY on a live-verified change: something watched
 happening in a running game, not merely code that landed. Update
 the score AND its status cell in the same commit as the
