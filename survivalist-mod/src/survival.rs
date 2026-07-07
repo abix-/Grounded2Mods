@@ -15,8 +15,11 @@
 //!   SetRelationship + SetInvasionTarget (the same machinery
 //!   war.rs proved). Vanilla only ever BEGS the player when
 //!   hungry; this makes hunger drive real AI-vs-AI war.
-//! - Terminal: (future) all-in attack or abandon-and-flee via
-//!   StartJourneyToExitMap.
+//! - Terminal: the group FRACTURES. When death by staying is
+//!   certain, a chunk of the non-leader survivors defect to the
+//!   nearest refuge that will take them rather than die together;
+//!   their genomes go with them (heredity through flight). The
+//!   doomed camp bleeds out one break at a time until it dissolves.
 //!
 //! Op `survival_status`: every settlement's nutrition, population
 //! vs beds vs worldgen size, threat count, and computed
@@ -455,6 +458,10 @@ fn desperation_scan(now: f32) -> Result<(), String> {
         ambition_war(&camps, now)?;
     }
 
+    // Terminal camps whose death by staying is certain fracture:
+    // survivors defect to a refuge rather than die together.
+    fracture(&camps)?;
+
     release_camps(&camps);
     Ok(())
 }
@@ -581,6 +588,161 @@ fn sue_for_peace(camps: &[Camp]) -> Result<bool, String> {
         return Ok(true);
     }
     Ok(false)
+}
+
+/// The terminal fracture: when death by staying is certain
+/// (Terminal rung), the group breaks apart. A chunk of the
+/// non-leader survivors defect to the nearest non-hostile refuge
+/// with real bed room, choosing to live over dying together; their
+/// genomes go with them (heredity through flight). If there is
+/// nowhere to flee, they stay and starve. One fracture per scan.
+fn fracture(camps: &[Camp]) -> Result<bool, String> {
+    for doomed in camps {
+        if doomed.ctype == "Player" || doomed.rung != Rung::Terminal || doomed.members < 3 {
+            continue;
+        }
+        let Some((dx, dy)) = doomed.centre else {
+            continue;
+        };
+        let mut refuge: Option<(&Camp, i64)> = None;
+        for c in camps {
+            if c.handle == doomed.handle || c.ctype == "Player" {
+                continue;
+            }
+            let Some((cx, cy)) = c.centre else {
+                continue;
+            };
+            let room = crate::common::with(c.handle, |com| -> i64 {
+                let beds = com
+                    .invoke("GetAccommodation", &json!([]))
+                    .ok()
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+                let members = com
+                    .invoke("GetLivingNonZombieMemberCount", &json!([]))
+                    .ok()
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+                (beds - members).max(0)
+            });
+            if room <= 0 {
+                continue;
+            }
+            let rel = crate::common::with(doomed.handle, |d| {
+                d.invoke("GetRelationship", &json!([{ "handle": c.handle }]))
+            })
+            .unwrap_or(json!("?"));
+            if rel == json!("Hostile") {
+                continue;
+            }
+            let dist = (cx - dx) * (cx - dx) + (cy - dy) * (cy - dy);
+            if refuge.map(|(_, bd)| dist < bd).unwrap_or(true) {
+                refuge = Some((c, dist));
+            }
+        }
+        let Some((refuge, _)) = refuge else {
+            continue;
+        };
+
+        // Up to half the camp breaks away at once; the rest hold
+        // on (and fracture again next scan, or perish).
+        let moved = defect(doomed, refuge)?;
+        if moved > 0 {
+            crate::chronicle::post(&format!(
+                "{} is breaking apart: {} fled to {}",
+                doomed.name, moved, refuge.name
+            ));
+            mono::log(
+                LogLevel::Info,
+                &format!(
+                    "survivalist-mod: survival -- FRACTURE: {} survivor(s) abandon doomed {} for {}",
+                    moved, doomed.name, refuge.name
+                ),
+            );
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Move up to half the doomed camp's non-leader living survivors
+/// into the refuge via the game's own SetCommunity, capped by the
+/// refuge's real bed room. Fleeing into a Looter camp makes them
+/// conscripts (voiceless), the same rule press-ganging uses.
+fn defect(doomed: &Camp, refuge: &Camp) -> Result<i64, String> {
+    let room = crate::common::with(refuge.handle, |com| -> i64 {
+        let beds = com
+            .invoke("GetAccommodation", &json!([]))
+            .ok()
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let members = com
+            .invoke("GetLivingNonZombieMemberCount", &json!([]))
+            .ok()
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        (beds - members).max(0)
+    });
+    let cap = ((doomed.members / 2).max(1)).min(room);
+    if cap <= 0 {
+        return Ok(0);
+    }
+    let leader_id = crate::common::with(doomed.handle, |com| -> Option<i64> {
+        let lh = handle_of(&com.read_field("Leader").ok()?)?;
+        own(lh).read_field("Id").ok().and_then(|v| v.as_i64())
+    });
+    let defectors: Vec<i32> = crate::common::with(doomed.handle, |com| {
+        let mut out = Vec::new();
+        if let Some(m_h) = com.read_field("Members").ok().as_ref().and_then(handle_of) {
+            let mlist = own(m_h);
+            let count = mlist
+                .invoke("get_Count", &json!([]))
+                .ok()
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            for i in 0..count {
+                if (out.len() as i64) >= cap {
+                    break;
+                }
+                if let Some(h) = mlist
+                    .invoke("get_Item", &json!([i]))
+                    .ok()
+                    .as_ref()
+                    .and_then(handle_of)
+                {
+                    let member = own(h);
+                    let alive = member
+                        .invoke("get_AliveAndNotZombie", &json!([]))
+                        .map(|v| v == json!(true))
+                        .unwrap_or(false);
+                    let id = member.read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1);
+                    if alive && Some(id) != leader_id {
+                        out.push(member.handle().0);
+                        std::mem::forget(member);
+                    } else {
+                        drop(member);
+                    }
+                }
+            }
+        }
+        out
+    });
+    let refuge_looter = refuge.ctype == "Looter";
+    let mut moved = 0i64;
+    for h in defectors {
+        let member = own(h);
+        member.invoke("SetCommunity", &json!([{ "handle": refuge.handle }]))?;
+        let _ = crate::common::with(refuge.handle, |r| {
+            r.invoke("UpdateRoles", &json!([{ "handle": member.handle().0 }]))
+        });
+        if refuge_looter {
+            if let Some(id) = member.read_field("Id").ok().and_then(|v| v.as_i64()) {
+                crate::genome::mark_conscript(id);
+            }
+        }
+        moved += 1;
+    }
+    Ok(moved)
 }
 
 /// The desperate hunger raid: among desperate, hungry, not-
