@@ -34,10 +34,13 @@
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use parking_lot::Mutex;
+use serde_json::json;
 
 use unityforge::mono::{self, LogLevel};
 
-use crate::common::{base_centre, ctype, for_each_community};
+use crate::common::{
+    base_centre, community_manager, ctype, display_name, for_each_community, handle_of, own, with,
+};
 use crate::storyteller::{Outcome, Rule};
 
 /// The dread loop as a storyteller rule; the director paces when a
@@ -216,46 +219,72 @@ fn resolve(now: f32) {
                 );
             }
         }
-        Payoff::Raiders => {
-            // A band that crossed the edge to fight, foreshadowed by
-            // the dread and set hostile the moment it reaches a camp.
-            if crate::stranger::launch_raiders(now) {
-                crate::chronicle::post(
-                    "raiders have crossed onto the map, and they mean to take what you have",
-                );
+        Payoff::Raiders => match spawn_edge_band(now, "HunterLooter", false) {
+            Ok(Some(camp)) => {
+                crate::chronicle::post(&format!(
+                    "raiders have crossed onto the map, and they mean to take what {camp} has"
+                ));
                 mono::log(
                     LogLevel::Info,
-                    "survivalist-mod: incursion -- RAIDERS; a hostile band crossed the edge to attack",
-                );
-            } else {
-                crate::chronicle::post("the raiders never found the map; the dread lingers");
-                mono::log(
-                    LogLevel::Info,
-                    "survivalist-mod: incursion -- raiders rolled, but no band was near enough to cross",
+                    &format!(
+                        "survivalist-mod: incursion -- RAIDERS; a hostile band spawned at the edge and marches on {camp}"
+                    ),
                 );
             }
-        }
-        Payoff::Military => {
-            // A remnant unit crossing on a mission, hostile to
-            // everything it passes; its purpose is never explained.
-            if crate::stranger::launch_military(now) {
+            Ok(None) => {
+                crate::chronicle::post("something stirred at the edge, but found nowhere to go");
+                mono::log(
+                    LogLevel::Info,
+                    "survivalist-mod: incursion -- raiders rolled, but there was nowhere to cross toward",
+                );
+            }
+            Err(e) if e.contains("pre-v6") => {
+                crate::chronicle::post("armed men gather beyond the ridge, but do not come; not yet");
+                mono::log(
+                    LogLevel::Info,
+                    "survivalist-mod: incursion -- raiders held back (a game restart arms the spawner)",
+                );
+            }
+            Err(e) => {
+                mono::log(
+                    LogLevel::Warn,
+                    &format!("survivalist-mod: incursion -- raiders failed: {e}"),
+                );
+            }
+        },
+        Payoff::Military => match spawn_edge_band(now, "HunterMercenary", true) {
+            Ok(Some(_)) => {
                 crate::chronicle::post(
                     "soldiers have crossed onto the map, and they are not here to help anyone",
                 );
                 mono::log(
                     LogLevel::Info,
-                    "survivalist-mod: incursion -- MILITARY; a remnant unit crossed the edge on a mission",
+                    "survivalist-mod: incursion -- MILITARY; a remnant unit spawned at the edge, hostile to every camp",
                 );
-            } else {
+            }
+            Ok(None) => {
                 crate::chronicle::post(
                     "the soldiers passed beyond the edge; no one learned their mission",
                 );
                 mono::log(
                     LogLevel::Info,
-                    "survivalist-mod: incursion -- military rolled, but no unit was near enough to cross",
+                    "survivalist-mod: incursion -- military rolled, but there was nowhere to cross toward",
                 );
             }
-        }
+            Err(e) if e.contains("pre-v6") => {
+                crate::chronicle::post("something moves in formation past the ridge, but does not come; not yet");
+                mono::log(
+                    LogLevel::Info,
+                    "survivalist-mod: incursion -- military held back (a game restart arms the spawner)",
+                );
+            }
+            Err(e) => {
+                mono::log(
+                    LogLevel::Warn,
+                    &format!("survivalist-mod: incursion -- military failed: {e}"),
+                );
+            }
+        },
         Payoff::Settlers => {
             // An off-map offshoot walks in to claim a dead base and
             // stays: the map's balance rewritten from beyond.
@@ -426,6 +455,90 @@ fn mega_horde(now: f32) -> Result<bool, String> {
     let sy = centroid.1 + (angle.sin() * radius) as i64;
     let pointed = crate::horde::spawn_traveling_pack(sx, sy, centroid, 16, 24, "White")?;
     Ok(pointed > 0)
+}
+
+/// The off-map generator (docs/status.md design lock): spawn a REAL
+/// hostile band at the map edge from the undefined beyond and send
+/// it inward. The game's own `SpawnAmbientLooters` creates a band of
+/// `kind` carrying real gear and generated loot, so the arrival also
+/// feeds fresh loot and people into the world. `hostile_all` makes
+/// it hostile to EVERY camp (a military remnant's purposeful
+/// killers); otherwise it falls on the nearest camp (raiders).
+/// Returns the target camp's name, or None if there was nowhere to
+/// cross toward. Errs "pre-v6" until a game restart arms static
+/// invoke, same as the horde.
+fn spawn_edge_band(now: f32, kind: &str, hostile_all: bool) -> Result<Option<String>, String> {
+    let Some((centroid, spread)) = map_centroid_and_spread()? else {
+        return Ok(None);
+    };
+    // A point beyond every camp, in a random direction: the edge.
+    let angle = rng(now, 20, 6283) as f64 / 1000.0;
+    let radius = spread as f64 * 1.4 + 150.0;
+    let ex = centroid.0 + (angle.cos() * radius) as i64;
+    let ey = centroid.1 + (angle.sin() * radius) as i64;
+
+    // The band: the game's own spawner, real gear + generated loot.
+    let band = mono::invoke_static(
+        "LooterSpawnPoint",
+        "SpawnAmbientLooters",
+        &json!([{"x": ex, "y": ey}, 3, 6, 0.85, 0.6, 0.3, 0.35, 0.3, 0.3, null, kind]),
+    )?;
+    let Some(band_h) = handle_of(&band) else {
+        return Ok(None);
+    };
+
+    // The camps, with handles, to point the band at.
+    let mut camps: Vec<(i32, (i64, i64), String)> = Vec::new();
+    for_each_community(|com| {
+        let t = ctype(&com);
+        if (t == "Normal" || t == "Looter" || t == "Player")
+            && com.invoke("GetLivingNonZombieMemberCount", &json!([]))?.as_i64().unwrap_or(0) > 0
+            && let Some(c) = base_centre(&com)
+        {
+            camps.push((com.handle().0, c, display_name(&com)));
+            std::mem::forget(com);
+        }
+        Ok(true)
+    })?;
+    if camps.is_empty() {
+        drop(own(band_h));
+        return Ok(None);
+    }
+
+    // Nearest camp to where the band crossed.
+    let mut best = 0usize;
+    let mut best_d = i64::MAX;
+    for (i, (_, c, _)) in camps.iter().enumerate() {
+        let d = (c.0 - ex).pow(2) + (c.1 - ey).pow(2);
+        if d < best_d {
+            best_d = d;
+            best = i;
+        }
+    }
+
+    // Set the band hostile (all camps for a military unit, just the
+    // nearest for raiders) and point its invasion at the target; the
+    // game's own combat AI marches them from here.
+    let cm = community_manager()?;
+    for (i, (ch, _, _)) in camps.iter().enumerate() {
+        if hostile_all || i == best {
+            let _ = cm.invoke(
+                "SetRelationship",
+                &json!([{ "handle": band_h }, { "handle": *ch }, "Hostile"]),
+            );
+        }
+    }
+    let target_h = camps[best].0;
+    let target_name = camps[best].2.clone();
+    let _ = with(band_h, |g| {
+        g.invoke("SetInvasionTarget", &json!([{ "handle": target_h }, 7.0, false]))
+    });
+
+    drop(own(band_h));
+    for (ch, _, _) in camps {
+        drop(own(ch));
+    }
+    Ok(Some(target_name))
 }
 
 /// The telegraph line. Never hints at the payoff (uncertainty is

@@ -45,19 +45,6 @@ pub fn launch_now(now: f32) -> bool {
     matches!(launch_with(now, None), Ok(Outcome::Fired))
 }
 
-/// Force-launch a band whose intent is fixed HOSTILE: off-map
-/// raiders that mean to attack. Same arrival machinery, no roll.
-pub fn launch_raiders(now: f32) -> bool {
-    matches!(launch_with(now, Some(Intent::Aggressive)), Ok(Outcome::Fired))
-}
-
-/// Force-launch a band themed as a military remnant: a unit crossing
-/// on a mission, hostile to EVERY camp it passes, purpose never
-/// explained. Same arrival machinery, no roll.
-pub fn launch_military(now: f32) -> bool {
-    matches!(launch_with(now, Some(Intent::Military)), Ok(Outcome::Fired))
-}
-
 /// Force-launch the mysterious stranger: a LONE figure (a one-member
 /// group) whose meaning is never learned. Same arrival machinery;
 /// the reveal is real but never explained.
@@ -112,7 +99,6 @@ enum Intent {
     FriendlyJoin,
     FriendlyShare,
     Aggressive,
-    Military,
     Mysterious,
     Refugee,
     WaryLeave,
@@ -459,17 +445,6 @@ fn resolve(m: &Mission, now: f32) -> Result<bool, String> {
                 ),
             );
         }
-        Intent::Military => {
-            set_hostile_all(m)?;
-            crate::chronicle::post(&reveal_military(m.group_id, &m.target_name));
-            mono::log(
-                LogLevel::Info,
-                &format!(
-                    "survivalist-mod: stranger -- MILITARY: a remnant unit opens fire at {}",
-                    m.target_name
-                ),
-            );
-        }
         Intent::Mysterious => {
             // The outcome is real, but no line ever explains it:
             // the lingering mystery IS the payoff.
@@ -765,30 +740,6 @@ fn set_hostile(m: &Mission) -> Result<(), String> {
     Ok(())
 }
 
-/// Military remnants kill everything they see: hostile to EVERY
-/// camp on the map, then pushed to invade the one they reached.
-/// The game's own combat AI carries it from here.
-fn set_hostile_all(m: &Mission) -> Result<(), String> {
-    let cm = community_manager()?;
-    for_each_community(|com| {
-        let t = ctype(&com);
-        if t == "Normal" || t == "Looter" || t == "Player" {
-            let _ = cm.invoke(
-                "SetRelationship",
-                &json!([{ "handle": m.group_h }, { "handle": com.handle().0 }, "Hostile"]),
-            );
-        }
-        Ok(true)
-    })?;
-    let _ = with(m.group_h, |g| {
-        g.invoke(
-            "SetInvasionTarget",
-            &json!([{ "handle": m.target_h }, 7.0, false]),
-        )
-    });
-    Ok(())
-}
-
 // ---- flavor (variety so the reveal never goes stale) -----------------------
 
 fn announce_line(id: i64, camp: &str) -> String {
@@ -859,15 +810,6 @@ fn reveal_aggressive(id: i64, camp: &str) -> String {
         "the strangers came for blood: {} is under attack",
         "it was a raid; the band fell on {}",
         "the newcomers drew blades at {}'s gate",
-    ];
-    L[hash_pick(id, 7.0, L.len() as u64) as usize].replace("{}", camp)
-}
-
-fn reveal_military(id: i64, camp: &str) -> String {
-    const L: &[&str] = &[
-        "they wore uniforms and gave no warning: {} is under fire",
-        "the soldiers opened fire on {} without a word",
-        "a remnant unit swept toward {}'s gate, mission unknown",
     ];
     L[hash_pick(id, 7.0, L.len() as u64) as usize].replace("{}", camp)
 }
