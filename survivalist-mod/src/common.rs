@@ -123,6 +123,48 @@ pub fn with<R>(h: i32, f: impl FnOnce(&MonoObject) -> R) -> R {
     r
 }
 
+/// Give a freshly-spawned band a squad and send every living member
+/// walking to `tile`. A mod-spawned off-map arrival
+/// (incursion::spawn_band_at_edge) otherwise just wanders on its own
+/// SurvivorGoal; this points it at the camp or husk it is bound for.
+/// Returns the squad id.
+pub fn march_band_to(com_h: i32, tile: (i64, i64), behaviour: &str) -> Result<i64, String> {
+    let goal = json!({"x": tile.0, "y": tile.1});
+    with(com_h, |com| -> Result<i64, String> {
+        let squad_h = handle_of(&com.invoke("AddSquad", &json!([behaviour, 0]))?)
+            .ok_or("AddSquad gave no squad")?;
+        if let Some(m_h) = handle_of(&com.read_field("Members")?) {
+            let mlist = own(m_h);
+            let n = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+            for i in 0..n {
+                if let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) {
+                    let alive = with(h, |member| {
+                        member
+                            .invoke("get_AliveAndNotZombie", &json!([]))
+                            .map(|v| v == json!(true))
+                            .unwrap_or(false)
+                    });
+                    if alive {
+                        let _ = com.invoke(
+                            "AddToSquad",
+                            &json!([{ "handle": h }, { "handle": squad_h }]),
+                        );
+                    }
+                }
+            }
+        }
+        let squad = own(squad_h);
+        squad.write_field("GoalTile", &goal)?;
+        let sid = squad.read_field("Id")?.as_i64().unwrap_or(-1);
+        drop(squad);
+        com.invoke(
+            "SetSquadAction",
+            &json!([{ "handle": squad_h }, "GoTo", 0, goal, null, false]),
+        )?;
+        Ok(sid)
+    })
+}
+
 /// Centre of a community's base rect, in tile coordinates.
 pub fn base_centre(com: &MonoObject) -> Option<(i64, i64)> {
     let rect = com.read_field("BaseRect").ok()?;

@@ -23,7 +23,7 @@ use serde_json::json;
 use unityforge::mono::{self, LogLevel};
 
 use crate::common::{
-    base_centre, ctype, display_name, for_each_community, handle_of, own, parse_xy, with,
+    base_centre, ctype, display_name, for_each_community, handle_of, own, with,
 };
 
 /// Seconds between watch passes.
@@ -82,12 +82,6 @@ pub fn launch_now(now: f32) -> bool {
     }
 }
 
-struct Group {
-    handle: i32,
-    id: i64,
-    pos: (f32, f32),
-}
-
 struct Husk {
     handle: i32,
     id: i64,
@@ -99,41 +93,19 @@ fn launch(now: f32) -> Result<bool, String> {
     if MISSIONS.lock().len() >= MAX_SETTLERS {
         return Ok(false);
     }
-    let mut groups: Vec<Group> = Vec::new();
+    // Husks: dead camps with a real base rect, ripe to be claimed.
     let mut husks: Vec<Husk> = Vec::new();
     for_each_community(|com| {
         let t = ctype(&com);
-        if t == "RovingRefugee" {
-            let members = com
-                .invoke("GetLivingNonZombieMemberCount", &json!([]))?
-                .as_i64()
-                .unwrap_or(0);
-            let id = com.read_field("Id")?.as_i64().unwrap_or(-1);
-            if members > 0 && !is_claimed(id) && !crate::stranger::is_claimed(id) {
-                if let Some(lead_h) = handle_of(&com.read_field("Leader")?) {
-                    // Tile coords, to match the husks' base centres.
-                    let pos = own(lead_h).read_field("Tile").ok().and_then(|v| parse_xy(&v));
-                    if let Some(pos) = pos {
-                        groups.push(Group {
-                            handle: com.handle().0,
-                            id,
-                            pos,
-                        });
-                        std::mem::forget(com);
-                        return Ok(true);
-                    }
-                }
-            }
-            return Ok(true);
-        }
         if t != "Normal" && t != "Looter" {
             return Ok(true);
         }
-        let members = com
+        if com
             .invoke("GetLivingNonZombieMemberCount", &json!([]))?
             .as_i64()
-            .unwrap_or(0);
-        if members > 0 {
+            .unwrap_or(0)
+            > 0
+        {
             return Ok(true);
         }
         let Some(centre) = base_centre(&com) else {
@@ -149,94 +121,107 @@ fn launch(now: f32) -> Result<bool, String> {
         std::mem::forget(com);
         Ok(true)
     })?;
-
-    let result = try_launch(&groups, &husks, now);
-
-    let kept: Vec<i32> = {
-        let ms = MISSIONS.lock();
-        ms.iter().flat_map(|m| [m.group_h, m.husk_h]).collect()
-    };
-    for g in &groups {
-        if !kept.contains(&g.handle) {
-            drop(own(g.handle));
-        }
+    if husks.is_empty() {
+        return Ok(false);
     }
-    for h in &husks {
-        if !kept.contains(&h.handle) {
+
+    // Spawn a REAL band at the edge from the undefined beyond (the
+    // off-map generator + fresh-people/loot faucet).
+    let salt = 40 + MISSIONS.lock().len() as u64;
+    let Some((band_h, band_id, spawn_tile)) =
+        crate::incursion::spawn_band_at_edge(now, salt, "RovingRefugee", 3, 6, false)?
+    else {
+        for h in &husks {
             drop(own(h.handle));
         }
-    }
-    result
-}
-
-fn try_launch(groups: &[Group], husks: &[Husk], now: f32) -> Result<bool, String> {
-    if groups.is_empty() || husks.is_empty() {
-        return Ok(false);
-    }
-    let mut best: Option<(&Group, &Husk, f32)> = None;
-    for g in groups {
-        for h in husks {
-            let (dx, dy) = (g.pos.0 - h.centre.0 as f32, g.pos.1 - h.centre.1 as f32);
-            let d2 = dx * dx + dy * dy;
-            if best.map(|(_, _, bd)| d2 < bd).unwrap_or(true) {
-                best = Some((g, h, d2));
-            }
-        }
-    }
-    let Some((group, husk, _)) = best else {
         return Ok(false);
     };
-    // The game's own gate: dead, real base rect, nobody else already
-    // claiming it, the Nemesis rule.
-    let occupiable = with(husk.handle, |h| {
-        h.invoke("CanBeOccupiedBy", &json!([{ "handle": group.handle }]))
+
+    // Nearest husk to where they crossed.
+    let mut best = 0usize;
+    let mut best_d = i64::MAX;
+    for (i, h) in husks.iter().enumerate() {
+        let d = (h.centre.0 - spawn_tile.0).pow(2) + (h.centre.1 - spawn_tile.1).pow(2);
+        if d < best_d {
+            best_d = d;
+            best = i;
+        }
+    }
+    let husk_h = husks[best].handle;
+    let husk_id = husks[best].id;
+    let husk_centre = husks[best].centre;
+    let husk_name = husks[best].name.clone();
+
+    // The game's own gate: dead, real base rect, not already claimed.
+    let occupiable = with(husk_h, |h| {
+        h.invoke("CanBeOccupiedBy", &json!([{ "handle": band_h }]))
     })? == json!(true);
     if !occupiable {
+        drop(own(band_h));
+        for h in &husks {
+            drop(own(h.handle));
+        }
         return Ok(false);
     }
-    // The group's traveling squad, re-pointed with the vanilla
-    // occupy shape; the game walks them there and OccupyBase does
-    // the transfer on arrival.
-    let squad_h = with(group.handle, |g| -> Result<Option<i32>, String> {
-        let Some(s_h) = handle_of(&g.read_field("Squads")?) else {
-            return Ok(None);
-        };
-        let slist = own(s_h);
-        if slist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0) == 0 {
-            return Ok(None);
+
+    // Give the band an Occupy squad pointed at the husk; the game
+    // walks them there and its own OccupyBase does the transfer.
+    let goal = json!({"x": husk_centre.0, "y": husk_centre.1});
+    let setup = with(band_h, |com| -> Result<(), String> {
+        let squad_h = handle_of(&com.invoke("AddSquad", &json!(["Occupy", husk_id]))?)
+            .ok_or("AddSquad gave no squad")?;
+        if let Some(m_h) = handle_of(&com.read_field("Members")?) {
+            let mlist = own(m_h);
+            let n = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+            for i in 0..n {
+                if let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) {
+                    let _ = com.invoke(
+                        "AddToSquad",
+                        &json!([{ "handle": h }, { "handle": squad_h }]),
+                    );
+                }
+            }
         }
-        Ok(handle_of(&slist.invoke("get_Item", &json!([0]))?))
-    })?;
-    let Some(squad_h) = squad_h else {
-        return Ok(false);
-    };
-    let goal = json!({"x": husk.centre.0, "y": husk.centre.1});
-    let squad = own(squad_h);
-    squad.write_field("Behaviour", &json!("Occupy"))?;
-    squad.write_field("EnemyCommunityId", &json!(husk.id))?;
-    squad.write_field("GoalTile", &goal)?;
-    drop(squad);
-    with(group.handle, |g| {
-        g.invoke(
+        let squad = own(squad_h);
+        squad.write_field("Behaviour", &json!("Occupy"))?;
+        squad.write_field("EnemyCommunityId", &json!(husk_id))?;
+        squad.write_field("GoalTile", &goal)?;
+        drop(squad);
+        com.invoke(
             "SetSquadAction",
             &json!([{ "handle": squad_h }, "GoTo", 0, goal, null, false]),
-        )
-    })?;
-    drop(own(squad_h));
+        )?;
+        drop(own(squad_h));
+        Ok(())
+    });
+    if setup.is_err() {
+        drop(own(band_h));
+        for h in &husks {
+            drop(own(h.handle));
+        }
+        return Ok(false);
+    }
+
     MISSIONS.lock().push(Mission {
-        group_h: group.handle,
-        group_id: group.id,
-        husk_h: husk.handle,
-        husk_name: husk.name.clone(),
+        group_h: band_h,
+        group_id: band_id,
+        husk_h,
+        husk_name: husk_name.clone(),
         deadline: now + MISSION_TIMEOUT_SECS,
     });
     mono::log(
         LogLevel::Info,
         &format!(
-            "survivalist-mod: settler -- a group is walking to claim the dead base of {}",
-            husk.name
+            "survivalist-mod: settler -- a band crossed the edge to claim the dead base of {husk_name}"
         ),
     );
+
+    // Release the husk handles we did not keep as the target.
+    for (i, h) in husks.iter().enumerate() {
+        if i != best {
+            drop(own(h.handle));
+        }
+    }
     Ok(true)
 }
 

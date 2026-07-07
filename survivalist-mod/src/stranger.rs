@@ -32,8 +32,8 @@ use serde_json::json;
 use unityforge::mono::{self, LogLevel, MonoObject};
 
 use crate::common::{
-    GoodsFilter, carry_off_stored_goods, community_manager, ctype, display_name,
-    for_each_community, handle_of, own, pos_of, with,
+    GoodsFilter, base_centre, carry_off_stored_goods, community_manager, ctype, display_name,
+    for_each_community, handle_of, march_band_to, own, pos_of, with,
 };
 use crate::storyteller::Outcome;
 
@@ -69,10 +69,6 @@ pub fn launch_refugees(now: f32) -> usize {
 
 /// Seconds between resolve passes (arrival checks).
 const MISSION_TICK_SECS: f32 = 5.0;
-
-/// A group already this close (world units) to a camp can be
-/// claimed as an approaching band.
-const ARRIVING_RANGE: f32 = 140.0;
 
 /// The band has reached the gate within this range: reveal the
 /// intent.
@@ -138,18 +134,6 @@ pub fn tick(now: f32) {
 
 // ---- launching (the storyteller rule) --------------------------------------
 
-struct Camp {
-    handle: i32,
-    name: String,
-    pos: (f32, f32),
-}
-
-struct Group {
-    handle: i32,
-    id: i64,
-    pos: (f32, f32),
-}
-
 fn launch_with(now: f32, forced: Option<Intent>) -> Result<Outcome, String> {
     {
         let ms = MISSIONS.lock();
@@ -167,38 +151,12 @@ fn launch_with(now: f32, forced: Option<Intent>) -> Result<Outcome, String> {
         }
     }
 
-    // The mysterious stranger is a LONE figure: only a one-member
-    // group can carry it.
-    let lone = matches!(forced, Some(Intent::Mysterious));
-    let mut camps: Vec<Camp> = Vec::new();
-    let mut groups: Vec<Group> = Vec::new();
+    // Targets: every living settlement (and the player), kept with
+    // base-centre tile coords to pick the nearest to where the band
+    // crosses and to march it there.
+    let mut camps: Vec<(i32, (i64, i64), String)> = Vec::new();
     for_each_community(|com| {
         let t = ctype(&com);
-        if t == "RovingRefugee" {
-            let members = com
-                .invoke("GetLivingNonZombieMemberCount", &json!([]))?
-                .as_i64()
-                .unwrap_or(0);
-            let id = com.read_field("Id")?.as_i64().unwrap_or(-1);
-            if members > 0
-                && (!lone || members == 1)
-                && !is_claimed(id)
-                && !crate::settler::is_claimed(id)
-            {
-                if let Some(lead_h) = handle_of(&com.read_field("Leader")?) {
-                    if let Some(pos) = pos_of(&own(lead_h)) {
-                        groups.push(Group {
-                            handle: com.handle().0,
-                            id,
-                            pos,
-                        });
-                        std::mem::forget(com);
-                        return Ok(true);
-                    }
-                }
-            }
-            return Ok(true);
-        }
         let is_player = t == "Player";
         if !is_player && t != "Normal" && t != "Looter" {
             return Ok(true);
@@ -206,91 +164,79 @@ fn launch_with(now: f32, forced: Option<Intent>) -> Result<Outcome, String> {
         if !is_player && com.invoke("IsAISettlement", &json!([]))? != json!(true) {
             return Ok(true);
         }
-        let members = com
+        if com
             .invoke("GetLivingNonZombieMemberCount", &json!([]))?
             .as_i64()
-            .unwrap_or(0);
-        if members == 0 {
+            .unwrap_or(0)
+            == 0
+        {
             return Ok(true);
         }
-        let Some(pos) = camp_pos(&com) else {
+        let Some(c) = base_centre(&com) else {
             return Ok(true);
         };
-        camps.push(Camp {
-            handle: com.handle().0,
-            name: display_name(&com),
-            pos,
-        });
+        camps.push((com.handle().0, c, display_name(&com)));
         std::mem::forget(com);
         Ok(true)
     })?;
-
-    let result = try_launch(&groups, &camps, now, forced);
-
-    let kept: Vec<i32> = {
-        let ms = MISSIONS.lock();
-        ms.iter().flat_map(|m| [m.group_h, m.target_h]).collect()
-    };
-    for g in &groups {
-        if !kept.contains(&g.handle) {
-            drop(own(g.handle));
-        }
-    }
-    for c in &camps {
-        if !kept.contains(&c.handle) {
-            drop(own(c.handle));
-        }
-    }
-    result
-}
-
-fn try_launch(
-    groups: &[Group],
-    camps: &[Camp],
-    now: f32,
-    forced: Option<Intent>,
-) -> Result<Outcome, String> {
-    if groups.is_empty() || camps.is_empty() {
+    if camps.is_empty() {
         return Ok(Outcome::Passed);
     }
-    let mut best: Option<(&Group, &Camp, f32)> = None;
-    for g in groups {
-        for c in camps {
-            let (dx, dy) = (g.pos.0 - c.pos.0, g.pos.1 - c.pos.1);
-            let d2 = dx * dx + dy * dy;
-            if d2 <= ARRIVING_RANGE * ARRIVING_RANGE
-                && best.map(|(_, _, bd)| d2 < bd).unwrap_or(true)
-            {
-                best = Some((g, c, d2));
-            }
+
+    // Spawn a REAL band at the edge from the undefined beyond (the
+    // off-map generator + fresh-people/loot faucet). The mysterious
+    // stranger is a lone figure.
+    let lone = matches!(forced, Some(Intent::Mysterious));
+    let (min, max) = if lone { (1, 1) } else { (3, 6) };
+    let salt = 30 + MISSIONS.lock().len() as u64;
+    let Some((band_h, band_id, spawn_tile)) =
+        crate::incursion::spawn_band_at_edge(now, salt, "RovingRefugee", min, max, false)?
+    else {
+        for (ch, _, _) in &camps {
+            drop(own(*ch));
         }
-    }
-    let Some((group, target, _)) = best else {
         return Ok(Outcome::Passed);
     };
 
-    let intent = forced.unwrap_or_else(|| roll_intent(group.id, now));
-    CLAIMED.lock().push(group.id);
+    // Nearest camp to where the band crossed; march the band to it.
+    let mut best = 0usize;
+    let mut best_d = i64::MAX;
+    for (i, (_, c, _)) in camps.iter().enumerate() {
+        let d = (c.0 - spawn_tile.0).pow(2) + (c.1 - spawn_tile.1).pow(2);
+        if d < best_d {
+            best_d = d;
+            best = i;
+        }
+    }
+    let (target_h, target_tile, target_name) = {
+        let (h, t, n) = &camps[best];
+        (*h, *t, n.clone())
+    };
+    let _ = march_band_to(band_h, target_tile, "Travel");
+
+    CLAIMED.lock().push(band_id);
+    let intent = forced.unwrap_or_else(|| roll_intent(band_id, now));
     MISSIONS.lock().push(Mission {
-        group_h: group.handle,
-        group_id: group.id,
-        target_h: target.handle,
-        target_name: target.name.clone(),
+        group_h: band_h,
+        group_id: band_id,
+        target_h,
+        target_name: target_name.clone(),
         intent,
         deadline: now + MISSION_TIMEOUT_SECS,
     });
+
     let (announce, log_shape) = match intent {
         Intent::Mysterious => (
-            announce_lone_line(group.id, &target.name),
-            "a lone figure nears {} (meaning hidden)",
+            announce_lone_line(band_id, &target_name),
+            "a lone figure crossed the edge toward {} (meaning hidden)",
         ),
         Intent::Refugee => (
-            announce_refugee_line(group.id, &target.name),
-            "refugees near {} (fleeing something off-map)",
+            announce_refugee_line(band_id, &target_name),
+            "refugees crossed the edge toward {} (fleeing something off-map)",
         ),
         _ => (
-            announce_line(group.id, &target.name),
-            "an unknown band nears {} (intent hidden)",
+            announce_line(band_id, &target_name),
+            "an unknown band crossed the edge toward {} (intent hidden)",
         ),
     };
     crate::chronicle::post(&announce);
@@ -298,9 +244,16 @@ fn try_launch(
         LogLevel::Info,
         &format!(
             "survivalist-mod: stranger -- {}",
-            log_shape.replace("{}", &target.name)
+            log_shape.replace("{}", &target_name)
         ),
     );
+
+    // Release the camp handles we did not keep as the target.
+    for (i, (ch, _, _)) in camps.iter().enumerate() {
+        if i != best {
+            drop(own(*ch));
+        }
+    }
     Ok(Outcome::Fired)
 }
 

@@ -458,32 +458,57 @@ fn mega_horde(now: f32) -> Result<bool, String> {
 }
 
 /// The off-map generator (docs/status.md design lock): spawn a REAL
-/// hostile band at the map edge from the undefined beyond and send
-/// it inward. The game's own `SpawnAmbientLooters` creates a band of
-/// `kind` carrying real gear and generated loot, so the arrival also
-/// feeds fresh loot and people into the world. `hostile_all` makes
-/// it hostile to EVERY camp (a military remnant's purposeful
-/// killers); otherwise it falls on the nearest camp (raiders).
-/// Returns the target camp's name, or None if there was nowhere to
-/// cross toward. Errs "pre-v6" until a game restart arms static
-/// invoke, same as the horde.
-fn spawn_edge_band(now: f32, kind: &str, hostile_all: bool) -> Result<Option<String>, String> {
+/// band at the map edge from the undefined beyond. The game's own
+/// `SpawnAmbientLooters` creates a band of `kind` carrying real gear
+/// and generated loot, so EVERY off-map arrival (hostile or not)
+/// feeds fresh loot and people into the world. Returns (band handle,
+/// band id, spawn tile), or None if there is no populated map to
+/// anchor an edge to, or the spawn produced nobody (an impassable
+/// edge point). `salt` varies the edge direction so several bands in
+/// one pass land apart. `armed` gives raider-grade weapons; light
+/// otherwise. Errs "pre-v6" until a game restart arms static invoke,
+/// like the horde. The caller owns the returned band handle.
+pub fn spawn_band_at_edge(
+    now: f32,
+    salt: u64,
+    kind: &str,
+    min_count: i64,
+    max_count: i64,
+    armed: bool,
+) -> Result<Option<(i32, i64, (i64, i64))>, String> {
     let Some((centroid, spread)) = map_centroid_and_spread()? else {
         return Ok(None);
     };
-    // A point beyond every camp, in a random direction: the edge.
-    let angle = rng(now, 20, 6283) as f64 / 1000.0;
+    let angle = rng(now, salt, 6283) as f64 / 1000.0;
     let radius = spread as f64 * 1.4 + 150.0;
     let ex = centroid.0 + (angle.cos() * radius) as i64;
     let ey = centroid.1 + (angle.sin() * radius) as i64;
-
-    // The band: the game's own spawner, real gear + generated loot.
+    let (melee, ammo, molotov, body, helmet, leg) = if armed {
+        (0.85, 0.6, 0.3, 0.35, 0.3, 0.3)
+    } else {
+        (0.3, 0.1, 0.0, 0.1, 0.05, 0.05)
+    };
     let band = mono::invoke_static(
         "LooterSpawnPoint",
         "SpawnAmbientLooters",
-        &json!([{"x": ex, "y": ey}, 3, 6, 0.85, 0.6, 0.3, 0.35, 0.3, 0.3, null, kind]),
+        &json!([
+            {"x": ex, "y": ey}, min_count, max_count,
+            melee, ammo, molotov, body, helmet, leg, null, kind
+        ]),
     )?;
     let Some(band_h) = handle_of(&band) else {
+        return Ok(None); // impassable edge point / nobody spawned
+    };
+    let id = with(band_h, |b| b.read_field("Id").ok().and_then(|v| v.as_i64())).unwrap_or(-1);
+    Ok(Some((band_h, id, (ex, ey))))
+}
+
+/// Raiders/military: spawn an armed band at the edge and set it
+/// hostile (all camps for a military remnant, the nearest for
+/// raiders); the game's combat AI marches them in. Returns the
+/// target camp's name.
+fn spawn_edge_band(now: f32, kind: &str, hostile_all: bool) -> Result<Option<String>, String> {
+    let Some((band_h, _id, (ex, ey))) = spawn_band_at_edge(now, 20, kind, 3, 6, true)? else {
         return Ok(None);
     };
 
