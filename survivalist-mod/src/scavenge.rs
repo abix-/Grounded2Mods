@@ -321,10 +321,23 @@ fn find_target(home: (i64, i64)) -> Result<Option<(i32, (f64, f64), String, i64)
     let pm = prop_manager()?;
     let list_h = handle_of(&pm.read_field("AllProps")?).ok_or("AllProps is null")?;
     let list = own(list_h);
-    let count = list.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+    // AllProps is large and VOLATILE: the game creates and destroys
+    // props constantly, so the list can shrink under this walk and a
+    // get_Item at a now-stale index throws. Read the count softly and
+    // stop the walk on the first faulting index instead of letting it
+    // abort (and log-spam) the whole scan.
+    let count = list
+        .invoke("get_Count", &json!([]))
+        .ok()
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
     let mut best: Option<(i32, (f64, f64), String, i64, f64)> = None;
     for i in 0..count {
-        let Some(ph) = handle_of(&list.invoke("get_Item", &json!([i]))?) else {
+        let item = match list.invoke("get_Item", &json!([i])) {
+            Ok(v) => v,
+            Err(_) => break, // the live props list moved under us
+        };
+        let Some(ph) = handle_of(&item) else {
             continue;
         };
         let prop = own(ph);
