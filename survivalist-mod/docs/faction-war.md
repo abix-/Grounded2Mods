@@ -419,23 +419,31 @@ read in the decompile, none guessed):
 | Act | Trait affinity | What the game already gives (verified) | What the mod adds |
 |---|---|---|---|
 | Trade | cautious, defensive | Trade squads travel to any non-hostile settlement with beds (GoToNextTradeDestination, Community.cs:5792) and HANG OUT there (SquadAction.Trade = SetHangoutLocation, Community.cs:3529). Goods exchange exists ONLY in the player trade UI; AI-to-AI trade is cosmetic today. | The actual exchange: when a trade squad idles at a friendly camp, surplus moves for need (real items via the proven Take/Add carry pattern, both sides gain). The peaceful acquisition dimension. |
-| Scavenge | expansionist | Loot locations exist as map data (LootLocationDef); predation leaves dead-camp husks with stockpiles nobody owns; the carry-home pattern is proven (predation looting). | Scavenge parties: a small squad walks to a husk or ruin, collects, walks home. The baseline low-risk acquisition act; vultures on the map's corpses. |
+| Scavenge | expansionist | The game's own scavenging brain (FindGoal) walks the public props list (PropManager.AllProps) to find loot; ownerless town furniture holds items and picking it up is NOT theft (IsStealingToPickUp trips only on another community's property); the carry-home pattern is proven (predation/robbery looting). NOTE: LootLocationDef is just a TSV of loot-probability profiles (Name/ClothingProbability/EmptyLiquidContainers), NOT a map of loot spots; dead camps VANISH, so towns not husks are the grounds. | Scavenge parties: a small squad walks to a stocked town building, collects ownerless goods, walks home. The baseline low-risk acquisition act; vultures on the map's corpses. |
 | Steal | guile | Picking up another community's property IS theft (IsStealingToPickUp, Character.cs:19043); OnStoleSomething (Character.cs:7327) runs the whole consequence ladder when seen, up to war. | A high-guile camp sends a thief into a neighbor's stores for food/gear. Unseen: free wealth. Seen: the VANILLA path ignites the fallout. This is the organic-war-ignition vector. |
 | Extort | aggressive, guile | Looters already extort weaker AI settlements on a hardcoded cadence (ExtortAISettlements). | Move the choice into the franchise vote; personality picks the targets and the cadence, not the community type alone. |
 | Rob (ambush) | aggression, guile | Community.Ambush (Community.cs:8080) sends a squad after a character CARRYING a wanted item type: demand it (SpeechSituation.Ambush), fight on refusal; SearchForAmbushItem (4720) scans who holds it. | Aim it AI-vs-AI: item-hungry camps rob travelers and rich neighbors of the thing they need. |
 | Murder | high aggression, guile | A real stealth-assassination attack path with secrecy handling exists (assassinate + stealthy melee, Character.cs:10798; witness/sound attribution decides if it is pinned). | A lone operative kills a rival camp's member quietly: weaken before a war, or revenge without one. Risky: attribution through the game's own witness systems means it can ignite. |
 | Raid / war | aggression, expansionism | SHIPPED: the hunger raid (famine-gated) + the two-way revenge loop. | Ambition ignition: comfortable but aggressive + expansionist camps vote to prey on a weaker, richer neighbor. Wars that start because of WHO a faction is, not only how hungry it is. |
 
-SCAVENGE: BLOCKED on a shim feature (honest status 2026-07-05).
-Dead camps turn out to VANISH from the community list when
-consumed (no husk to loot), and the world's real scavenging
-grounds, town buildings full of lootable furniture, cannot be
-enumerated over the bridge yet: the game's prop queries
-(`GetObjectsInRect`) fill a caller-provided List and the finder
-logic lives inside Goal classes, both needing object construction
-the shim does not support. The upstream fix is a shim primitive
-(construct game objects / pass fresh List args), which requires a
-game RESTART to ship. Deferred rather than shipping a hollow act.
+SCAVENGE: UNBLOCKED by research 2026-07-07; the 2026-07-05 block
+was WRONG. The old claim said town loot cannot be enumerated over
+the bridge because `GetObjectsInRect` fills a caller-provided
+List and the finder logic lives inside Goal classes, so a shim
+primitive plus a game restart were needed. The decompile says
+otherwise: `FindGoal`, the game's own scavenging brain, never
+uses the rect query. It finds loot by iterating
+`Session.Instance.PropManager.AllProps`, a plain public list,
+which is exactly the get_Count/get_Item walk the bridge already
+does for communities, buildings, members, and inventories. No
+shim primitive, no restart. Taking ownerless town furniture is
+not theft either (IsStealingToPickUp trips only on another
+community's property), so a scavenge party is clean: enumerate
+props with stocked inventories that no living community owns,
+walk a real squad there, carry home via the proven Take/Add
+pattern. Still true from the old note: camps consumed by
+predation VANISH from the community list, so dead camps leave no
+husk to pick over; the towns are the real scavenging grounds.
 
 THE CHRONICLE (commit `4f01c295`, survivalist-mod/src/chronicle.rs,
 verified live 2026-07-05): the living world made visible IN the
