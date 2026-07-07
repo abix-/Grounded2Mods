@@ -25,7 +25,8 @@
 //! via the game's own reclamation), the mysterious stranger (a lone
 //! figure whose meaning is never learned), a refugee wave (real
 //! groups seek shelter and what they fled arrives on the next
-//! sign), and the traveling mega-horde.
+//! sign), an off-map signal (a broadcast luring toward the edge),
+//! and the traveling mega-horde.
 //! The hostile payoffs rest on foundations not yet verified live (a
 //! group actually attacking; the horde spawner needs the game
 //! restart).
@@ -65,6 +66,7 @@ enum Payoff {
     Settlers,
     MysteriousStranger,
     RefugeeWave,
+    Signal,
     MegaHorde,
 }
 
@@ -136,6 +138,10 @@ fn run(now: f32) -> Result<Outcome, String> {
         // A wave of real survivors running from something beyond
         // the edge; what they fled comes for the map next.
         Payoff::RefugeeWave
+    } else if rng(now, 11, 100) < 12 {
+        // A broadcast from beyond the edge: a lure toward the
+        // unknown, never explained, never located.
+        Payoff::Signal
     } else {
         // Among real payoffs, raiders grow likelier as it escalates:
         // early arrivals are mostly benign, late ones mean to fight.
@@ -165,6 +171,7 @@ fn run(now: f32) -> Result<Outcome, String> {
                 Payoff::Settlers => "settlers",
                 Payoff::MysteriousStranger => "mysterious-stranger",
                 Payoff::RefugeeWave => "refugee-wave",
+                Payoff::Signal => "signal",
                 Payoff::MegaHorde => "mega-horde",
             },
             gap,
@@ -316,6 +323,15 @@ fn resolve(now: f32) {
                 );
             }
         }
+        Payoff::Signal => {
+            // Pure lure: the broadcast is heard and never explained.
+            // Whether anyone walks toward it is their own choice.
+            crate::chronicle::post(&signal_line(now));
+            mono::log(
+                LogLevel::Info,
+                "survivalist-mod: incursion -- SIGNAL; a broadcast from beyond the edge, never explained",
+            );
+        }
         Payoff::MegaHorde => match mega_horde(now) {
             Ok(true) => {
                 crate::chronicle::post(
@@ -429,6 +445,20 @@ fn dread_sign(now: f32, resolved: u32) -> &'static str {
     ];
     let pool = if resolved >= 4 { LATE } else { EARLY };
     pool[rng(now, 2, pool.len() as u64) as usize]
+}
+
+/// The off-map signal: a broadcast luring listeners toward the
+/// edge. It names a direction (the lure needs somewhere to point)
+/// but never a meaning.
+fn signal_line(now: f32) -> String {
+    const DIRS: &[&str] = &["north", "south", "east", "west"];
+    const L: &[&str] = &[
+        "a radio crackles to life: a voice beyond the {} edge repeats the same words, then static",
+        "for one night a broadcast from the {} promises safety to any who come; by morning it is gone",
+        "a signal from beyond the {} edge counts numbers into the dark, over and over",
+    ];
+    let dir = DIRS[rng(now, 12, DIRS.len() as u64) as usize];
+    L[rng(now, 13, L.len() as u64) as usize].replace("{}", dir)
 }
 
 fn false_alarm_line(now: f32) -> &'static str {
