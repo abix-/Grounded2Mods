@@ -21,9 +21,11 @@
 //! strangers system, which now fires ONLY through this loop, so
 //! every arrival is foreshadowed), off-map raiders (forced hostile),
 //! military remnants (hostile to everything, purpose never
-//! explained), and the traveling mega-horde. The hostile payoffs
-//! rest on foundations not yet verified live (a group actually
-//! attacking; the horde spawner needs the game restart).
+//! explained), a settling faction (a real group claims a dead base
+//! via the game's own reclamation), and the traveling mega-horde.
+//! The hostile payoffs rest on foundations not yet verified live (a
+//! group actually attacking; the horde spawner needs the game
+//! restart).
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -57,6 +59,7 @@ enum Payoff {
     Arrival,
     Raiders,
     Military,
+    Settlers,
     MegaHorde,
 }
 
@@ -103,6 +106,10 @@ fn run(now: f32) -> Result<Outcome, String> {
         // Late and rare: a military remnant crossing on a mission,
         // hostile to everything it passes, purpose never explained.
         Payoff::Military
+    } else if resolved >= 2 && rng(now, 8, 100) < 15 {
+        // An off-map offshoot comes to STAY: a new camp on a dead
+        // base rewrites the balance, so the map is never solved.
+        Payoff::Settlers
     } else {
         // Among real payoffs, raiders grow likelier as it escalates:
         // early arrivals are mostly benign, late ones mean to fight.
@@ -129,6 +136,7 @@ fn run(now: f32) -> Result<Outcome, String> {
                 Payoff::Arrival => "arrival",
                 Payoff::Raiders => "raiders",
                 Payoff::Military => "military",
+                Payoff::Settlers => "settlers",
                 Payoff::MegaHorde => "mega-horde",
             },
             gap,
@@ -210,6 +218,27 @@ fn resolve(now: f32) {
                 mono::log(
                     LogLevel::Info,
                     "survivalist-mod: incursion -- military rolled, but no unit was near enough to cross",
+                );
+            }
+        }
+        Payoff::Settlers => {
+            // An off-map offshoot walks in to claim a dead base and
+            // stays: the map's balance rewritten from beyond.
+            if crate::settler::launch_now(now) {
+                crate::chronicle::post(
+                    "a band has crossed the edge looking for a place to stay, and found dead walls to claim",
+                );
+                mono::log(
+                    LogLevel::Info,
+                    "survivalist-mod: incursion -- SETTLERS; an off-map faction crossed to claim a dead base",
+                );
+            } else {
+                crate::chronicle::post(
+                    "wanderers passed along the edge, but nothing out there stayed",
+                );
+                mono::log(
+                    LogLevel::Info,
+                    "survivalist-mod: incursion -- settlers rolled, but no group and claimable base matched",
                 );
             }
         }

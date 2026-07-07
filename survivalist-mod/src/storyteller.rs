@@ -272,6 +272,7 @@ fn storyteller_status(_args: &Json) -> Result<Json, String> {
             "packs_live": crate::horde::live_pack_count(),
             "vendors_live": crate::vendor::active_count(),
             "strangers_live": crate::stranger::active_count(),
+            "settlers_live": crate::settler::active_count(),
             "incursion_pending": crate::incursion::pending(),
             "last_event": last,
             "alpha": alpha,

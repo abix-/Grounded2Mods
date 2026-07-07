@@ -151,7 +151,7 @@ fn launch_with(now: f32, forced: Option<Intent>) -> Result<Outcome, String> {
                 .as_i64()
                 .unwrap_or(0);
             let id = com.read_field("Id")?.as_i64().unwrap_or(-1);
-            if members > 0 && !is_claimed(id) {
+            if members > 0 && !is_claimed(id) && !crate::settler::is_claimed(id) {
                 if let Some(lead_h) = handle_of(&com.read_field("Leader")?) {
                     if let Some(pos) = pos_of(&own(lead_h)) {
                         groups.push(Group {

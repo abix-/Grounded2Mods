@@ -252,9 +252,13 @@ fn recruit_scan() -> Result<(), String> {
                 .as_i64()
                 .unwrap_or(0);
             let id = com.read_field("Id")?.as_i64().unwrap_or(-1);
-            // A band the stranger system has claimed is its to
-            // resolve; do not recruit it out from under the roll.
-            if members > 0 && !crate::stranger::is_claimed(id) {
+            // A band the stranger or settler system has claimed is
+            // its to resolve; do not recruit it out from under the
+            // roll or the walk to a claimable base.
+            if members > 0
+                && !crate::stranger::is_claimed(id)
+                && !crate::settler::is_claimed(id)
+            {
                 refugees.push(com);
             }
             return Ok(true);
