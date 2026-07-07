@@ -143,3 +143,47 @@ Ordered by build feasibility; most reuse tech already in the tree.
 
 None built yet. This is the storyteller's next horizon once the
 three on-map events are verified.
+
+## What a fast-bored player enjoys, and what to build first
+
+The design target is a player who gets bored FAST (the operator).
+What un-bores them is not any one big threat; it is the LOOP of not
+knowing what is coming:
+
+1. DREAD. A quiet stretch breaks with a sign: smoke on the horizon,
+   a refugee raving about soldiers to the north. What is coming?
+   The anticipation is half the fun, sometimes more than the payoff.
+2. UNCERTAINTY. Mega-horde? Raiders? A lone stranger? A plague?
+   Nothing? They cannot predict it, so they cannot get comfortable.
+3. VARIED PAYOFF. It lands, and it is never the same thing twice.
+4. LINGERING MYSTERY. They never fully learn the meaning: why the
+   horde moved, what the stranger wanted, who the soldiers were.
+5. ESCALATION. It grows bigger and stranger as the map goes quiet,
+   so safety never sets in.
+
+Build-order consequence: the SETUP and the MYSTERY are worth as much
+as the threats. Telegraphing and the mystery events are not garnish;
+they ARE the fun for a fast-bored player, because they create the
+not-knowing. One dramatic incursion with no dread before it and no
+mystery after is a fireworks show; the LOOP is the game. So the
+highest-enjoyment build is the dread loop itself (telegraph, then
+payoff) plus two or three varied incursions to fill it, not one big
+threat in isolation.
+
+Value ranking (raw player impact, 2026-07-06):
+
+| Incursion | Value | Buildable now |
+|---|---|---|
+| Traveling mega-horde | 9/10 | Reuses the horde spawner; needs the restart, and the horde is unverified |
+| Off-map raiders / warband | 8/10 | Reuses the aggressive-stranger attack; unverified (a hostile group may flee, not fight) |
+| Military remnants (special forces) | 8/10 | Same unverified attack, themed as purposeful killers |
+| A settling faction | 7/10 | The hard one: a community and base from nothing (uncertain feasibility) |
+| The mysterious stranger | 6/10 | Reuses the strangers system; buildable now on proven ground |
+| Refugee wave fleeing something | 5/10 | Reuses recruitment; buildable now |
+| Off-map signal / plague | 5/10 | Chronicle plus strain hooks; buildable now |
+| Dread signs (the telegraph) | 4/10 raw, but core of the loop | Trivial chronicle lines; punch far above their number for a fast-bored player |
+
+The two foundations under the top three (the horde firing, a hostile
+group actually attacking rather than fleeing) are both unverified.
+One game restart plus watching one aggressive stranger reach a camp
+unlocks the 8s and the 9 at once.
