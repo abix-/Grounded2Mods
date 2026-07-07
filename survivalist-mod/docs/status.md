@@ -127,9 +127,11 @@ Ordered by build feasibility; most reuse tech already in the tree.
 - The mysterious stranger: a lone figure with a hidden meaning the
   player never fully learns. A special variant of the strangers
   system.
-- Off-map signals and plagues: a radio broadcast luring factions and
-  the player toward the edge; a group carrying a worse strain, so
-  taking them in may doom the camp. Chronicle plus strain hooks.
+- Off-map signal: a radio broadcast luring factions and the player
+  toward the edge. The plague half (a group carrying a worse strain
+  that may doom the camp) is DROPPED, operator call 2026-07-07: it
+  conflicts with the no-infections directive (2026-07-04,
+  infection.rs), which stands.
 - A settling faction: an off-map offshoot founds a new camp,
   rewriting the balance and keeping the map from ever being fully
   known. The hard one: needs creating a community and a base from
@@ -180,7 +182,7 @@ Value ranking (raw player impact, 2026-07-06):
 | A settling faction | 7/10 | The hard one: a community and base from nothing (uncertain feasibility) |
 | The mysterious stranger | 6/10 | Reuses the strangers system; buildable now on proven ground |
 | Refugee wave fleeing something | 5/10 | Reuses recruitment; buildable now |
-| Off-map signal / plague | 5/10 | Chronicle plus strain hooks; buildable now |
+| Off-map signal | 5/10 | Chronicle lines; plague half dropped (no-infections directive stands) |
 | Dread signs (the telegraph) | 4/10 raw, but core of the loop | Trivial chronicle lines; punch far above their number for a fast-bored player |
 
 The two foundations under the top three (the horde firing, a hostile
