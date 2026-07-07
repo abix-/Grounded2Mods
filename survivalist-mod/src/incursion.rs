@@ -52,6 +52,7 @@ const DREAD_MAX_SECS: f32 = 180.0;
 enum Payoff {
     FalseAlarm,
     Arrival,
+    Raiders,
 }
 
 struct Pending {
@@ -91,7 +92,14 @@ fn run(now: f32) -> Result<Outcome, String> {
     let payoff = if rng(now, 0, 100) < false_pct {
         Payoff::FalseAlarm
     } else {
-        Payoff::Arrival
+        // Among real payoffs, raiders grow likelier as it escalates:
+        // early arrivals are mostly benign, late ones mean to fight.
+        let raiders_pct = (30u64 + resolved as u64 * 5).min(70);
+        if rng(now, 4, 100) < raiders_pct {
+            Payoff::Raiders
+        } else {
+            Payoff::Arrival
+        }
     };
     let gap = DREAD_MIN_SECS
         + (rng(now, 1, 1000) as f32 / 1000.0) * (DREAD_MAX_SECS - DREAD_MIN_SECS);
@@ -107,6 +115,7 @@ fn run(now: f32) -> Result<Outcome, String> {
             match payoff {
                 Payoff::FalseAlarm => "false-alarm",
                 Payoff::Arrival => "arrival",
+                Payoff::Raiders => "raiders",
             },
             gap,
         ),
@@ -147,6 +156,25 @@ fn resolve(now: f32) {
                 mono::log(
                     LogLevel::Info,
                     "survivalist-mod: incursion -- arrival rolled, but nothing was near enough to cross",
+                );
+            }
+        }
+        Payoff::Raiders => {
+            // A band that crossed the edge to fight, foreshadowed by
+            // the dread and set hostile the moment it reaches a camp.
+            if crate::stranger::launch_raiders(now) {
+                crate::chronicle::post(
+                    "raiders have crossed onto the map, and they mean to take what you have",
+                );
+                mono::log(
+                    LogLevel::Info,
+                    "survivalist-mod: incursion -- RAIDERS; a hostile band crossed the edge to attack",
+                );
+            } else {
+                crate::chronicle::post("the raiders never found the map; the dread lingers");
+                mono::log(
+                    LogLevel::Info,
+                    "survivalist-mod: incursion -- raiders rolled, but no band was near enough to cross",
                 );
             }
         }

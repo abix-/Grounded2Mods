@@ -37,11 +37,18 @@ use crate::common::{
 };
 use crate::storyteller::Outcome;
 
-/// Force-launch a stranger now, reporting whether a group was near
-/// enough to actually cross. The incursion loop drives this, so
-/// every stranger now arrives foreshadowed by off-map dread.
+/// Force-launch a stranger now with a ROLLED hidden intent,
+/// reporting whether a group was near enough to actually cross. The
+/// incursion loop drives this, so every stranger arrives foreshadowed
+/// by off-map dread.
 pub fn launch_now(now: f32) -> bool {
-    matches!(run(now), Ok(Outcome::Fired))
+    matches!(launch_with(now, None), Ok(Outcome::Fired))
+}
+
+/// Force-launch a band whose intent is fixed HOSTILE: off-map
+/// raiders that mean to attack. Same arrival machinery, no roll.
+pub fn launch_raiders(now: f32) -> bool {
+    matches!(launch_with(now, Some(Intent::Aggressive)), Ok(Outcome::Fired))
 }
 
 /// Seconds between resolve passes (arrival checks).
@@ -121,7 +128,7 @@ struct Group {
     pos: (f32, f32),
 }
 
-fn run(now: f32) -> Result<Outcome, String> {
+fn launch_with(now: f32, forced: Option<Intent>) -> Result<Outcome, String> {
     if MISSIONS.lock().len() >= MAX_STRANGERS {
         return Ok(Outcome::Passed);
     }
@@ -177,7 +184,7 @@ fn run(now: f32) -> Result<Outcome, String> {
         Ok(true)
     })?;
 
-    let result = try_launch(&groups, &camps, now);
+    let result = try_launch(&groups, &camps, now, forced);
 
     let kept: Vec<i32> = {
         let ms = MISSIONS.lock();
@@ -196,7 +203,12 @@ fn run(now: f32) -> Result<Outcome, String> {
     result
 }
 
-fn try_launch(groups: &[Group], camps: &[Camp], now: f32) -> Result<Outcome, String> {
+fn try_launch(
+    groups: &[Group],
+    camps: &[Camp],
+    now: f32,
+    forced: Option<Intent>,
+) -> Result<Outcome, String> {
     if groups.is_empty() || camps.is_empty() {
         return Ok(Outcome::Passed);
     }
@@ -216,7 +228,7 @@ fn try_launch(groups: &[Group], camps: &[Camp], now: f32) -> Result<Outcome, Str
         return Ok(Outcome::Passed);
     };
 
-    let intent = roll_intent(group.id, now);
+    let intent = forced.unwrap_or_else(|| roll_intent(group.id, now));
     CLAIMED.lock().push(group.id);
     MISSIONS.lock().push(Mission {
         group_h: group.handle,
