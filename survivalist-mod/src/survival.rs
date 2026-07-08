@@ -95,6 +95,13 @@ const SURRENDER_AGGRESSION_CEILING: f64 = 0.5;
 /// times stronger.
 const SURRENDER_ODDS: i64 = 2;
 
+/// Population-collapse response: a camp beaten under half its
+/// worldgen size (but not starving, hunger has its own raid) merges
+/// into a stronger neighbor if its franchise is MEEK, a survivor
+/// votes to give up and flee when their defensiveness clears this.
+/// Proud (low-defensiveness) camps hold on and turtle instead.
+const FLEE_DEFENSIVENESS_FLOOR: f64 = 0.55;
+
 /// Extortion by vote: a Looter camp keeps its shakedown racket
 /// (the game's own ExtortAISettlements knob) only while its
 /// franchise votes menace (aggression/guile blend at or above
@@ -458,6 +465,11 @@ fn desperation_scan(now: f32) -> Result<(), String> {
         ambition_war(&camps, now)?;
     }
 
+    // A camp collapsed by LOSSES (not hunger) but not yet terminal:
+    // its meek survivors give up and merge into a stronger neighbor
+    // rather than dwindle to nothing; the proud hold on.
+    collapse_response(&camps)?;
+
     // Terminal camps whose death by staying is certain fracture:
     // survivors defect to a refuge rather than die together.
     fracture(&camps)?;
@@ -596,6 +608,105 @@ fn sue_for_peace(camps: &[Camp]) -> Result<bool, String> {
 /// with real bed room, choosing to live over dying together; their
 /// genomes go with them (heredity through flight). If there is
 /// nowhere to flee, they stay and starve. One fracture per scan.
+/// Population-collapse response (the desperation ladder's shrink
+/// rung, operator north star "settlements fighting to survive"): a
+/// camp beaten to under half its worldgen size, but NOT starving
+/// (hunger drives its own raid) and not yet terminal. Its people
+/// vote whether to hold on or give up; a MEEK majority (high
+/// defensiveness) abandons the dwindling camp and merges into the
+/// nearest STRONGER non-hostile neighbor, while a PROUD one turtles
+/// and endures. Reuses the fracture defect path; one merge per scan
+/// keeps the bleed gradual and legible.
+fn collapse_response(camps: &[Camp]) -> Result<bool, String> {
+    for c in camps {
+        let shrunk = c.initial > 0 && (c.members as f64) < (c.initial as f64) * 0.5;
+        if c.ctype == "Player"
+            || c.rung != Rung::Desperate
+            || !shrunk
+            || c.nutrition <= DESPERATE_NUTRITION
+            || c.members < 2
+            || c.centre.is_none()
+        {
+            continue;
+        }
+        // Give-up vote: meek (defensive) survivors choose to flee
+        // and merge; proud ones hold on and turtle.
+        let vote = crate::common::with(c.handle, |com| {
+            tally_vote(com, &c.ctype, FLEE_DEFENSIVENESS_FLOOR, |g| {
+                g.get(Trait::Defensiveness)
+            })
+        })?;
+        if vote.franchise == 0 || vote.for_raid * 2 <= vote.franchise {
+            continue; // the proud hold on
+        }
+        // The nearest STRONGER non-hostile neighbor with room.
+        let (cx, cy) = c.centre.unwrap();
+        let mut refuge: Option<(&Camp, i64)> = None;
+        for other in camps {
+            if other.handle == c.handle
+                || other.ctype == "Player"
+                || other.members <= c.members
+            {
+                continue;
+            }
+            let Some((ox, oy)) = other.centre else {
+                continue;
+            };
+            let room = crate::common::with(other.handle, |com| -> i64 {
+                let beds = com
+                    .invoke("GetAccommodation", &json!([]))
+                    .ok()
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+                let members = com
+                    .invoke("GetLivingNonZombieMemberCount", &json!([]))
+                    .ok()
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+                (beds - members).max(0)
+            });
+            if room <= 0 {
+                continue;
+            }
+            let rel = crate::common::with(c.handle, |d| {
+                d.invoke("GetRelationship", &json!([{ "handle": other.handle }]))
+            })
+            .unwrap_or(json!("?"));
+            if rel == json!("Hostile") {
+                continue;
+            }
+            let dist = (ox - cx) * (ox - cx) + (oy - cy) * (oy - cy);
+            if refuge.map(|(_, bd)| dist < bd).unwrap_or(true) {
+                refuge = Some((other, dist));
+            }
+        }
+        let Some((refuge, _)) = refuge else {
+            continue;
+        };
+        let moved = defect(c, refuge)?;
+        if moved > 0 {
+            crate::chronicle::post(&format!(
+                "{}, too few to go on, is giving up: {} joined {}",
+                c.name, moved, refuge.name
+            ));
+            mono::log(
+                LogLevel::Info,
+                &format!(
+                    "survivalist-mod: survival -- COLLAPSE: {} survivor(s) abandon dwindling {} to merge into stronger {}",
+                    moved, c.name, refuge.name
+                ),
+            );
+            // Survival by merging: the meek choice paid off, so the
+            // voters trust the careful way more.
+            for &v in &vote.voter_ids {
+                genome::reinforce_individual(v, Trait::Defensiveness, true, 1.0);
+            }
+            return Ok(true); // one collapse-merge per scan
+        }
+    }
+    Ok(false)
+}
+
 fn fracture(camps: &[Camp]) -> Result<bool, String> {
     for doomed in camps {
         if doomed.ctype == "Player" || doomed.rung != Rung::Terminal || doomed.members < 3 {
