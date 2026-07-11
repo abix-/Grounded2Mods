@@ -44,10 +44,18 @@ in-game chronicle.
 
 ## Design decisions (locked)
 
-- Open contract: no acceptance step. The chronicle line IS the
-  offer; the kill claims it. This matches the status row's
+- Open contract: no acceptance step. The chronicle line announces
+  the offer; the kill claims it. This matches the status row's
   "offers arrive in-world (a messenger at the gate, a chronicle
-  line)" and needs zero new UI or dialog research.
+  line)".
+- THE WORK BOARD (operator-locked 2026-07-10): the player must be
+  able to SEE, in-game, a list of everything they could do and
+  what each pays. The chronicle announces; the board lists. Which
+  game surface carries the list is a research question (Task 4);
+  the offer therefore carries a concrete reward from the moment
+  it is posted (`pays`, counted from the hirer's real stores at
+  offer time, capped at BOUNTY_PAY_STACKS) so any surface can
+  print "X offers a bounty on Y: pays N stacks of goods".
 - The mark is the enemy LEADER (decapitation; the same mark
   murder.rs uses, read from `InvasionTarget` then `Leader`).
 - The hirer: an AI settlement (Normal or Looter) at war with
@@ -165,6 +173,9 @@ enum Bounty {
         mark_id: i64,
         mark_name: String,
         enemy_name: String,
+        /// Non-food stacks the hirer could pay at offer time; what
+        /// the board and the chronicle advertise.
+        pays: i64,
         expires: f32,
     },
 }
@@ -244,7 +255,7 @@ fn offer_scan(now: f32) -> Result<(), String> {
             .invoke("GetRelationship", &json!([{ "handle": player_h }]))
             .map(|r| r != json!("Hostile"))
             .unwrap_or(false);
-        if !enemy_ok || !friendly || !has_stored_goods(&com, GoodsFilter::NonFood) {
+        if !enemy_ok || !friendly || count_stored_goods(&com, GoodsFilter::NonFood, 1) == 0 {
             drop(own(enemy_h));
             return Ok(true);
         }
@@ -297,13 +308,24 @@ fn post_offer(hirer_h: i32, hirer_name: String, enemy_h: i32, now: f32) -> Resul
         )
     });
 
+    // What the offer pays, counted from the real stores NOW so
+    // the board can advertise it. A broke hirer posts nothing.
+    let pays = with(hirer_h, |com| {
+        count_stored_goods(com, GoodsFilter::NonFood, BOUNTY_PAY_STACKS)
+    });
+    if pays == 0 {
+        drop(own(hirer_h));
+        drop(own(mark_h));
+        return Ok(());
+    }
+
     crate::chronicle::post(&format!(
-        "{hirer_name} offers a bounty on {mark_name}, leader of {enemy_name}"
+        "{hirer_name} offers a bounty on {mark_name}, leader of {enemy_name}: pays {pays} stack(s) of goods"
     ));
     mono::log(
         LogLevel::Info,
         &format!(
-            "survivalist-mod: bounty: {hirer_name} posts a bounty on {mark_name}, leader of {enemy_name} (window {OFFER_WINDOW_SECS}s)"
+            "survivalist-mod: bounty: {hirer_name} posts a bounty on {mark_name}, leader of {enemy_name}, paying {pays} stack(s) (window {OFFER_WINDOW_SECS}s)"
         ),
     );
     *BOUNTY.lock() = Some(Bounty::Offered {
@@ -313,17 +335,20 @@ fn post_offer(hirer_h: i32, hirer_name: String, enemy_h: i32, now: f32) -> Resul
         mark_id,
         mark_name,
         enemy_name,
+        pays,
         expires: now + OFFER_WINDOW_SECS,
     });
     Ok(())
 }
 
-/// Does the community hold at least one stored stack matching the
-/// filter? Cheap early-exit walk of its buildings' inventories.
-fn has_stored_goods(com: &MonoObject, filter: GoodsFilter) -> bool {
+/// Count the community's stored stacks matching the filter, up to
+/// `cap` (early exit; cap 1 is a cheap "has any" test, cap
+/// BOUNTY_PAY_STACKS is the advertised reward).
+fn count_stored_goods(com: &MonoObject, filter: GoodsFilter, cap: i64) -> i64 {
     let Some(b_h) = com.read_field("Buildings").ok().as_ref().and_then(handle_of) else {
-        return false;
+        return 0;
     };
+    let mut found = 0i64;
     let blist = own(b_h);
     let nb = blist
         .invoke("get_Count", &json!([]))
@@ -361,11 +386,14 @@ fn has_stored_goods(com: &MonoObject, filter: GoodsFilter) -> bool {
             };
             let item = own(item_h);
             if matches_filter(&item, filter) {
-                return true;
+                found += 1;
+                if found >= cap {
+                    return found;
+                }
             }
         }
     }
-    false
+    found
 }
 
 /// GoodsFilter::matches is private to common.rs; the same food
@@ -485,12 +513,13 @@ fn bounty_status(_args: &Json) -> Result<Json, String> {
     let slot = BOUNTY.lock();
     Ok(match slot.as_ref() {
         None => json!({ "bounty": null }),
-        Some(Bounty::Offered { hirer_name, mark_name, enemy_name, expires, .. }) => json!({
+        Some(Bounty::Offered { hirer_name, mark_name, enemy_name, pays, expires, .. }) => json!({
             "bounty": {
                 "stage": "offered",
                 "hirer": hirer_name,
                 "mark": mark_name,
                 "of": enemy_name,
+                "pays": pays,
                 "expires_in_secs": (expires - now).max(0.0),
             }
         }),
@@ -820,7 +849,58 @@ the status row's next re-rate cites.
 
 ---
 
-### Task 4: record it
+### Task 4: the work board (the in-game list of open work)
+
+**Files:**
+- Research first; implementation files are locked into this plan
+  only after the surface is verified (step 2).
+
+Requirement (operator, 2026-07-10): the player must be able to
+open something in-game and see every open offer and what it pays.
+The chronicle line is an announcement, not a list. The unityforge
+tab UI is not player-facing yet (mod_main.rs:29-31: render fires
+only from a control-plane op), so the board needs a game-owned
+surface.
+
+- [ ] **Step 1: research the game's own list surfaces**
+
+Candidates, in preference order, all vanilla-grain:
+1. The game's quest/objective system: campaign scripts show
+   objectives on the HUD, so a runtime-created objective may be
+   exactly the right surface. Find the classes
+   (`ilspycmd Assembly-CSharp.dll`, grep the type list for
+   Quest/Objective/Journal/Task) and read who renders them
+   (HudBehaviour fields).
+2. A notifications/message history, if the status bar keeps a
+   scrollable log.
+3. A physical board: a readable note at the player's base (the
+   game has a Read goal, research.md:79, so readable text items
+   exist).
+
+For each candidate: verify by decompile read plus a live probe
+(as a permanent diagnostic op, per repo rule) that entries can be
+created at runtime, carry arbitrary text, clear on demand, and
+survive a save/load. NO implementation until one surface is
+verified end to end.
+
+- [ ] **Step 2: decision gate with the operator**
+
+Present what each surface can and cannot show. The operator
+picks. Append the implementation steps to this plan (exact class
+names, calls, complete code) before writing any of it.
+
+- [ ] **Step 3: implement + live-verify** (steps appended after
+  the gate)
+
+Expected: open the chosen surface in-game and read the open
+bounty with hirer, mark, and pays; the entry clears when the
+bounty resolves or lapses.
+
+- [ ] **Step 4: commit** (paths named once the files are locked)
+
+---
+
+### Task 5: record it
 
 **Files:**
 - Modify: `survivalist-mod/docs/status.md` (the "More to do" row)
