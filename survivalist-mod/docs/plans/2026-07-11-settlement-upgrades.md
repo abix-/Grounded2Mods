@@ -81,15 +81,30 @@ like) get HEALTH REGEN. Tracks by structure function:
 | Efficiency | work props | chance a craft refunds its ingredients | C# patch on Recipe.UseIngredients (chance to skip consumption) |
 | Quality | work props | better quality-tier odds for items crafted there | Rust: quality.rs craft_odds already computes odds; add the prop's track level to the surplus |
 | Secure | storage (MaxInventoryWeight > 0) | a hostile taking (the mod's theft, predation, and tribute acts) can find the locks holding and leave that building's stores untouched | Rust: the shared stored-goods drain (common.rs carry_off_stored_goods) tests each building's locks on hostile call sites only; the C# shim owns the level and the roll (SecureBlocks, 5 percent per level capped at 50: never fully theft-proof). Willing loads (own wares, payments) never test locks |
+| Watch | watch towers (WatchTower, ConcreteWatchTower) | the guard occupying the tower sees farther (spots raiders and zombies sooner) | C# postfix on Character.GetSightRange(out fogStart, out fogEnd): the game already adds the occupied building's inhabitant-slot SightRangeModifier, so this adds the tower's track level on the SAME path (2 tiles per level), re-clamped to the game's 31-tile sight cap (base is 15, so the cap is the natural diminishing stop). The guard-to-tower link is free via Character.InsideBuilding |
 
 Staged after those (each needs its own effect-path research):
 Comfort (housing: rest quality), Insulate (housing: warmth),
-Watch (towers: guard detection radius), Yield (well/garden
-output). The catalog is designed to keep growing; each new
-track is one effect patch plus a menu entry. A work prop ends
-up with six tracks (Reinforce, Health Regen, Speed,
-Productivity, Efficiency, Quality): deep exactly where the
-building does the most.
+Yield (well/garden output). The catalog is designed to keep
+growing; each new track is one effect patch plus a menu entry.
+A work prop ends up with six tracks (Reinforce, Health Regen,
+Speed, Productivity, Efficiency, Quality): deep exactly where
+the building does the most.
+
+EFFECT-PATH RESEARCH, remaining staged tracks (decompiled
+2026-07-11, Assembly-CSharp via ilspycmd): none is a clean
+per-prop getter like Reinforce, so each is a real linkage
+project, not a quick add. Comfort: sleep restores on the
+Character (GetSleepDeprivation), not per-bed; a bed is a
+generic prop with no rest-quality method, so the sleeper needs
+linking to their bed. Insulate: insulation in this game is a
+CLOTHING stat (InsulationDisplayBehaviour reads jacket damp),
+not a structure warmth, so there is no building to hook. Yield:
+crops are ephemeral SingleTileProps (PlantableCrop.GetMaxYield
+is a clean multiplier) but the stable thing (CropPatch) is NOT
+a prop, it is community-keyed reflectable data with no prop id,
+so the per-prop sidecar cannot key it without new infra. Watch
+was the one that fit the model cleanly, hence it shipped first.
 
 ## Design decisions (locked)
 
@@ -226,3 +241,21 @@ building does the most.
 - [ ] Live verify (rides the Task 4 session): put Secure levels
   on a chest, force a shakedown or theft, watch the "Secure
   held" line and the chest keep its stores.
+
+### Task 6: Watch (tenth track; BUILT 2026-07-11, shim compiles clean)
+
+- [x] Effect-path research (decompile): the game already boosts
+  a character's sight range by their occupied building's
+  inhabitant-slot SightRangeModifier (Character.GetSightRange,
+  clamped to 31 tiles from a base of 15). WatchTower and
+  ConcreteWatchTower are placed props (Building : Prop, stable
+  Id); the guard-to-tower link is free via
+  Character.InsideBuilding.
+- [x] C#: TrackWatch on towers (menu predicate p is WatchTower
+  or ConcreteWatchTower), a postfix on the out-param
+  GetSightRange overload adding 2 tiles per level and re-clamping
+  to the 31-tile cap; zombies and no-building skip. No Rust
+  change (a pure C# effect, like Reinforce).
+- [ ] Live verify (rides the Task 4 session): put a guard in a
+  tower, add Watch levels, watch the fog-of-war reveal push out
+  and the guard spot arrivals sooner.

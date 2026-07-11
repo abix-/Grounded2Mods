@@ -47,6 +47,7 @@ public static class SettlementUpgrades
     public const string TrackEfficiency = "Efficiency";
     public const string TrackQuality = "Quality";
     public const string TrackSecure = "Secure";
+    public const string TrackWatch = "Watch";
 
     // Health Regen: hit points healed per minute per level.
     private const float RegenHpPerMinPerLevel = 0.2f;
@@ -67,6 +68,12 @@ public static class SettlementUpgrades
     // survivable cuts both ways).
     private const float SecureBlockChancePerLevel = 0.05f;
     private const float SecureBlockCap = 0.5f;
+    // Watch: extra sight-range tiles per level for the guard
+    // occupying the tower. The game clamps total sight to 31
+    // (Character.GetSightRange; base is 15), which is the natural
+    // diminishing cap.
+    private const int WatchTilesPerLevel = 2;
+    private const int SightRangeCap = 31;
 
     // Sentinel menu action ids, far above the vanilla enum range
     // (the game's switches ignore unknown values; our caption
@@ -107,6 +114,11 @@ public static class SettlementUpgrades
         {
             Name = TrackSecure,
             Applies = p => p.GetPropPrototype().MaxInventoryWeight > 0f,
+        },
+        new TrackDef
+        {
+            Name = TrackWatch,
+            Applies = p => p is WatchTower || p is ConcreteWatchTower,
         },
     };
 
@@ -171,8 +183,15 @@ public static class SettlementUpgrades
                         typeof(bool).MakeByRefType(), typeof(bool),
                     }),
                 prefix: new HarmonyMethod(AccessTools.Method(typeof(SettlementUpgrades), nameof(UseIngredientsPrefix))));
+            // Watch: the guard occupying an upgraded tower sees
+            // farther. Postfix the out-param overload
+            // (GetSightRange has a no-arg sibling).
+            _harmony.Patch(
+                AccessTools.Method(typeof(Character), nameof(Character.GetSightRange),
+                    new[] { typeof(int).MakeByRefType(), typeof(int).MakeByRefType() }),
+                postfix: new HarmonyMethod(AccessTools.Method(typeof(SettlementUpgrades), nameof(GetSightRangePostfix))));
             _installed = true;
-            ShimLogger.Info("SettlementUpgrades: installed (effects + upgrade menu patches, 9 tracks)");
+            ShimLogger.Info("SettlementUpgrades: installed (effects + upgrade menu patches, 10 tracks)");
         }
         catch (Exception e)
         {
@@ -464,6 +483,30 @@ public static class SettlementUpgrades
         {
             ShimLogger.Warn("SettlementUpgrades: efficiency failed: " + e.Message);
             return true;
+        }
+    }
+
+    /// Watch: the guard occupying an upgraded tower sees farther.
+    /// The game already adds the occupied building's slot modifier
+    /// to sight range (Character.GetSightRange); this rides the same
+    /// path off the tower's track level. fogStart is the sight
+    /// range in tiles; the game caps it at 31 (re-clamped here so
+    /// the bonus stops there too).
+    private static void GetSightRangePostfix(Character __instance, ref int fogStart, ref int fogEnd)
+    {
+        try
+        {
+            if (__instance == null || __instance.Zombie) return;
+            var building = __instance.InsideBuilding;
+            if (building == null) return;
+            var level = GetLevel(building.Id, TrackWatch);
+            if (level <= 0) return;
+            fogStart = Math.Min(SightRangeCap, fogStart + WatchTilesPerLevel * level);
+            fogEnd = Math.Min(SightRangeCap, fogStart + 8);
+        }
+        catch (Exception e)
+        {
+            ShimLogger.Warn("SettlementUpgrades: watch failed: " + e.Message);
         }
     }
 
