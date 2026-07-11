@@ -156,10 +156,12 @@ plus a menu entry.
 - [x] Label prefix on AvailableAction.GetCaption: sentinel
   entries render their SpeechText (and never reach the vanilla
   caption array index).
-- [ ] Live verify (operator restart + eyes): hover shows the
-  entry, click upgrades and eats the wood, gates grey out.
-  Deploy pending the next game-closed window (shim DLL locks
-  while the game runs).
+- [x] LIVE-VERIFIED 2026-07-11 by the operator's own hands:
+  menu entry visible, click upgraded the Well 3 -> 4 consuming 8
+  real wood (log: "Well #190942 Reinforce -> 4 (8 Wood
+  consumed)"), status-bar message shown, sidecar restored all 4
+  upgraded structures on load. Operator: "i think its all
+  working holy shit".
 - [x] Committed.
 
 ### Task 3: the remaining first-build effects
