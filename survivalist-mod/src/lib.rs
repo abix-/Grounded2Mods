@@ -93,6 +93,11 @@ fn on_init() {
     // uninfected via a Character.AddInjury prefix.
     infection::install();
 
+    // Hands roll quality: two prefixes on the game's one
+    // product-creation entry pair the recipe with the crafter;
+    // a skilled crafter's output rolls a tier.
+    quality::install();
+
     // Faction war: generalized revenge trigger (AI-vs-AI wars)
     // + war_status / war_ignite ops. docs/faction-war.md.
     war::install();

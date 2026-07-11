@@ -1518,13 +1518,31 @@ BUILT THE SAME DAY (gen42):
   predation's stockpile stripping, trade payment, the work
   couriers, and the vendor's wares all grab the good blade first.
 
+HANDS ROLL QUALITY (BUILT 2026-07-11, gen43): the game funnels
+every craft through ONE entry (Recipe.UseIngredientsAndCreateProduct,
+found by decompile), and two paired prefixes on it (the bridge's
+Instance-ctx and Arg0-ctx shapes, run back to back in
+registration order) capture the recipe (product name, skill type,
+required level) and the crafter (a Character; skill read via
+GetSkillLevelWithEffects). A missed pairing skips the roll, never
+mis-rolls. The pair queues a job; 2 seconds later the tick finds
+the product in the crafter's hands and rolls a tier with
+SKILL-SCALED odds (craft_odds: per mille [s, 3(1+s), 12(1+s),
+40(1+s)] where s = crafter level above the recipe's requirement,
+capped at 8): a novice never crafts Legendary, a master's hands
+are worth fighting over. Same net-zero swap as the edge. AI camps
+craft through the same entry, so camps with skilled crafters
+field better gear over time: ecosystem-wide by construction.
+Hooks verified installing live on gen43 (Player.log line).
+
 Live-verify after the next story restart: variants load (canary
 answers), an armed arrival carries tiered gear, a trader's stock
-shows tiered wares in the trade UI, prices scale, and the player
-can loot it. Still open: crafting rolls (hands roll quality;
-needs the Recipe/CraftGoal read), the vanilla equip-best check
-(does the warlord carry the camp's best rifle for free), unique
-ownership in the chronicle, quality on other gear.
+shows tiered wares in the trade UI, a skilled crafter turns out a
+tiered piece (craft_rolls counting in quality_status), prices
+scale, and the player can loot it. Still open: the vanilla
+equip-best check (does the warlord carry the camp's best rifle
+for free), unique ownership in the chronicle, quality on other
+gear.
 
 ### Open questions before any build
 

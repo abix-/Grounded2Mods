@@ -29,13 +29,15 @@
 //! type name is derived by convention and the swap happens only
 //! if that type exists.
 
+use std::ffi::c_void;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use parking_lot::Mutex;
 use serde_json::{Value as Json, json};
 
 use modforge::ops::{OP_REGISTRY, OpDef};
-use unityforge::mono::{self, LogLevel, MonoType};
+use unityforge::hook::{self, HOOK_REGISTRY, HookCtx};
+use unityforge::mono::{self, LogLevel, MonoObject, MonoType};
 
 use crate::common::{ctype, for_each_community, handle_of, on_main_thread, own, with};
 
@@ -78,6 +80,241 @@ static MISSING_LOGGED: AtomicU32 = AtomicU32::new(0);
 /// (their fresh stock rolls ONCE, when first seen).
 static ROLLED_TRADERS: Mutex<Vec<i64>> = Mutex::new(Vec::new());
 static LAST_TRADER_SCAN_BITS: AtomicU32 = AtomicU32::new(0);
+/// Game clock as of the last tick, for the craft hooks (hooks
+/// have no `now`).
+static LAST_NOW_BITS: AtomicU32 = AtomicU32::new(0);
+
+// ---- hands roll quality (crafting) ---------------------------------------------
+
+/// Seconds after the craft call before the job looks for the
+/// product in the crafter's hands (creation is synchronous; the
+/// margin covers a frame or two of settling).
+const CRAFT_SETTLE_SECS: f32 = 2.0;
+
+/// A job that never finds its product is dropped (liquid
+/// products, container-routed output, or the crafter deposited
+/// it faster than we looked).
+const CRAFT_JOB_TIMEOUT_SECS: f32 = 30.0;
+
+/// The recipe half of a craft event, set by the Instance-ctx
+/// prefix and consumed by the Arg0-ctx prefix on the same call
+/// (Harmony runs them back to back; a missed pairing skips the
+/// roll, never mis-rolls).
+static PENDING_RECIPE: Mutex<Option<(String, String, i64)>> = Mutex::new(None); // product, skill type, recipe level
+
+/// One queued craft roll: the crafter (handle owned by the job),
+/// what they made, and how far their skill clears the recipe.
+struct CraftJob {
+    crafter_h: i32,
+    product: String,
+    surplus: i64,
+    ready_at: f32,
+    deadline: f32,
+}
+
+static CRAFT_JOBS: Mutex<Vec<CraftJob>> = Mutex::new(Vec::new());
+static CRAFT_ROLLS: AtomicU32 = AtomicU32::new(0);
+
+/// Install the craft hooks: two prefixes on the game's ONE
+/// product-creation entry (Recipe.UseIngredientsAndCreateProduct),
+/// the first reading the recipe (instance), the second the
+/// crafter (arg0, a Character). Registration order pairs them.
+pub fn install() {
+    match hook::patch_prefix_ctx(
+        "Recipe",
+        "UseIngredientsAndCreateProduct",
+        HookCtx::Instance,
+        on_craft_recipe,
+    ) {
+        Ok(h) => HOOK_REGISTRY.register(h),
+        Err(e) => {
+            mono::log(
+                LogLevel::Error,
+                &format!("survivalist-mod: quality: craft recipe hook FAILED: {e}"),
+            );
+            return;
+        }
+    }
+    match hook::patch_prefix_ctx(
+        "Recipe",
+        "UseIngredientsAndCreateProduct",
+        HookCtx::Arg0,
+        on_craft_carrier,
+    ) {
+        Ok(h) => {
+            HOOK_REGISTRY.register(h);
+            mono::log(
+                LogLevel::Info,
+                "survivalist-mod: quality: hands roll quality (craft hooks installed)",
+            );
+        }
+        Err(e) => {
+            mono::log(
+                LogLevel::Error,
+                &format!("survivalist-mod: quality: craft carrier hook FAILED: {e}"),
+            );
+        }
+    }
+}
+
+/// Prefix 1 (instance = the Recipe): remember what is being made
+/// and what skill it asks for.
+extern "C" fn on_craft_recipe(ctx: *const c_void) -> i32 {
+    let h = ctx as isize as i32;
+    if h == 0 {
+        return 0;
+    }
+    let recipe = own(h);
+    let mut product = recipe
+        .read_field("ProductPrototypeName")
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_default();
+    if product.is_empty() {
+        product = recipe
+            .read_field("ProductPrototype")
+            .ok()
+            .as_ref()
+            .and_then(handle_of)
+            .and_then(|ph| {
+                let p = own(ph);
+                p.read_field("Name").ok().and_then(|v| v.as_str().map(str::to_string))
+            })
+            .unwrap_or_default();
+    }
+    if product.is_empty() {
+        return 0; // liquid or prop recipe; nothing to roll
+    }
+    let skill_type = recipe
+        .read_field("SkillType")
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_default();
+    let recipe_level = recipe.read_field("SkillLevel").ok().and_then(|v| v.as_i64()).unwrap_or(0);
+    *PENDING_RECIPE.lock() = Some((product, skill_type, recipe_level));
+    0
+}
+
+/// Prefix 2 (arg0 = the carrier Character): pair with the pending
+/// recipe and queue the roll for after the product exists.
+extern "C" fn on_craft_carrier(ctx: *const c_void) -> i32 {
+    let Some((product, skill_type, recipe_level)) = PENDING_RECIPE.lock().take() else {
+        return 0;
+    };
+    let h = ctx as isize as i32;
+    if h == 0 {
+        return 0;
+    }
+    let crafter = own(h);
+    let level = if skill_type.is_empty() {
+        0
+    } else {
+        crafter
+            .invoke("GetSkillLevelWithEffects", &json!([skill_type]))
+            .ok()
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0)
+    };
+    let surplus = (level - recipe_level).max(0);
+    let now = f32::from_bits(LAST_NOW_BITS.load(Ordering::Relaxed));
+    std::mem::forget(crafter); // the job owns the handle
+    CRAFT_JOBS.lock().push(CraftJob {
+        crafter_h: h,
+        product,
+        surplus,
+        ready_at: now + CRAFT_SETTLE_SECS,
+        deadline: now + CRAFT_JOB_TIMEOUT_SECS,
+    });
+    0
+}
+
+/// Skill-scaled tier odds (per mille, best first). A novice never
+/// rolls Legendary; a master's hands are worth fighting over.
+fn craft_odds(surplus: i64) -> [u64; 4] {
+    let s = surplus.clamp(0, 8) as u64;
+    [s, 3 * (1 + s), 12 * (1 + s), 40 * (1 + s)]
+}
+
+/// Walk the queued craft rolls: find the product in the crafter's
+/// hands, roll the tier by skill, swap on a hit.
+fn process_craft_jobs(now: f32) {
+    let mut jobs = CRAFT_JOBS.lock();
+    let mut i = 0;
+    while i < jobs.len() {
+        let job = &jobs[i];
+        if now < job.ready_at {
+            i += 1;
+            continue;
+        }
+        let done = match try_craft_roll(job, now) {
+            Ok(d) => d || now >= job.deadline,
+            Err(e) => {
+                mono::log(
+                    LogLevel::Warn,
+                    &format!("survivalist-mod: quality: craft roll failed: {e}"),
+                );
+                true
+            }
+        };
+        if done {
+            let job = jobs.remove(i);
+            drop(own(job.crafter_h));
+        } else {
+            i += 1;
+        }
+    }
+}
+
+/// Ok(true) = job resolved (rolled, missed, or product gone).
+fn try_craft_roll(job: &CraftJob, now: f32) -> Result<bool, String> {
+    let Some(inv_h) = with(job.crafter_h, |c| {
+        c.read_field("Inventory").ok().as_ref().and_then(handle_of)
+    }) else {
+        return Ok(true);
+    };
+    let inv = own(inv_h);
+    let n = inv.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+    for i in 0..n {
+        let Some(item_h) = handle_of(&inv.invoke("GetItem", &json!([i]))?) else {
+            continue;
+        };
+        let item = own(item_h);
+        let name = handle_of(&item.invoke("GetPrototype", &json!([]))?).and_then(|ph| {
+            let p = own(ph);
+            p.read_field("Name").ok().and_then(|v| v.as_str().map(str::to_string))
+        });
+        if name.as_deref() != Some(job.product.as_str()) {
+            continue;
+        }
+        // The product is in hand: one roll, hit or miss.
+        CRAFT_ROLLS.fetch_add(1, Ordering::Relaxed);
+        let salt = (job.crafter_h as u64).wrapping_mul(53) ^ 0xC0FFEE;
+        let odds = craft_odds(job.surplus);
+        let Some(tier_ix) = roll_tier(&odds, now, salt) else {
+            return Ok(true); // common hands, common work
+        };
+        let who = with(job.crafter_h, |c| {
+            c.invoke("GetDisplayNameString", &json!([]))
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_string))
+                .unwrap_or_else(|| "<unnamed>".into())
+        });
+        let swapped = swap_to_variant(
+            job.crafter_h,
+            &inv,
+            item_h,
+            &job.product,
+            tier_ix,
+            now,
+            salt,
+            &who,
+            "crafted",
+        )?;
+        let _ = swapped;
+        return Ok(true);
+    }
+    Ok(false) // not in hand yet; retry until the deadline
+}
 
 /// Is the generated variant data loaded? One canary lookup; the
 /// not-loaded line logs once per generation.
@@ -115,7 +352,7 @@ pub fn upgrade_band_gear(band_h: i32, now: f32, military: bool) {
         return;
     }
     let odds = if military { &MILITARY_ODDS } else { &RAIDER_ODDS };
-    if let Err(e) = roll_band(band_h, odds, now) {
+    if let Err(e) = roll_band(band_h, odds, now, "edge band") {
         mono::log(
             LogLevel::Warn,
             &format!("survivalist-mod: quality: edge roll failed: {e}"),
@@ -130,6 +367,11 @@ pub fn upgrade_band_gear(band_h: i32, now: f32, military: bool) {
 /// guard), so a hot reload cannot inflate a trader twice beyond
 /// re-rolling what stayed common.
 pub fn tick(now: f32) {
+    LAST_NOW_BITS.store(now.to_bits(), Ordering::Relaxed);
+    // Queued craft rolls settle on their own clock, every pass.
+    if !CRAFT_JOBS.lock().is_empty() {
+        process_craft_jobs(now);
+    }
     let last = f32::from_bits(LAST_TRADER_SCAN_BITS.load(Ordering::Relaxed));
     if now - last < TRADER_SCAN_PERIOD_SECS {
         return;
@@ -148,7 +390,7 @@ pub fn tick(now: f32) {
         if ROLLED_TRADERS.lock().contains(&id) {
             return Ok(true);
         }
-        if let Err(e) = roll_band(com.handle().0, &TRADER_ODDS, now) {
+        if let Err(e) = roll_band(com.handle().0, &TRADER_ODDS, now, "trader stock") {
             mono::log(
                 LogLevel::Warn,
                 &format!("survivalist-mod: quality: trader roll failed: {e}"),
@@ -175,7 +417,7 @@ fn roll_tier(odds: &[u64; 4], now: f32, salt: u64) -> Option<usize> {
     None
 }
 
-fn roll_band(band_h: i32, odds: &[u64; 4], now: f32) -> Result<(), String> {
+fn roll_band(band_h: i32, odds: &[u64; 4], now: f32, origin: &str) -> Result<(), String> {
     let Some(m_h) = with(band_h, |b| b.read_field("Members").ok().as_ref().and_then(handle_of))
     else {
         return Ok(());
@@ -228,69 +470,87 @@ fn roll_band(band_h: i32, odds: &[u64; 4], now: f32) -> Result<(), String> {
             let Some(tier_ix) = roll_tier(odds, now, salt) else {
                 continue;
             };
-            let sibling = rng(now, salt.wrapping_mul(97), SIBLINGS) + 1;
-            let candidate = format!("{base_name}_{}{sibling}", TIER_NAMES[tier_ix]);
-            // Only weapons and armor have variants; anything else
-            // misses the lookup and stays as spawned.
-            let Ok(Some(proto_h)) = find_prototype(&candidate) else {
-                continue;
-            };
-            // The swap, net zero items: the common piece leaves
-            // the world, the tiered one lands in the same hand.
-            let taken = inv.invoke(
-                "Take",
-                &json!([{ "handle": mh }, { "handle": item_h }, 1]),
-            )?;
-            let Some(taken_h) = handle_of(&taken) else {
-                drop(own(proto_h));
-                continue;
-            };
-            if let Err(e) = with(taken_h, |t| t.invoke("Delete", &json!([]))) {
-                mono::log(
-                    LogLevel::Warn,
-                    &format!("survivalist-mod: quality: delete of the common piece failed: {e}"),
-                );
-            }
-            drop(own(taken_h));
-            let fine = mono::invoke_static(
-                "Equipment",
-                "Spawn",
-                &json!([{ "handle": proto_h }, 1]),
-            );
-            drop(own(proto_h));
-            let fine_h = match fine {
-                Ok(v) => match handle_of(&v) {
-                    Some(h) => h,
-                    None => continue,
-                },
-                Err(e) => {
-                    mono::log(
-                        LogLevel::Warn,
-                        &format!("survivalist-mod: quality: variant spawn failed: {e}"),
-                    );
-                    continue;
-                }
-            };
-            let _ = member.invoke("Add", &json!([{ "handle": mh }, { "handle": fine_h }]));
-            drop(own(fine_h));
             let who = member
                 .invoke("GetDisplayNameString", &json!([]))
                 .ok()
                 .and_then(|v| v.as_str().map(str::to_string))
                 .unwrap_or_else(|| "<unnamed>".into());
-            SWAPS[tier_ix].fetch_add(1, Ordering::Relaxed);
-            *LAST_SWAP.lock() =
-                Some(format!("{} {base_name} in {who}'s hands", TIER_NAMES[tier_ix]));
-            mono::log(
-                LogLevel::Info,
-                &format!(
-                    "survivalist-mod: quality: a {} {base_name} crossed the edge in {who}'s hands",
-                    TIER_NAMES[tier_ix],
-                ),
-            );
+            let _ = swap_to_variant(mh, &inv, item_h, &base_name, tier_ix, now, salt, &who, origin)?;
         }
     }
     Ok(())
+}
+
+/// The swap, net zero items: the common piece leaves the world,
+/// the tiered variant (a random sibling) lands in the same hand.
+/// Ok(true) on a swap; Ok(false) when no variant exists for this
+/// item (not a weapon or armor piece).
+#[allow(clippy::too_many_arguments)]
+fn swap_to_variant(
+    owner_h: i32,
+    inv: &MonoObject,
+    item_h: i32,
+    base_name: &str,
+    tier_ix: usize,
+    now: f32,
+    salt: u64,
+    who: &str,
+    origin: &str,
+) -> Result<bool, String> {
+    let sibling = rng(now, salt.wrapping_mul(97), SIBLINGS) + 1;
+    let candidate = format!("{base_name}_{}{sibling}", TIER_NAMES[tier_ix]);
+    // Only weapons and armor have variants; anything else misses
+    // the lookup and stays as it was.
+    let Ok(Some(proto_h)) = find_prototype(&candidate) else {
+        return Ok(false);
+    };
+    let taken = inv.invoke(
+        "Take",
+        &json!([{ "handle": owner_h }, { "handle": item_h }, 1]),
+    )?;
+    let Some(taken_h) = handle_of(&taken) else {
+        drop(own(proto_h));
+        return Ok(false);
+    };
+    if let Err(e) = with(taken_h, |t| t.invoke("Delete", &json!([]))) {
+        mono::log(
+            LogLevel::Warn,
+            &format!("survivalist-mod: quality: delete of the common piece failed: {e}"),
+        );
+    }
+    drop(own(taken_h));
+    let fine = mono::invoke_static("Equipment", "Spawn", &json!([{ "handle": proto_h }, 1]));
+    drop(own(proto_h));
+    let fine_h = match fine {
+        Ok(v) => match handle_of(&v) {
+            Some(h) => h,
+            None => return Ok(false),
+        },
+        Err(e) => {
+            mono::log(
+                LogLevel::Warn,
+                &format!("survivalist-mod: quality: variant spawn failed: {e}"),
+            );
+            return Ok(false);
+        }
+    };
+    let _ = with(owner_h, |o| {
+        o.invoke("Add", &json!([{ "handle": owner_h }, { "handle": fine_h }]))
+    });
+    drop(own(fine_h));
+    SWAPS[tier_ix].fetch_add(1, Ordering::Relaxed);
+    *LAST_SWAP.lock() = Some(format!(
+        "{} {base_name} ({origin}) with {who}",
+        TIER_NAMES[tier_ix]
+    ));
+    mono::log(
+        LogLevel::Info,
+        &format!(
+            "survivalist-mod: quality: a {} {base_name} ({origin}) now in {who}'s hands",
+            TIER_NAMES[tier_ix],
+        ),
+    );
+    Ok(true)
 }
 
 /// Walk GameImpl.Instance.CurrentStories and ask each loaded
@@ -357,6 +617,8 @@ fn quality_status(_args: &Json) -> Result<Json, String> {
             "swaps": swaps,
             "last_swap": LAST_SWAP.lock().clone(),
             "traders_rolled": ROLLED_TRADERS.lock().len(),
+            "craft_rolls": CRAFT_ROLLS.load(Ordering::Relaxed),
+            "craft_jobs_pending": CRAFT_JOBS.lock().len(),
         }))
     })
 }
