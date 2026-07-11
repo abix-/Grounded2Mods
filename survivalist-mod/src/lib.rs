@@ -32,6 +32,7 @@ mod incursion;
 mod infection;
 mod murder;
 mod predation;
+mod quality;
 mod rob;
 mod scavenge;
 mod settler;
@@ -101,6 +102,10 @@ fn on_init() {
     // bounty_status/bounty_post + threat_status/threat_post ops.
     bounty::register_ops();
     threat::register_ops();
+
+    // The quality system, first slice: the edge rolls quality
+    // (fine rifles on military remnants). quality_status op.
+    quality::register_ops();
 
     // REAL growth, people half: repopulator disabled (operator-
     // locked) + refugee recruitment on the tick + growth_status.

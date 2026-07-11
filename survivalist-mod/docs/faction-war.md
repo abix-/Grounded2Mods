@@ -1464,15 +1464,23 @@ combat math, save persistence, UI names, AI behavior.
   the top of the ladder, entering only with the incursion that
   fits it.
 
-### First build slice (proposed, not started)
+### First build slice (BUILT 2026-07-10, unwatched)
 
-One family, one tier, one faucet: ship XML for a "fine" variant
-of one common ranged weapon, swap it into military-remnant
-arrivals at spawn with a low roll, and live-verify the full
-chain: the XML loads, the swap lands in a real hand at the edge,
-the item trades at its better price, and the player can loot it.
-Everything after (more families, more tiers, crafting rolls, act
-preferences) widens a verified pipeline.
+One family, one tier, one faucet: the Fine Assault Rifle ships as
+story XML (story/Equipment/FineAssaultRifle.xml: +25 percent
+damage, better accurate range, less recoil, BasePrice doubled to
+150, Scarcity Legendary, NO LootableFromLocations so the edge is
+its only door), and quality.rs swaps it into a military-remnant
+band at spawn (incursion.rs calls upgrade_band_gear): each common
+assault rifle in a spawned hand rolls 25 percent, at most one
+swap per band, net zero items (Take + Delete the common rifle,
+Equipment.Spawn the fine one into the same hand). quality_status
+op reports whether the prototype resolved, total swaps, and the
+last carrier. Live-verify after the next story restart: the
+prototype loads, a military arrival carries one, it prices at 150
+in trade, and the player can loot it. Everything after (more
+families, more tiers, crafting rolls, act preferences) widens a
+verified pipeline.
 
 ### Open questions before any build
 

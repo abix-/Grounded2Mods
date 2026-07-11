@@ -73,17 +73,22 @@ if (-not (Test-Path $modDir)) {
     exit 1
 }
 
-# Story content (script XML, e.g. the work-board quests): the game
-# loads Scripts/*.xml at STORY LOAD, not hot reload; copied on
-# every deploy so the next restart has it.
-$storySrc = Join-Path $repoRoot 'survivalist-mod\story\Scripts'
+# Story content (XML: work-board quests in Scripts/, quality-tier
+# items in Equipment/): the game loads story XML at STORY LOAD,
+# not hot reload; copied on every deploy so the next restart has
+# it.
+$storySrc = Join-Path $repoRoot 'survivalist-mod\story'
 if (Test-Path $storySrc) {
-    $scriptsDir = Join-Path $modDir 'Scripts'
-    if (-not (Test-Path $scriptsDir)) {
-        New-Item -ItemType Directory -Force -Path $scriptsDir | Out-Null
+    foreach ($sub in @('Scripts', 'Equipment')) {
+        $src = Join-Path $storySrc $sub
+        if (-not (Test-Path $src)) { continue }
+        $dst = Join-Path $modDir $sub
+        if (-not (Test-Path $dst)) {
+            New-Item -ItemType Directory -Force -Path $dst | Out-Null
+        }
+        Copy-Item -Force (Join-Path $src '*.xml') $dst
     }
-    Copy-Item -Force (Join-Path $storySrc '*.xml') $scriptsDir
-    Write-Host "==> Story content copied (Scripts/*.xml; loads on next story load)" -ForegroundColor Green
+    Write-Host "==> Story content copied (Scripts + Equipment XML; loads on next story load)" -ForegroundColor Green
 }
 
 $rustDll = Join-Path $repoRoot 'target\x86_64-pc-windows-msvc\release\survivalist_mod.dll'
