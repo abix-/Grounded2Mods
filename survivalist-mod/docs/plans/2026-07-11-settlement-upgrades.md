@@ -10,16 +10,20 @@ incrementally, with real costs, until the costs outweigh the
 benefits. The resource sink for a rich player.
 
 **Architecture:** the proven type-ladder trick applied to
-STRUCTURES, plus the game's own build menu as the upgrade
-affordance. A DRY generator writes leveled structure types; the
-player orders an upgrade by placing a real construction (an
-upgrade marker) from the build menu, built by real builders from
-real materials; on completion the mod swaps the adjacent
-structure to its next level in place and removes the marker.
+STRUCTURES, plus a REAL "Upgrade" option in the game's own
+right-click action menu (operator-locked 2026-07-11: "real
+modding not janky modding"; the earlier build-menu-marker
+affordance is REJECTED). The menu work happens in the C# shim
+(Unityforge.Shim.Survivalist), which compiles against the game
+assembly and can therefore construct the menu's structs, switch
+on the real enums, and patch with full type safety. A DRY
+generator writes the leveled structure types; the C# patches add
+the menu option, gate it, take the materials, and swap the type.
 
-**Tech stack:** story XML (Props + Recipes, same pipeline as the
-quality items and work-board quests), a PowerShell generator, one
-Rust module on the established mission-scan pattern.
+**Tech stack:** story XML (Props, same pipeline as the quality
+items), a PowerShell generator, C# Harmony patches in the shim
+(embedded Harmony 2.4.2), a small Rust op surface for
+observability.
 
 ## Research findings (2026-07-11, decompile + vanilla data)
 
@@ -44,14 +48,33 @@ Rust module on the established mission-scan pattern.
   storage (WoodenChest, SteelChest), housing (Tent 1-3, Shack,
   WoodCabin, WoodBarn), work props (WorkBench, Forge, Kiln,
   Still, Well, ...).
-- The action menu (right-click) is a baked CursorAction enum
-  switch in GameCursor: adding a menu entry means a multi-point
-  UI patch chain. REJECTED for the first build; the build menu
-  affordance needs zero UI surgery.
+- THE ACTION MENU CHAIN (the real affordance, all patchable from
+  the C# shim with direct type access):
+  - Population: GameCursor.GetAvailableActions adds per-object
+    entries as `new AvailableAction(CursorAction.X, character,
+    target, enabledReason)` with skill gating and disabled
+    reasons (the Repair entry at GameCursor.cs:4036 is the exact
+    pattern: toolbox check, own-community check, Construction
+    skill gate). A POSTFIX appends the Upgrade entry.
+  - Dispatch: the click lands in Hud's `case CursorAction.X:`
+    switch (Repair at Hud.cs:2373) which emits an InputAction. A
+    PREFIX on that method handles our action value and skips the
+    original for it.
+  - The action id: a sentinel CursorAction value far above the
+    vanilla range (enums are ints; vanilla switches ignore
+    unknown values by design).
+  - Label: one patch on the action-name lookup so the sentinel
+    renders as "Upgrade" (exact lookup method pinned during the
+    build; the shim can read it directly).
+- UPGRADE COST FROM THE GAME'S OWN DATA: every structure declares
+  RepairResourceType / RepairResourceNeeded (wood walls repair
+  with wood, concrete with cement). Upgrade cost = the same
+  resource, scaled by target level (knob). No invented cost
+  tables; the resource identity always fits the structure.
 - OPEN (Task 1 verifies live): writing a placed structure's
-  Prototype reference over the bridge takes effect (MaxDamage
-  reads the new type) and survives a save round-trip (Prop
-  serialization of the type reference).
+  Prototype reference takes effect (MaxDamage reads the new
+  type) and survives a save round-trip (Prop serialization of
+  the type reference).
 
 ## Design decisions (locked with the operator's vision)
 
@@ -65,14 +88,18 @@ Rust module on the established mission-scan pattern.
   flat, so "upgrade until the costs outweigh the benefits"
   emerges from the curve, not from a hard wall. All knobs in one
   generator config block, like the quality generator.
-- THE AFFORDANCE: one build-menu entry, "Structure Upgrade"
-  (RecipeType Toolbox, Construction skill, real materials, real
-  crafting time). The player places it NEXT TO the target
-  structure; builders build it like anything else. On completion
-  the mod upgrades the nearest upgradeable structure within 3
-  tiles by one level and removes the marker. No adjacent
-  upgradeable structure = the marker stands and retries, so
-  order of operations never eats materials.
+- THE AFFORDANCE: a real "Upgrade" option in the right-click
+  action menu on the player's own upgradeable structures,
+  implemented in the C# shim. Gated like Repair: own community,
+  Construction skill (>= the base type's repair skill + level
+  knob), and the materials present (the structure's own repair
+  resource, scaled by target level), with the vanilla disabled
+  reasons shown when a gate fails. On click: the materials are
+  consumed for REAL (the character's carried stack first, then
+  camp stores), the structure's type swaps up one level in
+  place, and the status bar notes the camp standing stronger.
+  V1 is click-to-upgrade with real costs; a walk-to-and-work
+  crew flow (the full Repair-role feel) is a later polish pass.
 - PLAYER-ONLY for the first build (the scan runs on the player
   camp); the same ladders open to AI camps later (their growth
   system already builds from records), which is the symmetry
@@ -83,32 +110,35 @@ Rust module on the established mission-scan pattern.
 ## File structure
 
 - Create: `survivalist-mod/scripts/generate_upgrades.ps1` (the
-  ladder generator: leveled Props XML + the marker prop + the
-  mod's Recipes.xml with the upgrade recipe)
-- Create: `survivalist-mod/story/Props/*.xml` (generated) and
-  `survivalist-mod/story/Recipes.xml` (generated)
-- Create: `survivalist-mod/src/upgrade.rs` (marker scan, type
-  swap, upgrade_status + upgrade_probe ops)
-- Modify: `survivalist-mod/src/lib.rs` (mod + tick + ops),
-  `survivalist-mod/scripts/build_and_deploy.ps1` (copy Props/
-  and Recipes.xml)
+  ladder generator: leveled Props XML)
+- Create: `survivalist-mod/story/Props/*.xml` (generated)
+- Create: `unityforge/cs-shim-survivalist/UpgradeMenu.cs` (the
+  C# Harmony patches: menu population postfix, click dispatch
+  prefix, label patch, the upgrade execution: gates, real
+  material consumption, type swap)
+- Create: `survivalist-mod/src/upgrade.rs` (upgrade_probe +
+  upgrade_status ops: the observability surface; the C# side
+  reports counters through a small bridge surface or the ops
+  read game state directly)
+- Modify: `survivalist-mod/src/lib.rs` (ops),
+  `survivalist-mod/scripts/build_and_deploy.ps1` (copy Props/)
 
 ---
 
 ### Task 1: the risky mechanic, verified live first
 
-- [ ] upgrade_probe op: given a structure (nearest to the player
-  camp centre of a named type), write its Prototype to a named
-  type over the bridge and read GetMaxDamage back. Permanent
-  diagnostic (repo rule).
+- [ ] upgrade_probe op (Rust): given a structure (nearest to the
+  player camp centre of a named type), write its Prototype to a
+  named type and read GetMaxDamage back. Permanent diagnostic
+  (repo rule).
 - [ ] Verify live on two vanilla types (swap a WoodenChest's
   type to SteelChest and back: both exist, no mod data needed,
   no restart needed).
 - [ ] Verify save round-trip: operator saves and reloads, probe
   reads the type still swapped. THE GATE: if the type reference
-  does not survive the save, the whole design falls back to
-  delete-and-replace via Recipe.PlaceProp (researched entry
-  point), and the plan gets amended before Task 2.
+  does not survive the save, the fallback is delete-and-replace
+  via Recipe.PlaceProp (researched entry point), and the plan
+  gets amended before Task 2.
 - [ ] Commit.
 
 ### Task 2: the ladders (generator + data)
@@ -118,34 +148,38 @@ Rust module on the established mission-scan pattern.
   minus non-structures like Snowman/Grave/traps: config list),
   writes `<Base>_L<N>.xml` for levels 1..10 with the config
   curve applied (MaxDamage, MaxInventoryWeight when present,
-  RepairResourceNeeded; NativeName "+N" suffix; same PrefabNames)
-  plus the marker prop (UpgradeMarker.xml: a small buildable
-  prop, CanBeDemolished, low MaxDamage) and the mod Recipes.xml
-  (one "Structure Upgrade" recipe producing the marker:
-  Construction skill 3, real materials, CraftingTime ~60).
+  RepairResourceNeeded; NativeName "+N" suffix; same
+  PrefabNames). Knobs: per-level benefit multipliers
+  (diminishing), cost scale, level cap.
 - [ ] Run it; spot-check one wall and one chest ladder.
-- [ ] Deploy script copies story/Props/*.xml and story/Recipes.xml.
+- [ ] Deploy script copies story/Props/*.xml.
 - [ ] Commit.
 
-### Task 3: the swap (upgrade.rs)
+### Task 3: the menu (C# shim patches)
 
-- [ ] Marker scan on the mission-tick pattern (30s cadence):
-  player camp props of the marker type with construction
-  complete; for each, nearest prop within 3 tiles whose type
-  name is in a ladder (base or _L<N>, next level exists); write
-  the Prototype up one level, delete the marker (the game's own
-  demolish/delete path), chronicle + log; upgrade_status op
-  (ladder data loaded, upgrades applied, last upgrade).
-- [ ] Graceful degradation: ladder data not loaded (restart
-  pending) logs once and the scan idles; a marker with no
-  adjacent upgradeable structure stands and retries.
-- [ ] Build, deploy, verify ops answer; commit.
+- [ ] UpgradeMenu.cs in the survivalist shim: a sentinel
+  CursorAction value; a postfix on the menu population adding
+  "Upgrade" for the player's own upgradeable structures with the
+  vanilla gates (own community, Construction skill, materials
+  present, next level exists), disabled reasons included; a
+  prefix on Hud's click dispatch handling the sentinel: consume
+  the repair resource scaled by target level (character stack
+  first, then camp stores, real Take), swap the structure's
+  Prototype up one level, refresh, status-bar line; the label
+  patch so the option reads "Upgrade" with the cost.
+- [ ] Patches install via the shim's existing Harmony instance
+  and log an install line (Player.log), same discipline as the
+  Rust hooks.
+- [ ] Build both halves, deploy (shim DLL changes need the
+  restart, not a hot reload: note it), verify install lines.
+- [ ] Commit.
 
 ### Task 4: live verify + re-rate
 
-- [ ] After the operator's restart: the upgrade recipe shows in
-  the build menu; place a marker by a fence; builders build it
-  from real materials; the fence becomes +1 (probe reads the
-  higher MaxDamage); the marker disappears; the chronicle line
-  posts; a save round-trip keeps the +1.
+- [ ] After the operator's restart: hover an own wall shows
+  "Upgrade" with the cost; clicking with materials consumes them
+  and the wall becomes +1 (probe reads the higher MaxDamage);
+  without materials the option shows disabled with the vanilla
+  reason; a save round-trip keeps the +1; ten clicks climb the
+  ladder with diminishing gains.
 - [ ] Re-rate the status row honestly; commit.
