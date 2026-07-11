@@ -19,6 +19,7 @@
 //!    every frame; `Main.Unload()` (story switch) shuts the
 //!    generation down and a later `Load()` re-arms it.
 
+mod bounty;
 mod chronicle;
 mod common;
 mod development;
@@ -62,6 +63,7 @@ fn on_tick(now: f32) {
     rob::tick(now);
     scavenge::tick(now);
     murder::tick(now);
+    bounty::tick(now);
     vendor::tick(now);
     stranger::tick(now);
     settler::tick(now);
@@ -88,6 +90,10 @@ fn on_init() {
     // + war_status / war_ignite ops. docs/faction-war.md.
     war::install();
     war::register_ops();
+
+    // The work pillar, first slice: bounties on enemy leaders,
+    // paid by real couriers. bounty_status + bounty_post ops.
+    bounty::register_ops();
 
     // REAL growth, people half: repopulator disabled (operator-
     // locked) + refugee recruitment on the tick + growth_status.
