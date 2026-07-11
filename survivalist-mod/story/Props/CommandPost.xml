@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<PropPrototype xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <TypeName>Building</TypeName>
+  <NativeName>Command Post</NativeName>
+  <Category>Camp/Buildings</Category>
+  <PrefabNames>
+    <string>Prefabs/Props/RadarTower</string>
+  </PrefabNames>
+  <ModelOffset>
+    <Vector3>
+      <x>0</x>
+      <y>0</y>
+      <z>0</z>
+    </Vector3>
+  </ModelOffset>
+  <MinMaxScale />
+  <MaxDamage>40</MaxDamage>
+  <CoverType>Transparent</CoverType>
+  <Flammability>Low_RequiresExplosion</Flammability>
+  <ExtentsMin>
+    <x>-1</x>
+    <y>-1</y>
+  </ExtentsMin>
+  <ExtentsMax>
+    <x>1</x>
+    <y>1</y>
+  </ExtentsMax>
+  <VisibleFromFarAway>true</VisibleFromFarAway>
+  <WantClearGrass>false</WantClearGrass>
+  <WantFlattenTerrain>true</WantFlattenTerrain>
+  <CanBeDemolished>true</CanBeDemolished>
+  <Tall>true</Tall>
+  <Inhabitants>
+    <InhabitantSlotDef>
+      <External>true</External>
+      <NativeName>Front</NativeName>
+      <Pos>
+        <x>0</x>
+        <y>6</y>
+        <z>1.45</z>
+      </Pos>
+      <PipFocusDist>4</PipFocusDist>
+      <SightRangeModifier>12</SightRangeModifier>
+      <WeaponRangeModifier>8</WeaponRangeModifier>
+      <MinWeaponRange>16</MinWeaponRange>
+      <RangeAngle>90</RangeAngle>
+    </InhabitantSlotDef>
+  </Inhabitants>
+  <RepairResourceType>Wood</RepairResourceType>
+  <RepairResourceNeeded>10</RepairResourceNeeded>
+  <CaptureResourceType>Wood</CaptureResourceType>
+  <CaptureResourceNeeded>5</CaptureResourceNeeded>
+  <Mass>300</Mass>
+</PropPrototype>

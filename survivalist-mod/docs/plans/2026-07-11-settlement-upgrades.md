@@ -103,8 +103,10 @@ not a structure warmth, so there is no building to hook. Yield:
 crops are ephemeral SingleTileProps (PlantableCrop.GetMaxYield
 is a clean multiplier) but the stable thing (CropPatch) is NOT
 a prop, it is community-keyed reflectable data with no prop id,
-so the per-prop sidecar cannot key it without new infra. Watch
-was the one that fit the model cleanly, hence it shipped first.
+so the per-prop sidecar cannot key it. RESOLVED by the
+settlement-wide upgrade class (Task 7): keyed by community, not
+prop, and bought at the Command Post hub. Watch fit the
+per-structure model cleanly, hence it shipped first.
 
 ## Design decisions (locked)
 
@@ -259,3 +261,53 @@ was the one that fit the model cleanly, hence it shipped first.
 - [ ] Live verify (rides the Task 4 session): put a guard in a
   tower, add Watch levels, watch the fog-of-war reveal push out
   and the guard spot arrivals sooner.
+
+### Task 7: settlement-wide upgrades + the Command Post + Yield (BUILT 2026-07-11, both sides compile clean)
+
+A SECOND class of upgrade (operator call 2026-07-11): some effects
+belong to one structure (Reinforce a wall), some belong to the
+whole camp (crop yield, which has no single structure to live on).
+Settlement-wide upgrades are keyed by COMMUNITY, not prop, and
+bought at a new dedicated hub structure.
+
+- [x] The Command Post: a new buildable structure shipped as story
+  XML (story/Props/CommandPost.xml), reusing the RadarTower model
+  (operator pick; the large tent is a one-line model swap if it
+  reads better), Category Camp/Buildings so it appears in the
+  player build menu, costing Wood. A mod is a story, so its
+  PropPrototype merges into the live registry (GameImpl.cs:1103);
+  Camp category + a repair resource is all it takes to be
+  player-buildable (verified against ChickenCoop.xml). Deploy now
+  copies the Props/ folder.
+- [x] Community-keyed sidecar: the same seed-keyed file gains a
+  `communities` section (community id -> track -> level) beside
+  `props`; GetCommunityLevel/SetCommunityLevel mirror the
+  per-structure pair; both load and persist together.
+- [x] Menu: hovering the Command Post lists the settlement-wide
+  tracks (a separate sentinel range, 9500+, so the click dispatch
+  tells them apart); the cost is real Wood from the player's
+  carried stacks, same as a per-structure upgrade, but the level
+  lands on the camp.
+- [x] Yield (first settlement-wide track): a postfix on
+  PlantableCrop.GetMaxYield reads the crop's community and lifts
+  every crop's max yield by the camp's Yield level (GetMaxYield
+  has zero overrides, so one patch covers all crops; it feeds
+  HarvestableAmount). No Rust change.
+- [ ] Live verify (rides the Task 4 session): build a Command
+  Post, buy Yield, watch the camp's crops harvest more; the level
+  persists across a save round-trip and the AI can climb the same
+  community-keyed tracks later for free.
+
+### Comfort: deferred, stays per-structure
+
+Comfort keeps to the per-structure model (per house), NOT
+settlement-wide: houses are real placed props, so it is cleaner
+and more granular there. Effect path (decompiled 2026-07-11):
+sleep restores on the Character (SleepDeprivation -= dts *
+SleepRecoverRate, a global 3f, inline in the character update, so
+not patchable per-bed); the clean fit is the Health-Regen
+driver-tick pattern speeding a sleeper's recovery via the public
+Get/SetSleepDeprivation, with the bed read for free off
+Character.InsideBuilding (the same link Watch used). Open detail:
+the menu predicate (which buildings offer sleep, read from the
+inhabitant slot defs). Not built yet.

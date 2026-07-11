@@ -48,6 +48,10 @@ public static class SettlementUpgrades
     public const string TrackQuality = "Quality";
     public const string TrackSecure = "Secure";
     public const string TrackWatch = "Watch";
+    // Settlement-wide tracks: keyed by COMMUNITY, not by structure,
+    // and bought at the Command Post hub (one placed prop per camp).
+    // For effects that have no single structure to live on.
+    public const string TrackYield = "Yield";
 
     // Health Regen: hit points healed per minute per level.
     private const float RegenHpPerMinPerLevel = 0.2f;
@@ -74,11 +78,18 @@ public static class SettlementUpgrades
     // diminishing cap.
     private const int WatchTilesPerLevel = 2;
     private const int SightRangeCap = 31;
+    // Yield (settlement-wide): each level lifts a camp's crop max
+    // yield, diminishing.
+    private const float YieldBase = 0.35f;
+    private const float YieldDecay = 0.85f;
 
     // Sentinel menu action ids, far above the vanilla enum range
     // (the game's switches ignore unknown values; our caption
     // prefix intercepts before any array indexes by action).
     private const int SentinelBase = 9000;
+    // A separate range for settlement-wide entries so the click
+    // dispatch tells them apart (community-keyed, not prop-keyed).
+    private const int SettlementSentinelBase = 9500;
 
     /// One upgrade track: its state key, its menu action id, and
     /// which structures it applies to (by what the building does).
@@ -122,11 +133,27 @@ public static class SettlementUpgrades
         },
     };
 
+    /// Settlement-wide tracks, hosted by the Command Post and keyed
+    /// by community id. No per-structure predicate: they belong to
+    /// the whole camp.
+    private static readonly string[] SettlementTracks = { TrackYield };
+
+    /// The Command Post hub prop (story/Props/CommandPost.xml).
+    private static bool IsCommandPost(Prop prop)
+    {
+        var proto = prop == null ? null : prop.GetPropPrototype();
+        return proto != null
+            && (proto.Name == "CommandPost" || proto.NativeName == "Command Post");
+    }
+
     private static Harmony _harmony;
     private static bool _installed;
 
     // prop id -> track -> level. Loaded per save seed.
     private static readonly Dictionary<int, Dictionary<string, int>> Tracks
+        = new Dictionary<int, Dictionary<string, int>>();
+    // community id -> track -> level (settlement-wide upgrades).
+    private static readonly Dictionary<int, Dictionary<string, int>> CommunityTracks
         = new Dictionary<int, Dictionary<string, int>>();
     private static long _seed;
     private static bool _loaded;
@@ -190,8 +217,13 @@ public static class SettlementUpgrades
                 AccessTools.Method(typeof(Character), nameof(Character.GetSightRange),
                     new[] { typeof(int).MakeByRefType(), typeof(int).MakeByRefType() }),
                 postfix: new HarmonyMethod(AccessTools.Method(typeof(SettlementUpgrades), nameof(GetSightRangePostfix))));
+            // Yield (settlement-wide): the owning camp's Yield level
+            // lifts every crop's max yield.
+            _harmony.Patch(
+                AccessTools.Method(typeof(PlantableCrop), nameof(PlantableCrop.GetMaxYield)),
+                postfix: new HarmonyMethod(AccessTools.Method(typeof(SettlementUpgrades), nameof(GetMaxYieldPostfix))));
             _installed = true;
-            ShimLogger.Info("SettlementUpgrades: installed (effects + upgrade menu patches, 10 tracks)");
+            ShimLogger.Info("SettlementUpgrades: installed (effects + upgrade menu patches, 10 per-structure + 1 settlement-wide tracks)");
         }
         catch (Exception e)
         {
@@ -266,6 +298,29 @@ public static class SettlementUpgrades
                 };
                 __instance.AvailableActions.Add(action);
             }
+            // Settlement-wide tracks live on the Command Post and are
+            // keyed by the camp, not this structure.
+            if (IsCommandPost(prop))
+            {
+                var com = prop.GetCommunity();
+                var comId = com == null ? 0 : com.Id;
+                for (var i = 0; i < SettlementTracks.Length; i++)
+                {
+                    var next = GetCommunityLevel(comId, SettlementTracks[i]) + 1;
+                    var cost = CostFor(proto, next);
+                    var reason = skill < SkillFor(proto, next)
+                        ? CursorActionDisabledReason.ConstructionSkillTooLow
+                        : CursorActionDisabledReason.Enabled;
+                    var label = SettlementTracks[i] + " (camp) +" + next + ": " + cost + " " + resource.NativeName;
+                    if (have < cost) label += " (carrying " + have + ")";
+                    var action = new AvailableAction(
+                        (CursorAction)(SettlementSentinelBase + i), character, prop, reason)
+                    {
+                        SpeechText = label,
+                    };
+                    __instance.AvailableActions.Add(action);
+                }
+            }
         }
         catch (Exception e)
         {
@@ -301,6 +356,11 @@ public static class SettlementUpgrades
 
     private static void HandleUpgradeClick(AvailableAction action)
     {
+        if ((int)action.ActionType >= SettlementSentinelBase)
+        {
+            HandleSettlementUpgradeClick(action);
+            return;
+        }
         var trackIx = (int)action.ActionType - SentinelBase;
         if (trackIx < 0 || trackIx >= TrackDefs.Length) return;
         var track = TrackDefs[trackIx].Name;
@@ -335,6 +395,50 @@ public static class SettlementUpgrades
             prop.GetDisplayNameString() + ": " + track + " +" + next
             + " (" + cost + " " + resource.NativeName + " used)");
         ShimLogger.Info("SettlementUpgrades: " + proto.Name + " #" + prop.Id
+            + " " + track + " -> " + next + " (" + cost + " " + resource.Name + " consumed)");
+    }
+
+    /// The Command Post click for a settlement-wide track: same
+    /// real material cost from the character's carried stacks, but
+    /// the level is stored on the CAMP (the prop's community), so
+    /// the effect covers everything that community owns.
+    private static void HandleSettlementUpgradeClick(AvailableAction action)
+    {
+        var ix = (int)action.ActionType - SettlementSentinelBase;
+        if (ix < 0 || ix >= SettlementTracks.Length) return;
+        var track = SettlementTracks[ix];
+        var prop = action.Target as Prop;
+        var character = action.Actor;
+        if (!Upgradeable(prop, character) || !IsCommandPost(prop)) return;
+        if (action.Enabled != CursorActionDisabledReason.Enabled) return;
+        var com = prop.GetCommunity();
+        if (com == null) return;
+        var proto = prop.GetPropPrototype();
+        var resource = prop.GetRepairResourceType();
+        var next = GetCommunityLevel(com.Id, track) + 1;
+        var cost = CostFor(proto, next);
+        var have = CountCarried(character, resource);
+        if (have < cost)
+        {
+            HudBehaviour.Instance?.SetStatusBarMsg(
+                "Upgrade needs " + cost + " " + resource.NativeName + " (carrying " + have + ")");
+            return;
+        }
+        var remaining = cost;
+        while (remaining > 0)
+        {
+            var item = character.Inventory.FindItemOfType(resource);
+            if (item == null) break;
+            var take = Math.Min(remaining, item.GetAmount());
+            var taken = character.Inventory.Take(character, item, take);
+            taken?.Delete();
+            remaining -= take;
+        }
+        SetCommunityLevel(com.Id, track, next);
+        HudBehaviour.Instance?.SetStatusBarMsg(
+            "Settlement: " + track + " +" + next
+            + " (" + cost + " " + resource.NativeName + " used)");
+        ShimLogger.Info("SettlementUpgrades: community #" + com.Id
             + " " + track + " -> " + next + " (" + cost + " " + resource.Name + " consumed)");
     }
 
@@ -510,6 +614,27 @@ public static class SettlementUpgrades
         }
     }
 
+    /// Yield (settlement-wide): the owning camp's Yield level lifts
+    /// every crop's max yield, which feeds the harvest amount
+    /// (PlantableCrop sets HarvestableAmount from GetMaxYield). Keyed
+    /// by the crop's community, so it covers the whole camp's fields.
+    private static void GetMaxYieldPostfix(PlantableCrop __instance, ref int __result)
+    {
+        try
+        {
+            if (__result <= 0) return;
+            var com = __instance.GetCommunity();
+            if (com == null) return;
+            var level = GetCommunityLevel(com.Id, TrackYield);
+            if (level <= 0) return;
+            __result = UnityEngine.Mathf.CeilToInt(__result * (1f + CurveBonus(level, YieldBase, YieldDecay)));
+        }
+        catch (Exception e)
+        {
+            ShimLogger.Warn("SettlementUpgrades: yield failed: " + e.Message);
+        }
+    }
+
     /// Secure: a hostile taking (the mod's theft, predation, and
     /// tribute acts) tests the storage's locks before draining it.
     /// Queried per building from the Rust acts; one roll per visit.
@@ -610,6 +735,7 @@ public static class SettlementUpgrades
         long seed = session.RandomSeed;
         if (_loaded && seed == _seed) return true;
         Tracks.Clear();
+        CommunityTracks.Clear();
         _seed = seed;
         _loaded = true;
         try
@@ -628,8 +754,19 @@ public static class SettlementUpgrades
                         Tracks[int.Parse(p.Key)] = levels;
                     }
                 }
+                if (root["communities"] is JObject coms)
+                {
+                    foreach (var c in coms)
+                    {
+                        if (!(c.Value is JObject trackObj)) continue;
+                        var levels = new Dictionary<string, int>();
+                        foreach (var t in trackObj) levels[t.Key] = (int)t.Value;
+                        CommunityTracks[int.Parse(c.Key)] = levels;
+                    }
+                }
                 ShimLogger.Info("SettlementUpgrades: restored upgrades for "
-                    + Tracks.Count + " structure(s) (seed " + seed + ")");
+                    + Tracks.Count + " structure(s) and " + CommunityTracks.Count
+                    + " camp(s) (seed " + seed + ")");
             }
         }
         catch (Exception e)
@@ -652,7 +789,19 @@ public static class SettlementUpgrades
                 foreach (var t in p.Value) trackObj[t.Key] = t.Value;
                 props[p.Key.ToString()] = trackObj;
             }
-            var root = new JObject { ["schema_version"] = 1, ["props"] = props };
+            var coms = new JObject();
+            foreach (var c in CommunityTracks)
+            {
+                var trackObj = new JObject();
+                foreach (var t in c.Value) trackObj[t.Key] = t.Value;
+                coms[c.Key.ToString()] = trackObj;
+            }
+            var root = new JObject
+            {
+                ["schema_version"] = 1,
+                ["props"] = props,
+                ["communities"] = coms,
+            };
             var path = StorePath(_seed);
             var tmp = path + ".tmp";
             File.WriteAllText(tmp, root.ToString(Newtonsoft.Json.Formatting.None));
@@ -680,6 +829,26 @@ public static class SettlementUpgrades
         {
             t = new Dictionary<string, int>();
             Tracks[propId] = t;
+        }
+        t[track] = level;
+        Persist();
+    }
+
+    public static int GetCommunityLevel(int communityId, string track)
+    {
+        if (!_loaded && !EnsureLoaded()) return 0;
+        return CommunityTracks.TryGetValue(communityId, out var t) && t.TryGetValue(track, out var level)
+            ? level
+            : 0;
+    }
+
+    public static void SetCommunityLevel(int communityId, string track, int level)
+    {
+        if (!EnsureLoaded()) return;
+        if (!CommunityTracks.TryGetValue(communityId, out var t))
+        {
+            t = new Dictionary<string, int>();
+            CommunityTracks[communityId] = t;
         }
         t[track] = level;
         Persist();

@@ -79,7 +79,7 @@ if (-not (Test-Path $modDir)) {
 # it.
 $storySrc = Join-Path $repoRoot 'survivalist-mod\story'
 if (Test-Path $storySrc) {
-    foreach ($sub in @('Scripts', 'Equipment')) {
+    foreach ($sub in @('Scripts', 'Equipment', 'Props')) {
         $src = Join-Path $storySrc $sub
         if (-not (Test-Path $src)) { continue }
         $dst = Join-Path $modDir $sub
