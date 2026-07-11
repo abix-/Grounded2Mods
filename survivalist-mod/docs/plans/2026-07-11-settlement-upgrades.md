@@ -64,23 +64,32 @@ hundreds of purchases per settlement, each a real material sink.
 
 ## The track catalog
 
-First build (four tracks, effects verified patchable or already
-ours):
+OPERATOR-LOCKED 2026-07-11: buildings that DO something get
+upgrades for how well they do it, borrowing Factorio's taxonomy:
+PRODUCTIVITY, SPEED, EFFICIENCY, and QUALITY, each applying to a
+building by what it does; passive structures (walls and the
+like) get HEALTH REGEN. Tracks by structure function:
 
-| Track | Applies to | Effect | Effect path |
+| Track | Applies to (by function) | Effect | Effect path |
 |---|---|---|---|
-| Reinforce | every structure | max hit points x(1 + curve) | C# postfix on Prop.GetMaxDamage |
-| Expand | storage (chests etc) | capacity x(1 + curve) | C# postfix on the max-inventory-weight read |
+| Reinforce | every destructible structure | max hit points x(1 + curve) | C# postfix on Prop.GetMaxDamage (LIVE) |
+| Health Regen | every destructible structure (walls and other passives especially) | the structure heals its damage over time | C# driver tick: Prop.Damage is a public per-instance field; a slow pass heals tracked props by level rate |
+| Expand | storage (MaxInventoryWeight > 0) | capacity x(1 + curve) | C# postfix on the max-inventory-weight read |
 | Spikes | walls, fences, gates | melee attackers take damage per hit | C# postfix on the structure-melee-hit path |
-| Precision | work props (WorkBench, Forge, Kiln, Still) | quality tier odds bonus for items crafted there | Rust: quality.rs craft_odds already computes odds; add the prop's track level to the surplus |
+| Speed | work props (WorkBench, Forge, Kiln, Still, Campfire) | crafting there runs faster | C# patch on the craft-progress rate (pin the method at build) |
+| Productivity | work props | chance of extra product per craft | rides the existing craft hook (the product is in hand; roll a duplicate) |
+| Efficiency | work props | chance a craft refunds its ingredients | C# patch on Recipe.UseIngredients (chance to skip consumption) |
+| Quality | work props | better quality-tier odds for items crafted there | Rust: quality.rs craft_odds already computes odds; add the prop's track level to the surplus |
 
-Staged next (each needs its own effect-path research first):
+Staged after those (each needs its own effect-path research):
 Comfort (housing: rest quality), Insulate (housing: warmth),
-Watch (towers: guard detection radius), Efficiency (work props:
-crafting time), Secure (storage: resistance against the mod's
-own theft/robbery acts), Yield (well/garden output). The catalog
-is designed to keep growing; each new track is one effect patch
-plus a menu entry.
+Watch (towers: guard detection radius), Secure (storage:
+resistance against the mod's own theft/robbery acts), Yield
+(well/garden output). The catalog is designed to keep growing;
+each new track is one effect patch plus a menu entry. A work
+prop ends up with six tracks (Reinforce, Health Regen, Speed,
+Productivity, Efficiency, Quality): deep exactly where the
+building does the most.
 
 ## Design decisions (locked)
 
@@ -166,16 +175,27 @@ plus a menu entry.
 
 ### Task 3: the remaining first-build effects
 
+- [ ] Health Regen: a slow driver-tick pass healing tracked
+  props' Damage by a level-scaled rate (public per-instance
+  field, no patch needed).
 - [ ] Expand: postfix on the max-inventory-weight read (pin the
   exact method during the build).
 - [ ] Spikes: postfix on the structure-melee-hit path (pin the
   method; attackers take track-scaled damage per swing, capped).
-- [ ] Precision: quality.rs craft_odds gains the crafting prop's
-  track level (the craft hooks already know the recipe; pin how
-  the crafting prop reaches the odds call: likely via the craft
-  job's carrier position or the recipe's RequiredPropToWorkOn).
-- [ ] upgrade_status op: per-structure track levels, totals,
-  last upgrade.
+- [ ] Speed: patch on the craft-progress rate for crafts at the
+  prop (pin the method during the build).
+- [ ] Productivity: chance of an extra product per craft (rides
+  the existing craft detection; duplicate the found product on a
+  track-scaled roll).
+- [ ] Efficiency: chance a craft consumes no ingredients (patch
+  Recipe.UseIngredients with a track-scaled skip roll).
+- [ ] Quality: quality.rs craft_odds gains the crafting prop's
+  track level (pin how the crafting prop reaches the odds call:
+  likely the recipe's RequiredPropToWorkOn + the crafter's
+  position).
+- [ ] Menu: entries appear per track by the structure's function
+  (work props list all six; storage lists Reinforce, Health
+  Regen, Expand; walls list Reinforce, Health Regen, Spikes).
 - [ ] Commit.
 
 ### Task 4: live verify + re-rate
