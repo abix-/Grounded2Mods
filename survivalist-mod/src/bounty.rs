@@ -20,7 +20,8 @@ use modforge::ops::{OP_REGISTRY, OpDef};
 use unityforge::mono::{self, LogLevel, MonoObject};
 
 use crate::common::{
-    GoodsFilter, ctype, display_name, for_each_community, handle_of, on_main_thread, own, with,
+    GoodsFilter, base_centre, carry_off_stored_goods, ctype, display_name, for_each_community,
+    handle_of, on_main_thread, own, with,
 };
 
 /// Seconds between offer scans; work is a slow drumbeat, offset
@@ -36,6 +37,18 @@ const OFFER_WINDOW_SECS: f32 = 2700.0;
 /// Non-food stacks the payment courier carries.
 const BOUNTY_PAY_STACKS: i64 = 3;
 
+/// A courier that has not resolved by then is recalled.
+const COURIER_TIMEOUT_SECS: f32 = 1800.0;
+
+/// Within this squared tile distance of a building the courier
+/// has arrived; same bar trade uses.
+const ARRIVE_DIST_SQ: f64 = 25.0;
+
+enum Stage {
+    Going,
+    Returning,
+}
+
 /// The one bounty in flight map-wide. Each variant owns the
 /// handles it names; transitions drop what they shed.
 enum Bounty {
@@ -50,6 +63,29 @@ enum Bounty {
         /// the board and the chronicle advertise.
         pays: i64,
         expires: f32,
+    },
+    /// The kill is confirmed; the next advance pass launches the
+    /// payment courier (never inside the death callback).
+    /// waiting_logged: the no-free-courier wait logs once, not
+    /// every 5s pass.
+    Owed {
+        hirer_h: i32,
+        hirer_name: String,
+        mark_name: String,
+        waiting_logged: bool,
+    },
+    /// The courier is on the road with real goods.
+    Paying {
+        hirer_h: i32,
+        hirer_name: String,
+        courier_h: i32,
+        courier_name: String,
+        player_h: i32,
+        squad_id: i64,
+        home: (i64, i64),
+        stage: Stage,
+        loaded: i64,
+        deadline: f32,
     },
 }
 
@@ -289,22 +325,517 @@ fn matches_filter(item: &MonoObject, filter: GoodsFilter) -> bool {
     }
 }
 
+// ---- kill attribution ---------------------------------------------------------
+
+/// Called from war.rs's OnMemberDied prefix for every death.
+/// Cheap gate first: no open offer means no bridge calls. Never
+/// launches anything here; the courier launch belongs to the
+/// tick, outside the game's death processing.
+pub fn on_death(member: &MonoObject) {
+    {
+        let slot = BOUNTY.lock();
+        if !matches!(slot.as_ref(), Some(Bounty::Offered { .. })) {
+            return;
+        }
+    }
+    let Some(dead_id) = member.read_field("Id").ok().and_then(|v| v.as_i64()) else {
+        return;
+    };
+    let mut slot = BOUNTY.lock();
+    let Some(Bounty::Offered { mark_id, .. }) = slot.as_ref() else {
+        return;
+    };
+    if *mark_id != dead_id {
+        return;
+    }
+    // The mark is down. By whose hand?
+    let by_player = (|| {
+        let kh = handle_of(&member.read_field("Killer").ok()?)?;
+        let killer = own(kh);
+        let ch = handle_of(&killer.read_field("Community").ok()?)?;
+        Some(ctype(&own(ch)) == "Player")
+    })()
+    .unwrap_or(false);
+    let Some(Bounty::Offered { hirer_h, hirer_name, mark_h, mark_name, enemy_name, .. }) =
+        slot.take()
+    else {
+        return;
+    };
+    drop(own(mark_h));
+    if by_player {
+        crate::chronicle::post(&format!(
+            "the bounty on {mark_name} is claimed; {hirer_name} owes a debt"
+        ));
+        mono::log(
+            LogLevel::Info,
+            &format!(
+                "survivalist-mod: bounty: {mark_name} of {enemy_name} fell to the player; {hirer_name} owes payment"
+            ),
+        );
+        *slot = Some(Bounty::Owed { hirer_h, hirer_name, mark_name, waiting_logged: false });
+    } else {
+        mono::log(
+            LogLevel::Info,
+            &format!("survivalist-mod: bounty: {mark_name} died by other hands; the offer lapses"),
+        );
+        drop(own(hirer_h));
+    }
+}
+
 // ---- advancing ---------------------------------------------------------------
 
 fn advance(now: f32) {
     let mut slot = BOUNTY.lock();
-    let done = match slot.as_mut() {
-        None => return,
-        Some(Bounty::Offered { hirer_h, hirer_name, mark_h, mark_name, expires, .. }) => {
-            advance_offered(*hirer_h, hirer_name, *mark_h, mark_name, *expires, now)
+    let Some(state) = slot.take() else { return };
+    *slot = match state {
+        Bounty::Offered {
+            hirer_h,
+            hirer_name,
+            mark_h,
+            mark_id,
+            mark_name,
+            enemy_name,
+            pays,
+            expires,
+        } => {
+            if advance_offered(hirer_h, &hirer_name, mark_h, &mark_name, expires, now) {
+                drop(own(hirer_h));
+                drop(own(mark_h));
+                None
+            } else {
+                Some(Bounty::Offered {
+                    hirer_h,
+                    hirer_name,
+                    mark_h,
+                    mark_id,
+                    mark_name,
+                    enemy_name,
+                    pays,
+                    expires,
+                })
+            }
+        }
+        Bounty::Owed { hirer_h, hirer_name, mark_name, waiting_logged } => {
+            launch_courier(hirer_h, hirer_name, mark_name, waiting_logged, now)
+        }
+        s @ Bounty::Paying { .. } => advance_paying(s, now),
+    };
+}
+
+/// The debt comes due: load real payment onto the hirer's first
+/// free member and walk it to the player's gate. Returns the next
+/// state (stays Owed while no member is free).
+fn launch_courier(
+    hirer_h: i32,
+    hirer_name: String,
+    mark_name: String,
+    waiting_logged: bool,
+    now: f32,
+) -> Option<Bounty> {
+    // The player's gate.
+    let mut player: Option<(i32, (i64, i64))> = None;
+    let _ = for_each_community(|com| {
+        if ctype(&com) == "Player" {
+            if let Some(c) = base_centre(&com) {
+                player = Some((com.handle().0, c));
+                std::mem::forget(com);
+            }
+            return Ok(false);
+        }
+        Ok(true)
+    });
+    let Some((player_h, dest)) = player else {
+        mono::log(
+            LogLevel::Info,
+            &format!("survivalist-mod: bounty: no player camp to pay; {hirer_name}'s debt is void"),
+        );
+        drop(own(hirer_h));
+        return None;
+    };
+    // A hirer that died owing pays nothing.
+    let standing = with(hirer_h, |c| {
+        c.invoke("HasAnyLivingNonZombieMembers", &json!([]))
+            .map(|v| v == json!(true))
+            .unwrap_or(false)
+    });
+    if !standing {
+        mono::log(
+            LogLevel::Info,
+            &format!("survivalist-mod: bounty: {hirer_name} died owing; the debt dies with them"),
+        );
+        drop(own(hirer_h));
+        drop(own(player_h));
+        return None;
+    }
+    // The courier: the first free member.
+    let courier = match with(hirer_h, |com| pick_courier(com)) {
+        Ok(c) => c,
+        Err(e) => {
+            mono::log(
+                LogLevel::Warn,
+                &format!("survivalist-mod: bounty: courier pick failed: {e}"),
+            );
+            None
         }
     };
-    if done {
-        if let Some(Bounty::Offered { hirer_h, mark_h, .. }) = slot.take() {
+    let Some((courier_h, courier_name)) = courier else {
+        if !waiting_logged {
+            mono::log(
+                LogLevel::Info,
+                &format!(
+                    "survivalist-mod: bounty: {hirer_name} owes for {mark_name} but has no free member to send; waiting"
+                ),
+            );
+        }
+        drop(own(player_h));
+        return Some(Bounty::Owed { hirer_h, hirer_name, mark_name, waiting_logged: true });
+    };
+    // Load the payment from real stores.
+    let loaded = with(hirer_h, |com| {
+        carry_off_stored_goods(com, &[courier_h], BOUNTY_PAY_STACKS, GoodsFilter::NonFood)
+    })
+    .unwrap_or(0);
+    if loaded == 0 {
+        crate::chronicle::post(&format!("{hirer_name} cannot pay the bounty"));
+        mono::log(
+            LogLevel::Info,
+            &format!(
+                "survivalist-mod: bounty: {hirer_name}'s stores are bare; the debt for {mark_name} goes unpaid"
+            ),
+        );
+        drop(own(hirer_h));
+        drop(own(courier_h));
+        drop(own(player_h));
+        return None;
+    }
+    // On the road as a real 1-member Trade squad.
+    let home = with(hirer_h, |com| base_centre(com)).unwrap_or(dest);
+    let dest_j = json!({"x": dest.0, "y": dest.1});
+    let squad_id = match with(hirer_h, |com| -> Result<i64, String> {
+        let squad_h = handle_of(&com.invoke("AddSquad", &json!(["Trade", 0]))?)
+            .ok_or("AddSquad gave no squad")?;
+        let squad = own(squad_h);
+        com.invoke(
+            "AddToSquad",
+            &json!([{ "handle": courier_h }, { "handle": squad_h }]),
+        )?;
+        squad.write_field("GoalTile", &dest_j)?;
+        com.invoke(
+            "SetSquadAction",
+            &json!([{ "handle": squad_h }, "GoTo", 0, dest_j.clone(), null, false]),
+        )?;
+        squad.read_field("Id").map(|v| v.as_i64().unwrap_or(-1))
+    }) {
+        Ok(id) => id,
+        Err(e) => {
+            mono::log(
+                LogLevel::Warn,
+                &format!("survivalist-mod: bounty: courier launch failed: {e}"),
+            );
             drop(own(hirer_h));
-            drop(own(mark_h));
+            drop(own(courier_h));
+            drop(own(player_h));
+            return None;
+        }
+    };
+    crate::chronicle::post(&format!("{hirer_name} sends payment for the bounty on {mark_name}"));
+    mono::log(
+        LogLevel::Info,
+        &format!(
+            "survivalist-mod: bounty: {hirer_name} sends {courier_name} with {loaded} stack(s) of payment to the player's gate"
+        ),
+    );
+    Some(Bounty::Paying {
+        hirer_h,
+        hirer_name,
+        courier_h,
+        courier_name,
+        player_h,
+        squad_id,
+        home,
+        stage: Stage::Going,
+        loaded,
+        deadline: now + COURIER_TIMEOUT_SECS,
+    })
+}
+
+/// One courier step. Returns the next state (None = closed).
+fn advance_paying(state: Bounty, now: f32) -> Option<Bounty> {
+    let Bounty::Paying {
+        hirer_h,
+        hirer_name,
+        courier_h,
+        courier_name,
+        player_h,
+        squad_id,
+        home,
+        stage,
+        loaded,
+        deadline,
+    } = state
+    else {
+        return Some(state);
+    };
+    let alive = with(courier_h, |c| c.invoke("get_AliveAndNotZombie", &json!([])))
+        .map(|v| v == json!(true))
+        .unwrap_or(false);
+    if !alive {
+        crate::chronicle::post(&format!("the bounty payment from {hirer_name} never arrived"));
+        mono::log(
+            LogLevel::Info,
+            &format!(
+                "survivalist-mod: bounty: courier {courier_name} died on the road; the payment is lost"
+            ),
+        );
+        close_paying(hirer_h, courier_h, player_h, squad_id);
+        return None;
+    }
+    if now >= deadline {
+        mono::log(
+            LogLevel::Info,
+            &format!(
+                "survivalist-mod: bounty: courier {courier_name} recalled (timeout); the payment never arrived"
+            ),
+        );
+        close_paying(hirer_h, courier_h, player_h, squad_id);
+        return None;
+    }
+    let tile = match with(courier_h, |c| c.invoke("get_Tile", &json!([]))) {
+        Ok(t) => t,
+        Err(e) => {
+            mono::log(
+                LogLevel::Warn,
+                &format!("survivalist-mod: bounty: courier tile read failed: {e}"),
+            );
+            close_paying(hirer_h, courier_h, player_h, squad_id);
+            return None;
+        }
+    };
+    match stage {
+        Stage::Going => {
+            let d = with(player_h, |p| {
+                p.invoke("GetDistSqToNearestBuilding", &json!([tile.clone()]))
+            })
+            .ok()
+            .and_then(|v| v.as_f64())
+            .unwrap_or(f64::MAX);
+            if d > ARRIVE_DIST_SQ {
+                return Some(Bounty::Paying {
+                    hirer_h,
+                    hirer_name,
+                    courier_h,
+                    courier_name,
+                    player_h,
+                    squad_id,
+                    home,
+                    stage: Stage::Going,
+                    loaded,
+                    deadline,
+                });
+            }
+            // At the gate: real hands into the player's store.
+            let delivered = deliver_carried_payment(courier_h, player_h, loaded).unwrap_or(0);
+            if delivered > 0 {
+                crate::chronicle::post(&format!(
+                    "a courier from {hirer_name} brings your bounty payment"
+                ));
+            }
+            mono::log(
+                LogLevel::Info,
+                &format!(
+                    "survivalist-mod: bounty: {courier_name} delivers {delivered} stack(s) into the player's store"
+                ),
+            );
+            // Walk home.
+            let home_j = json!({"x": home.0, "y": home.1});
+            let _ = with(hirer_h, |com| -> Result<(), String> {
+                if let Ok(sq) = com.invoke("GetSquad", &json!([squad_id])) {
+                    if let Some(sq_h) = handle_of(&sq) {
+                        let squad = own(sq_h);
+                        squad.write_field("GoalTile", &home_j)?;
+                        com.invoke(
+                            "SetSquadAction",
+                            &json!([{ "handle": sq_h }, "GoTo", 0, home_j.clone(), null, false]),
+                        )?;
+                    }
+                }
+                Ok(())
+            });
+            Some(Bounty::Paying {
+                hirer_h,
+                hirer_name,
+                courier_h,
+                courier_name,
+                player_h,
+                squad_id,
+                home,
+                stage: Stage::Returning,
+                loaded: delivered,
+                deadline,
+            })
+        }
+        Stage::Returning => {
+            let d = with(hirer_h, |com| {
+                com.invoke("GetDistSqToNearestBuilding", &json!([tile]))
+            })
+            .ok()
+            .and_then(|v| v.as_f64())
+            .unwrap_or(f64::MAX);
+            if d <= ARRIVE_DIST_SQ {
+                mono::log(
+                    LogLevel::Info,
+                    &format!(
+                        "survivalist-mod: bounty: {courier_name} home; the bounty is paid and closed"
+                    ),
+                );
+                close_paying(hirer_h, courier_h, player_h, squad_id);
+                return None;
+            }
+            Some(Bounty::Paying {
+                hirer_h,
+                hirer_name,
+                courier_h,
+                courier_name,
+                player_h,
+                squad_id,
+                home,
+                stage: Stage::Returning,
+                loaded,
+                deadline,
+            })
         }
     }
+}
+
+/// Disband the courier squad and release every held handle.
+fn close_paying(hirer_h: i32, courier_h: i32, player_h: i32, squad_id: i64) {
+    with(hirer_h, |com| {
+        if let Ok(sq) = com.invoke("GetSquad", &json!([squad_id])) {
+            if let Some(sq_h) = handle_of(&sq) {
+                let _ = com.invoke("RemoveSquad", &json!([{ "handle": sq_h }]));
+            }
+        }
+    });
+    drop(own(hirer_h));
+    drop(own(courier_h));
+    drop(own(player_h));
+}
+
+/// The first free member: alive, human, conscious, unsquadded,
+/// not the leader (murder.rs's eligibility, no genome ranking).
+fn pick_courier(com: &MonoObject) -> Result<Option<(i32, String)>, String> {
+    let leader_id = handle_of(&com.read_field("Leader")?)
+        .map(|h| own(h).read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1));
+    let Some(m_h) = handle_of(&com.read_field("Members")?) else {
+        return Ok(None);
+    };
+    let mlist = own(m_h);
+    let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+    for i in 0..count {
+        let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+            continue;
+        };
+        let member = own(h);
+        let alive = member
+            .invoke("get_AliveAndNotZombie", &json!([]))
+            .map(|v| v == json!(true))
+            .unwrap_or(false);
+        let human = member
+            .invoke("GetBaseObjectType", &json!([]))
+            .map(|v| v == json!("Human"))
+            .unwrap_or(false);
+        let conscious = member
+            .invoke("get_IsConscious", &json!([]))
+            .map(|v| v == json!(true))
+            .unwrap_or(false);
+        let squadded =
+            handle_of(&member.invoke("GetSquad", &json!([])).unwrap_or(Json::Null)).is_some();
+        let id = member.read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1);
+        if !alive || !human || !conscious || squadded || Some(id) == leader_id {
+            continue;
+        }
+        let name = member
+            .invoke("GetDisplayNameString", &json!([]))
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_string))
+            .unwrap_or_else(|| "<unnamed>".into());
+        std::mem::forget(member);
+        return Ok(Some((h, name)));
+    }
+    Ok(None)
+}
+
+/// Move up to `max` non-food stacks from the courier's carried
+/// inventory into the player's first storage building: the payout,
+/// on the same Take/Add calls as everything else (trade.rs's
+/// delivery, filter inverted).
+fn deliver_carried_payment(courier_h: i32, player_h: i32, max: i64) -> Result<i64, String> {
+    // The receiving shelf: the player's first building with an
+    // inventory container.
+    let store: Option<(i32, i32)> = with(player_h, |host| {
+        let b_h = handle_of(&host.read_field("Buildings").ok()?)?;
+        let blist = own(b_h);
+        let nb = blist.invoke("get_Count", &json!([])).ok()?.as_i64()?;
+        for bi in 0..nb {
+            let Some(bh) = handle_of(&blist.invoke("get_Item", &json!([bi])).ok()?) else {
+                continue;
+            };
+            let building = own(bh);
+            if let Some(inv_h) = handle_of(&building.read_field("Inventory").ok()?) {
+                std::mem::forget(building);
+                return Some((bh, inv_h));
+            }
+        }
+        None
+    });
+    let Some((store_bh, store_inv_h)) = store else {
+        return Ok(0);
+    };
+    let courier_inv_h = with(courier_h, |c| {
+        handle_of(&c.read_field("Inventory")?).ok_or("courier has no inventory".to_string())
+    })?;
+    let courier_inv = own(courier_inv_h);
+    let store_inv = own(store_inv_h);
+    let mut delivered = 0i64;
+    while delivered < max {
+        let count = courier_inv
+            .invoke("get_Count", &json!([]))
+            .ok()
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let mut pick: Option<(i32, i64)> = None;
+        for i in 0..count {
+            let Some(item_h) = handle_of(&courier_inv.invoke("GetItem", &json!([i]))?) else {
+                continue;
+            };
+            let item = own(item_h);
+            let amount = item
+                .invoke("GetAmount", &json!([]))
+                .ok()
+                .and_then(|v| v.as_i64())
+                .unwrap_or(1);
+            if matches_filter(&item, GoodsFilter::NonFood) {
+                std::mem::forget(item);
+                pick = Some((item_h, amount));
+                break;
+            }
+        }
+        let Some((item_h, amount)) = pick else { break };
+        let taken = courier_inv.invoke(
+            "Take",
+            &json!([{ "handle": courier_h }, { "handle": item_h }, amount]),
+        )?;
+        let Some(taken_h) = handle_of(&taken) else { break };
+        store_inv.invoke(
+            "Add",
+            &json!([{ "handle": store_bh }, { "handle": taken_h }]),
+        )?;
+        delivered += 1;
+    }
+    drop(courier_inv);
+    drop(store_inv);
+    drop(own(store_bh));
+    Ok(delivered)
 }
 
 /// True = the offer is void; clean up.
@@ -399,6 +930,21 @@ fn bounty_status(_args: &Json) -> Result<Json, String> {
                 "of": enemy_name,
                 "pays": pays,
                 "expires_in_secs": (expires - now).max(0.0),
+            }
+        }),
+        Some(Bounty::Owed { hirer_name, mark_name, .. }) => json!({
+            "bounty": { "stage": "owed", "hirer": hirer_name, "mark": mark_name }
+        }),
+        Some(Bounty::Paying { hirer_name, courier_name, loaded, stage, .. }) => json!({
+            "bounty": {
+                "stage": "paying",
+                "hirer": hirer_name,
+                "courier": courier_name,
+                "stacks": loaded,
+                "leg": match stage {
+                    Stage::Going => "going",
+                    Stage::Returning => "returning",
+                },
             }
         }),
     })
