@@ -82,14 +82,19 @@ like) get HEALTH REGEN. Tracks by structure function:
 | Quality | work props | better quality-tier odds for items crafted there | Rust: quality.rs craft_odds already computes odds; add the prop's track level to the surplus |
 | Secure | storage (MaxInventoryWeight > 0) | a hostile taking (the mod's theft, predation, and tribute acts) can find the locks holding and leave that building's stores untouched | Rust: the shared stored-goods drain (common.rs carry_off_stored_goods) tests each building's locks on hostile call sites only; the C# shim owns the level and the roll (SecureBlocks, 5 percent per level capped at 50: never fully theft-proof). Willing loads (own wares, payments) never test locks |
 | Watch | watch towers (WatchTower, ConcreteWatchTower) | the guard occupying the tower sees farther (spots raiders and zombies sooner) | C# postfix on Character.GetSightRange(out fogStart, out fogEnd): the game already adds the occupied building's inhabitant-slot SightRangeModifier, so this adds the tower's track level on the SAME path (2 tiles per level), re-clamped to the game's 31-tile sight cap (base is 15, so the cap is the natural diminishing stop). The guard-to-tower link is free via Character.InsideBuilding |
+| Comfort | accommodation (Prop.IsAccommodation: houses, shacks) | survivors sleeping here recover from tiredness faster | driver tick (shared with Health Regen): each sleeping occupant (Building.Inhabitants + Character.IsSleeping) has SleepDeprivation reduced 0.5s per real second per level via the public Get/SetSleepDeprivation. The bed signal is the game's own Prop.IsAccommodation (what Community.GetAccommodation counts) |
+| Yield (settlement-wide) | the whole camp's crops | every crop yields more at harvest | C# postfix on PlantableCrop.GetMaxYield reading the crop's community; keyed by community, bought at the Command Post (see Task 7). Not a per-structure track |
 
-Staged after those (each needs its own effect-path research):
-Comfort (housing: rest quality), Insulate (housing: warmth),
-Yield (well/garden output). The catalog is designed to keep
-growing; each new track is one effect patch plus a menu entry.
-A work prop ends up with six tracks (Reinforce, Health Regen,
-Speed, Productivity, Efficiency, Quality): deep exactly where
-the building does the most.
+Staged, remaining: Insulate (housing warmth) is the last named
+staged track, and it does NOT fit: insulation in this game is a
+CLOTHING stat, not a structure, so there is no building to hook
+(it would be a different feature, not a structure upgrade). The
+catalog is designed to keep growing; each new per-structure track
+is one effect patch plus a menu entry, and each new camp-wide
+track is one effect patch on the Command Post. A work prop ends
+up with six tracks (Reinforce, Health Regen, Speed, Productivity,
+Efficiency, Quality): deep exactly where the building does the
+most.
 
 EFFECT-PATH RESEARCH, remaining staged tracks (decompiled
 2026-07-11, Assembly-CSharp via ilspycmd): none is a clean
@@ -298,16 +303,25 @@ bought at a new dedicated hub structure.
   persists across a save round-trip and the AI can climb the same
   community-keyed tracks later for free.
 
-### Comfort: deferred, stays per-structure
+### Task 8: Comfort (eleventh per-structure track; BUILT 2026-07-11, shim compiles clean)
 
-Comfort keeps to the per-structure model (per house), NOT
-settlement-wide: houses are real placed props, so it is cleaner
-and more granular there. Effect path (decompiled 2026-07-11):
-sleep restores on the Character (SleepDeprivation -= dts *
-SleepRecoverRate, a global 3f, inline in the character update, so
-not patchable per-bed); the clean fit is the Health-Regen
-driver-tick pattern speeding a sleeper's recovery via the public
-Get/SetSleepDeprivation, with the bed read for free off
-Character.InsideBuilding (the same link Watch used). Open detail:
-the menu predicate (which buildings offer sleep, read from the
-inhabitant slot defs). Not built yet.
+Per-structure (per accommodation), NOT settlement-wide: houses
+and shacks are real placed props, so it is cleaner and more
+granular there.
+
+- [x] Effect-path research (decompile): sleep restores on the
+  Character (SleepDeprivation -= dts * SleepRecoverRate, a global
+  3f, inline in the character update, so not patchable per-bed);
+  the clean fit is the Health-Regen driver-tick pattern.
+- [x] Menu predicate is the game's own bed signal:
+  Prop.IsAccommodation() (Community.GetAccommodation sums
+  inhabitant slots over exactly these), so Comfort offers on
+  houses and shacks, not towers.
+- [x] Effect: the driver tick (shared with Health Regen) speeds
+  every sleeping occupant's recovery. A building's occupants are
+  free via the public Building.Inhabitants array; sleepers
+  (Character.IsSleeping) get their SleepDeprivation reduced by
+  0.5s per real second per level through the public
+  Get/SetSleepDeprivation pair. No Harmony patch, no Rust change.
+- [ ] Live verify (rides the Task 4 session): add Comfort to a
+  shack, watch its sleepers wake rested sooner.

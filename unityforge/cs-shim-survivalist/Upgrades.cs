@@ -48,6 +48,7 @@ public static class SettlementUpgrades
     public const string TrackQuality = "Quality";
     public const string TrackSecure = "Secure";
     public const string TrackWatch = "Watch";
+    public const string TrackComfort = "Comfort";
     // Settlement-wide tracks: keyed by COMMUNITY, not by structure,
     // and bought at the Command Post hub (one placed prop per camp).
     // For effects that have no single structure to live on.
@@ -78,6 +79,10 @@ public static class SettlementUpgrades
     // diminishing cap.
     private const int WatchTilesPerLevel = 2;
     private const int SightRangeCap = 31;
+    // Comfort: extra sleep-deprivation recovered per real second
+    // per level for a survivor sleeping in this accommodation (the
+    // game's base recovery rate while sleeping is 3/s).
+    private const float ComfortSecsPerLevel = 0.5f;
     // Yield (settlement-wide): each level lifts a camp's crop max
     // yield, diminishing.
     private const float YieldBase = 0.35f;
@@ -131,6 +136,10 @@ public static class SettlementUpgrades
             Name = TrackWatch,
             Applies = p => p is WatchTower || p is ConcreteWatchTower,
         },
+        // Comfort: sleepers in this accommodation recover faster.
+        // IsAccommodation is the game's own "provides beds" signal
+        // (Community.GetAccommodation sums slots over these).
+        new TrackDef { Name = TrackComfort, Applies = p => p.IsAccommodation() },
     };
 
     /// Settlement-wide tracks, hosted by the Command Post and keyed
@@ -223,7 +232,7 @@ public static class SettlementUpgrades
                 AccessTools.Method(typeof(PlantableCrop), nameof(PlantableCrop.GetMaxYield)),
                 postfix: new HarmonyMethod(AccessTools.Method(typeof(SettlementUpgrades), nameof(GetMaxYieldPostfix))));
             _installed = true;
-            ShimLogger.Info("SettlementUpgrades: installed (effects + upgrade menu patches, 10 per-structure + 1 settlement-wide tracks)");
+            ShimLogger.Info("SettlementUpgrades: installed (effects + upgrade menu patches, 11 per-structure + 1 settlement-wide tracks)");
         }
         catch (Exception e)
         {
@@ -665,10 +674,13 @@ public static class SettlementUpgrades
         {
             var session = Session.Instance;
             if (session == null || !_loaded) return;
+            // Both driver-tick tracks: Health Regen tends the public
+            // damage field; Comfort speeds sleepers' recovery.
             var any = false;
             foreach (var p in Tracks)
             {
-                if (p.Value.TryGetValue(TrackHealthRegen, out var l) && l > 0)
+                if ((p.Value.TryGetValue(TrackHealthRegen, out var hr) && hr > 0)
+                    || (p.Value.TryGetValue(TrackComfort, out var cf) && cf > 0))
                 {
                     any = true;
                     break;
@@ -678,19 +690,35 @@ public static class SettlementUpgrades
             foreach (var obj in session.PropManager.AllProps)
             {
                 if (!(obj is Prop prop) || prop.Destroyed) continue;
-                var frac = prop.GetDamageFraction();
-                if (frac <= 0f) continue;
-                var level = GetLevel(prop.Id, TrackHealthRegen);
-                if (level <= 0) continue;
-                var maxDamage = prop.GetMaxDamage();
-                if (maxDamage <= 0f || maxDamage >= float.MaxValue) continue;
-                var heal = RegenHpPerMinPerLevel * level * (dt / 60f);
-                prop.SetDamageFraction(Math.Max(0f, frac - heal / maxDamage));
+                var regen = GetLevel(prop.Id, TrackHealthRegen);
+                if (regen > 0)
+                {
+                    var frac = prop.GetDamageFraction();
+                    var maxDamage = prop.GetMaxDamage();
+                    if (frac > 0f && maxDamage > 0f && maxDamage < float.MaxValue)
+                    {
+                        var heal = RegenHpPerMinPerLevel * regen * (dt / 60f);
+                        prop.SetDamageFraction(Math.Max(0f, frac - heal / maxDamage));
+                    }
+                }
+                var comfort = GetLevel(prop.Id, TrackComfort);
+                if (comfort > 0 && prop is Building building && building.Inhabitants != null)
+                {
+                    var relief = ComfortSecsPerLevel * comfort * dt;
+                    foreach (var occupant in building.Inhabitants)
+                    {
+                        if (occupant != null && occupant.IsSleeping())
+                        {
+                            occupant.SetSleepDeprivation(
+                                Math.Max(0f, occupant.GetSleepDeprivation() - relief));
+                        }
+                    }
+                }
             }
         }
         catch (Exception e)
         {
-            ShimLogger.Warn("SettlementUpgrades: regen tick failed: " + e.Message);
+            ShimLogger.Warn("SettlementUpgrades: driver tick failed: " + e.Message);
         }
     }
 
