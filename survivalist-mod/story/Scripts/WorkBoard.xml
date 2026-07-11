@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<Script xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Speeches />
+  <Triggers />
+  <ConditionBlocks />
+  <Quests>
+    <Quest UniqueID="WorkBoard_Bounty" GroupID="WorkBoard_Group" NativeDescription="%1 offers a bounty on %2, leader of %3. Kill them, and payment comes to your gate: up to 3 stacks of goods from the hirer's stores.">
+      <Params>
+        <SpeechParam Type="CommunityName" Subject="Actor" />
+        <SpeechParam Type="FullName" Subject="ReferringTo" />
+        <SpeechParam Type="CommunityName" Subject="ReferringTo" />
+      </Params>
+      <QuestMarkers>
+        <QuestMarker Specifier="ReferringTo" />
+      </QuestMarkers>
+    </Quest>
+  </Quests>
+  <QuestGroups>
+    <QuestGroup UniqueID="WorkBoard_Group" NativeTitle="Bounties" />
+  </QuestGroups>
+  <Templates />
+  <Invaders />
+</Script>

@@ -62,6 +62,10 @@ enum Bounty {
         /// Non-food stacks the hirer could pay at offer time; what
         /// the board and the chronicle advertise.
         pays: i64,
+        /// The journal entry (a QuestInstance handle): the work
+        /// board line the player reads, None when the quest data
+        /// is not loaded yet (XML loads at story load).
+        quest_h: Option<i32>,
         expires: f32,
     },
     /// The kill is confirmed; the next advance pass launches the
@@ -119,6 +123,10 @@ pub fn tick(now: f32) {
 // ---- the offer ---------------------------------------------------------------
 
 fn offer_scan(now: f32) -> Result<(), String> {
+    // Board entries from a prior generation or a loaded save have
+    // no owner in this process; clear them before posting fresh.
+    board_sweep_orphans();
+
     // The player's camp: bounties exist to be claimed by them.
     let mut player_h: Option<i32> = None;
     for_each_community(|com| {
@@ -233,6 +241,11 @@ fn post_offer(hirer_h: i32, hirer_name: String, enemy_h: i32, now: f32) -> Resul
         return Ok(());
     }
 
+    // The work board: the game's own journal entry with a map
+    // marker tracking the mark. Best-effort: the offer stands
+    // (chronicle + status) even when the quest data is missing.
+    let quest_h = board_spawn(hirer_h, mark_h);
+
     crate::chronicle::post(&format!(
         "{hirer_name} offers a bounty on {mark_name}, leader of {enemy_name}: pays {pays} stack(s) of goods"
     ));
@@ -250,9 +263,173 @@ fn post_offer(hirer_h: i32, hirer_name: String, enemy_h: i32, now: f32) -> Resul
         mark_name,
         enemy_name,
         pays,
+        quest_h,
         expires: now + OFFER_WINDOW_SECS,
     });
     Ok(())
+}
+
+// ---- the work board (the game's own quest journal) -----------------------------
+
+/// The quest data shipped in story/Scripts/WorkBoard.xml.
+const BOARD_QUEST_ID: &str = "WorkBoard_Bounty";
+
+/// Spawn the journal entry for an offer via the game's own
+/// QuestInstance.Spawn: new-quest notification, journal line
+/// ("%1 offers a bounty on %2, leader of %3..."), and a map
+/// marker tracking the mark. Returns the instance handle; None
+/// (with a log line) when the quest data is not loaded, since the
+/// XML loads at story load and a hot reload alone cannot see it.
+fn board_spawn(hirer_h: i32, mark_h: i32) -> Option<i32> {
+    let quest_h = match find_board_quest() {
+        Ok(Some(h)) => h,
+        Ok(None) => {
+            mono::log(
+                LogLevel::Info,
+                "survivalist-mod: bounty: WorkBoard_Bounty quest data not loaded; no journal entry (restart the story to load Scripts/WorkBoard.xml)",
+            );
+            return None;
+        }
+        Err(e) => {
+            mono::log(
+                LogLevel::Warn,
+                &format!("survivalist-mod: bounty: board quest lookup failed: {e}"),
+            );
+            return None;
+        }
+    };
+    // Giver: the hirer's leader; seeker: the player's leader. The
+    // description's community names resolve from these characters.
+    let giver_h = with(hirer_h, |c| c.read_field("Leader").ok().as_ref().and_then(handle_of));
+    let mut seeker_h: Option<i32> = None;
+    let _ = for_each_community(|com| {
+        if ctype(&com) == "Player" {
+            seeker_h = com.read_field("Leader").ok().as_ref().and_then(handle_of);
+            return Ok(false);
+        }
+        Ok(true)
+    });
+    let giver = giver_h.map(|h| json!({"handle": h})).unwrap_or(Json::Null);
+    let seeker = seeker_h.map(|h| json!({"handle": h})).unwrap_or(Json::Null);
+    let spawned = mono::invoke_static(
+        "QuestInstance",
+        "Spawn",
+        &json!([{ "handle": quest_h }, giver, seeker, { "handle": mark_h }, false]),
+    );
+    drop(own(quest_h));
+    if let Some(h) = giver_h {
+        drop(own(h));
+    }
+    if let Some(h) = seeker_h {
+        drop(own(h));
+    }
+    match spawned {
+        Ok(v) => handle_of(&v),
+        Err(e) => {
+            mono::log(
+                LogLevel::Warn,
+                &format!("survivalist-mod: bounty: board entry spawn failed: {e}"),
+            );
+            None
+        }
+    }
+}
+
+/// Walk GameImpl.Instance.CurrentStories and ask each loaded
+/// story for the quest data (Story.FindQuestByUniqueID); the one
+/// that loaded our XML answers.
+fn find_board_quest() -> Result<Option<i32>, String> {
+    let game = mono::MonoType::find("GameImpl")
+        .and_then(|t| t.singleton_instance())
+        .ok_or("GameImpl.Instance not found")?;
+    let Some(list_h) = handle_of(&game.read_field("CurrentStories")?) else {
+        return Ok(None);
+    };
+    let list = own(list_h);
+    let n = list.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+    for i in 0..n {
+        let Some(story_h) = handle_of(&list.invoke("get_Item", &json!([i]))?) else {
+            continue;
+        };
+        let story = own(story_h);
+        if let Ok(q) = story.invoke("FindQuestByUniqueID", &json!([BOARD_QUEST_ID])) {
+            if let Some(qh) = handle_of(&q) {
+                return Ok(Some(qh));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Resolve the journal entry: Complete (claimed) or Fail (lapsed
+/// or void), both the game's own paths with their own
+/// notifications. Consumes the handle.
+fn board_close(quest_h: Option<i32>, claimed: bool) {
+    let Some(h) = quest_h else { return };
+    // The 1-arg overloads (skipCompletionEvents: false) avoid any
+    // 0-arg/1-arg overload ambiguity in the shim's resolution.
+    let method = if claimed { "Complete" } else { "Fail" };
+    if let Err(e) = with(h, |q| q.invoke(method, &json!([false]))) {
+        mono::log(
+            LogLevel::Warn,
+            &format!("survivalist-mod: bounty: board {method} failed: {e}"),
+        );
+    }
+    drop(own(h));
+}
+
+/// Delete every active board entry: a prior generation's (hot
+/// reload) or a loaded save's entries have no owner in this
+/// process and would linger in the journal forever.
+fn board_sweep_orphans() {
+    let Some(sm) = mono::MonoType::find("StoryManager").and_then(|t| t.singleton_instance())
+    else {
+        return;
+    };
+    let Some(list_h) = sm.read_field("ActiveQuests").ok().as_ref().and_then(handle_of) else {
+        return;
+    };
+    let list = own(list_h);
+    let n = list
+        .invoke("get_Count", &json!([]))
+        .ok()
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    // Collect first: Delete mutates the list.
+    let mut orphans = Vec::new();
+    for i in 0..n {
+        let Some(h) = list
+            .invoke("get_Item", &json!([i]))
+            .ok()
+            .as_ref()
+            .and_then(handle_of)
+        else {
+            continue;
+        };
+        let q = own(h);
+        let is_ours = q
+            .invoke("GetUniqueID", &json!([]))
+            .ok()
+            .and_then(|v| v.as_str().map(|s| s.starts_with(BOARD_QUEST_ID)))
+            .unwrap_or(false);
+        if is_ours {
+            std::mem::forget(q);
+            orphans.push(h);
+        }
+    }
+    let count = orphans.len();
+    for h in orphans {
+        let _ = with(h, |q| q.invoke("Delete", &json!([])));
+        drop(own(h));
+    }
+    if count > 0 {
+        mono::log(
+            LogLevel::Info,
+            &format!(
+                "survivalist-mod: bounty: swept {count} orphaned board entries from a prior generation or save"
+            ),
+        );
+    }
 }
 
 /// Count the community's stored stacks matching the filter, up to
@@ -356,13 +533,14 @@ pub fn on_death(member: &MonoObject) {
         Some(ctype(&own(ch)) == "Player")
     })()
     .unwrap_or(false);
-    let Some(Bounty::Offered { hirer_h, hirer_name, mark_h, mark_name, enemy_name, .. }) =
+    let Some(Bounty::Offered { hirer_h, hirer_name, mark_h, mark_name, enemy_name, quest_h, .. }) =
         slot.take()
     else {
         return;
     };
     drop(own(mark_h));
     if by_player {
+        board_close(quest_h, true);
         crate::chronicle::post(&format!(
             "the bounty on {mark_name} is claimed; {hirer_name} owes a debt"
         ));
@@ -374,6 +552,7 @@ pub fn on_death(member: &MonoObject) {
         );
         *slot = Some(Bounty::Owed { hirer_h, hirer_name, mark_name, waiting_logged: false });
     } else {
+        board_close(quest_h, false);
         mono::log(
             LogLevel::Info,
             &format!("survivalist-mod: bounty: {mark_name} died by other hands; the offer lapses"),
@@ -396,9 +575,11 @@ fn advance(now: f32) {
             mark_name,
             enemy_name,
             pays,
+            quest_h,
             expires,
         } => {
             if advance_offered(hirer_h, &hirer_name, mark_h, &mark_name, expires, now) {
+                board_close(quest_h, false);
                 drop(own(hirer_h));
                 drop(own(mark_h));
                 None
@@ -411,6 +592,7 @@ fn advance(now: f32) {
                     mark_name,
                     enemy_name,
                     pays,
+                    quest_h,
                     expires,
                 })
             }
@@ -922,16 +1104,19 @@ fn bounty_status(_args: &Json) -> Result<Json, String> {
     let slot = BOUNTY.lock();
     Ok(match slot.as_ref() {
         None => json!({ "bounty": null }),
-        Some(Bounty::Offered { hirer_name, mark_name, enemy_name, pays, expires, .. }) => json!({
-            "bounty": {
-                "stage": "offered",
-                "hirer": hirer_name,
-                "mark": mark_name,
-                "of": enemy_name,
-                "pays": pays,
-                "expires_in_secs": (expires - now).max(0.0),
-            }
-        }),
+        Some(Bounty::Offered { hirer_name, mark_name, enemy_name, pays, quest_h, expires, .. }) => {
+            json!({
+                "bounty": {
+                    "stage": "offered",
+                    "hirer": hirer_name,
+                    "mark": mark_name,
+                    "of": enemy_name,
+                    "pays": pays,
+                    "board": quest_h.is_some(),
+                    "expires_in_secs": (expires - now).max(0.0),
+                }
+            })
+        }
         Some(Bounty::Owed { hirer_name, mark_name, .. }) => json!({
             "bounty": { "stage": "owed", "hirer": hirer_name, "mark": mark_name }
         }),
@@ -960,6 +1145,7 @@ fn bounty_post(args: &Json) -> Result<Json, String> {
         if BOUNTY.lock().is_some() {
             return Err("a bounty is already open (bounty_status)".into());
         }
+        board_sweep_orphans();
         let now = f32::from_bits(LAST_NOW_BITS.load(Ordering::Relaxed));
         let mut found: Option<(i32, String, i32)> = None;
         for_each_community(|com| {

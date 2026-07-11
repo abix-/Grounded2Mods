@@ -73,6 +73,19 @@ if (-not (Test-Path $modDir)) {
     exit 1
 }
 
+# Story content (script XML, e.g. the work-board quests): the game
+# loads Scripts/*.xml at STORY LOAD, not hot reload; copied on
+# every deploy so the next restart has it.
+$storySrc = Join-Path $repoRoot 'survivalist-mod\story\Scripts'
+if (Test-Path $storySrc) {
+    $scriptsDir = Join-Path $modDir 'Scripts'
+    if (-not (Test-Path $scriptsDir)) {
+        New-Item -ItemType Directory -Force -Path $scriptsDir | Out-Null
+    }
+    Copy-Item -Force (Join-Path $storySrc '*.xml') $scriptsDir
+    Write-Host "==> Story content copied (Scripts/*.xml; loads on next story load)" -ForegroundColor Green
+}
+
 $rustDll = Join-Path $repoRoot 'target\x86_64-pc-windows-msvc\release\survivalist_mod.dll'
 # merged\ = the ILRepack output with Harmony 2.4.2 embedded; the
 # unmerged sibling one level up must NOT ship.

@@ -883,20 +883,45 @@ created at runtime, carry arbitrary text, clear on demand, and
 survive a save/load. NO implementation until one surface is
 verified end to end.
 
-- [ ] **Step 2: decision gate with the operator**
+- [x] **Step 2: decision gate PASSED (operator, 2026-07-10): the
+  board is the game's own quest journal.** Research findings:
+  quests are XML script data (`<Quest UniqueID GroupID
+  NativeDescription>` with `%N` placeholders resolved by
+  SpeechParams; CommunityName/FullName types cover the board
+  line), a `QuestMarker Specifier="ReferringTo"` puts a map
+  marker on the mark, `QuestInstance.Spawn(quest, giver, seeker,
+  ob, canSkip)` posts the vanilla new-quest notification and
+  journal entry, `Story.FindQuestByUniqueID` looks the data up
+  (walk `GameImpl.Instance.CurrentStories`), `Complete(false)` /
+  `Fail(false)` resolve it, `Delete()` clears it, and the bridge
+  has `invoke_static` (ABI v6). Script files load from any story
+  folder's `Scripts/*.xml` at STORY LOAD (not hot reload);
+  `Script.UniqueID` is the filename.
 
-Present what each surface can and cannot show. The operator
-picks. Append the implementation steps to this plan (exact class
-names, calls, complete code) before writing any of it.
+- [x] **Step 3: implemented (2026-07-10).**
+  - Create: `survivalist-mod/story/Scripts/WorkBoard.xml` (quest
+    `WorkBoard_Bounty` in group "Bounties": "%1 offers a bounty
+    on %2, leader of %3..." + marker on the mark; no conditions,
+    the mod drives resolution).
+  - Modify: `survivalist-mod/scripts/build_and_deploy.ps1` copies
+    `story/Scripts/*.xml` into the mod folder on every deploy.
+  - Modify: `survivalist-mod/src/bounty.rs`: the offer carries a
+    journal-entry handle; board_spawn at post (giver = hirer
+    leader, seeker = player leader, ob = the mark), board_close
+    completes on claim / fails on lapse and void, and
+    board_sweep_orphans deletes unowned entries (hot reload or
+    loaded save) in the scan and before forced posts. Missing
+    quest data degrades gracefully: the offer still posts, one
+    log line names the restart.
+  - Live-verified on gen37: the graceful no-data branch and the
+    organic offer. Status shows `board: true/false`.
 
-- [ ] **Step 3: implement + live-verify** (steps appended after
-  the gate)
+- [ ] **Step 4: verify the journal on the next story restart**
 
-Expected: open the chosen surface in-game and read the open
-bounty with hirer, mark, and pays; the entry clears when the
-bounty resolves or lapses.
-
-- [ ] **Step 4: commit** (paths named once the files are locked)
+Expected: the new-quest popup when an offer posts, the journal
+entry naming hirer, mark, and camp with the pay line, the map
+marker tracking the mark; the entry completes when the player
+claims the kill and fails when the offer lapses.
 
 ---
 
