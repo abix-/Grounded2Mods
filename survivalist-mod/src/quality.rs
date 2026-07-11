@@ -174,8 +174,8 @@ fn roll_band(band_h: i32, proto_h: i32, now: f32) -> Result<(), String> {
 
 /// Walk GameImpl.Instance.CurrentStories and ask each loaded
 /// story for the prototype (Story.FindEquipmentPrototypeByName);
-/// the one that loaded our XML answers.
-fn find_prototype(name: &str) -> Result<Option<i32>, String> {
+/// the one that loaded our XML answers. Shared with unique.rs.
+pub(crate) fn find_prototype(name: &str) -> Result<Option<i32>, String> {
     let game = MonoType::find("GameImpl")
         .and_then(|t| t.singleton_instance())
         .ok_or("GameImpl.Instance not found")?;
@@ -199,8 +199,8 @@ fn find_prototype(name: &str) -> Result<Option<i32>, String> {
 }
 
 /// A pseudo-random value in [0, n): the incursion rng shape (a
-/// hash of the fire time and a salt).
-fn rng(now: f32, salt: u64, n: u64) -> u64 {
+/// hash of the fire time and a salt). Shared with unique.rs.
+pub(crate) fn rng(now: f32, salt: u64, n: u64) -> u64 {
     let mut h = (now.to_bits() as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
         ^ salt.wrapping_mul(0xD1B5_4A32_D192_ED03);
     h ^= h >> 29;

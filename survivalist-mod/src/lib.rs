@@ -42,6 +42,7 @@ mod stranger;
 mod survival;
 mod threat;
 mod trade;
+mod unique;
 mod vendor;
 mod war;
 
@@ -106,6 +107,10 @@ fn on_init() {
     // The quality system, first slice: the edge rolls quality
     // (fine rifles on military remnants). quality_status op.
     quality::register_ops();
+
+    // Named uniques, first slice: The Colonel's Rifle enters once
+    // per save with a military remnant. unique_status op.
+    unique::register_ops();
 
     // REAL growth, people half: repopulator disabled (operator-
     // locked) + refugee recruitment on the tick + growth_status.

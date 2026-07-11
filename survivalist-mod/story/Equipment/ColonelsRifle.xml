@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<EquipmentPrototype xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <TypeName>SniperRifle</TypeName>
+  <NativeName>The Colonel's Rifle</NativeName>
+  <NativeDescription>An immaculate marksman's rifle, older than the outbreak and better kept than anything on the island. Every soldier who carried it had a story; none of them are told anymore.</NativeDescription>
+  <Category>2:Weapons/Ranged</Category>
+  <IsProperNoun>true</IsProperNoun>
+  <GenderInLanguages>
+    <GenderInLanguage Gender="Male" Language="BrazilianPortuguese" />
+  </GenderInLanguages>
+  <Weight>10</Weight>
+  <BasePrice>400</BasePrice>
+  <CanBeEquipped>true</CanBeEquipped>
+  <CanBeCombined>false</CanBeCombined>
+  <SightRangeModifier>4</SightRangeModifier>
+  <EquippedModelName>Prefabs/Equipment/SniperRifle/M40A3 Rifle_prefab</EquippedModelName>
+  <Scarcity>Legendary</Scarcity>
+  <InjuryType>Bullet</InjuryType>
+  <Damage>1.3</Damage>
+  <DamageBonusPerSkillLevel>0.25</DamageBonusPerSkillLevel>
+  <Range>26</Range>
+  <AttackSoundRadius>32</AttackSoundRadius>
+  <AccurateRange>6</AccurateRange>
+  <AccurateRangeBonusPerSkillLevel>4</AccurateRangeBonusPerSkillLevel>
+  <MinAimTime>0.2</MinAimTime>
+  <MaxAimTime>1.5</MaxAimTime>
+  <MinHeadAimTime>0.75</MinHeadAimTime>
+  <MaxHeadAimTime>2.5</MaxHeadAimTime>
+  <MinLegsAimTime>0.4</MinLegsAimTime>
+  <MaxLegsAimTime>2</MaxLegsAimTime>
+  <Recoil>1.5</Recoil>
+  <AimPenaltyWhenMoving>1</AimPenaltyWhenMoving>
+  <MinTimeBetweenFiring>0.75</MinTimeBetweenFiring>
+  <AmmoTypes>
+    <string>SniperRifleAmmo</string>
+    <string>ArmorPiercingSniperAmmo</string>
+  </AmmoTypes>
+  <MaxAmmo>5</MaxAmmo>
+  <ReloadReleaseSounds>
+    <string>Sounds\Equipment\SniperRifle\m21_clipout</string>
+  </ReloadReleaseSounds>
+  <ReloadInsertSounds>
+    <string>Sounds\Equipment\SniperRifle\m21_clipin</string>
+  </ReloadInsertSounds>
+</EquipmentPrototype>

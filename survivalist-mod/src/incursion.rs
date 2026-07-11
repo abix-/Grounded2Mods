@@ -513,9 +513,11 @@ fn spawn_edge_band(now: f32, kind: &str, hostile_all: bool) -> Result<Option<Str
     };
 
     // The edge rolls quality: a military remnant may carry a fine
-    // rifle in place of a common one (quality.rs first slice).
+    // rifle in place of a common one (quality.rs first slice),
+    // and, once per save, the storied unique (unique.rs).
     if hostile_all {
         crate::quality::upgrade_band_gear(band_h, now);
+        crate::unique::maybe_enter_with_military(band_h, now);
     }
 
     // The camps, with handles, to point the band at.
