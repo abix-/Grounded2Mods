@@ -46,6 +46,7 @@ public static class SettlementUpgrades
     public const string TrackProductivity = "Productivity";
     public const string TrackEfficiency = "Efficiency";
     public const string TrackQuality = "Quality";
+    public const string TrackSecure = "Secure";
 
     // Health Regen: hit points healed per minute per level.
     private const float RegenHpPerMinPerLevel = 0.2f;
@@ -60,6 +61,12 @@ public static class SettlementUpgrades
     private const float ProductivityChancePerLevel = 0.04f;
     private const float EfficiencyChancePerLevel = 0.04f;
     private const float CraftChanceCap = 0.5f;
+    // Secure: chance a hostile taking (the mod's theft, predation,
+    // and tribute acts) finds this storage's locks holding. Capped
+    // below 1 so stores are never fully theft-proof (brutal but
+    // survivable cuts both ways).
+    private const float SecureBlockChancePerLevel = 0.05f;
+    private const float SecureBlockCap = 0.5f;
 
     // Sentinel menu action ids, far above the vanilla enum range
     // (the game's switches ignore unknown values; our caption
@@ -94,6 +101,13 @@ public static class SettlementUpgrades
         new TrackDef { Name = TrackProductivity, Applies = p => p is CraftingProp },
         new TrackDef { Name = TrackEfficiency, Applies = p => p is CraftingProp },
         new TrackDef { Name = TrackQuality, Applies = p => p is CraftingProp },
+        // Appended last: sentinel action ids are SentinelBase +
+        // index, so existing tracks keep their ids.
+        new TrackDef
+        {
+            Name = TrackSecure,
+            Applies = p => p.GetPropPrototype().MaxInventoryWeight > 0f,
+        },
     };
 
     private static Harmony _harmony;
@@ -158,7 +172,7 @@ public static class SettlementUpgrades
                     }),
                 prefix: new HarmonyMethod(AccessTools.Method(typeof(SettlementUpgrades), nameof(UseIngredientsPrefix))));
             _installed = true;
-            ShimLogger.Info("SettlementUpgrades: installed (effects + upgrade menu patches, 8 tracks)");
+            ShimLogger.Info("SettlementUpgrades: installed (effects + upgrade menu patches, 9 tracks)");
         }
         catch (Exception e)
         {
@@ -451,6 +465,20 @@ public static class SettlementUpgrades
             ShimLogger.Warn("SettlementUpgrades: efficiency failed: " + e.Message);
             return true;
         }
+    }
+
+    /// Secure: a hostile taking (the mod's theft, predation, and
+    /// tribute acts) tests the storage's locks before draining it.
+    /// Queried per building from the Rust acts; one roll per visit.
+    public static bool SecureBlocks(int propId)
+    {
+        var level = GetLevel(propId, TrackSecure);
+        if (level <= 0) return false;
+        var chance = Math.Min(SecureBlockCap, SecureBlockChancePerLevel * level);
+        if (UnityEngine.Random.value >= chance) return false;
+        ShimLogger.Info("SettlementUpgrades: Secure held (prop #" + propId
+            + ", level " + level + ")");
+        return true;
     }
 
     // ---- health regen (driver tick) ------------------------------------------------

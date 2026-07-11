@@ -207,6 +207,27 @@ impl GoodsFilter {
     }
 }
 
+/// Secure (settlement upgrades): a hostile taking tests the
+/// building's locks before draining it. The level and the roll
+/// live in the C# shim beside the other track knobs
+/// (Upgrades.cs SecureBlocks); a shim without the entry fails
+/// open (the locks do not hold).
+fn secure_blocks(building: &MonoObject) -> bool {
+    let Some(id) = building.read_field("Id").ok().and_then(|v| v.as_i64()) else {
+        return false;
+    };
+    match mono::invoke_static("SettlementUpgrades", "SecureBlocks", &json!([id])) {
+        Ok(v) => v == json!(true),
+        Err(e) => {
+            mono::log(
+                LogLevel::Warn,
+                &format!("survivalist-mod: secure check failed: {e}"),
+            );
+            false
+        }
+    }
+}
+
 /// Move a community's building-stored items into the carriers'
 /// inventories, round-robin, via the game's own
 /// `EquipmentContainer.Take` (removes from source) + `Add` (gives
@@ -216,11 +237,18 @@ impl GoodsFilter {
 /// burglar's armful; trade loads food and collects non-food
 /// payment. Buildings/crops stay put; only portable stored goods
 /// move, and only as far as living hands can carry them.
+///
+/// `hostile` marks a taking against the owner's will (theft,
+/// predation, tribute): each building's Secure locks (settlement
+/// upgrades) are tested and a held lock keeps that whole
+/// building's stores. Willing loads (a camp loading its own
+/// wares, paying for goods or work) never test locks.
 pub fn carry_off_stored_goods(
     from: &MonoObject,
     carriers: &[i32],
     max_stacks: i64,
     filter: GoodsFilter,
+    hostile: bool,
 ) -> Result<i64, String> {
     let Some(b_h) = handle_of(&from.read_field("Buildings")?) else {
         return Ok(0);
@@ -234,6 +262,9 @@ pub fn carry_off_stored_goods(
             continue;
         };
         let building = own(bh);
+        if hostile && secure_blocks(&building) {
+            continue;
+        }
         let Some(inv_h) = handle_of(&building.read_field("Inventory")?) else {
             continue;
         };

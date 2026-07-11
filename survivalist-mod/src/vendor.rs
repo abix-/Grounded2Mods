@@ -218,8 +218,13 @@ fn launch(source: &Camp, target: &Camp, now: f32) -> Result<Outcome, String> {
         };
 
         // Load the wares BEFORE leaving, from the source's stores.
-        let brought =
-            carry_off_stored_goods(com, &[trader_h], VENDOR_GOODS_STACKS, GoodsFilter::NonFood)?;
+        let brought = carry_off_stored_goods(
+            com,
+            &[trader_h],
+            VENDOR_GOODS_STACKS,
+            GoodsFilter::NonFood,
+            false,
+        )?;
         if brought == 0 {
             drop(own(trader_h)); // nothing to sell; try again later
             return Ok(Outcome::Passed);
@@ -417,7 +422,13 @@ fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
             // FIRST (from the target's own stores), then the wares,
             // so the payment can never grab back what we just gave.
             m.paid = with(m.target_h, |h| {
-                carry_off_stored_goods(h, &[m.trader_h], VENDOR_PAY_STACKS, GoodsFilter::NonFood)
+                carry_off_stored_goods(
+                    h,
+                    &[m.trader_h],
+                    VENDOR_PAY_STACKS,
+                    GoodsFilter::NonFood,
+                    false,
+                )
             })?;
             m.sold = deposit_goods(m.trader_h, m.target_h, m.brought)?;
             if m.target_is_player && m.sold > 0 {

@@ -113,7 +113,7 @@ pub fn launch(hirer_h: i32, hirer_name: &str, debt_name: &str, now: f32) -> Laun
     };
     // Load the payment from real stores.
     let loaded = with(hirer_h, |com| {
-        carry_off_stored_goods(com, &[courier_h], PAY_STACKS, GoodsFilter::NonFood)
+        carry_off_stored_goods(com, &[courier_h], PAY_STACKS, GoodsFilter::NonFood, false)
     })
     .unwrap_or(0);
     if loaded == 0 {

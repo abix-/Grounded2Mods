@@ -669,7 +669,7 @@ fn take_tribute(m: &Mission) -> Result<i64, String> {
         return Ok(0);
     };
     let took = with(m.target_h, |camp| {
-        carry_off_stored_goods(camp, &[carrier], TRIBUTE_STACKS, GoodsFilter::NonFood)
+        carry_off_stored_goods(camp, &[carrier], TRIBUTE_STACKS, GoodsFilter::NonFood, true)
     })?;
     drop(own(carrier));
     Ok(took)

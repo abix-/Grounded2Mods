@@ -162,7 +162,7 @@ fn consume(winner: MonoObject, loser: MonoObject) -> Result<(), String> {
         0
     } else {
         // 500 is a safety cap; a camp never holds this much.
-        carry_off_stored_goods(&loser, &carriers, 500, GoodsFilter::Any)?
+        carry_off_stored_goods(&loser, &carriers, 500, GoodsFilter::Any, true)?
     };
 
     // 3. Selection: the loser's genome dies with it. (The people it

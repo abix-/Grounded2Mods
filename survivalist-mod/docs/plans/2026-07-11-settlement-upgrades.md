@@ -80,14 +80,14 @@ like) get HEALTH REGEN. Tracks by structure function:
 | Productivity | work props | chance of extra product per craft | rides the existing craft hook (the product is in hand; roll a duplicate) |
 | Efficiency | work props | chance a craft refunds its ingredients | C# patch on Recipe.UseIngredients (chance to skip consumption) |
 | Quality | work props | better quality-tier odds for items crafted there | Rust: quality.rs craft_odds already computes odds; add the prop's track level to the surplus |
+| Secure | storage (MaxInventoryWeight > 0) | a hostile taking (the mod's theft, predation, and tribute acts) can find the locks holding and leave that building's stores untouched | Rust: the shared stored-goods drain (common.rs carry_off_stored_goods) tests each building's locks on hostile call sites only; the C# shim owns the level and the roll (SecureBlocks, 5 percent per level capped at 50: never fully theft-proof). Willing loads (own wares, payments) never test locks |
 
 Staged after those (each needs its own effect-path research):
 Comfort (housing: rest quality), Insulate (housing: warmth),
-Watch (towers: guard detection radius), Secure (storage:
-resistance against the mod's own theft/robbery acts), Yield
-(well/garden output). The catalog is designed to keep growing;
-each new track is one effect patch plus a menu entry. A work
-prop ends up with six tracks (Reinforce, Health Regen, Speed,
+Watch (towers: guard detection radius), Yield (well/garden
+output). The catalog is designed to keep growing; each new
+track is one effect patch plus a menu entry. A work prop ends
+up with six tracks (Reinforce, Health Regen, Speed,
 Productivity, Efficiency, Quality): deep exactly where the
 building does the most.
 
@@ -208,3 +208,21 @@ building does the most.
   at the upgraded bench and watch the tier odds move
   (quality_status); save round-trip keeps everything.
 - [ ] Re-rate the status row honestly; commit.
+
+### Task 5: Secure (ninth track; BUILT 2026-07-11, both sides compile clean)
+
+- [x] C#: TrackSecure on storage (same predicate as Expand, so
+  chests and other containers list it in the menu), knobs beside
+  the other track knobs, and the SecureBlocks(propId) roll (5
+  percent per level, capped at 50 so stores are never fully
+  theft-proof; a held lock logs to the player log).
+- [x] Rust: carry_off_stored_goods takes `hostile`; the three
+  takings against the owner's will (steal, predation, stranger
+  tribute) test each building's locks and a held lock keeps that
+  whole building's stores; the five willing loads (courier pay,
+  vendor wares + payment, trade food + payment) never test.
+  The stranger shakedown already targets the player camp, so a
+  secured chest is felt gameplay on the next shakedown.
+- [ ] Live verify (rides the Task 4 session): put Secure levels
+  on a chest, force a shakedown or theft, watch the "Secure
+  held" line and the chest keep its stores.

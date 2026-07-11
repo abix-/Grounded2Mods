@@ -414,7 +414,7 @@ fn launch(camp: &Camp, host: &Camp, now: f32) -> Result<(), String> {
         // most food planted and carried, not warehoused, so the
         // member top-up is usually the real source.
         let mut loaded =
-            carry_off_stored_goods(com, &[trader_h], TRADE_FOOD_STACKS, GoodsFilter::Food)?;
+            carry_off_stored_goods(com, &[trader_h], TRADE_FOOD_STACKS, GoodsFilter::Food, false)?;
         if loaded < TRADE_FOOD_STACKS {
             loaded += load_food_from_members(com, trader_h, trader_id, TRADE_FOOD_STACKS - loaded)?;
         }
@@ -574,7 +574,13 @@ fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
             // Full symmetry (operator-locked): the player pays
             // like any host, one non-food stack.
             m.paid = with(m.host_h, |h| {
-                carry_off_stored_goods(h, &[m.trader_h], TRADE_PAY_STACKS, GoodsFilter::NonFood)
+                carry_off_stored_goods(
+                    h,
+                    &[m.trader_h],
+                    TRADE_PAY_STACKS,
+                    GoodsFilter::NonFood,
+                    false,
+                )
             })?;
             if m.host_is_player && m.delivered > 0 {
                 crate::chronicle::post(&format!(

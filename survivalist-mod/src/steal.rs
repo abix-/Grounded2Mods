@@ -485,7 +485,7 @@ fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
             // sight; a witness shouts StopThief and the game sets
             // the pair Hostile itself).
             m.stolen = with(m.target_h, |t| {
-                carry_off_stored_goods(t, &[m.thief_h], STEAL_MAX_STACKS, GoodsFilter::Any)
+                carry_off_stored_goods(t, &[m.thief_h], STEAL_MAX_STACKS, GoodsFilter::Any, true)
             })?;
             let caught = with(m.thief_h, |t| {
                 t.invoke(
