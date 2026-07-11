@@ -122,21 +122,22 @@ plus a menu entry.
 
 ---
 
-### Task 1: the risky mechanics, verified live first
+### Task 1: the risky mechanics, verified live first: PASSED 2026-07-11
 
-- [ ] C# skeleton: the sidecar store + ONE effect patch (postfix
-  on Prop.GetMaxDamage applying the Reinforce curve) + a debug
-  entry point the Rust upgrade_probe op can drive (set a track
-  level on the structure nearest the player camp centre).
-- [ ] upgrade_probe (Rust): set Reinforce level N on the nearest
-  named structure, read GetMaxDamage back through the game.
-  Expected: the multiplied value. Permanent diagnostic.
-- [ ] Save round-trip: operator saves and reloads; the sidecar
-  reloads by seed; the probe reads the same boosted value. THE
-  GATE for the whole architecture.
-- [ ] NOTE: shim changes load at game start (no hot reload):
-  each C# task lands across an operator restart.
-- [ ] Commit.
+- [x] C# skeleton: sidecar store + Prop.GetMaxDamage postfix +
+  probe entries (Upgrades.cs; shim now references
+  Assembly-CSharp: the game-typed layer compiles clean).
+- [x] upgrade_probe live: Reinforce 3 on the player's Well took
+  20.0 -> 45.725 hit points through the game's own getter
+  (exact: x2.28625); Outhouse 5 -> 11.43, RabbitTrap 2 -> 4.57;
+  the indestructible guard held on the Campfire (float.MaxValue
+  untouched).
+- [x] Save round-trip PASSED: after save + reload the Well
+  (same id 190942) read 45.725 BEFORE any new write: prop ids
+  are stable across saves, the sidecar reattaches, THE
+  ARCHITECTURE IS SEALED.
+- [x] Noted: shim changes land across operator restarts.
+- [x] Committed (6e95a055).
 
 ### Task 2: the menu (population, dispatch, label)
 
