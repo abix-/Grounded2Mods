@@ -238,8 +238,11 @@ pub fn carry_off_stored_goods(
             continue;
         };
         let inv = own(inv_h);
-        // Per pass: find the first item the filter wants; Take()
-        // shrinks the container, so re-scan from the top each time.
+        // Per pass: find the most VALUABLE item the filter wants
+        // (the world values quality: every act that loads loot or
+        // payment through here grabs the good blade first, docs/
+        // status.md "Quality system"); Take() shrinks the
+        // container, so re-scan each time.
         loop {
             let count = inv
                 .invoke("get_Count", &json!([]))
@@ -247,15 +250,33 @@ pub fn carry_off_stored_goods(
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0);
             let mut pick: Option<i32> = None;
+            let mut pick_price = -1.0f64;
             for i in 0..count {
                 let Some(item_h) = handle_of(&inv.invoke("GetItem", &json!([i]))?) else {
                     continue;
                 };
                 let item = own(item_h);
                 if filter.matches(&item) {
-                    std::mem::forget(item);
-                    pick = Some(item_h);
-                    break;
+                    let price = item
+                        .invoke("GetPrototype", &json!([]))
+                        .ok()
+                        .as_ref()
+                        .and_then(handle_of)
+                        .map(|ph| {
+                            let p = own(ph);
+                            p.read_field("BasePrice")
+                                .ok()
+                                .and_then(|v| v.as_f64())
+                                .unwrap_or(0.0)
+                        })
+                        .unwrap_or(0.0);
+                    if price > pick_price {
+                        if let Some(old) = pick.replace(item_h) {
+                            drop(own(old));
+                        }
+                        pick_price = price;
+                        std::mem::forget(item);
+                    }
                 }
             }
             let Some(item_h) = pick else { break };

@@ -1502,11 +1502,29 @@ same hand). A canary prototype detects unloaded data and degrades
 to one log line. quality_status reports loaded state, swaps per
 tier, and the last swap.
 
+BUILT THE SAME DAY (gen42):
+- THE SHOP ROLLS: a vanilla roving trader is an ambient arrival
+  (the world feeding the map, the same boundary as the edge
+  bands), so its stock rolls tiers ONCE when the trader is first
+  seen (quality.rs tick, TRADER_ODDS 4/20/60/150 per mille,
+  rolled ids pruned as traders despawn; already-tiered items
+  never re-roll). Our own vendor act is deliberately NOT rolled:
+  it sells from a camp's real stores (rolling it would conjure
+  value inside the map); it starts carrying tiered wares
+  naturally as tiered gear circulates into real stores.
+- THE ACTS VALUE QUALITY: carry_off_stored_goods now takes the
+  most VALUABLE matching stack first (by prototype BasePrice),
+  which upgrades every consumer at once: theft, robbery,
+  predation's stockpile stripping, trade payment, the work
+  couriers, and the vendor's wares all grab the good blade first.
+
 Live-verify after the next story restart: variants load (canary
-answers), an armed arrival carries tiered gear, prices scale in
-trade, and the player can loot it. Next after that: crafting
-rolls (hands roll quality), act preferences (thieves prefer the
-good blade), quality on other gear.
+answers), an armed arrival carries tiered gear, a trader's stock
+shows tiered wares in the trade UI, prices scale, and the player
+can loot it. Still open: crafting rolls (hands roll quality;
+needs the Recipe/CraftGoal read), the vanilla equip-best check
+(does the warlord carry the camp's best rifle for free), unique
+ownership in the chronicle, quality on other gear.
 
 ### Open questions before any build
 

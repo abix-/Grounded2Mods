@@ -70,6 +70,7 @@ fn on_tick(now: f32) {
     murder::tick(now);
     bounty::tick(now);
     threat::tick(now);
+    quality::tick(now);
     vendor::tick(now);
     stranger::tick(now);
     settler::tick(now);

@@ -37,7 +37,7 @@ use serde_json::{Value as Json, json};
 use modforge::ops::{OP_REGISTRY, OpDef};
 use unityforge::mono::{self, LogLevel, MonoType};
 
-use crate::common::{handle_of, on_main_thread, own, with};
+use crate::common::{ctype, for_each_community, handle_of, on_main_thread, own, with};
 
 /// Tier names, best first (Factorio naming). Must match the
 /// generator's $Tiers.
@@ -45,9 +45,15 @@ const TIER_NAMES: [&str; 4] = ["Legendary", "Epic", "Rare", "Uncommon"];
 
 /// Per-sender tier odds in PER MILLE, best tier first, evaluated
 /// cumulatively from the top. Military remnants carry the best;
-/// raiders roll lower. Higher quality, lower chance.
+/// raiders roll lower; the roving traders' shop stock rolls
+/// generously (a shop worth checking). Higher quality, lower
+/// chance.
 const MILITARY_ODDS: [u64; 4] = [10, 40, 100, 200]; // 1%, 4%, 10%, 20%
 const RAIDER_ODDS: [u64; 4] = [3, 15, 50, 120]; // 0.3%, 1.5%, 5%, 12%
+const TRADER_ODDS: [u64; 4] = [4, 20, 60, 150]; // 0.4%, 2%, 6%, 15%
+
+/// Seconds between scans for roving traders not yet rolled.
+const TRADER_SCAN_PERIOD_SECS: f32 = 60.0;
 
 /// Statistical siblings per tier. Must match the generator's
 /// $Siblings.
@@ -68,30 +74,45 @@ static SWAPS: [AtomicU32; 4] = [
 static LAST_SWAP: Mutex<Option<String>> = Mutex::new(None);
 /// The data-not-loaded line logs once per generation.
 static MISSING_LOGGED: AtomicU32 = AtomicU32::new(0);
+/// Roving-trader community ids already rolled this generation
+/// (their fresh stock rolls ONCE, when first seen).
+static ROLLED_TRADERS: Mutex<Vec<i64>> = Mutex::new(Vec::new());
+static LAST_TRADER_SCAN_BITS: AtomicU32 = AtomicU32::new(0);
 
-/// The edge roll: every weapon or armor piece carried by the band
-/// rolls a tier by the sender's odds. Called by incursion.rs
-/// right after an edge band spawns; best-effort (a failure leaves
-/// the band exactly as the game spawned it).
-pub fn upgrade_band_gear(band_h: i32, now: f32, military: bool) {
+/// Is the generated variant data loaded? One canary lookup; the
+/// not-loaded line logs once per generation.
+fn variants_loaded() -> bool {
     match find_prototype(CANARY) {
-        Ok(Some(h)) => drop(own(h)),
+        Ok(Some(h)) => {
+            drop(own(h));
+            true
+        }
         Ok(None) => {
             if MISSING_LOGGED.swap(1, Ordering::Relaxed) == 0 {
                 mono::log(
                     LogLevel::Info,
-                    "survivalist-mod: quality: variant data not loaded; the edge rolls nothing (restart the story to load the generated Equipment XML)",
+                    "survivalist-mod: quality: variant data not loaded; nothing rolls (restart the story to load the generated Equipment XML)",
                 );
             }
-            return;
+            false
         }
         Err(e) => {
             mono::log(
                 LogLevel::Warn,
                 &format!("survivalist-mod: quality: canary lookup failed: {e}"),
             );
-            return;
+            false
         }
+    }
+}
+
+/// The edge roll: every weapon or armor piece carried by the band
+/// rolls a tier by the sender's odds. Called by incursion.rs
+/// right after an edge band spawns; best-effort (a failure leaves
+/// the band exactly as the game spawned it).
+pub fn upgrade_band_gear(band_h: i32, now: f32, military: bool) {
+    if !variants_loaded() {
+        return;
     }
     let odds = if military { &MILITARY_ODDS } else { &RAIDER_ODDS };
     if let Err(e) = roll_band(band_h, odds, now) {
@@ -100,6 +121,44 @@ pub fn upgrade_band_gear(band_h: i32, now: f32, military: bool) {
             &format!("survivalist-mod: quality: edge roll failed: {e}"),
         );
     }
+}
+
+/// The shop rolls too: a vanilla roving trader is an ambient
+/// arrival (the world feeding the map, same boundary as the edge
+/// bands), so its fresh stock rolls tiers ONCE when the trader is
+/// first seen. Already-tiered items never re-roll (the underscore
+/// guard), so a hot reload cannot inflate a trader twice beyond
+/// re-rolling what stayed common.
+pub fn tick(now: f32) {
+    let last = f32::from_bits(LAST_TRADER_SCAN_BITS.load(Ordering::Relaxed));
+    if now - last < TRADER_SCAN_PERIOD_SECS {
+        return;
+    }
+    LAST_TRADER_SCAN_BITS.store(now.to_bits(), Ordering::Relaxed);
+    if !variants_loaded() {
+        return;
+    }
+    let mut seen: Vec<i64> = Vec::new();
+    let _ = for_each_community(|com| {
+        if ctype(&com) != "RovingTrader" {
+            return Ok(true);
+        }
+        let id = com.read_field("Id")?.as_i64().unwrap_or(-1);
+        seen.push(id);
+        if ROLLED_TRADERS.lock().contains(&id) {
+            return Ok(true);
+        }
+        if let Err(e) = roll_band(com.handle().0, &TRADER_ODDS, now) {
+            mono::log(
+                LogLevel::Warn,
+                &format!("survivalist-mod: quality: trader roll failed: {e}"),
+            );
+        }
+        ROLLED_TRADERS.lock().push(id);
+        Ok(true)
+    });
+    // Traders despawn; forget the gone ones.
+    ROLLED_TRADERS.lock().retain(|id| seen.contains(id));
 }
 
 /// Pick a tier index from cumulative per-mille odds, or None for
@@ -297,6 +356,7 @@ fn quality_status(_args: &Json) -> Result<Json, String> {
             "variants_loaded": loaded,
             "swaps": swaps,
             "last_swap": LAST_SWAP.lock().clone(),
+            "traders_rolled": ROLLED_TRADERS.lock().len(),
         }))
     })
 }
