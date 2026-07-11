@@ -189,7 +189,7 @@ pub enum GoodsFilter {
 }
 
 impl GoodsFilter {
-    fn matches(self, item: &MonoObject) -> bool {
+    pub fn matches(self, item: &MonoObject) -> bool {
         match self {
             GoodsFilter::Any => true,
             GoodsFilter::Food | GoodsFilter::NonFood => {
@@ -292,6 +292,61 @@ pub fn carry_off_stored_goods(
         }
     }
     Ok(carried)
+}
+
+/// Count a community's stored stacks matching the filter, up to
+/// `cap` (early exit; cap 1 is a cheap "has any" test). The work
+/// pillar's "can they pay" and "what does it pay" reads.
+pub fn count_stored_goods(com: &MonoObject, filter: GoodsFilter, cap: i64) -> i64 {
+    let Some(b_h) = com.read_field("Buildings").ok().as_ref().and_then(handle_of) else {
+        return 0;
+    };
+    let mut found = 0i64;
+    let blist = own(b_h);
+    let nb = blist
+        .invoke("get_Count", &json!([]))
+        .ok()
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    for bi in 0..nb {
+        let Some(bh) = blist
+            .invoke("get_Item", &json!([bi]))
+            .ok()
+            .as_ref()
+            .and_then(handle_of)
+        else {
+            continue;
+        };
+        let building = own(bh);
+        let Some(inv_h) = building.read_field("Inventory").ok().as_ref().and_then(handle_of)
+        else {
+            continue;
+        };
+        let inv = own(inv_h);
+        let n = inv
+            .invoke("get_Count", &json!([]))
+            .ok()
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        for i in 0..n {
+            let Some(item_h) = inv
+                .invoke("GetItem", &json!([i]))
+                .ok()
+                .as_ref()
+                .and_then(handle_of)
+            else {
+                continue;
+            };
+            let item = own(item_h);
+            if filter.matches(&item) {
+                found += 1;
+                if found >= cap {
+                    return found;
+                }
+            }
+        }
+    }
+    found
 }
 
 /// Reclaim mission squads a prior mod generation left behind. A

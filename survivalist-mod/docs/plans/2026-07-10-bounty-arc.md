@@ -943,3 +943,42 @@ offer watched without bounty_post, then the second offer kind.
 - [ ] **Step 2: commit**
 
 `git commit survivalist-mod/docs/status.md -m "survivalist status: bounty arc live-verified; re-rate the work pillar row" && git push`
+
+---
+
+### Task 6: the second work kind, clear the threat (built 2026-07-10)
+
+Operator-picked after Task 4. A camp with raiders at its door
+pays the player to wipe them out.
+
+- The game's own Threat records define the trouble
+  (Community.Threats holds groups of hostile characters seen near
+  the base; Threat.ThreatMembers, Threat.Id) and the game
+  dropping the record (Community.FindThreatById returning null)
+  defines "over". Payment is owed only if the player's people
+  killed at least one threat member while the offer stood; the
+  camp's guards handling it, or the raiders leaving, pays
+  nothing. A threat containing PLAYER-community members is the
+  player attacking that camp; skipped entirely.
+- Structure: the payment courier and the board became shared
+  modules so two work kinds can each be paying at once.
+  - Create: `survivalist-mod/src/courier.rs` (Courier struct +
+    launch/step; owns hirer/courier/player handles; PAY_STACKS).
+  - Create: `survivalist-mod/src/board.rs` (spawn/close/
+    sweep_orphans keyed on the WorkBoard_ prefix; an OWNED
+    registry spares live offers' entries, matched by instance
+    UniqueID since handles never compare across bridge calls).
+  - Create: `survivalist-mod/src/threat.rs` (the kind:
+    offer scan on the smallest threatened camp, kill counting via
+    war.rs's death prefix, resolution by FindThreatById,
+    threat_status + threat_post ops).
+  - Modify: `bounty.rs` (rides board + courier), `common.rs`
+    (count_stored_goods + pub GoodsFilter::matches), `lib.rs`,
+    `war.rs` (threat::on_death), `story/Scripts/WorkBoard.xml`
+    (quest WorkBoard_ClearThreat; group title now "Work").
+- Live status (gen38, 2026-07-10): builds clean, loaded; bounty
+  re-posted organically on the new generation; threat scan runs
+  clean and finds no threatened camp right now (honest: threats
+  appear when hostiles approach a base); threat_post's no-threats
+  error path verified. UNWATCHED: a real threat offer, the kill
+  counting, the paid and unpaid resolutions.

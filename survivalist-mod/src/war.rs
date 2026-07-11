@@ -90,6 +90,8 @@ extern "C" fn on_member_died(ctx: *const c_void) -> i32 {
         }
         // A dead bounty mark: claimed by the player or lapsed.
         crate::bounty::on_death(&member);
+        // A dead threat member: counts toward clear-the-threat.
+        crate::threat::on_death(&member);
         if let Err(e) = try_ai_revenge(&member) {
             mono::log(
                 LogLevel::Warn,

@@ -19,9 +19,11 @@
 //!    every frame; `Main.Unload()` (story switch) shuts the
 //!    generation down and a later `Load()` re-arms it.
 
+mod board;
 mod bounty;
 mod chronicle;
 mod common;
+mod courier;
 mod development;
 mod genome;
 mod growth;
@@ -37,6 +39,7 @@ mod steal;
 mod storyteller;
 mod stranger;
 mod survival;
+mod threat;
 mod trade;
 mod vendor;
 mod war;
@@ -64,6 +67,7 @@ fn on_tick(now: f32) {
     scavenge::tick(now);
     murder::tick(now);
     bounty::tick(now);
+    threat::tick(now);
     vendor::tick(now);
     stranger::tick(now);
     settler::tick(now);
@@ -91,9 +95,12 @@ fn on_init() {
     war::install();
     war::register_ops();
 
-    // The work pillar, first slice: bounties on enemy leaders,
-    // paid by real couriers. bounty_status + bounty_post ops.
+    // The work pillar: bounties on enemy leaders and clearing
+    // the raiders at a camp's door, both paid by real couriers
+    // and listed on the work board (the game's quest journal).
+    // bounty_status/bounty_post + threat_status/threat_post ops.
     bounty::register_ops();
+    threat::register_ops();
 
     // REAL growth, people half: repopulator disabled (operator-
     // locked) + refugee recruitment on the tick + growth_status.
