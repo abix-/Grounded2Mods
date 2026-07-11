@@ -32,7 +32,19 @@ public static class SettlementUpgrades
     private const float ReinforceBase = 0.5f;
     private const float ReinforceDecay = 0.85f;
 
+    // Cost: the structure's own repair resource,
+    // ceil(RepairResourceNeeded) * CostFactor * next level.
+    private const int CostFactor = 2;
+    // Skill gate: Construction >= RepairSkillNeeded + level band.
+    private const int LevelsPerSkillBand = 3;
+
     public const string TrackReinforce = "Reinforce";
+
+    // Sentinel menu action ids, far above the vanilla enum range
+    // (the game's switches ignore unknown values; our caption
+    // prefix intercepts before any array indexes by action).
+    private const int SentinelBase = 9000;
+    private const CursorAction ReinforceAction = (CursorAction)(SentinelBase + 0);
 
     private static Harmony _harmony;
     private static bool _installed;
@@ -51,16 +63,163 @@ public static class SettlementUpgrades
         try
         {
             _harmony = new Harmony("abix.survivalist.upgrades");
-            var original = AccessTools.Method(typeof(Prop), nameof(Prop.GetMaxDamage));
-            var postfix = AccessTools.Method(typeof(SettlementUpgrades), nameof(GetMaxDamagePostfix));
-            _harmony.Patch(original, postfix: new HarmonyMethod(postfix));
+            _harmony.Patch(
+                AccessTools.Method(typeof(Prop), nameof(Prop.GetMaxDamage)),
+                postfix: new HarmonyMethod(AccessTools.Method(typeof(SettlementUpgrades), nameof(GetMaxDamagePostfix))));
+            // The menu: population (append our entries for the
+            // hovered structure), caption (our label text; also
+            // shields the caption array from sentinel indexes),
+            // and click dispatch (perform the upgrade, skip the
+            // vanilla switch).
+            _harmony.Patch(
+                AccessTools.Method(typeof(GameCursor), nameof(GameCursor.GetAvailableActions)),
+                postfix: new HarmonyMethod(AccessTools.Method(typeof(SettlementUpgrades), nameof(GetAvailableActionsPostfix))));
+            _harmony.Patch(
+                AccessTools.Method(typeof(AvailableAction), nameof(AvailableAction.GetCaption)),
+                prefix: new HarmonyMethod(AccessTools.Method(typeof(SettlementUpgrades), nameof(GetCaptionPrefix))));
+            _harmony.Patch(
+                AccessTools.Method(typeof(Hud), nameof(Hud.OnSelectedAction)),
+                prefix: new HarmonyMethod(AccessTools.Method(typeof(SettlementUpgrades), nameof(OnSelectedActionPrefix))));
             _installed = true;
-            ShimLogger.Info("SettlementUpgrades: installed (Prop.GetMaxDamage postfix)");
+            ShimLogger.Info("SettlementUpgrades: installed (max-damage effect + upgrade menu patches)");
         }
         catch (Exception e)
         {
             ShimLogger.Error("SettlementUpgrades: install FAILED: " + e);
         }
+    }
+
+    // ---- the menu ---------------------------------------------------------------
+
+    /// Which structure is upgradeable by the controlled character:
+    /// the player's own, fully built, destructible, with a repair
+    /// resource to price the work in.
+    private static bool Upgradeable(Prop prop, Character character)
+    {
+        if (prop == null || character == null) return false;
+        if (prop.Destroyed || prop.UnderConstructionInfo != null) return false;
+        var proto = prop.GetPropPrototype();
+        if (proto == null || !(proto.MaxDamage > 0f)) return false;
+        if (prop.GetRepairResourceType() == null) return false;
+        var com = character.Community;
+        return com != null && prop.GetCommunity() == com;
+    }
+
+    private static int CostFor(PropPrototype proto, int nextLevel)
+    {
+        var baseNeed = Math.Max(1, (int)Math.Ceiling(proto.RepairResourceNeeded));
+        return baseNeed * CostFactor * nextLevel;
+    }
+
+    private static int SkillFor(PropPrototype proto, int nextLevel)
+    {
+        return proto.RepairSkillNeeded + (nextLevel - 1) / LevelsPerSkillBand;
+    }
+
+    private static int CountCarried(Character c, EquipmentPrototype proto)
+    {
+        var total = 0;
+        foreach (var item in c.Inventory.Contents)
+        {
+            if (item.GetPrototype() == proto) total += item.GetAmount();
+        }
+        return total;
+    }
+
+    /// Append the upgrade entries for the hovered structure.
+    private static void GetAvailableActionsPostfix(GameCursor __instance, ref BaseObject outTarget)
+    {
+        try
+        {
+            var prop = outTarget as Prop;
+            var character = Hud.Instance?.LocalControlledCharacter;
+            if (!Upgradeable(prop, character)) return;
+            var proto = prop.GetPropPrototype();
+            var resource = prop.GetRepairResourceType();
+            var next = GetLevel(prop.Id, TrackReinforce) + 1;
+            var cost = CostFor(proto, next);
+            var have = CountCarried(character, resource);
+            var reason = CursorActionDisabledReason.Enabled;
+            if (character.GetSkillLevelWithEffects(SkillType.Construction) < SkillFor(proto, next))
+            {
+                reason = CursorActionDisabledReason.ConstructionSkillTooLow;
+            }
+            var label = "Reinforce +" + next + ": " + cost + " " + resource.NativeName;
+            if (have < cost) label += " (carrying " + have + ")";
+            var action = new AvailableAction(ReinforceAction, character, prop, reason)
+            {
+                SpeechText = label,
+            };
+            __instance.AvailableActions.Add(action);
+        }
+        catch (Exception e)
+        {
+            ShimLogger.Warn("SettlementUpgrades: menu population failed: " + e.Message);
+        }
+    }
+
+    /// Our entries carry their label in SpeechText; vanilla
+    /// captions index arrays by action id, which a sentinel must
+    /// never reach.
+    private static bool GetCaptionPrefix(ref AvailableAction __instance, ref string __result)
+    {
+        if ((int)__instance.ActionType < SentinelBase) return true;
+        __result = __instance.SpeechText;
+        return false;
+    }
+
+    /// The click: consume the materials for real, bump the track,
+    /// tell the player. Skips the vanilla switch for our ids.
+    private static bool OnSelectedActionPrefix(AvailableAction action)
+    {
+        if ((int)action.ActionType < SentinelBase) return true;
+        try
+        {
+            HandleUpgradeClick(action);
+        }
+        catch (Exception e)
+        {
+            ShimLogger.Warn("SettlementUpgrades: upgrade click failed: " + e);
+        }
+        return false;
+    }
+
+    private static void HandleUpgradeClick(AvailableAction action)
+    {
+        var prop = action.Target as Prop;
+        var character = action.Actor;
+        if (!Upgradeable(prop, character)) return;
+        if (action.Enabled != CursorActionDisabledReason.Enabled) return;
+        var proto = prop.GetPropPrototype();
+        var resource = prop.GetRepairResourceType();
+        var next = GetLevel(prop.Id, TrackReinforce) + 1;
+        var cost = CostFor(proto, next);
+        var have = CountCarried(character, resource);
+        if (have < cost)
+        {
+            HudBehaviour.Instance?.SetStatusBarMsg(
+                "Upgrade needs " + cost + " " + resource.NativeName + " (carrying " + have + ")");
+            return;
+        }
+        // Real consumption from the character's carried stacks.
+        var remaining = cost;
+        while (remaining > 0)
+        {
+            var item = character.Inventory.FindItemOfType(resource);
+            if (item == null) break; // counted above; belt and braces
+            var take = Math.Min(remaining, item.GetAmount());
+            var taken = character.Inventory.Take(character, item, take);
+            taken?.Delete();
+            remaining -= take;
+        }
+        SetLevel(prop.Id, TrackReinforce, next);
+        var hp = prop.GetMaxDamage();
+        HudBehaviour.Instance?.SetStatusBarMsg(
+            prop.GetDisplayNameString() + " reinforced to +" + next
+            + " (" + cost + " " + resource.NativeName + " used; "
+            + hp.ToString("0.#") + " hp)");
+        ShimLogger.Info("SettlementUpgrades: " + proto.Name + " #" + prop.Id
+            + " Reinforce -> " + next + " (" + cost + " " + resource.Name + " consumed)");
     }
 
     // ---- the Reinforce effect ------------------------------------------------

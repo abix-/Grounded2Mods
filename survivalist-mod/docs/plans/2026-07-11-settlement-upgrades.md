@@ -141,17 +141,26 @@ plus a menu entry.
 
 ### Task 2: the menu (population, dispatch, label)
 
-- [ ] Sentinel CursorAction values (one per track) + population
-  postfix: own-community upgradeable structures list their
-  available tracks with cost and gates (skill, materials, level
-  band), vanilla disabled reasons.
-- [ ] Click dispatch prefix in Hud: consume the cost for real
-  (carried stack, then camp stores), bump the track in the
-  sidecar, persist, status-bar line.
-- [ ] Label patch: entries render "<Track> (+<next>): <cost>".
+- [x] Sentinel CursorAction values (9000+) + population postfix
+  on GameCursor.GetAvailableActions: the hovered own-community
+  structure gets "Reinforce +N: <cost> <resource>" with the
+  Construction-skill gate greyed via the vanilla reason and the
+  carried count shown when short. BUILT 2026-07-11, compiles
+  clean against the game types.
+- [x] Click dispatch prefix on Hud.OnSelectedAction: sentinel
+  actions consume the repair resource for real from the
+  character's carried stacks (Take + Delete), bump the track,
+  persist the sidecar, status-bar line with the new hit points;
+  short materials post the shortfall instead. V1 consumes from
+  the CARRIED stacks only (camp stores later).
+- [x] Label prefix on AvailableAction.GetCaption: sentinel
+  entries render their SpeechText (and never reach the vanilla
+  caption array index).
 - [ ] Live verify (operator restart + eyes): hover shows the
-  entries, click upgrades, gates grey out correctly.
-- [ ] Commit.
+  entry, click upgrades and eats the wood, gates grey out.
+  Deploy pending the next game-closed window (shim DLL locks
+  while the game runs).
+- [x] Committed.
 
 ### Task 3: the remaining first-build effects
 
