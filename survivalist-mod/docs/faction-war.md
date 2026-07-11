@@ -1543,9 +1543,20 @@ scale, and the player can loot it. UNIQUE OWNERSHIP (built
 2026-07-11, gen44, unique.rs): a 300s whole-map inventory scan
 tracks the storied rifle's holder; the chronicle announces every
 change of hands; the last known holder persists in the uniques
-sidecar so a reload does not re-announce. Still open: the vanilla
-equip-best check (does the warlord carry the camp's best rifle
-for free), quality on other gear.
+sidecar so a reload does not re-announce.
+
+EQUIP-BEST: ANSWERED (2026-07-11, decompile): the AI picks its
+weapon through EquipmentContainer.GetBestWeapon, which scores
+every carried weapon; melee score IS Prototype.Damage
+(Weapon.GetBaseDamage), ranged score is damage-per-second from
+prototype stats (damage x pellets / fire interval, armor-piercing
+and carried ammo factored). Our tiers raise exactly those stats,
+so whoever HOLDS a tiered weapon wields it automatically. NO
+NUDGE NEEDED. Nuance: this covers choosing among CARRIED weapons;
+whether members proactively fetch better weapons out of camp
+stores is vanilla's equipment-policy system, secondary because
+tiered gear moves hand to hand (edge bands, looting, theft,
+couriers). Still open: quality on other gear.
 
 ### Open questions before any build
 
