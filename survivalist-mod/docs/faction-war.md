@@ -1539,10 +1539,13 @@ Live-verify after the next story restart: variants load (canary
 answers), an armed arrival carries tiered gear, a trader's stock
 shows tiered wares in the trade UI, a skilled crafter turns out a
 tiered piece (craft_rolls counting in quality_status), prices
-scale, and the player can loot it. Still open: the vanilla
+scale, and the player can loot it. UNIQUE OWNERSHIP (built
+2026-07-11, gen44, unique.rs): a 300s whole-map inventory scan
+tracks the storied rifle's holder; the chronicle announces every
+change of hands; the last known holder persists in the uniques
+sidecar so a reload does not re-announce. Still open: the vanilla
 equip-best check (does the warlord carry the camp's best rifle
-for free), unique ownership in the chronicle, quality on other
-gear.
+for free), quality on other gear.
 
 ### Open questions before any build
 

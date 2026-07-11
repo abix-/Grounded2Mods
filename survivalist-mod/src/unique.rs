@@ -22,7 +22,7 @@ use serde_json::{Value as Json, json};
 use modforge::ops::{OP_REGISTRY, OpDef};
 use unityforge::mono::{self, LogLevel};
 
-use crate::common::{handle_of, on_main_thread, own, session_seed, with};
+use crate::common::{for_each_community, handle_of, on_main_thread, own, session_seed, with};
 use crate::quality::{find_prototype, rng};
 
 /// The prototype shipped in story/Equipment/ColonelsRifle.xml.
@@ -31,12 +31,21 @@ const COLONELS_RIFLE: &str = "ColonelsRifle";
 /// Percent chance per military band until it enters; then never.
 const ENTER_ROLL_PCT: u64 = 20;
 
+/// Seconds between holder scans: where is the legend now? A slow
+/// whole-map inventory walk; word travels slowly.
+const HOLDER_SCAN_PERIOD_SECS: f32 = 300.0;
+
 const SCHEMA_VERSION: i64 = 1;
 
 /// Uniques that have entered THIS save (lazy from the sidecar).
 static ENTERED: Mutex<Option<Vec<String>>> = Mutex::new(None);
 /// Who carried the last unique in, for unique_status.
 static LAST_CARRIER: Mutex<Option<String>> = Mutex::new(None);
+/// The legend's last known holder ("Name of Camp", "the stores of
+/// Camp", or None = whereabouts unknown). Persisted in the
+/// sidecar so a reload does not re-announce an unchanged holder.
+static HOLDER: Mutex<Option<String>> = Mutex::new(None);
+static LAST_HOLDER_SCAN_BITS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 /// The data-not-loaded line logs once per generation.
 static MISSING_LOGGED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
@@ -49,38 +58,49 @@ fn store_path(seed: i64) -> Option<PathBuf> {
     )
 }
 
-/// The entered list for this save, loaded once per generation.
+/// The entered list for this save, loaded once per generation
+/// (the same lazy load fills the holder cache).
 fn entered(seed: i64) -> Vec<String> {
     let mut slot = ENTERED.lock();
     if let Some(list) = slot.as_ref() {
         return list.clone();
     }
-    let list: Vec<String> = store_path(seed)
+    let store: Option<Json> = store_path(seed)
         .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|text| serde_json::from_str::<Json>(&text).ok())
+        .and_then(|text| serde_json::from_str::<Json>(&text).ok());
+    let list: Vec<String> = store
+        .as_ref()
         .and_then(|v| {
             v.get("entered").and_then(Json::as_array).map(|a| {
                 a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()
             })
         })
         .unwrap_or_default();
+    *HOLDER.lock() = store
+        .as_ref()
+        .and_then(|v| v.get("holders"))
+        .and_then(|h| h.get(COLONELS_RIFLE))
+        .and_then(Json::as_str)
+        .map(str::to_string);
     *slot = Some(list.clone());
     list
 }
 
-/// Record an entry and write the sidecar NOW (entries are rare,
-/// one-time, and must survive any reload; same atomic
-/// tmp-then-rename shape as the genome store).
-fn mark_entered(seed: i64, name: &str) {
-    let mut slot = ENTERED.lock();
-    let list = slot.get_or_insert_with(Vec::new);
-    if !list.iter().any(|x| x == name) {
-        list.push(name.to_string());
-    }
+/// Write the sidecar NOW (entries and holder changes are rare and
+/// must survive any reload; same atomic tmp-then-rename shape as
+/// the genome store).
+fn persist_store(seed: i64) {
+    let entered: Vec<String> = ENTERED.lock().clone().unwrap_or_default();
+    let holder = HOLDER.lock().clone();
     let Some(path) = store_path(seed) else { return };
+    let mut holders = serde_json::Map::new();
+    if let Some(h) = holder {
+        holders.insert(COLONELS_RIFLE.to_string(), json!(h));
+    }
     let text = json!({
         "schema_version": SCHEMA_VERSION,
-        "entered": list.clone(),
+        "entered": entered,
+        "holders": holders,
     })
     .to_string();
     let tmp = path.with_extension("json.tmp");
@@ -90,6 +110,145 @@ fn mark_entered(seed: i64, name: &str) {
             "survivalist-mod: unique: sidecar write failed; a reload could re-enter a unique",
         );
     }
+}
+
+/// Record an entry and write the sidecar.
+fn mark_entered(seed: i64, name: &str) {
+    {
+        let mut slot = ENTERED.lock();
+        let list = slot.get_or_insert_with(Vec::new);
+        if !list.iter().any(|x| x == name) {
+            list.push(name.to_string());
+        }
+    }
+    persist_store(seed);
+}
+
+// ---- the legend has an address -------------------------------------------------
+
+/// Track who holds the storied rifle: a slow whole-map inventory
+/// walk; when the holder changes, the chronicle says so, and the
+/// player always has an address for the thing they want.
+pub fn tick(now: f32) {
+    let last = f32::from_bits(LAST_HOLDER_SCAN_BITS.load(std::sync::atomic::Ordering::Relaxed));
+    if now - last < HOLDER_SCAN_PERIOD_SECS {
+        return;
+    }
+    LAST_HOLDER_SCAN_BITS.store(now.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    let Ok(seed) = session_seed() else { return };
+    if !entered(seed).iter().any(|x| x == COLONELS_RIFLE) {
+        return; // nothing storied on the map yet
+    }
+    let found = match scan_holder() {
+        Ok(f) => f,
+        Err(e) => {
+            mono::log(
+                LogLevel::Warn,
+                &format!("survivalist-mod: unique: holder scan failed: {e}"),
+            );
+            return;
+        }
+    };
+    let changed = { *HOLDER.lock() != found };
+    if !changed {
+        return;
+    }
+    match &found {
+        Some(holder) => {
+            crate::chronicle::post(&format!("The Colonel's Rifle is with {holder}"));
+            mono::log(
+                LogLevel::Info,
+                &format!("survivalist-mod: unique: The Colonel's Rifle is with {holder}"),
+            );
+        }
+        None => {
+            crate::chronicle::post("no one knows where The Colonel's Rifle is");
+            mono::log(
+                LogLevel::Info,
+                "survivalist-mod: unique: The Colonel's Rifle has no known holder",
+            );
+        }
+    }
+    *HOLDER.lock() = found;
+    persist_store(seed);
+}
+
+/// Find the rifle: every community's members' hands, then their
+/// buildings' stores. Returns a plain-English address.
+fn scan_holder() -> Result<Option<String>, String> {
+    let mut found: Option<String> = None;
+    for_each_community(|com| {
+        let camp = crate::common::display_name(&com);
+        // Hands first: the carrier is the story.
+        if let Some(m_h) = com.read_field("Members").ok().as_ref().and_then(handle_of) {
+            let mlist = own(m_h);
+            let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+            for i in 0..count {
+                let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+                    continue;
+                };
+                let member = own(h);
+                if let Some(inv_h) = member.read_field("Inventory").ok().as_ref().and_then(handle_of)
+                {
+                    if inventory_has_rifle(inv_h)? {
+                        let who = member
+                            .invoke("GetDisplayNameString", &json!([]))
+                            .ok()
+                            .and_then(|v| v.as_str().map(str::to_string))
+                            .unwrap_or_else(|| "<unnamed>".into());
+                        found = Some(format!("{who} of {camp}"));
+                        return Ok(false);
+                    }
+                }
+            }
+        }
+        // Then the shelves.
+        if let Some(b_h) = com.read_field("Buildings").ok().as_ref().and_then(handle_of) {
+            let blist = own(b_h);
+            let nb = blist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+            for bi in 0..nb {
+                let Some(bh) = handle_of(&blist.invoke("get_Item", &json!([bi]))?) else {
+                    continue;
+                };
+                let building = own(bh);
+                if let Some(inv_h) =
+                    building.read_field("Inventory").ok().as_ref().and_then(handle_of)
+                {
+                    if inventory_has_rifle(inv_h)? {
+                        found = Some(format!("the stores of {camp}"));
+                        return Ok(false);
+                    }
+                }
+            }
+        }
+        Ok(true)
+    })?;
+    Ok(found)
+}
+
+fn inventory_has_rifle(inv_h: i32) -> Result<bool, String> {
+    let inv = own(inv_h);
+    let n = inv.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+    for i in 0..n {
+        let Some(item_h) = handle_of(&inv.invoke("GetItem", &json!([i]))?) else {
+            continue;
+        };
+        let item = own(item_h);
+        let is_it = handle_of(&item.invoke("GetPrototype", &json!([]))?)
+            .map(|ph| {
+                let p = own(ph);
+                p.read_field("Name")
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_string))
+                    .map(|n| n == COLONELS_RIFLE)
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false);
+        if is_it {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// The military remnants' unique: roll The Colonel's Rifle into
@@ -244,6 +403,7 @@ fn unique_status(_args: &Json) -> Result<Json, String> {
             "colonels_rifle_loaded": loaded,
             "entered": entered_list,
             "last_entry_carrier": LAST_CARRIER.lock().clone(),
+            "holder": HOLDER.lock().clone(),
         }))
     })
 }

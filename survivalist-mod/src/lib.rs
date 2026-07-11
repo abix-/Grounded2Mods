@@ -71,6 +71,7 @@ fn on_tick(now: f32) {
     bounty::tick(now);
     threat::tick(now);
     quality::tick(now);
+    unique::tick(now);
     vendor::tick(now);
     stranger::tick(now);
     settler::tick(now);
