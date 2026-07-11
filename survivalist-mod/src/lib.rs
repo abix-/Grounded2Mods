@@ -43,6 +43,7 @@ mod survival;
 mod threat;
 mod trade;
 mod unique;
+mod upgrade;
 mod vendor;
 mod war;
 
@@ -118,6 +119,11 @@ fn on_init() {
     // Named uniques, first slice: The Colonel's Rifle enters once
     // per save with a military remnant. unique_status op.
     unique::register_ops();
+
+    // Settlement upgrades: the state and effects live in the C#
+    // shim (Upgrades.cs); these ops drive its probes.
+    // upgrade_probe + upgrade_status.
+    upgrade::register_ops();
 
     // REAL growth, people half: repopulator disabled (operator-
     // locked) + refugee recruitment on the tick + growth_status.

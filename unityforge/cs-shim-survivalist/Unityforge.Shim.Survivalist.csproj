@@ -59,6 +59,13 @@
     -->
     <PackageReference Include="Lib.Harmony" Version="2.4.2" PrivateAssets="all" />
     <PackageReference Include="ILRepack.Lib.MSBuild.Task" Version="2.0.43" PrivateAssets="all" />
+    <!-- The game assembly itself: the settlement-upgrades patches
+         (Upgrades.cs) are written against the real game types,
+         the same model as the game's own example mods. -->
+    <Reference Include="Assembly-CSharp" Condition="'$(UnityDir)' != ''">
+      <Private>false</Private>
+      <HintPath>$(UnityDir)\Assembly-CSharp.dll</HintPath>
+    </Reference>
     <Reference Include="UnityEngine" Condition="'$(UnityDir)' != ''">
       <Private>false</Private>
       <HintPath>$(UnityDir)\UnityEngine.dll</HintPath>

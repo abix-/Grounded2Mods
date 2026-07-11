@@ -43,6 +43,7 @@ public class Main
         {
             if (_loader.ReinitAfterUnload())
             {
+                SettlementUpgrades.Install();
                 EnsureDriver();
                 ShimLogger.Info("Unityforge.Shim: re-armed after unload");
             }
@@ -67,6 +68,11 @@ public class Main
         }
 
         HarmonyBridge.EnsureHarmony("abix.unityforge.shim.survivalist");
+
+        // Settlement upgrades: game-typed Harmony patches
+        // (Upgrades.cs). Idempotent; patches survive story
+        // switches with the assembly.
+        SettlementUpgrades.Install();
 
         var loader = new GenerationLoader(new MonoBackendBridge(), MonoBridge.ClearHandles);
         if (!loader.LoadInitial(dllPath))
