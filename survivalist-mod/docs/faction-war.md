@@ -1390,3 +1390,97 @@ happening):
   community's fields are reachable over the control plane for
   experiments (e.g. set `InvasionTarget`, force a war, watch the
   squad form).
+
+## The quality system (research pass 2026-07-10)
+
+Operator-locked ECOSYSTEM-WIDE (status.md priority 2): every item
+rolls a quality, higher quality is rarer, and the whole world
+plays the loot game, not just the player. This pass answers what
+the item model supports; nothing is built yet.
+
+### The decisive engine fact: quality must be a TYPE, not a tag
+
+An item instance (Equipment) carries only: its prototype
+reference, stack amount, three color variations plus a material
+variation (cosmetic only), liquid contents, dampness, infection.
+There is NO per-instance condition, durability, or quality field.
+Worse for any sidecar idea: most items stack
+(EquipmentPrototype.CanBeCombined defaults true) and stacks merge
+BY PROTOTYPE, so two instances of one prototype cannot keep
+different qualities; a per-instance quality would be destroyed by
+the game's own stacking. A mod-tracked sidecar with Harmony
+patches over every stat and price read is therefore not fragile,
+it is IMPOSSIBLE. Quality tiers must be distinct item TYPES.
+
+That is also the vanilla-grain answer, because the prototype
+carries every stat a tier would vary: BasePrice, Damage,
+DamageBonusPerSkillLevel, DamageModifier, ArmorPiercing,
+DamageAbsorption, Insulation, Weight, SightRangeModifier,
+SkillBonus, CarryWeight. A "fine rifle" that IS a different,
+better, rarer item gets everything downstream free: trade prices,
+combat math, save persistence, UI names, AI behavior.
+
+### Verified plumbing (decompile 2026-07-10, game build current)
+
+- Prototypes are per-story DATA: each story folder's
+  Equipment/*.xml loads into Story.EquipmentPrototypes keyed by
+  name (Story.LoadStoryContent), looked up via
+  Story.FindEquipmentPrototypeByName. Our mod folder is a story
+  folder (the work board's Scripts/WorkBoard.xml already ships
+  this way), so the mod can ship tier variants as XML. Loads at
+  STORY LOAD, like all story content.
+- Runtime creation exists: static Equipment.Spawn(prototype,
+  amount) (also Create, SpawnRandomVariation), callable from Rust
+  via the bridge's invoke_static (ABI v6, loaded). Creating items
+  is conjuring, so it is allowed ONLY inside the no-cheating
+  boundary: at the edge faucet (incursion bands), or as a SWAP
+  (take the vanilla item out of a hand, spawn its tier variant in
+  its place: net-zero, a re-tiering of what already spawned).
+- Crafting hook exists: Recipe + CraftGoal classes (the crafted
+  output's creation is the patch point for skill-rolled quality);
+  exact method shape is a build-time read.
+
+### The three hooks, restated against the findings
+
+1. THE EDGE ROLLS QUALITY: incursion bands spawn with vanilla
+   gear; a post-spawn pass swaps items for tier variants with
+   odds set by the sender (refugees worn, warbands standard,
+   military the top of the ladder), and escalation means later
+   arrivals roll better. The storyteller's incursions ARE the
+   loot table.
+2. HANDS ROLL QUALITY: patch the craft-completion path so the
+   crafter's skill rolls the output tier; a master crafter
+   becomes a rare person worth fighting over (feeds the
+   more-to-learn pillar).
+3. THE WORLD VALUES QUALITY: prices ride BasePrice automatically
+   in vanilla trading; the mod's own acts (steal, rob, predation
+   loot passes) prefer high-BasePrice stacks with small changes
+   to their existing picks; the chronicle can name who holds
+   what. OPEN (verify live at build time): whether vanilla AI
+   already equips the best weapon it owns (the warlord carries
+   the camp's best rifle for free if so).
+- UNIQUES RIDE THIS DIRECTLY (more to discover, priority 3): a
+  named one-off prototype (Special flag, MaxSpawnable exists) at
+  the top of the ladder, entering only with the incursion that
+  fits it.
+
+### First build slice (proposed, not started)
+
+One family, one tier, one faucet: ship XML for a "fine" variant
+of one common ranged weapon, swap it into military-remnant
+arrivals at spawn with a low roll, and live-verify the full
+chain: the XML loads, the swap lands in a real hand at the edge,
+the item trades at its better price, and the player can loot it.
+Everything after (more families, more tiers, crafting rolls, act
+preferences) widens a verified pipeline.
+
+### Open questions before any build
+
+- Does the game's XML loader accept a NEW prototype name from a
+  mod story cleanly (expected yes, same path as quests; verify
+  with one file and a FindEquipmentPrototypeByName probe op)?
+- The craft-completion method shape (Recipe/CraftGoal read).
+- Vanilla equip-best behavior (watch a camp with a fine rifle in
+  stores: who carries it?).
+- Where band spawn loadouts come from (to place the swap pass
+  cleanly after SpawnAmbientLooters).
