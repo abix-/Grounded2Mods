@@ -286,10 +286,21 @@ fn try_craft_roll(job: &CraftJob, now: f32) -> Result<bool, String> {
         if name.as_deref() != Some(job.product.as_str()) {
             continue;
         }
-        // The product is in hand: one roll, hit or miss.
+        // The product is in hand: one roll, hit or miss. An
+        // upgraded work prop's Quality track (settlement
+        // upgrades, C# side) adds to the crafter's surplus:
+        // better benches make finer things.
         CRAFT_ROLLS.fetch_add(1, Ordering::Relaxed);
+        let crafter_id = with(job.crafter_h, |c| {
+            c.read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1)
+        });
+        let prop_bonus =
+            mono::invoke_static("SettlementUpgrades", "TakeCraftQualityBonus", &json!([crafter_id]))
+                .ok()
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
         let salt = (job.crafter_h as u64).wrapping_mul(53) ^ 0xC0FFEE;
-        let odds = craft_odds(job.surplus);
+        let odds = craft_odds(job.surplus + prop_bonus);
         let Some(tier_ix) = roll_tier(&odds, now, salt) else {
             return Ok(true); // common hands, common work
         };

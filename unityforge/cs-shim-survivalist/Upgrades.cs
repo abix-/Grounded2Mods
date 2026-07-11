@@ -39,12 +39,62 @@ public static class SettlementUpgrades
     private const int LevelsPerSkillBand = 3;
 
     public const string TrackReinforce = "Reinforce";
+    public const string TrackHealthRegen = "Health Regen";
+    public const string TrackExpand = "Expand";
+    public const string TrackSpikes = "Spikes";
+    public const string TrackSpeed = "Speed";
+    public const string TrackProductivity = "Productivity";
+    public const string TrackEfficiency = "Efficiency";
+    public const string TrackQuality = "Quality";
+
+    // Health Regen: hit points healed per minute per level.
+    private const float RegenHpPerMinPerLevel = 0.2f;
+    private const float RegenTickSecs = 15f;
+    // Spikes: damage dealt to a melee attacker per hit per level
+    // (capped at level 10).
+    private const float SpikeDamagePerLevel = 0.05f;
+    // Speed: extra craft progress; Productivity/Efficiency:
+    // chance per craft (capped).
+    private const float SpeedBase = 0.25f;
+    private const float SpeedDecay = 0.9f;
+    private const float ProductivityChancePerLevel = 0.04f;
+    private const float EfficiencyChancePerLevel = 0.04f;
+    private const float CraftChanceCap = 0.5f;
 
     // Sentinel menu action ids, far above the vanilla enum range
     // (the game's switches ignore unknown values; our caption
     // prefix intercepts before any array indexes by action).
     private const int SentinelBase = 9000;
-    private const CursorAction ReinforceAction = (CursorAction)(SentinelBase + 0);
+
+    /// One upgrade track: its state key, its menu action id, and
+    /// which structures it applies to (by what the building does).
+    private struct TrackDef
+    {
+        public string Name;
+        public Func<Prop, bool> Applies;
+    }
+
+    private static readonly TrackDef[] TrackDefs =
+    {
+        new TrackDef { Name = TrackReinforce, Applies = _ => true },
+        new TrackDef { Name = TrackHealthRegen, Applies = _ => true },
+        new TrackDef
+        {
+            Name = TrackExpand,
+            Applies = p => p.GetPropPrototype().MaxInventoryWeight > 0f,
+        },
+        new TrackDef
+        {
+            Name = TrackSpikes,
+            Applies = p => p is Gate
+                || (p.GetPropPrototype().Category != null
+                    && p.GetPropPrototype().Category.Contains("Fences")),
+        },
+        new TrackDef { Name = TrackSpeed, Applies = p => p is CraftingProp },
+        new TrackDef { Name = TrackProductivity, Applies = p => p is CraftingProp },
+        new TrackDef { Name = TrackEfficiency, Applies = p => p is CraftingProp },
+        new TrackDef { Name = TrackQuality, Applies = p => p is CraftingProp },
+    };
 
     private static Harmony _harmony;
     private static bool _installed;
@@ -80,8 +130,35 @@ public static class SettlementUpgrades
             _harmony.Patch(
                 AccessTools.Method(typeof(Hud), nameof(Hud.OnSelectedAction)),
                 prefix: new HarmonyMethod(AccessTools.Method(typeof(SettlementUpgrades), nameof(OnSelectedActionPrefix))));
+            // The track effects: capacity (Expand), attacker
+            // bleed (Spikes), craft speed, extra product
+            // (Productivity), ingredient refund (Efficiency).
+            // Health Regen needs no patch (a slow tick tends the
+            // public per-instance damage field); Quality hands
+            // its bonus to the Rust craft roll.
+            _harmony.Patch(
+                AccessTools.Method(typeof(Prop), nameof(Prop.GetMaxInventoryWeight)),
+                postfix: new HarmonyMethod(AccessTools.Method(typeof(SettlementUpgrades), nameof(GetMaxInventoryWeightPostfix))));
+            _harmony.Patch(
+                AccessTools.Method(typeof(Prop), nameof(Prop.ApplyDamage)),
+                postfix: new HarmonyMethod(AccessTools.Method(typeof(SettlementUpgrades), nameof(ApplyDamagePostfix))));
+            _harmony.Patch(
+                AccessTools.Method(typeof(CraftingProp), nameof(CraftingProp.Craft)),
+                postfix: new HarmonyMethod(AccessTools.Method(typeof(SettlementUpgrades), nameof(CraftPostfix))));
+            _harmony.Patch(
+                AccessTools.Method(typeof(Recipe), nameof(Recipe.CreateProduct)),
+                postfix: new HarmonyMethod(AccessTools.Method(typeof(SettlementUpgrades), nameof(CreateProductPostfix))));
+            _harmony.Patch(
+                AccessTools.Method(typeof(Recipe), nameof(Recipe.UseIngredients),
+                    new[]
+                    {
+                        typeof(Character), typeof(Equipment), typeof(List<UsedIngredient>),
+                        typeof(float).MakeByRefType(), typeof(InfectionType).MakeByRefType(),
+                        typeof(bool).MakeByRefType(), typeof(bool),
+                    }),
+                prefix: new HarmonyMethod(AccessTools.Method(typeof(SettlementUpgrades), nameof(UseIngredientsPrefix))));
             _installed = true;
-            ShimLogger.Info("SettlementUpgrades: installed (max-damage effect + upgrade menu patches)");
+            ShimLogger.Info("SettlementUpgrades: installed (effects + upgrade menu patches, 8 tracks)");
         }
         catch (Exception e)
         {
@@ -126,7 +203,8 @@ public static class SettlementUpgrades
         return total;
     }
 
-    /// Append the upgrade entries for the hovered structure.
+    /// Append the upgrade entries for the hovered structure: one
+    /// per track that fits what the building does.
     private static void GetAvailableActionsPostfix(GameCursor __instance, ref BaseObject outTarget)
     {
         try
@@ -136,21 +214,25 @@ public static class SettlementUpgrades
             if (!Upgradeable(prop, character)) return;
             var proto = prop.GetPropPrototype();
             var resource = prop.GetRepairResourceType();
-            var next = GetLevel(prop.Id, TrackReinforce) + 1;
-            var cost = CostFor(proto, next);
             var have = CountCarried(character, resource);
-            var reason = CursorActionDisabledReason.Enabled;
-            if (character.GetSkillLevelWithEffects(SkillType.Construction) < SkillFor(proto, next))
+            var skill = character.GetSkillLevelWithEffects(SkillType.Construction);
+            for (var i = 0; i < TrackDefs.Length; i++)
             {
-                reason = CursorActionDisabledReason.ConstructionSkillTooLow;
+                if (!TrackDefs[i].Applies(prop)) continue;
+                var next = GetLevel(prop.Id, TrackDefs[i].Name) + 1;
+                var cost = CostFor(proto, next);
+                var reason = skill < SkillFor(proto, next)
+                    ? CursorActionDisabledReason.ConstructionSkillTooLow
+                    : CursorActionDisabledReason.Enabled;
+                var label = TrackDefs[i].Name + " +" + next + ": " + cost + " " + resource.NativeName;
+                if (have < cost) label += " (carrying " + have + ")";
+                var action = new AvailableAction(
+                    (CursorAction)(SentinelBase + i), character, prop, reason)
+                {
+                    SpeechText = label,
+                };
+                __instance.AvailableActions.Add(action);
             }
-            var label = "Reinforce +" + next + ": " + cost + " " + resource.NativeName;
-            if (have < cost) label += " (carrying " + have + ")";
-            var action = new AvailableAction(ReinforceAction, character, prop, reason)
-            {
-                SpeechText = label,
-            };
-            __instance.AvailableActions.Add(action);
         }
         catch (Exception e)
         {
@@ -186,13 +268,16 @@ public static class SettlementUpgrades
 
     private static void HandleUpgradeClick(AvailableAction action)
     {
+        var trackIx = (int)action.ActionType - SentinelBase;
+        if (trackIx < 0 || trackIx >= TrackDefs.Length) return;
+        var track = TrackDefs[trackIx].Name;
         var prop = action.Target as Prop;
         var character = action.Actor;
         if (!Upgradeable(prop, character)) return;
         if (action.Enabled != CursorActionDisabledReason.Enabled) return;
         var proto = prop.GetPropPrototype();
         var resource = prop.GetRepairResourceType();
-        var next = GetLevel(prop.Id, TrackReinforce) + 1;
+        var next = GetLevel(prop.Id, track) + 1;
         var cost = CostFor(proto, next);
         var have = CountCarried(character, resource);
         if (have < cost)
@@ -212,14 +297,205 @@ public static class SettlementUpgrades
             taken?.Delete();
             remaining -= take;
         }
-        SetLevel(prop.Id, TrackReinforce, next);
-        var hp = prop.GetMaxDamage();
+        SetLevel(prop.Id, track, next);
         HudBehaviour.Instance?.SetStatusBarMsg(
-            prop.GetDisplayNameString() + " reinforced to +" + next
-            + " (" + cost + " " + resource.NativeName + " used; "
-            + hp.ToString("0.#") + " hp)");
+            prop.GetDisplayNameString() + ": " + track + " +" + next
+            + " (" + cost + " " + resource.NativeName + " used)");
         ShimLogger.Info("SettlementUpgrades: " + proto.Name + " #" + prop.Id
-            + " Reinforce -> " + next + " (" + cost + " " + resource.Name + " consumed)");
+            + " " + track + " -> " + next + " (" + cost + " " + resource.Name + " consumed)");
+    }
+
+    // ---- the track effects -------------------------------------------------------
+
+    /// Shared diminishing curve for multiplier tracks.
+    private static float CurveBonus(int level, float baseStep, float decay)
+    {
+        float bonus = 0f, step = baseStep;
+        for (var i = 0; i < level; i++)
+        {
+            bonus += step;
+            step *= decay;
+        }
+        return bonus;
+    }
+
+    /// Expand: storage capacity rides the track.
+    private static void GetMaxInventoryWeightPostfix(Prop __instance, ref float __result)
+    {
+        if (!(__result > 0f)) return;
+        var level = GetLevel(__instance.Id, TrackExpand);
+        if (level <= 0) return;
+        __result *= 1f + CurveBonus(level, 0.5f, 0.85f);
+    }
+
+    /// Spikes: a melee attacker bleeds on the structure it hits.
+    private static void ApplyDamagePostfix(Prop __instance, Character source, bool burning, float damageRadius)
+    {
+        try
+        {
+            if (source == null || burning || damageRadius > 0f) return;
+            var level = Math.Min(10, GetLevel(__instance.Id, TrackSpikes));
+            if (level <= 0) return;
+            if (!source.AliveAndNotZombie && !source.Zombie) return;
+            // Melee reach only: explosions and gunfire pass wider
+            // radii or no adjacency.
+            if ((source.Pos - __instance.Pos).sqrMagnitude > 16f) return;
+            var bone = UnityEngine.Random.value < 0.5f ? Bone.LeftLeg : Bone.RightLeg;
+            source.OnMeleeAttack(AttackType.Low, InjuryType.SharpObject, bone, SpikeDamagePerLevel * level);
+        }
+        catch (Exception e)
+        {
+            ShimLogger.Warn("SettlementUpgrades: spikes failed: " + e.Message);
+        }
+    }
+
+    /// Speed: crafting at the prop runs faster.
+    private static void CraftPostfix(CraftingProp __instance, float time)
+    {
+        var level = GetLevel(__instance.Id, TrackSpeed);
+        if (level <= 0) return;
+        __instance.CraftingTimeSpent += time * CurveBonus(level, SpeedBase, SpeedDecay);
+    }
+
+    /// Productivity: a chance per craft of one extra product,
+    /// spawned into the same carrier (the prop for prop-crafts).
+    private static void CreateProductPostfix(Recipe __instance, TileObject carrier, bool __result)
+    {
+        try
+        {
+            if (!__result || __instance.ProductPrototype == null) return;
+            if (!(carrier is Prop prop)) return;
+            var level = GetLevel(prop.Id, TrackProductivity);
+            if (level <= 0) return;
+            var chance = Math.Min(CraftChanceCap, ProductivityChancePerLevel * level);
+            if (UnityEngine.Random.value >= chance) return;
+            var extra = Equipment.Spawn(__instance.ProductPrototype, Math.Max(1, __instance.ProductAmount));
+            if (extra == null) return;
+            prop.Inventory.Add(prop, extra);
+            ShimLogger.Info("SettlementUpgrades: productivity bonus at " + prop.GetPropPrototype().Name
+                + " #" + prop.Id + ": extra " + __instance.ProductPrototype.Name);
+        }
+        catch (Exception e)
+        {
+            ShimLogger.Warn("SettlementUpgrades: productivity failed: " + e.Message);
+        }
+    }
+
+    /// Quality bonus handoff: recorded when ingredients are used
+    /// near an upgraded work prop, consumed by the Rust craft
+    /// roll seconds later.
+    private static readonly Dictionary<int, int> CraftQualityBonus = new Dictionary<int, int>();
+
+    public static int TakeCraftQualityBonus(int characterId)
+    {
+        if (CraftQualityBonus.TryGetValue(characterId, out var level))
+        {
+            CraftQualityBonus.Remove(characterId);
+            return level;
+        }
+        return 0;
+    }
+
+    /// The work prop this recipe would run on, near the carrier.
+    private static CraftingProp NearestWorkProp(Recipe recipe, Character carrier)
+    {
+        var session = Session.Instance;
+        if (session == null || carrier == null) return null;
+        CraftingProp best = null;
+        var bestD = 25f; // within 5m
+        foreach (var obj in session.PropManager.AllProps)
+        {
+            if (!(obj is CraftingProp cp)) continue;
+            if (!recipe.IsCraftingPropForRecipe(cp)) continue;
+            var d = (cp.Pos - carrier.Pos).sqrMagnitude;
+            if (d < bestD)
+            {
+                bestD = d;
+                best = cp;
+            }
+        }
+        return best;
+    }
+
+    /// Efficiency: a chance the craft consumes nothing. Also the
+    /// moment the Quality handoff is recorded (same lookup).
+    private static bool UseIngredientsPrefix(
+        Recipe __instance,
+        Character carrier,
+        ref float ingredientsNutrition,
+        ref InfectionType ingredientsInfectedWith,
+        ref bool usedHumanIngredients)
+    {
+        ingredientsNutrition = 0f;
+        ingredientsInfectedWith = InfectionType.None;
+        usedHumanIngredients = false;
+        try
+        {
+            var prop = NearestWorkProp(__instance, carrier);
+            if (prop == null) return true;
+            var quality = GetLevel(prop.Id, TrackQuality);
+            if (quality > 0 && carrier != null)
+            {
+                CraftQualityBonus[carrier.Id] = quality;
+            }
+            var level = GetLevel(prop.Id, TrackEfficiency);
+            if (level <= 0) return true;
+            var chance = Math.Min(CraftChanceCap, EfficiencyChancePerLevel * level);
+            if (UnityEngine.Random.value >= chance) return true;
+            ShimLogger.Info("SettlementUpgrades: efficiency bonus at " + prop.GetPropPrototype().Name
+                + " #" + prop.Id + ": ingredients refunded");
+            return false; // skip consumption; the materials stay
+        }
+        catch (Exception e)
+        {
+            ShimLogger.Warn("SettlementUpgrades: efficiency failed: " + e.Message);
+            return true;
+        }
+    }
+
+    // ---- health regen (driver tick) ------------------------------------------------
+
+    private static float _lastRegen;
+
+    /// Called every frame from the shim driver; heals tracked
+    /// structures on a slow cadence. Damage is a public
+    /// per-instance field, so no patch is needed.
+    public static void Tick(float now)
+    {
+        if (now - _lastRegen < RegenTickSecs) return;
+        var dt = now - _lastRegen;
+        _lastRegen = now;
+        try
+        {
+            var session = Session.Instance;
+            if (session == null || !_loaded) return;
+            var any = false;
+            foreach (var p in Tracks)
+            {
+                if (p.Value.TryGetValue(TrackHealthRegen, out var l) && l > 0)
+                {
+                    any = true;
+                    break;
+                }
+            }
+            if (!any) return;
+            foreach (var obj in session.PropManager.AllProps)
+            {
+                if (!(obj is Prop prop) || prop.Destroyed) continue;
+                var frac = prop.GetDamageFraction();
+                if (frac <= 0f) continue;
+                var level = GetLevel(prop.Id, TrackHealthRegen);
+                if (level <= 0) continue;
+                var maxDamage = prop.GetMaxDamage();
+                if (maxDamage <= 0f || maxDamage >= float.MaxValue) continue;
+                var heal = RegenHpPerMinPerLevel * level * (dt / 60f);
+                prop.SetDamageFraction(Math.Max(0f, frac - heal / maxDamage));
+            }
+        }
+        catch (Exception e)
+        {
+            ShimLogger.Warn("SettlementUpgrades: regen tick failed: " + e.Message);
+        }
     }
 
     // ---- the Reinforce effect ------------------------------------------------

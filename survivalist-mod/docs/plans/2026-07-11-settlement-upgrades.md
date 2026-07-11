@@ -173,30 +173,33 @@ building does the most.
   working holy shit".
 - [x] Committed.
 
-### Task 3: the remaining first-build effects
+### Task 3: the remaining first-build effects (BUILT 2026-07-11, compiles clean; live verify = Task 4)
 
-- [ ] Health Regen: a slow driver-tick pass healing tracked
-  props' Damage by a level-scaled rate (public per-instance
-  field, no patch needed).
-- [ ] Expand: postfix on the max-inventory-weight read (pin the
-  exact method during the build).
-- [ ] Spikes: postfix on the structure-melee-hit path (pin the
-  method; attackers take track-scaled damage per swing, capped).
-- [ ] Speed: patch on the craft-progress rate for crafts at the
-  prop (pin the method during the build).
-- [ ] Productivity: chance of an extra product per craft (rides
-  the existing craft detection; duplicate the found product on a
-  track-scaled roll).
-- [ ] Efficiency: chance a craft consumes no ingredients (patch
-  Recipe.UseIngredients with a track-scaled skip roll).
-- [ ] Quality: quality.rs craft_odds gains the crafting prop's
-  track level (pin how the crafting prop reaches the odds call:
-  likely the recipe's RequiredPropToWorkOn + the crafter's
-  position).
-- [ ] Menu: entries appear per track by the structure's function
-  (work props list all six; storage lists Reinforce, Health
-  Regen, Expand; walls list Reinforce, Health Regen, Spikes).
-- [ ] Commit.
+- [x] Health Regen: driver-tick pass every 15s heals tracked
+  structures through the public damage-fraction API (0.2 hp/min
+  per level).
+- [x] Expand: postfix on Prop.GetMaxInventoryWeight (only when
+  the base capacity is nonzero).
+- [x] Spikes: postfix on Prop.ApplyDamage: a character source in
+  melee reach (radius-0, non-burning hits) takes SharpObject leg
+  damage, 0.05/hit per level, capped at level 10, via the game's
+  own Character.OnMeleeAttack.
+- [x] Speed: postfix on CraftingProp.Craft adds track-scaled
+  extra progress per tick.
+- [x] Productivity: postfix on Recipe.CreateProduct: prop-carrier
+  crafts roll (4 percent per level, capped 50) for an extra
+  product spawned into the prop.
+- [x] Efficiency: prefix on the innermost Recipe.UseIngredients:
+  a roll (4 percent per level, capped 50) skips consumption
+  entirely; the same lookup records the Quality handoff.
+- [x] Quality: quality.rs adds the work prop's track level to the
+  crafter's surplus via the C# TakeCraftQualityBonus handoff
+  (recorded at ingredient time near the prop, consumed when the
+  Rust craft job resolves).
+- [x] Menu: entries per track by the structure's function (work
+  props list six tracks; storage: Reinforce, Health Regen,
+  Expand; fences and gates: Reinforce, Health Regen, Spikes).
+- [x] Committed; deploy rides the next game-closed window.
 
 ### Task 4: live verify + re-rate
 

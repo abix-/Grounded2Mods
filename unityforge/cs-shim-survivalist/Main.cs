@@ -101,6 +101,7 @@ public class Main
         var loader = _loader;
         if (loader == null || !loader.Active) return;
         InputBridge.PollAll();
+        SettlementUpgrades.Tick(Time.realtimeSinceStartup);
         loader.Tick(Time.realtimeSinceStartup);
     }
 
