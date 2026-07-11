@@ -1,20 +1,33 @@
-//! The quality system, first slice (docs/status.md "Quality
-//! system (higher quality, lower chance)"; research + design in
-//! faction-war.md "The quality system").
+//! The quality system (docs/status.md "Quality system (higher
+//! quality, lower chance)"; research + design in faction-war.md
+//! "The quality system").
 //!
 //! Quality tiers are distinct item TYPES: the engine has no
-//! per-item quality field and stacks merge by type, so a "fine"
-//! item is a separate, better, rarer prototype shipped as story
-//! XML (story/Equipment/FineAssaultRifle.xml), and everything
-//! downstream (price, damage, saves, names) rides vanilla.
+//! per-item quality field and stacks merge by type, so a tiered
+//! item is a separate, better, rarer prototype, and everything
+//! downstream (price, damage, saves, names) rides vanilla. The
+//! full variant set is GENERATED, never hand-authored:
+//! scripts/generate_quality.ps1 reads every vanilla weapon and
+//! armor definition and writes <Base>_<Tier><Sibling>.xml into
+//! story/Equipment with per-tier stat/price/recoil MULTIPLIERS
+//! (the knobs live in that script). Factorio naming: Uncommon,
+//! Rare, Epic, Legendary above the vanilla Normal; named uniques
+//! (unique.rs) sit above the whole ladder.
 //!
-//! This slice is THE EDGE ROLLS QUALITY: when a military remnant
-//! band crosses the edge (incursion.rs), each common assault
-//! rifle in a spawned hand has a low chance to be a Fine Assault
-//! Rifle instead, capped at one per band. The swap is net zero
-//! items (take the common rifle, delete it, spawn the fine type
-//! into the same hand) and runs ONLY on edge-spawned bands, the
-//! sanctioned faucet of the no-cheating boundary.
+//! Each tier ships several statistical SIBLINGS with jittered
+//! stats sharing one display name, so two Rare rifles are
+//! usually not exactly the same (real per-item stat ranges are
+//! impossible: stats live on the type).
+//!
+//! THE EDGE ROLLS QUALITY: every weapon and armor piece in an
+//! edge-spawned band's hands rolls a tier independently, with
+//! odds set by the sender (military remnants roll best, raiders
+//! lower). The swap is net zero items (Take + Delete the common
+//! piece, Equipment.Spawn the tiered one into the same hand) and
+//! runs ONLY on edge-spawned bands, the sanctioned faucet of the
+//! no-cheating boundary. Rust keeps no item lists: the variant
+//! type name is derived by convention and the swap happens only
+//! if that type exists.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -26,36 +39,48 @@ use unityforge::mono::{self, LogLevel, MonoType};
 
 use crate::common::{handle_of, on_main_thread, own, with};
 
-/// The tier variant shipped in story/Equipment/FineAssaultRifle.xml.
-const FINE_ASSAULT_RIFLE: &str = "FineAssaultRifle";
+/// Tier names, best first (Factorio naming). Must match the
+/// generator's $Tiers.
+const TIER_NAMES: [&str; 4] = ["Legendary", "Epic", "Rare", "Uncommon"];
 
-/// The common type it upgrades (vanilla BaseStory prototype).
-const BASE_ASSAULT_RIFLE: &str = "AssaultRifle";
+/// Per-sender tier odds in PER MILLE, best tier first, evaluated
+/// cumulatively from the top. Military remnants carry the best;
+/// raiders roll lower. Higher quality, lower chance.
+const MILITARY_ODDS: [u64; 4] = [10, 40, 100, 200]; // 1%, 4%, 10%, 20%
+const RAIDER_ODDS: [u64; 4] = [3, 15, 50, 120]; // 0.3%, 1.5%, 5%, 12%
 
-/// Percent chance per carried common rifle; at most one swap per
-/// band. Higher quality, lower chance.
-const FINE_ROLL_PCT: u64 = 25;
+/// Statistical siblings per tier. Must match the generator's
+/// $Siblings.
+const SIBLINGS: u64 = 3;
 
-static SWAPS_TOTAL: AtomicU32 = AtomicU32::new(0);
+/// A generated prototype that always exists when the variant set
+/// is loaded; its absence means the story has not loaded our
+/// Equipment XML yet (loads at story restart).
+const CANARY: &str = "AssaultRifle_Uncommon1";
+
+/// Swaps per tier (indexed like TIER_NAMES), for quality_status.
+static SWAPS: [AtomicU32; 4] = [
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+];
 static LAST_SWAP: Mutex<Option<String>> = Mutex::new(None);
-/// The quest-data-not-loaded line logs once per generation, not
-/// once per band.
+/// The data-not-loaded line logs once per generation.
 static MISSING_LOGGED: AtomicU32 = AtomicU32::new(0);
 
-/// The edge roll: upgrade at most one common assault rifle in the
-/// band's hands to the fine tier. Called by incursion.rs right
-/// after a military remnant band spawns; best-effort (a failure
-/// leaves the band exactly as the game spawned it).
-pub fn upgrade_band_gear(band_h: i32, now: f32) {
-    let proto_h = match find_prototype(FINE_ASSAULT_RIFLE) {
-        Ok(Some(h)) => h,
+/// The edge roll: every weapon or armor piece carried by the band
+/// rolls a tier by the sender's odds. Called by incursion.rs
+/// right after an edge band spawns; best-effort (a failure leaves
+/// the band exactly as the game spawned it).
+pub fn upgrade_band_gear(band_h: i32, now: f32, military: bool) {
+    match find_prototype(CANARY) {
+        Ok(Some(h)) => drop(own(h)),
         Ok(None) => {
             if MISSING_LOGGED.swap(1, Ordering::Relaxed) == 0 {
                 mono::log(
                     LogLevel::Info,
-                    &format!(
-                        "survivalist-mod: quality: {FINE_ASSAULT_RIFLE} prototype not loaded; the edge rolls nothing (restart the story to load Equipment/FineAssaultRifle.xml)"
-                    ),
+                    "survivalist-mod: quality: variant data not loaded; the edge rolls nothing (restart the story to load the generated Equipment XML)",
                 );
             }
             return;
@@ -63,21 +88,35 @@ pub fn upgrade_band_gear(band_h: i32, now: f32) {
         Err(e) => {
             mono::log(
                 LogLevel::Warn,
-                &format!("survivalist-mod: quality: prototype lookup failed: {e}"),
+                &format!("survivalist-mod: quality: canary lookup failed: {e}"),
             );
             return;
         }
-    };
-    if let Err(e) = roll_band(band_h, proto_h, now) {
+    }
+    let odds = if military { &MILITARY_ODDS } else { &RAIDER_ODDS };
+    if let Err(e) = roll_band(band_h, odds, now) {
         mono::log(
             LogLevel::Warn,
             &format!("survivalist-mod: quality: edge roll failed: {e}"),
         );
     }
-    drop(own(proto_h));
 }
 
-fn roll_band(band_h: i32, proto_h: i32, now: f32) -> Result<(), String> {
+/// Pick a tier index from cumulative per-mille odds, or None for
+/// the common item the game already spawned.
+fn roll_tier(odds: &[u64; 4], now: f32, salt: u64) -> Option<usize> {
+    let r = rng(now, salt, 1000);
+    let mut cum = 0u64;
+    for (i, &o) in odds.iter().enumerate() {
+        cum += o;
+        if r < cum {
+            return Some(i);
+        }
+    }
+    None
+}
+
+fn roll_band(band_h: i32, odds: &[u64; 4], now: f32) -> Result<(), String> {
     let Some(m_h) = with(band_h, |b| b.read_field("Members").ok().as_ref().and_then(handle_of))
     else {
         return Ok(());
@@ -101,13 +140,14 @@ fn roll_band(band_h: i32, proto_h: i32, now: f32) -> Result<(), String> {
         };
         let inv = own(inv_h);
         let n = inv.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
-        for i in 0..n {
+        // Walk top-down: a swap mutates the container.
+        for i in (0..n).rev() {
             let Some(item_h) = handle_of(&inv.invoke("GetItem", &json!([i]))?) else {
                 continue;
             };
             let item = own(item_h);
-            let is_base = handle_of(&item.invoke("GetPrototype", &json!([]))?)
-                .map(|ph| {
+            let Some(base_name) = handle_of(&item.invoke("GetPrototype", &json!([]))?)
+                .and_then(|ph| {
                     with(ph, |p| {
                         let name = p
                             .read_field("Name")
@@ -117,29 +157,39 @@ fn roll_band(band_h: i32, proto_h: i32, now: f32) -> Result<(), String> {
                         name
                     })
                 })
-                .flatten()
-                .map(|name| name == BASE_ASSAULT_RIFLE)
-                .unwrap_or(false);
-            if !is_base {
+            else {
+                continue;
+            };
+            // Already tiered (or any modded underscore name): never
+            // re-roll.
+            if base_name.contains('_') {
                 continue;
             }
-            // Higher quality, lower chance.
-            if rng(now, (mi as u64) * 131 + i as u64 + 7, 100) >= FINE_ROLL_PCT {
+            let salt = (mi as u64) * 131 + i as u64 + 7;
+            let Some(tier_ix) = roll_tier(odds, now, salt) else {
                 continue;
-            }
-            // The swap, net zero items: the common rifle leaves
-            // the world, the fine one lands in the same hand.
+            };
+            let sibling = rng(now, salt.wrapping_mul(97), SIBLINGS) + 1;
+            let candidate = format!("{base_name}_{}{sibling}", TIER_NAMES[tier_ix]);
+            // Only weapons and armor have variants; anything else
+            // misses the lookup and stays as spawned.
+            let Ok(Some(proto_h)) = find_prototype(&candidate) else {
+                continue;
+            };
+            // The swap, net zero items: the common piece leaves
+            // the world, the tiered one lands in the same hand.
             let taken = inv.invoke(
                 "Take",
                 &json!([{ "handle": mh }, { "handle": item_h }, 1]),
             )?;
             let Some(taken_h) = handle_of(&taken) else {
+                drop(own(proto_h));
                 continue;
             };
             if let Err(e) = with(taken_h, |t| t.invoke("Delete", &json!([]))) {
                 mono::log(
                     LogLevel::Warn,
-                    &format!("survivalist-mod: quality: delete of the common rifle failed: {e}"),
+                    &format!("survivalist-mod: quality: delete of the common piece failed: {e}"),
                 );
             }
             drop(own(taken_h));
@@ -147,9 +197,20 @@ fn roll_band(band_h: i32, proto_h: i32, now: f32) -> Result<(), String> {
                 "Equipment",
                 "Spawn",
                 &json!([{ "handle": proto_h }, 1]),
-            )?;
-            let Some(fine_h) = handle_of(&fine) else {
-                return Err("Equipment.Spawn gave no item".into());
+            );
+            drop(own(proto_h));
+            let fine_h = match fine {
+                Ok(v) => match handle_of(&v) {
+                    Some(h) => h,
+                    None => continue,
+                },
+                Err(e) => {
+                    mono::log(
+                        LogLevel::Warn,
+                        &format!("survivalist-mod: quality: variant spawn failed: {e}"),
+                    );
+                    continue;
+                }
             };
             let _ = member.invoke("Add", &json!([{ "handle": mh }, { "handle": fine_h }]));
             drop(own(fine_h));
@@ -158,15 +219,16 @@ fn roll_band(band_h: i32, proto_h: i32, now: f32) -> Result<(), String> {
                 .ok()
                 .and_then(|v| v.as_str().map(str::to_string))
                 .unwrap_or_else(|| "<unnamed>".into());
-            SWAPS_TOTAL.fetch_add(1, Ordering::Relaxed);
-            *LAST_SWAP.lock() = Some(who.clone());
+            SWAPS[tier_ix].fetch_add(1, Ordering::Relaxed);
+            *LAST_SWAP.lock() =
+                Some(format!("{} {base_name} in {who}'s hands", TIER_NAMES[tier_ix]));
             mono::log(
                 LogLevel::Info,
                 &format!(
-                    "survivalist-mod: quality: a FINE assault rifle crossed the edge in {who}'s hands"
+                    "survivalist-mod: quality: a {} {base_name} crossed the edge in {who}'s hands",
+                    TIER_NAMES[tier_ix],
                 ),
             );
-            return Ok(()); // at most one per band
         }
     }
     Ok(())
@@ -212,7 +274,7 @@ pub(crate) fn rng(now: f32, salt: u64, n: u64) -> u64 {
 pub fn register_ops() {
     OP_REGISTRY.register(OpDef::new(
         "quality_status",
-        "The quality system's live state: is the fine prototype loaded, how many edge swaps happened, who carried the last one.",
+        "The quality system's live state: is the variant data loaded, edge swaps per tier, and the last swap.",
         "{}",
         quality_status,
     ));
@@ -220,16 +282,20 @@ pub fn register_ops() {
 
 fn quality_status(_args: &Json) -> Result<Json, String> {
     on_main_thread(|| {
-        let loaded = match find_prototype(FINE_ASSAULT_RIFLE) {
+        let loaded = match find_prototype(CANARY) {
             Ok(Some(h)) => {
                 drop(own(h));
                 true
             }
             _ => false,
         };
+        let mut swaps = serde_json::Map::new();
+        for (i, name) in TIER_NAMES.iter().enumerate() {
+            swaps.insert(name.to_lowercase(), json!(SWAPS[i].load(Ordering::Relaxed)));
+        }
         Ok(json!({
-            "fine_assault_rifle_loaded": loaded,
-            "swaps_total": SWAPS_TOTAL.load(Ordering::Relaxed),
+            "variants_loaded": loaded,
+            "swaps": swaps,
             "last_swap": LAST_SWAP.lock().clone(),
         }))
     })

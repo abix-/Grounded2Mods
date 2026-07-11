@@ -1464,23 +1464,49 @@ combat math, save persistence, UI names, AI behavior.
   the top of the ladder, entering only with the incursion that
   fits it.
 
-### First build slice (BUILT 2026-07-10, unwatched)
+### The full tier system (BUILT 2026-07-10, unwatched)
 
-One family, one tier, one faucet: the Fine Assault Rifle ships as
-story XML (story/Equipment/FineAssaultRifle.xml: +25 percent
-damage, better accurate range, less recoil, BasePrice doubled to
-150, Scarcity Legendary, NO LootableFromLocations so the edge is
-its only door), and quality.rs swaps it into a military-remnant
-band at spawn (incursion.rs calls upgrade_band_gear): each common
-assault rifle in a spawned hand rolls 25 percent, at most one
-swap per band, net zero items (Take + Delete the common rifle,
-Equipment.Spawn the fine one into the same hand). quality_status
-op reports whether the prototype resolved, total swaps, and the
-last carrier. Live-verify after the next story restart: the
-prototype loads, a military arrival carries one, it prices at 150
-in trade, and the player can loot it. Everything after (more
-families, more tiers, crafting rolls, act preferences) widens a
-verified pipeline.
+Factorio naming (operator-locked): the vanilla item is Normal;
+above it Uncommon, Rare, Epic, Legendary; named uniques
+(unique.rs) above the whole ladder. The single-item first slice
+(a hand-authored Fine Assault Rifle) was retired the same day in
+favor of the generated set; it never loaded into any story.
+
+DRY: scripts/generate_quality.ps1 reads every vanilla WEAPON and
+ARMOR definition (selected by the game's own categories:
+Weapons/Melee, Weapons/Ranged, Clothing/Armor/*: 38 base items)
+and writes <Base>_<Tier><Sibling>.xml into story/Equipment: 456
+generated files, never hand-edited, rebuilt on demand (game patch
+or knob change). THE KNOBS are per-tier MULTIPLIERS on the base
+stats, in one config block at the top of the generator: Stat
+(damage, skill bonuses, accuracy, absorption, insulation) 1.10 /
+1.20 / 1.35 / 1.50, Price 2 / 4 / 8 / 16, Recoil 0.95 / 0.90 /
+0.85 / 0.80. Generated variants have NO LootableFromLocations:
+the edge is their only door.
+
+VARIANCE: real per-item stat ranges are impossible (stats live on
+the type; stacks merge by type), so each tier ships 3 statistical
+SIBLINGS with a deterministic plus-or-minus 5 percent jitter on
+the power stats, all sharing one display name. Two Rare rifles
+are usually not exactly the same, and the difference is real and
+visible.
+
+THE EDGE ROLLS TIERS (quality.rs): every weapon and armor piece
+in an edge-spawned band's hands rolls independently, odds by
+sender, per mille cumulative: military remnants 10/40/100/200
+(Legendary/Epic/Rare/Uncommon), raiders 3/15/50/120. Rust keeps
+no item lists: it derives the variant name by convention and
+swaps only if that prototype exists (net zero items: Take +
+Delete the common piece, Equipment.Spawn the tiered one into the
+same hand). A canary prototype detects unloaded data and degrades
+to one log line. quality_status reports loaded state, swaps per
+tier, and the last swap.
+
+Live-verify after the next story restart: variants load (canary
+answers), an armed arrival carries tiered gear, prices scale in
+trade, and the player can loot it. Next after that: crafting
+rolls (hands roll quality), act preferences (thieves prefer the
+good blade), quality on other gear.
 
 ### Open questions before any build
 
