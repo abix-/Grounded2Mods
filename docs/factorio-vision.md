@@ -18,6 +18,10 @@ Factorio is an amazing game, but as a factory grows in complexity it becomes har
 
 Everything repeatable is scripts or loops, not LLM calls. Monitoring for stalled assemblers, low power, belt backups, biter attacks, and resource depletion is deterministic work. The LLM is for judgment: design decisions, diagnosis, planning, and conversation with the player. If a task can be a script, it must be a script.
 
+## Works on any modded game
+
+Every Factorio game gets modded. The partner must understand any modded game state and act appropriately. Item, recipe, entity, and technology knowledge comes from the game's own prototype data at runtime, never from hardcoded vanilla lists. The player's own games will run mods (relatively light initially), so this is a day-one requirement, not a later feature.
+
 ## Working assumption on architecture (to be validated by research)
 
 The Timberborn pattern: an in-game mod exposes factory state and a command surface, and an external brain runs the scripted automation and the LLM assistance.
