@@ -54,3 +54,28 @@ Covered only indirectly this pass. The monitoring mods prove deep read access to
 2. The bridge shape is settled by three independent projects: in-game Lua mod, RCON, external brain. That matches the Timberborn pattern from the vision doc.
 3. The scripts-not-LLM principle maps to reality. Detection is proven mod-side work; the LLM projects that aimed for full autonomous play stalled or died. A partner that watches deterministically and reasons only on demand avoids what killed them.
 4. Reusable pieces: FLE's command surface design, the companion's MCP wiring, draftsman or the Rust blueprint crate for building at scale, and the monitoring mods as references for detectors.
+
+## Second pass 2026-07-18: cloned repos and what is useful in them
+
+17 repos shallow-cloned into C:/code/factorio-refs. A GitHub search found a second wave of similar projects beyond the first pass. Licenses checked at repo root; "no license file" means design ideas only, no code reuse.
+
+### Most useful
+
+- factorio-sensei (Rust, MIT): the advice half of our vision, already built, in our default language. RCON client, eleven game-state reader tools (assemblers, entities, furnaces, inventory, position, power, production, recipe, research, resources), Claude agent loop, terminal REPL, and in-game /sensei chat via a bundled Lua mod. Reads state, gives coaching, changes nothing in the world.
+- ai-player-v3 (no license file, active, updated 2026-07-18): the cleanest architecture split found, and it independently arrived at our core principle. The LLM only picks what to do; the mod handles how (pathfinding, placement, fuelling) via a deterministic skill layer. Skills run with no LLM at all through a console command. Perception flows out through script-output files, actions flow back through RCON. Player directs it with chat prefixes or by placing blueprint ghosts.
+- factorioctl (Rust, no license file): a weekend project whose lessons-learned section is the best failure writeup found. Also has belt network analysis code (gaps, graph, reach, source tracing) and a bugs/ directory workflow: document bugs during play sessions, fix only in dedicated dev sessions.
+- claude-code-plays-factorio (FLE team, no license file): the Claude Code harness pattern. Observation is read-only resources (fle://inventory, fle://entities, fle://metrics), actions are tools, plus git-like commit/restore of game state and a local workspace as persistent memory. Four specialized subagent definitions (automation, inspector, prototyping, spatial reasoning).
+- claude-in-factorio (MIT): in-game chat GUI to Claude, bridge invokes claude -p with MCP tools, JSON schemas for events and responses, per-planet agent configs.
+- factorio-agent by lvshrd (license unchecked, in docs/): RAG knowledge base built from the Factorio runtime API JSON plus wiki pages, with embeddings. Also an MQTT mod for pushing game events out. The "give the LLM real Factorio knowledge" piece.
+- ai_combinator (MIT): natural language to combinator circuit logic, with a test case system that validates generated logic and auto-fixes failures. The test-the-generated-thing pattern is worth stealing.
+- factorio-bottleneck-analyzer (no license file): tracker.lua samples every crafting machine and records which ingredient was missing on stall; remote-interface.lua shows the standard way a mod exposes calls that RCON can reach.
+- Blueprint libraries: factorio-draftsman (Python, MIT, large and mod-aware) is the strongest. The Rust factorio-blueprint crate is GPL-3: decide about copyleft before linking it.
+
+### Their failures, for our planning
+
+- Full autonomy died twice. AI Player v1 was abandoned as too hard; v3 survives by shrinking the LLM's job to picking skills and letting deterministic code do everything else. factorioctl's author concluded the same: offload everything computable to tools, do not make the LLM do pathfinding, give it A*.
+- Spatial reasoning is the wall. factorioctl: LLMs have no native sense of why anything is where it is, will build on top of ore patches, cannot hold a spatial plan. Zones (reserving map areas for a purpose) helped. FLE's benchmark results say the same: models fail at layout.
+- Aspiration outruns shipping. factorio-ai-companion's README promises 51 commands and autonomous skills; only the chat bridge works.
+- Benchmark-shaped is not partner-shaped. FLE and its offspring drive headless server clusters; nobody built for a player-attended game plus an assistant, which is our exact niche.
+- Speed matters more than smarts for live play (factorioctl): thousands of decisions per session mean fast tool calls beat clever slow ones.
+- No tests, no survival: factorioctl was vibe-coded with no tests and, per its author, collapsed under its own weight as it grew.
