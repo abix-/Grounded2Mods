@@ -113,3 +113,27 @@ Reviewed 2026-07-18 from the timberborn repo (C:/code/timberborn), its docs, and
 - One canonical writer per piece of state. Duplicate writers drifted and produced bugs that took multi-round sagas to close.
 - Do not trust cached state at decision time when the world may have moved. Stale reads caused wrong decisions repeatedly.
 - Live verification before claiming done. Tests green in isolation is not working end-to-end.
+
+## Mining catalog 2026-07-18: what we lift from each repo
+
+Decision: brain in Rust, mine the cloned repos for whatever is useful. License-safe code is MIT, everything else is ideas only.
+
+### Code we can lift (MIT)
+
+- factorio-sensei. The key mechanism discovery: state readers need no mod at all. The Rust side builds small Lua functions as strings, sends them over RCON, and gets JSON back via the game's table-to-json helper. src/lua.rs is 381 lines of ready-made Factorio 2.x readers (position, inventory, power, production, research, entities, resources, assemblers, furnaces, recipes), rcon_ext.rs wraps execution, and the 88-line bundled mod is just an in-game chat inbox (/sensei stores player messages, RCON-only poll and respond commands move them). Lift lua.rs nearly wholesale, the chat inbox pattern, and the typed tool outputs.
+- Factorio Learning Environment. The most complete action vocabulary in existence: 28 agent tools including can_place_entity, connect_entities (routes belts and pipes between entities), craft_item, harvest_resource, move_to, nearest_buildable, place_entity, place_entity_next_to, rotate_entity, set_entity_recipe, and set_research, with 97 Lua files implementing the game side. connect_entities and nearest_buildable are the two spatial helpers every other project lacks.
+- factorio-ai-companion. 1512 lines of working mod-side Lua command modules (building, item, move, research, resource, combat, and a 406-line queueing layer), plus TypeScript MCP server wiring for Claude Code.
+- claude-in-factorio. In-game GUI chat as a three-file mod, JSON schemas for events, responses, and sessions, and the headless claude invocation pattern.
+- ai_combinator. 313-line control.lua. The pattern worth stealing is its loop: generate logic from natural language, run defined test cases in-game, auto-fix failures before deploying.
+- factorio-draftsman (Python). Full blueprint manipulation if we accept a Python sidecar. The blueprint string format is just compressed JSON, so a Rust implementation is realistic instead. The existing Rust crate is GPL-3, excluded.
+
+### Ideas only (no license file)
+
+- ai-player-v3. The skill layer split (LLM picks what, deterministic code does how), perception snapshots flowing out through script-output files, skills runnable with no LLM, and blueprint ghosts as the direction mechanism.
+- factorioctl. Zones (reserving map areas for a purpose) as the answer to spatial drift, belt network analysis (gaps, reach, source tracing), and the bugs/ discipline: document during play, fix only in dev sessions.
+- claude-code-plays-factorio. Read-only resources vs state-changing tools, git-like commit and restore of game state, a workspace directory as persistent memory, and four specialized subagent roles.
+
+### To verify at design time
+
+- Whether RCON commands count as console commands that disable achievements for the save. If yes, readers and writers should go through mod-registered commands and remote interfaces instead of raw Lua strings.
+- Space Age surface handling: every reader in the catalog assumes one surface; ours must be surface-aware from the start (Nauvis, platforms, other planets).
