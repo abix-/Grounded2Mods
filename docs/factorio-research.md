@@ -79,3 +79,37 @@ Covered only indirectly this pass. The monitoring mods prove deep read access to
 - Benchmark-shaped is not partner-shaped. FLE and its offspring drive headless server clusters; nobody built for a player-attended game plus an assistant, which is our exact niche.
 - Speed matters more than smarts for live play (factorioctl): thousands of decisions per session mean fast tool calls beat clever slow ones.
 - No tests, no survival: factorioctl was vibe-coded with no tests and, per its author, collapsed under its own weight as it grew.
+
+## Our own prior art: Timberbot, what went good and bad
+
+Reviewed 2026-07-18 from the timberborn repo (C:/code/timberborn), its docs, and project state. Timberbot is the closest thing to what we want to build: a game mod exposing all state and all actions over HTTP, a Python client, and an AI agent loop on top.
+
+### What went good, carry all of it forward
+
+- The control plane shape. One HTTP server in the mod exposing every read and every write. Reads are served from snapshots on a background thread with zero main-thread cost. Writes are queued and drained on the main thread under a per-frame time budget. This threading model is the crown jewel and maps directly onto Factorio (mod-side event handlers, external brain over RCON).
+- The debug endpoint. A reflection inspector that lets you examine live game state and call methods without rebuilding. The debug-first workflow (reproduce, inspect, verify assumptions, then change code) saved endless rebuild cycles.
+- Errors written for an AI caller. Every error says what went wrong and what to do next: bad value echoed, valid options listed, suggestions included. This saves the LLM whole turns of guessing and was worth every line.
+- Never reimplement game validation. Placement uses the game's own validators, planting uses the game's own planting checks. Factorio equivalent: use the game's can_place_entity, built-in pathfinder request, and prototype data, never our own physics.
+- Push, not poll. Batched webhooks with a circuit breaker for game events. 68 event types.
+- Zero-alloc discipline. Custom JSON writer, allocate at load and reuse forever, benchmark endpoint proving 0 GC collections across 760K calls. We run inside someone else's game and its stutter is our fault.
+- Live test harness. Tests run against the running game, a validate endpoint compares snapshot vs live state, and a launch command boots straight into a named save for repeatable verification.
+- Token-efficient output. Compact TOON format for the AI, json for programs, human-readable maps for the player.
+- The split of labor: mod does mechanics, external client plus AI does judgment. Same conclusion ai-player-v3 reached independently.
+
+### What went bad, design these out from day one
+
+- Security as an afterthought. The 2026-04-06 review found no authentication at all, arbitrary command execution through the agent-start endpoint, SSRF through webhook registration, wildcard CORS, and unbounded request bodies. Factorio version binds localhost only with auth from the first commit.
+- The A* stair placement saga. Two failed fix approaches (lookback direction guessing, destination-based orientation) before accepting that the search graph itself must encode which 3D connectors are physically valid. Post-hoc correction of a pathfinding result does not work. Release v0.7.1 sat blocked on five path routing test failures. Factorio v1 is flat per surface, and the game ships its own pathfinder, so we may dodge this entirely until multilevel railways.
+- Unbounded queues. Webhook backlog and POST queues could grow without limit under load. Bound every queue at creation.
+- Ephemeral entity IDs. Unity instance IDs change every session, which forced re-query crutches into the error messages. Factorio gives stable unit_number, use it from the start.
+- Reachability archaeology. Long DLL spelunking to replicate a thing the game already computed and displayed. Find the game's own service first.
+- Synchronous logging on hot paths. Lock contention and disk writes per request.
+- Doc drift. Keeping five documentation surfaces in sync required a manual pre-release checklist. Fewer surfaces, or generated docs.
+
+### From the lotj bot work, the cross-cutting rules already paid for
+
+- Every command sent to the game needs an expected settle signal. Fire-and-forget actions produced production wedges.
+- Silent failure is the number one killer across the whole failure log. Loud errors on every stub, instrumentation from day one, a panic path that writes where it died.
+- One canonical writer per piece of state. Duplicate writers drifted and produced bugs that took multi-round sagas to close.
+- Do not trust cached state at decision time when the world may have moved. Stale reads caused wrong decisions repeatedly.
+- Live verification before claiming done. Tests green in isolation is not working end-to-end.
