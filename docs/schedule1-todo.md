@@ -53,12 +53,65 @@
 
 ## Smoke on Schedule 1
 
-- [ ] Deploy `il2cpp_smoke.unityforge.dll` + the MelonLoader shim
-      into the operator's Schedule 1 `Mods/` folder.
-- [ ] Exit gate: ping, smoke_state (runtime = IL2CPP),
-      walk_class, smoke_read/smoke_write round trip, postfix
-      fires; driven as repo tests via the modforge client. The 7
-      existing Vortex mods still load clean.
+- [x] Deploy `il2cpp_smoke.unityforge.dll` + the MelonLoader shim
+      into the operator's Schedule 1 `Mods/` folder. Done
+      2026-08-07.
+- [x] Exit gate: ping, smoke_state (runtime = IL2CPP),
+      walk_class, inspect_object, read_field/write_field round
+      trip, postfix fires. PASSED 2026-08-07 against the live
+      game via `il2cpp-smoke/tests/smoke.rs` (modforge client,
+      port 17175). Hot reload also proven live: gen1 dropped
+      while the game ran, swap logged, no restart.
+      The "7 existing mods load clean" clause is NOT met, but for
+      an upstream reason, not ours: see the 0.4.6 findings below.
+
+### What we know, 2026-08-07 (game updated 0.4.5f2 -> 0.4.6f11)
+
+- Steam auto-updated Schedule 1 to 0.4.6f11. MelonLoader's
+  interop generation (Il2CppInterop, bundled by MelonLoader
+  0.7.2 AND latest 0.7.3, AND upstream BepInEx/Il2CppInterop
+  master) crashes on the new build. Every modded Schedule 1
+  player is bricked on 0.4.6 until upstream ships a fix.
+- Root cause, verified: the 0.4.6 binary strips types that are
+  still referenced (verified: `UnityEngine.Camera+GateFitMode`
+  has zero definitions in the Cpp2IL dump while dumped types
+  still reference it). The generator dereferences null on such
+  refs in three places (Pass11ComputeTypeSpecifics,
+  AssemblyRewriteContext.RewriteTypeRef,
+  RewriteGlobalContext.JudgeSpecificsByOriginalType).
+- Our fix: patched upstream Il2CppInterop master (base commit
+  81a6f78) at those three sites to treat unresolvable types
+  conservatively (non-blittable / Il2CppSystem.Object /
+  reference type). Proof: `Il2CppInterop.CLI generate` against
+  the game's own Cpp2IL dump completes and emits all 148 interop
+  assemblies; in-game regeneration then succeeded and MelonLoader
+  loaded all 9 mods. The patched
+  `Il2CppInterop.Generator.dll` + `Il2CppInterop.Common.dll`
+  (AssemblyVersion pinned 1.5.1.0 to satisfy MelonLoader's strict
+  binding) are deployed to the game's `MelonLoader/net6/` and to
+  the Vortex staging package `MelonLoader.x64`. Source clone +
+  diff live in the session scratchpad; the fix should be offered
+  upstream (BepInEx/Il2CppInterop) so a stock MelonLoader works
+  again.
+- MelonLoader 0.7.3 is installed (upgraded from 0.7.2 via the
+  Vortex staging package; 0.7.2 backup kept in scratchpad).
+- Third-party mod fallout on 0.4.6 (upstream, not ours):
+  Infinite_ATM throws MissingMethodException EVERY FRAME
+  (`ATM.set_WEEKLY_DEPOSIT_LIMIT` removed from the game;
+  verified absent from the Cpp2IL dump). Remedy: disable
+  Infinite_ATM in Vortex until its author updates. S1API logs
+  several one-shot patch failures at startup (e.g.
+  `ChemistryStationCanvas` gone). eMployee/DealerPlus territory
+  untested in play.
+- Port fact: modforge's default control-plane port 17173 is held
+  by eufy-capture on this machine (bind fails WSAEACCES 10013).
+  il2cpp-smoke moved to 17175; give `schedule1-mod` its own port
+  too.
+- The MelonLoader shim path is proven end-to-end: shim loads via
+  MelonLoader, unityforge init, Harmony postfix installed and
+  firing (Time.get_realtimeSinceStartup), control plane
+  answering, generation-based hot reload working. The
+  research phase can start on top of this.
 
 ## Research Schedule 1 internals
 

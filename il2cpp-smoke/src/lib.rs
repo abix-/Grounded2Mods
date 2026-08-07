@@ -36,7 +36,9 @@ use unityforge::unity::Type;
 static MOD_INFO: ModDef = ModDef {
     name: "Il2CppSmoke",
     version: "0.1.0",
-    http_port: 17173,
+    // 17175: the modforge default 17173 is held by eufy-capture on
+    // the operator's machine (bind failed with WSAEACCES 10013).
+    http_port: 17175,
     on_init: Some(on_init),
     on_tick: None,
     on_shutdown: Some(on_shutdown),
