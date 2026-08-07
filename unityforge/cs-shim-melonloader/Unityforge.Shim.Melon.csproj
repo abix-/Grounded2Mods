@@ -1,0 +1,86 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>Unityforge.Shim.Melon</AssemblyName>
+    <Version>0.1.0</Version>
+    <LangVersion>10.0</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <RootNamespace>Unityforge.Shim</RootNamespace>
+    <InteropDir Condition="'$(InteropDir)' == '' And '$(MelonLoaderDir)' != ''">$(MelonLoaderDir)\Il2CppAssemblies</InteropDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Common sources linked from cs-shim-common (shared with the
+         BepInEx shims). -->
+    <Compile Include="..\cs-shim-common\Bridge.cs">
+      <Link>Common\Bridge.cs</Link>
+    </Compile>
+    <Compile Include="..\cs-shim-common\GenerationLoader.cs">
+      <Link>Common\GenerationLoader.cs</Link>
+    </Compile>
+    <Compile Include="..\cs-shim-common\HarmonyBridge.cs">
+      <Link>Common\HarmonyBridge.cs</Link>
+    </Compile>
+    <Compile Include="..\cs-shim-common\Logger.cs">
+      <Link>Common\Logger.cs</Link>
+    </Compile>
+    <Compile Include="..\cs-shim-common\InputBridge.cs">
+      <Link>Common\InputBridge.cs</Link>
+    </Compile>
+    <Compile Include="..\cs-shim-common\TypeCache.cs">
+      <Link>Common\TypeCache.cs</Link>
+    </Compile>
+    <!-- The IL2CPP backend is host-agnostic (Il2CppInterop +
+         Newtonsoft.Json); link it from the BepInEx 6 shim. -->
+    <Compile Include="..\cs-shim-il2cpp\Il2CppBridge.cs">
+      <Link>Common\Il2CppBridge.cs</Link>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      MelonLoader + Il2CppInterop + HarmonyX + Unity interop
+      references. Adjust via -p:MelonLoaderDir, which points at the
+      game's `MelonLoader/` folder (or the extracted MelonLoader
+      package: it must contain `net6/` and, for the Unity interop
+      assemblies, `Il2CppAssemblies/` generated on first game run).
+      MelonLoader 0.7.x ships HarmonyX as 0Harmony.dll and
+      Newtonsoft.Json in net6/, so both resolve from the same dir.
+      Note: on a Vortex-managed install the game folder is emptied
+      when Vortex purges; point MelonLoaderDir at the staged
+      MelonLoader package's MelonLoader/ folder instead, plus a
+      deployed game for Il2CppAssemblies via -p:InteropDir.
+    -->
+    <Reference Include="MelonLoader" Condition="'$(MelonLoaderDir)' != ''">
+      <Private>false</Private>
+      <HintPath>$(MelonLoaderDir)\net6\MelonLoader.dll</HintPath>
+    </Reference>
+    <Reference Include="0Harmony" Condition="'$(MelonLoaderDir)' != ''">
+      <Private>false</Private>
+      <HintPath>$(MelonLoaderDir)\net6\0Harmony.dll</HintPath>
+    </Reference>
+    <Reference Include="Il2CppInterop.Runtime" Condition="'$(MelonLoaderDir)' != ''">
+      <Private>false</Private>
+      <HintPath>$(MelonLoaderDir)\net6\Il2CppInterop.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="Newtonsoft.Json" Condition="'$(MelonLoaderDir)' != ''">
+      <Private>false</Private>
+      <HintPath>$(MelonLoaderDir)\net6\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="Il2Cppmscorlib" Condition="'$(InteropDir)' != ''">
+      <Private>false</Private>
+      <HintPath>$(InteropDir)\Il2Cppmscorlib.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule" Condition="'$(InteropDir)' != ''">
+      <Private>false</Private>
+      <HintPath>$(InteropDir)\UnityEngine.CoreModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule" Condition="'$(InteropDir)' != ''">
+      <Private>false</Private>
+      <HintPath>$(InteropDir)\UnityEngine.InputLegacyModule.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>

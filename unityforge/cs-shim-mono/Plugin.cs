@@ -51,6 +51,7 @@ namespace Unityforge.Shim
                 return;
             }
 
+            HarmonyBridge.AcquireHandle = MonoBridge.Acquire;
             HarmonyBridge.EnsureHarmony(PluginGuid);
 
             // WWM-specific: block the demo-end panel by patching

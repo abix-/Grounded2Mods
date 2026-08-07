@@ -24,16 +24,32 @@
       purged, those files live in the Vortex staging package
       `MelonLoader.x64`. Binding is finally proven by the smoke
       run, not by version numbers.
-- [ ] `unityforge/cs-shim-melonloader/` MelonMod entry:
+- [x] `unityforge/cs-shim-melonloader/` MelonMod entry:
       OnInitializeMelon loads the Rust cdylib and bridge,
       OnUpdate ticks, OnApplicationQuit shuts down. Links
-      `cs-shim-common/*.cs` + `Il2CppBridge.cs`.
+      `cs-shim-common/*.cs` + `Il2CppBridge.cs`. Built 2026-08-07:
+      compiles clean against MelonLoader 0.7.2 refs + the game's
+      Il2CppAssemblies. In-game load untested until the smoke run.
+      Fallout fixed while making it compile (the IL2CPP backend
+      had never been built): TypeCache + the list_methods body
+      moved to cs-shim-common (HarmonyBridge needs them on every
+      backend); HarmonyBridge's hard-coded MonoBridge.Acquire
+      replaced with an AcquireHandle seam each entry assigns;
+      Il2CppBridge.FindType rewritten onto TypeCache.Resolve
+      (Il2CppType.From does not take a string); WalkClass converts
+      via Il2CppType.From(t); bare `Harmony` qualified (MelonLoader
+      exports a legacy Harmony NAMESPACE). Mono + survivalist
+      shims rebuilt green after the shared-file changes.
 
 ## Generation-loader parity
 
-- [ ] Mirror the generation-loader into the MelonLoader entry so
-      Rust hot reload works without a game restart (existing
-      todo.md item for the IL2CPP shim).
+- [x] Mirror the generation-loader into the MelonLoader entry so
+      Rust hot reload works without a game restart. Done by
+      construction 2026-08-07: the MelonLoader entry drives
+      GenerationLoader (LoadInitial / Tick / ShutdownFinal), same
+      as the Mono entry. The BepInEx 6 IL2CPP entry (Plugin.cs)
+      still bypasses GenerationLoader; that variant stays on the
+      repo todo.md and is not needed for Schedule 1.
 
 ## Smoke on Schedule 1
 

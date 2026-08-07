@@ -54,6 +54,7 @@ namespace Unityforge.Shim
         public IntPtr InvokeMethod => Marshal.GetFunctionPointerForDelegate(Il2CppBridge.InvokeMethodDelegate);
         public IntPtr InvokeStatic => Marshal.GetFunctionPointerForDelegate(Il2CppBridge.InvokeStaticDelegate);
         public IntPtr ReleaseHandle => Marshal.GetFunctionPointerForDelegate(Il2CppBridge.ReleaseHandleDelegate);
+        public IntPtr ListMethods => Marshal.GetFunctionPointerForDelegate(Il2CppBridge.ListMethodsDelegate);
     }
 
     public static class Il2CppBridge
@@ -120,6 +121,18 @@ namespace Unityforge.Shim
             return -1; // static invoke is not implemented on the IL2CPP backend yet
         }
         public static readonly ReleaseHandleFn ReleaseHandleDelegate = ReleaseHandle;
+        public delegate int ListMethodsFn(IntPtr typeNameUtf8, IntPtr outBuf, int cap);
+        public static readonly ListMethodsFn ListMethodsDelegate = ListMethods;
+
+        private static int ListMethods(IntPtr typeNameUtf8, IntPtr outBuf, int cap)
+        {
+            // Body shared with the Mono backend; see
+            // TypeCache.ListMethods (cs-shim-common). On IL2CPP the
+            // reflection walk runs over the Il2CppInterop proxy
+            // types, which is what Harmony patches target here.
+            var name = Marshal.PtrToStringAnsi(typeNameUtf8);
+            return WriteJsonToBuf(TypeCache.ListMethods(name).ToString(Formatting.None), outBuf, cap);
+        }
 
         // ---- implementations -------------------------------------------
 
@@ -127,12 +140,23 @@ namespace Unityforge.Shim
         {
             var name = Marshal.PtrToStringAnsi(nameUtf8);
             if (string.IsNullOrEmpty(name)) return 0;
-            // Il2CppType.From walks all loaded Il2Cpp assemblies for the
-            // type by name (no namespace required for unique short
-            // names, but full names work).
+            // Resolve against the loaded Il2CppInterop proxy
+            // assemblies via the shared TypeCache (exact match
+            // first, short-name scan second). The previous
+            // `Il2CppType.From(name, throwOnError:)` call never
+            // compiled: Il2CppType.From takes a System.Type, not a
+            // string (found 2026-08-07 on the first real build of
+            // this backend). Proxy types are what Harmony patches
+            // and reflection reads target here, so System.Type is
+            // the right currency for handles.
             try
             {
-                var t = Il2CppType.From(name, throwOnError: false);
+                var t = TypeCache.Resolve(name);
+                if (t == null)
+                {
+                    ShimLogger.Error($"Il2CppBridge: type '{name}' not found");
+                    return 0;
+                }
                 return Acquire(t);
             }
             catch
@@ -168,10 +192,11 @@ namespace Unityforge.Shim
             var t = Lookup(typeHandle) as Type;
             if (t == null) return -1;
             // Object.FindObjectsOfTypeAll equivalent on IL2CPP comes
-            // via Resources.FindObjectsOfTypeAll(t). Caller must
-            // ensure t derives from UnityEngine.Object for this path
-            // to return anything.
-            var arr = UnityEngine.Resources.FindObjectsOfTypeAll(t);
+            // via Resources.FindObjectsOfTypeAll, which takes an
+            // Il2CppSystem.Type; Il2CppType.From converts from the
+            // proxy System.Type. Caller must ensure t derives from
+            // UnityEngine.Object for this path to return anything.
+            var arr = UnityEngine.Resources.FindObjectsOfTypeAll(Il2CppType.From(t));
             var list = new JArray();
             for (int i = 0; arr != null && i < arr.Count; i++)
             {

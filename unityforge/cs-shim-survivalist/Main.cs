@@ -67,6 +67,7 @@ public class Main
             return;
         }
 
+        HarmonyBridge.AcquireHandle = MonoBridge.Acquire;
         HarmonyBridge.EnsureHarmony("abix.unityforge.shim.survivalist");
 
         // Settlement upgrades: game-typed Harmony patches

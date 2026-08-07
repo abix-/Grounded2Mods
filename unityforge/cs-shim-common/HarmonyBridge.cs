@@ -56,7 +56,10 @@ namespace Unityforge.Shim
         private static readonly object _lock = new object();
         private static readonly Dictionary<int, PatchEntry> _patches = new Dictionary<int, PatchEntry>();
         private static int _next = 1;
-        private static Harmony _harmony;
+        // Fully qualified: MelonLoader's 0Harmony also exports a
+        // legacy `Harmony` NAMESPACE, so the bare name resolves to
+        // the namespace there (CS0118).
+        private static HarmonyLib.Harmony _harmony;
 
         // delegate signatures matching the Rust extern "C" fns
         private delegate int RustPrefixDelegate(IntPtr ctx);
@@ -72,9 +75,19 @@ namespace Unityforge.Shim
         public static readonly PatchPrefixCtxFn PatchPrefixCtxDelegate = PatchPrefixCtx;
         public static readonly UnpatchFn UnpatchDelegate = Unpatch;
 
+        /// <summary>
+        /// Backend handle-acquire seam for ctx patches. Each entry
+        /// assigns its backend's Acquire (MonoBridge.Acquire or
+        /// Il2CppBridge.Acquire) before installing patches. Was a
+        /// hard-coded MonoBridge.Acquire call, which broke every
+        /// non-Mono build of this shared file (found 2026-08-07
+        /// bringing up the MelonLoader shim).
+        /// </summary>
+        public static Func<object, int> AcquireHandle;
+
         public static void EnsureHarmony(string instanceId)
         {
-            if (_harmony == null) _harmony = new Harmony(instanceId);
+            if (_harmony == null) _harmony = new HarmonyLib.Harmony(instanceId);
         }
 
         /// <summary>
@@ -166,7 +179,7 @@ namespace Unityforge.Shim
             if (d == null) return true;
             // A FRESH handle per call: the Rust side owns it and
             // releases it (MonoObject Drop).
-            var handle = (ctx != null) ? MonoBridge.Acquire(ctx) : 0;
+            var handle = (ctx != null && AcquireHandle != null) ? AcquireHandle(ctx) : 0;
             try
             {
                 return d(new IntPtr(handle)) == 0;
@@ -317,6 +330,13 @@ namespace Unityforge.Shim
             {
                 if (_harmony == null || rustFnPtr == IntPtr.Zero) return 0;
                 if (ctxKind != 0 && ctxKind != 1 && ctxKind != 2) return 0;
+                if (AcquireHandle == null)
+                {
+                    // Loud: a null seam would hand every callback
+                    // handle 0 and look like a null context object.
+                    ShimLogger.Error("HarmonyBridge.PatchPrefixCtx: AcquireHandle not set by the shim entry; refusing ctx patch");
+                    return 0;
+                }
                 var target = ResolveTarget(typeNameUtf8, methodNameUtf8);
                 if (target == null) return 0;
                 if (ctxKind == 0 && target.IsStatic)

@@ -74,6 +74,7 @@ namespace Unityforge.Shim
                 return;
             }
 
+            HarmonyBridge.AcquireHandle = Il2CppBridge.Acquire;
             HarmonyBridge.EnsureHarmony(PluginGuid);
 
             _bridge = Bridge.Build(new Il2CppBackendBridge());
