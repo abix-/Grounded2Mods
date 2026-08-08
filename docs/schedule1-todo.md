@@ -113,6 +113,28 @@
   answering, generation-based hot reload working. The
   research phase can start on top of this.
 
+## The goal checklist (added 2026-08-07)
+
+The operator's goal: FF7-style grind loop, then conquest. Run
+around an area farming mobs, kill them, get loot, level up, then
+take region control from factions. Every unchecked box below is
+the concrete path there, in order. Sections after this one carry
+the detail per box.
+
+- [ ] Research proven live: region owner, mob classes, death
+      path, kill hook, loot path (game must be running).
+- [ ] Kill an NPC, gain XP, level a combat stat, stat visibly
+      changes, survives save/reload.
+- [ ] Kill an NPC, loot drops (cash first), pick it up in-game.
+- [ ] Walk into a region, hostile mobs are there to farm; they
+      respawn on a timer; their stats scale with player level.
+- [ ] Regions show an owner faction; `faction_state` op agrees
+      with what the player sees.
+- [ ] Take a region: clear its mobs/influence and ownership
+      flips to the player; losing one costs the player.
+- [ ] Factions fight each other for regions with no player
+      involvement.
+
 ## Research Schedule 1 internals
 
 - [x] New crate `schedule1-mod/` (cdylib, unityforge + modforge,
@@ -127,6 +149,11 @@
 - [ ] NPCs: spawn/path/despawn; the cartel/goon NPC classes.
 - [ ] Combat: health, damage, death, aggro classes.
 - [ ] The kill-observation Harmony hook point for combat XP.
+- [ ] Loot path: how item pickups / dead drops are created in
+      the world; prove spawning one at a position via a test.
+- [ ] Mob spawn path: prove spawning a hostile cartel/goon NPC
+      at a position via the vanilla machinery, and that it
+      fights, dies, and despawns clean.
 
 ## Combat RPG levelling
 
@@ -137,6 +164,24 @@
 - [ ] Exit gate: kill grants XP in-game, leveled stat visibly
       changes, save/reload persists, `skill_state` op agrees.
 
+## Loot drops (after levelling works)
+
+- [ ] Loot table v1: cash drop on NPC kill, amount scaled by mob
+      toughness, via the vanilla pickup/dead-drop path from
+      research.
+- [ ] Exit gate: kill a mob in-game, loot appears, player picks
+      it up; no orphaned pickups after save/reload.
+- [ ] Item drops (beyond cash) once cash drops are proven.
+
+## Mob farming areas (after loot works)
+
+- [ ] Per-region mob spawner on the vanilla spawn machinery:
+      density per region, respawn timer, despawn when the player
+      leaves.
+- [ ] Mob stats scale with player level (never trivializes).
+- [ ] Exit gate: operator farms one region for several respawn
+      cycles; kills grant XP + loot; MelonLoader log clean.
+
 ## Faction war (in slices, each verified in-game)
 
 - [ ] Ownership map: factions own regions; `faction_state` op.
@@ -145,6 +190,9 @@
       level.
 - [ ] Territory pressure: losing a region costs the player
       (customers/dealers in that region).
+- [ ] Player takeover: clearing a region's mobs/influence flips
+      ownership to the player; holding it pays off (customers/
+      dealers safe there).
 - [ ] NPC-vs-NPC contests: factions fight each other for regions
       without player involvement.
 - [ ] Director split: random event rolls and adaptive pressure as

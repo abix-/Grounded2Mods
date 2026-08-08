@@ -16,6 +16,12 @@ proof target, with two gameplay goals from the operator:
    other for control, so the game changes even when the player
    does nothing. Harder overall: more frequent attacks, tougher
    scaling enemies, territory pressure.
+3. The FF7 grind loop (added 2026-08-07): regions hold farmable
+   hostile mobs, kills drop loot (cash/items), the player runs an
+   area killing and levelling, then graduates to taking regions
+   from factions. Mobs and loot ride the vanilla machinery
+   (cartel NPCs, item pickups/dead drops), never spawned from
+   nothing that the game cannot render or persist.
 
 Constraints, settled with the operator:
 
@@ -129,6 +135,20 @@ effects, same shape as the wwm-mod plan in `unityforge-plan.md`:
   effects. The exact skill list is drafted after research names
   the real fields; it uses the standard xp curve and store.
 - Persistence: JSON per save slot via `modforge::rpg::store`.
+
+### 5b. Loot drops and mob farming areas
+
+The grind loop, after levelling works and before the full
+faction war:
+
+- Loot: NPC kills drop cash/items via the vanilla pickup or
+  dead-drop path found in research. Simple loot table first
+  (cash amount scaled by mob toughness), items later.
+- Mob farming: each region holds hostile mobs spawned through
+  the vanilla cartel/NPC spawn machinery, with per-region
+  density, respawn timers, and stats scaled to player level.
+  Verified in-game: walk into a region, mobs are there, kill
+  them, they respawn after the timer.
 
 ### 6. Faction war
 
