@@ -57,15 +57,48 @@ fn first_handle(api: &Api<Value>, class: &str) -> Option<i64> {
     handle
 }
 
-fn read_fields(api: &Api<Value>, class: &str, handle: i64, fields: &[&str]) {
-    for field in fields {
-        let read = api.op("read_field", json!({"handle": handle, "field": field}));
-        if read.ok {
-            println!("{class}.{field} = {}", read.result);
-        } else {
-            println!("{class}.{field}: read_field failed: {:?}", read.error);
+/// Handle carried by a complex value (attached by the shim's
+/// serializer so ops chain generically).
+fn handle_of(v: &Value) -> Option<i64> {
+    v.get("handle").and_then(Value::as_i64)
+}
+
+/// Element count of any Il2Cpp sequence: arrays answer
+/// get_Length, lists answer get_Count.
+fn count_of(api: &Api<Value>, h: i64) -> Option<i64> {
+    for getter in ["get_Length", "get_Count"] {
+        let r = api.op("invoke_method", json!({"handle": h, "method": getter, "args": []}));
+        if r.ok {
+            return r.result.as_i64();
         }
     }
+    None
+}
+
+/// Walk a sequence handle generically: get_Item(i) per element,
+/// inspect each element, print its fields, release the handles.
+fn dump_sequence(api: &Api<Value>, label: &str, seq: i64) {
+    let Some(n) = count_of(api, seq) else {
+        println!("{label}: no get_Length/get_Count answered");
+        return;
+    };
+    println!("{label}: {n} element(s)");
+    for i in 0..n {
+        let item = api.op("invoke_method", json!({"handle": seq, "method": "get_Item", "args": [i]}));
+        if !item.ok {
+            println!("{label}[{i}]: get_Item failed: {:?}", item.error);
+            continue;
+        }
+        let Some(eh) = handle_of(&item.result) else {
+            println!("{label}[{i}] = {}", item.result);
+            continue;
+        };
+        let inspect = api.op("inspect_object", json!({"handle": eh}));
+        println!("{label}[{i}]:\n{}",
+            serde_json::to_string_pretty(&inspect.result).unwrap_or_default());
+        api.op("release_handle", json!({"handle": eh}));
+    }
+    api.op("release_handle", json!({"handle": seq}));
 }
 
 #[test]
@@ -81,23 +114,24 @@ fn map_region_owner() {
     };
     assert!(ping.ok, "ping not ok: {:?}", ping.error);
 
+    // The full region table, walked generically: Regions is a
+    // MapRegionData[]; each element's inspect names the region
+    // (Name + Region enum value), closing the EMapRegion mapping.
     if let Some(h) = first_handle(&api, "ScheduleOne.Map.Map") {
-        read_fields(&api, "Map", h, &["Regions"]);
-        let inspect = api.op("inspect_object", json!({"handle": h}));
-        println!(
-            "Map inspect:\n{}",
-            serde_json::to_string_pretty(&inspect.result).unwrap_or_default()
-        );
+        let regions = api.op("read_field", json!({"handle": h, "field": "Regions"}));
+        match handle_of(&regions.result) {
+            Some(seq) => dump_sequence(&api, "Map.Regions", seq),
+            None => println!("Map.Regions carried no handle: {}", regions.result),
+        }
     }
+
+    // Influence per region, plus the live influence list.
     if let Some(h) = first_handle(&api, "ScheduleOne.Cartel.CartelInfluence") {
-        read_fields(&api, "CartelInfluence", h, &["DefaultRegionInfluence"]);
-        let inspect = api.op("inspect_object", json!({"handle": h}));
-        println!(
-            "CartelInfluence inspect:\n{}",
-            serde_json::to_string_pretty(&inspect.result).unwrap_or_default()
-        );
-        // Influence per region: EMapRegion is an int-backed enum;
-        // probe values 0..8 and note which answer.
+        let infl = api.op("read_field", json!({"handle": h, "field": "regionInfluence"}));
+        match handle_of(&infl.result) {
+            Some(seq) => dump_sequence(&api, "CartelInfluence.regionInfluence", seq),
+            None => println!("regionInfluence carried no handle: {}", infl.result),
+        }
         for region in 0..8 {
             let r = api.op(
                 "invoke_method",

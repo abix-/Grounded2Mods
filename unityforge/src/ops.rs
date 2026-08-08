@@ -74,6 +74,12 @@ pub fn register_builtins() {
             harmony_probe,
         ),
         OpDef::new(
+            "release_handle",
+            "Free one handle from the shim's handle table. Complex values returned by read_field / invoke_method / inspect_object carry a live handle for chaining; release it when done with a research walk.",
+            "{handle: u64}",
+            release_handle,
+        ),
+        OpDef::new(
             "list_ops",
             "Auto-generated catalog of every registered debug op",
             "{}",
@@ -238,6 +244,17 @@ fn invoke_method(args: &Json) -> Result<Json, String> {
         let res = obj.invoke(&method, &m_args);
         std::mem::forget(obj);
         res
+    })?
+}
+
+fn release_handle(args: &Json) -> Result<Json, String> {
+    let h = arg_u64(args, "handle", None)? as i32;
+    on_main("release_handle", std::time::Duration::from_secs(1), move || {
+        // SAFETY: releasing is what Drop does; a stale handle is a
+        // no-op in the shim's table.
+        let obj = unsafe { MonoObject::from_handle(MonoHandle(h)) };
+        drop(obj);
+        Ok(json!({"released": true}))
     })?
 }
 

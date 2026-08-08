@@ -413,8 +413,13 @@ namespace Unityforge.Shim
             if (t.IsPrimitive || v is string) return v;
             // Il2Cpp objects: Newtonsoft would dump wrapper
             // plumbing (Pointer, WasCollected, ...). Report the
-            // proxy type + ToString instead; complex values get
-            // walked via their own handle, not serialized here.
+            // proxy type + ToString + a live HANDLE instead, so
+            // any complex value chains into the existing ops
+            // (inspect_object / read_field / invoke_method on the
+            // handle). This is what makes the control plane fully
+            // generic for research: arrays chain via get_Item /
+            // Length, lists via get_Item / Count, dictionaries via
+            // get_Item(key). release_handle frees them.
             if (v is Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase il2cpp)
             {
                 string s;
@@ -424,6 +429,7 @@ namespace Unityforge.Shim
                     ["il2cpp_type"] = t.FullName,
                     ["ptr"] = (long)il2cpp.Pointer,
                     ["str"] = s,
+                    ["handle"] = Acquire(v),
                 };
             }
             try
