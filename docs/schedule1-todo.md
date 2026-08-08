@@ -135,8 +135,11 @@ the detail per box.
       path, kill hook, loot path (game must be running). All
       five proven by 2026-08-08; evidence in
       schedule1-mod/docs/research.md + certainty-tracking.md.
-- [ ] Kill an NPC, gain XP, level a combat stat, stat visibly
-      changes, survives save/reload.
+- [x] Kill an NPC, gain XP, level a combat stat, stat visibly
+      changes, survives save/reload. DONE 2026-08-08: operator
+      knocked out an NPC, log shows "+25 XP for the kill (total
+      875) LEVEL UP -> 9"; auto-spend raised Heavy Hands; state
+      survived 4+ relaunches.
 - [ ] Kill an NPC, loot drops (cash first), pick it up in-game.
 - [ ] Walk into a region, hostile mobs are there to farm; they
       respawn on a timer; their stats scale with player level.
@@ -192,10 +195,10 @@ the detail per box.
 - [x] Persistence per save slot (LoadManager save folder name);
       proven across 4+ relaunches. Endless curve + auto-spend
       per the operator.
-- [ ] Exit gate: kill grants XP in-game (operator sees the
-      console line), punches feel stronger, save/reload
-      persists, `skill_state` agrees. Control-plane half PROVEN
-      2026-08-08; operator confirmation pending.
+- [x] Exit gate PASSED 2026-08-08: operator's kill logged
+      "+25 XP ... LEVEL UP -> 9", auto-spend applied, punches
+      confirmed stronger ("IT WORKED"), persistence proven
+      across relaunches, skill_state agrees.
 - [ ] Fix the interop generator's 4th patch site properly (the
       skipped metadata init breaks static field-backed property
       SETTERS: set_MaxHealth crashes the game; getters fine).

@@ -32,7 +32,7 @@ in the repo's docs/schedule1-todo.md.
 | Research: NPCs + cartel classes | 10/10 | ANSWERED: spawn AND aggro proven in-game (goon spawned, AttackEntity, operator got attacked) |
 | Research: combat/death/aggro | 10/10 | ANSWERED: NotifyAttackedByPlayer fires per player hit (attribution proven live); melee-to-0 raises KnockOut not Die, so XP credits both |
 | Research: loot + mob spawn paths | 9/10 | ANSWERED for cash: template clone + FishNet spawn recipe proven in-game (operator picked up spawned $100); remaining: item (non-cash) pickup creation when loot tables need it |
-| Combat-XP levelling | 6/10 | WORKING: kill hooks + endless curve + auto-spend + per-save persistence proven; Heavy Hands (punch damage) applies exactly. Open: in-game kill-XP line + feel confirmation from the operator; vitality/regeneration on ice (static setters crash 0.4.6f12, generator fix needed); baseline poisoning on hot reload needs the framework fix |
+| Combat-XP levelling | 7/10 | EXIT GATE PASSED: operator kill logged "+25 XP ... LEVEL UP -> 9", auto-spend applied, punches confirmed stronger, persistence proven. Open to 10: vitality/regeneration on ice (generator fix), more skills (toughness, gun damage, fleet foot, jump height), baseline-poisoning framework fix, long-play soak |
 | Loot drops | 0/10 | blocked on research; after levelling |
 | Mob farming areas | 0/10 | blocked on research; after loot |
 | Faction war | 0/10 | blocked on research |
