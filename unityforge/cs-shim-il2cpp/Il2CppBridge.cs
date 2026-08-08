@@ -231,11 +231,22 @@ namespace Unityforge.Shim
             }
             // Native fields surface as properties on the proxy
             // type; wrapper plumbing declared on Il2CppObjectBase
-            // itself is skipped.
+            // itself is skipped. Only FIELD-backed properties
+            // (static NativeFieldInfoPtr_<name> on the declaring
+            // type) are read: those are memory reads. Method-backed
+            // getters run arbitrary game code and crashed the game
+            // when blanket-invoked (0xc0000005, 2026-08-07); they
+            // are listed as markers and read explicitly via
+            // read_field / invoke_method instead.
             foreach (var p in t.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
             {
                 if (!p.CanRead || p.GetIndexParameters().Length > 0) continue;
                 if (p.DeclaringType == typeof(Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase)) continue;
+                if (!IsFieldBackedProperty(p))
+                {
+                    fields[p.Name] = "<getter: " + p.PropertyType.Name + ">";
+                    continue;
+                }
                 try
                 {
                     var v = p.GetValue(obj);
@@ -363,6 +374,20 @@ namespace Unityforge.Shim
         /// boxed structs) often don't have a Newtonsoft converter
         /// off the shelf; fall back to ToString for those.
         /// </summary>
+        /// <summary>
+        /// True when the interop proxy property is backed by a
+        /// native FIELD (the generator emits a static
+        /// NativeFieldInfoPtr_&lt;name&gt; alongside it). Reading such
+        /// a property is a memory read; anything else is a native
+        /// method call.
+        /// </summary>
+        private static bool IsFieldBackedProperty(PropertyInfo p)
+        {
+            return p.DeclaringType?.GetField(
+                "NativeFieldInfoPtr_" + p.Name,
+                BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static) != null;
+        }
+
         /// <summary>
         /// Rewrap a UnityEngine.Object wrapper as the requested
         /// interop proxy type so reflection sees the game class.

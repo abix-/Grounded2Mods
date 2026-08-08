@@ -82,19 +82,32 @@ fn map_region_owner() {
     assert!(ping.ok, "ping not ok: {:?}", ping.error);
 
     if let Some(h) = first_handle(&api, "ScheduleOne.Map.Map") {
-        read_fields(
-            &api,
-            "Map",
-            h,
-            &["Regions", "RegionDict", "Instance"],
+        read_fields(&api, "Map", h, &["Regions"]);
+        let inspect = api.op("inspect_object", json!({"handle": h}));
+        println!(
+            "Map inspect:\n{}",
+            serde_json::to_string_pretty(&inspect.result).unwrap_or_default()
         );
     }
     if let Some(h) = first_handle(&api, "ScheduleOne.Cartel.CartelInfluence") {
-        read_fields(
-            &api,
-            "CartelInfluence",
-            h,
-            &["RegionInfluence", "DefaultRegionInfluence"],
+        read_fields(&api, "CartelInfluence", h, &["DefaultRegionInfluence"]);
+        let inspect = api.op("inspect_object", json!({"handle": h}));
+        println!(
+            "CartelInfluence inspect:\n{}",
+            serde_json::to_string_pretty(&inspect.result).unwrap_or_default()
         );
+        // Influence per region: EMapRegion is an int-backed enum;
+        // probe values 0..8 and note which answer.
+        for region in 0..8 {
+            let r = api.op(
+                "invoke_method",
+                json!({"handle": h, "method": "GetInfluence", "args": [region]}),
+            );
+            if r.ok {
+                println!("GetInfluence({region}) = {}", r.result);
+            } else {
+                println!("GetInfluence({region}) failed: {:?}", r.error);
+            }
+        }
     }
 }

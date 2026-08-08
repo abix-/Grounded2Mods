@@ -100,14 +100,45 @@ pub fn register_builtins() {
     ]);
 }
 
+/// Run `f` on the game's main thread via MAIN_QUEUE and wait for
+/// the answer (bounded oneshot). Every op that touches Unity or
+/// game code goes through here: on IL2CPP, native calls from the
+/// HTTP thread are a process crash, not an exception (seen live
+/// 2026-08-07: 0xc0000005 during an off-main inspect_object).
+fn on_main<T: Send + 'static>(
+    op_name: &str,
+    timeout: std::time::Duration,
+    f: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, String> {
+    use parking_lot::Mutex;
+    use std::sync::Arc;
+    let result: Arc<Mutex<Option<T>>> = Arc::new(Mutex::new(None));
+    let r2 = result.clone();
+    MAIN_QUEUE.push(move || {
+        *r2.lock() = Some(f());
+    });
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if let Some(r) = result.lock().take() {
+            return Ok(r);
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(format!("{op_name}: main-thread queue timed out"));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
 fn walk_class(args: &Json) -> Result<Json, String> {
-    let class = arg_str(args, "class")?;
+    let class = arg_str(args, "class")?.to_string();
     let include_inactive = args
         .get("include_inactive")
         .and_then(Json::as_bool)
         .unwrap_or(false);
-    let ty = MonoType::find(class).ok_or_else(|| format!("type '{class}' not found"))?;
-    ty.walk(include_inactive)
+    on_main("walk_class", std::time::Duration::from_secs(2), move || {
+        let ty = MonoType::find(&class).ok_or_else(|| format!("type '{class}' not found"))?;
+        ty.walk(include_inactive)
+    })?
 }
 
 fn list_methods(args: &Json) -> Result<Json, String> {
@@ -130,56 +161,38 @@ fn list_methods(args: &Json) -> Result<Json, String> {
 
 fn inspect_object(args: &Json) -> Result<Json, String> {
     let h = arg_u64(args, "handle", None)? as i32;
-    // SAFETY: caller asserts handle is live; if not, the shim's
-    // dictionary lookup returns null and the op surfaces an
-    // error.
-    let obj = unsafe { MonoObject::from_handle(MonoHandle(h)) };
-    let r = obj.dump();
-    std::mem::forget(obj); // don't release; caller may reuse the handle
-    r
+    on_main("inspect_object", std::time::Duration::from_secs(2), move || {
+        // SAFETY: caller asserts handle is live; if not, the shim's
+        // dictionary lookup returns null and the op surfaces an
+        // error.
+        let obj = unsafe { MonoObject::from_handle(MonoHandle(h)) };
+        let r = obj.dump();
+        std::mem::forget(obj); // don't release; caller may reuse the handle
+        r
+    })?
 }
 
 fn read_field(args: &Json) -> Result<Json, String> {
     let h = arg_u64(args, "handle", None)? as i32;
-    let field = arg_str(args, "field")?;
-    let obj = unsafe { MonoObject::from_handle(MonoHandle(h)) };
-    let r = obj.read_field(field);
-    std::mem::forget(obj);
-    r
+    let field = arg_str(args, "field")?.to_string();
+    on_main("read_field", std::time::Duration::from_secs(2), move || {
+        let obj = unsafe { MonoObject::from_handle(MonoHandle(h)) };
+        let r = obj.read_field(&field);
+        std::mem::forget(obj);
+        r
+    })?
 }
 
 fn write_field(args: &Json) -> Result<Json, String> {
-    // Field writes go through the main thread to avoid race
-    // conditions with the game's Update loop.
     let h = arg_u64(args, "handle", None)? as i32;
     let field = arg_str(args, "field")?.to_string();
     let value = args.get("value").cloned().unwrap_or(Json::Null);
-
-    // For an HTTP request we want a synchronous answer. Use a
-    // bounded oneshot via parking_lot.
-    use std::sync::Arc;
-    use parking_lot::Mutex;
-    let result: Arc<Mutex<Option<Result<(), String>>>> = Arc::new(Mutex::new(None));
-    let r2 = result.clone();
-    MAIN_QUEUE.push(move || {
+    on_main("write_field", std::time::Duration::from_secs(1), move || {
         let obj = unsafe { MonoObject::from_handle(MonoHandle(h)) };
         let res = obj.write_field(&field, &value);
         std::mem::forget(obj);
-        *r2.lock() = Some(res);
-    });
-
-    // Poll for up to ~1 second. The shim ticks at frame rate
-    // (~16ms); 1s is generous for a single field write.
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-    loop {
-        if let Some(r) = result.lock().take() {
-            return r.map(|_| json!({"written": true}));
-        }
-        if std::time::Instant::now() >= deadline {
-            return Err("write_field: main-thread queue timed out".into());
-        }
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
+        res.map(|_| json!({"written": true}))
+    })?
 }
 
 extern "C" fn probe_prefix_noop(ctx: *const c_void) -> i32 {
@@ -200,90 +213,59 @@ fn harmony_probe(args: &Json) -> Result<Json, String> {
     let method = arg_str(args, "method")?.to_string();
     let ctx_kind = args.get("ctx_kind").and_then(Json::as_i64);
 
-    // Patching runs on the main thread like every other mutating
-    // op; mirrors write_field's oneshot.
-    use std::sync::Arc;
-    use parking_lot::Mutex;
-    let result: Arc<Mutex<Option<Result<Json, String>>>> = Arc::new(Mutex::new(None));
-    let r2 = result.clone();
-    MAIN_QUEUE.push(move || {
+    on_main("harmony_probe", std::time::Duration::from_secs(5), move || {
         let res = match ctx_kind {
             Some(0) => hook::patch_prefix_ctx(&class, &method, HookCtx::Instance, probe_prefix_noop),
             Some(1) => hook::patch_prefix_ctx(&class, &method, HookCtx::Arg0, probe_prefix_noop),
             _ => hook::patch_prefix(&class, &method, probe_prefix_noop),
         };
-        let out = match res {
+        match res {
             Ok(hook) => {
                 drop(hook); // unpatch immediately; the probe only tests applicability
                 Ok(json!({"patched": true, "unpatched": true}))
             }
             Err(e) => Err(format!("{e} (full exception in the player log)")),
-        };
-        *r2.lock() = Some(out);
-    });
-
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    loop {
-        if let Some(r) = result.lock().take() {
-            return r;
         }
-        if std::time::Instant::now() >= deadline {
-            return Err("harmony_probe: main-thread queue timed out".into());
-        }
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
+    })?
 }
 
 fn invoke_method(args: &Json) -> Result<Json, String> {
     let h = arg_u64(args, "handle", None)? as i32;
     let method = arg_str(args, "method")?.to_string();
     let m_args = args.get("args").cloned().unwrap_or(Json::Array(vec![]));
-
-    use std::sync::Arc;
-    use parking_lot::Mutex;
-    let result: Arc<Mutex<Option<Result<Json, String>>>> = Arc::new(Mutex::new(None));
-    let r2 = result.clone();
-    MAIN_QUEUE.push(move || {
+    on_main("invoke_method", std::time::Duration::from_secs(2), move || {
         let obj = unsafe { MonoObject::from_handle(MonoHandle(h)) };
         let res = obj.invoke(&method, &m_args);
         std::mem::forget(obj);
-        *r2.lock() = Some(res);
-    });
-
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-    loop {
-        if let Some(r) = result.lock().take() {
-            return r;
-        }
-        if std::time::Instant::now() >= deadline {
-            return Err("invoke_method: main-thread queue timed out".into());
-        }
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
+        res
+    })?
 }
 
 fn list_singletons(args: &Json) -> Result<Json, String> {
     let types = args
         .get("types")
         .and_then(Json::as_array)
+        .cloned()
         .ok_or("missing arg 'types' (array of class names)")?;
-    let mut out = Vec::with_capacity(types.len());
-    for t in types {
-        let Some(name) = t.as_str() else {
-            continue;
-        };
-        let entry = match MonoType::find(name) {
-            None => json!({"class": name, "found": false}),
-            Some(ty) => match ty.singleton_instance() {
-                None => json!({"class": name, "found": false, "type_found": true}),
-                Some(obj) => {
-                    let h = obj.handle();
-                    std::mem::forget(obj); // keep alive; caller may inspect_object
-                    json!({"class": name, "found": true, "handle": h.0})
-                }
-            },
-        };
-        out.push(entry);
-    }
-    Ok(json!({"singletons": out}))
+    on_main("list_singletons", std::time::Duration::from_secs(2), move || {
+        let mut out = Vec::with_capacity(types.len());
+        for t in &types {
+            let Some(name) = t.as_str() else {
+                continue;
+            };
+            let entry = match MonoType::find(name) {
+                None => json!({"class": name, "found": false}),
+                Some(ty) => match ty.singleton_instance() {
+                    None => json!({"class": name, "found": false, "type_found": true}),
+                    Some(obj) => {
+                        let h = obj.handle();
+                        std::mem::forget(obj); // keep alive; caller may inspect_object
+                        json!({"class": name, "found": true, "handle": h.0})
+                    }
+                },
+            };
+            out.push(entry);
+        }
+        Ok(json!({"singletons": out}))
+    })?
 }
