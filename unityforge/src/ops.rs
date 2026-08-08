@@ -8,12 +8,15 @@
 //!   - read_field, write_field, invoke_method
 //!   - list_ops, list_selectors (auto-generated)
 
+use std::ffi::c_void;
+
 use serde_json::{Value as Json, json};
 
 use modforge::args::{arg_str, arg_u64};
 use modforge::ops::{OP_REGISTRY, OpDef};
 
 use crate::bridge::MonoHandle;
+use crate::hook::{self, HookCtx};
 use crate::main_thread_queue::MAIN_QUEUE;
 use crate::mono::{MonoObject, MonoType};
 
@@ -63,6 +66,12 @@ pub fn register_builtins() {
             "Get the live Singleton<T>.Instance for each named type",
             "{types: [str]}",
             list_singletons,
+        ),
+        OpDef::new(
+            "harmony_probe",
+            "Try a Harmony prefix patch on class.method with a no-op callback, report ok or the failure, then unpatch. Diagnoses per-target patchability without a game restart; the shim logs the full exception to the player log.",
+            "{class: str, method: str, ctx_kind?: 0|1}",
+            harmony_probe,
         ),
         OpDef::new(
             "list_ops",
@@ -168,6 +177,58 @@ fn write_field(args: &Json) -> Result<Json, String> {
         }
         if std::time::Instant::now() >= deadline {
             return Err("write_field: main-thread queue timed out".into());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
+extern "C" fn probe_prefix_noop(ctx: *const c_void) -> i32 {
+    // ctx-kind probes hand us an owned handle; release it so the
+    // probe doesn't leak table entries.
+    let h = ctx as isize as i32;
+    if h != 0 {
+        // SAFETY: the shim's ctx dispatcher acquired this handle
+        // for this call and we own it; Drop releases it.
+        let obj = unsafe { MonoObject::from_handle(MonoHandle(h)) };
+        drop(obj);
+    }
+    0 // never skip the original
+}
+
+fn harmony_probe(args: &Json) -> Result<Json, String> {
+    let class = arg_str(args, "class")?.to_string();
+    let method = arg_str(args, "method")?.to_string();
+    let ctx_kind = args.get("ctx_kind").and_then(Json::as_i64);
+
+    // Patching runs on the main thread like every other mutating
+    // op; mirrors write_field's oneshot.
+    use std::sync::Arc;
+    use parking_lot::Mutex;
+    let result: Arc<Mutex<Option<Result<Json, String>>>> = Arc::new(Mutex::new(None));
+    let r2 = result.clone();
+    MAIN_QUEUE.push(move || {
+        let res = match ctx_kind {
+            Some(0) => hook::patch_prefix_ctx(&class, &method, HookCtx::Instance, probe_prefix_noop),
+            Some(1) => hook::patch_prefix_ctx(&class, &method, HookCtx::Arg0, probe_prefix_noop),
+            _ => hook::patch_prefix(&class, &method, probe_prefix_noop),
+        };
+        let out = match res {
+            Ok(hook) => {
+                drop(hook); // unpatch immediately; the probe only tests applicability
+                Ok(json!({"patched": true, "unpatched": true}))
+            }
+            Err(e) => Err(format!("{e} (full exception in the player log)")),
+        };
+        *r2.lock() = Some(out);
+    });
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        if let Some(r) = result.lock().take() {
+            return r;
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err("harmony_probe: main-thread queue timed out".into());
         }
         std::thread::sleep(std::time::Duration::from_millis(5));
     }

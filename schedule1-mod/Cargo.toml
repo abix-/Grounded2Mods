@@ -1,0 +1,37 @@
+[package]
+name = "schedule1-mod"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Schedule 1 mod. Rust cdylib loaded into the IL2CPP game by
+# Unityforge.Shim.Melon (MelonLoader entry). v1 scope is the HTTP
+# control plane for live research (docs/schedule1-plan.md); the
+# gameplay goals on top are combat-XP RPG levelling and the
+# faction war.
+
+[lib]
+crate-type = ["cdylib"]
+name = "schedule1_mod"
+
+[dependencies]
+modforge = { path = "../modforge" }
+unityforge = { path = "../unityforge" }
+serde_json = { workspace = true }
+parking_lot = { workspace = true }
+
+[dev-dependencies]
+serde = { workspace = true }
+
+# Deploy convention: the MelonLoader shim looks for exactly ONE
+# `*.unityforge.dll` in the game's Mods folder. After building,
+# copy the cdylib there as `schedule1_mod.unityforge.dll`
+# (replacing il2cpp_smoke.unityforge.dll; the two cannot coexist).
+
+[lints]
+workspace = true
+
+[package.metadata.unityforge]
+deploy_name = "schedule1_mod.unityforge.dll"

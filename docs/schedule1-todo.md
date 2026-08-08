@@ -115,10 +115,14 @@
 
 ## Research Schedule 1 internals
 
-- [ ] New crate `schedule1-mod/` (cdylib, unityforge + modforge,
-      own HTTP port) added to the workspace.
-- [ ] `schedule1-mod/docs/research.md` +
-      `docs/certainty-tracking.md` started.
+- [x] New crate `schedule1-mod/` (cdylib, unityforge + modforge,
+      own HTTP port 17175) added to the workspace. Built and
+      deployed to Mods/ 2026-08-07 (replaces the smoke dll).
+- [x] `schedule1-mod/docs/research.md` +
+      `docs/certainty-tracking.md` started. Also added a
+      `harmony_probe` op to unityforge ops (no-op prefix patch,
+      report, unpatch) to prove per-target patchability on game
+      classes without a restart.
 - [ ] Map regions: the class that owns town areas + its state.
 - [ ] NPCs: spawn/path/despawn; the cartel/goon NPC classes.
 - [ ] Combat: health, damage, death, aggro classes.

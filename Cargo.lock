@@ -1511,6 +1511,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "schedule1-mod"
+version = "0.1.0"
+dependencies = [
+ "modforge",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "unityforge",
+]
+
+[[package]]
 name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1678,6 +1689,7 @@ name = "survivalist-mod"
 version = "0.1.0"
 dependencies = [
  "modforge",
+ "parking_lot",
  "serde_json",
  "unityforge",
 ]
