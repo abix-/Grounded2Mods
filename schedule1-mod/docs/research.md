@@ -89,6 +89,28 @@ certainty-tracking.md.
    `NotifyAttackedByPlayer(int)`, and UnityEvents onDie /
    onKnockedOut / onDieOrKnockedOut / onRevive. Still open:
    who applies damage (the caller of TakeDamage) and aggro.
+2b. Mob spawning: ANSWERED 2026-08-07 (tests/research_cartel.rs).
+   `ScheduleOne.Cartel.Cartel` (singleton) is the faction brain:
+   Status (ECartelStatus), HourPass tick, and it owns
+   Activities, Influence, GoonPool, DealManager. Its `GoonPool`
+   (1 live instance) has PUBLIC `SpawnGoon(Vector3) ->
+   CartelGoon` and `SpawnMultipleGoons(Vector3, int, bool) ->
+   List<CartelGoon>`, plus `ReturnToPool(goon)`, pooled
+   spawned/unspawned lists, and a full appearance randomizer.
+   5 CartelGoon instances were live at scan time. Mob farming
+   rides this pool; no from-nothing spawning needed.
+   CartelGoon's own method list overflows list_methods' 64KB
+   buffer (control-plane nit, not a blocker).
+
+4b. Loot path: PARTLY ANSWERED 2026-08-07.
+   `ScheduleOne.ItemFramework.ItemPickup` (70 live instances)
+   is the ground-loot object: `ItemToGive: ItemDefinition`,
+   `Pickup()`, `DestroyOnPickup`, `onPickup` UnityEvent; there
+   is also a NetworkedItemPickup. `ScheduleOne.Economy.DeadDrop`
+   (25 live, static `DeadDrops` list, `GetRandomEmptyDrop`) is
+   the stash-loot alternative. Still open: the creation call
+   (what instantiates a pickup at a position with a given item).
+
 4. Where kills are observable: ANSWERED 2026-08-07.
    `NPCHealth.Die` and `NPCHealth.KnockOut` are both
    Harmony-patchable live (harmony_probe patched and unpatched

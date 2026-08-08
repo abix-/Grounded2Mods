@@ -29,9 +29,9 @@ in the repo's docs/schedule1-todo.md.
 | --- | --- | --- |
 | Control plane (research surface) | 10/10 | generic and live-proven end to end: handle chaining walks any structure, main-thread safe, harmony_probe proven on a game class (NPCHealth.Die) |
 | Research: map regions | 9/10 | ANSWERED: Map.Regions (6 regions, names + enum + ranks proven), CartelInfluence live values read; remaining: exercise ChangeInfluence |
-| Research: NPCs + cartel classes | 5/10 | 135 NPCs live, NPCManager registry found; open: spawn path + the hostile cartel/goon classes |
+| Research: NPCs + cartel classes | 8/10 | Cartel/GoonPool/CartelGoon mapped live; SpawnGoon is public; open: invoke a spawn and observe it in-game |
 | Research: combat/death/aggro | 6/10 | NPCHealth fully mapped (SyncVar health, Die/KnockOut/TakeDamage, death events); kill hook PROVEN patchable; open: damage-source attribution + aggro |
-| Research: loot + mob spawn paths | 0/10 | find pickup/dead-drop creation and the NPC spawn path |
+| Research: loot + mob spawn paths | 6/10 | ItemPickup + DeadDrop mapped live (spawn path done via GoonPool); open: the pickup creation call |
 | Combat-XP levelling | 0/10 | blocked on research |
 | Loot drops | 0/10 | blocked on research; after levelling |
 | Mob farming areas | 0/10 | blocked on research; after loot |
