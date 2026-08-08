@@ -396,6 +396,9 @@ namespace Unityforge.Shim
             // JSON null -> null argument (e.g. the trailing object
             // params of GameTerrain.IsImpassable).
             if (tok == null || tok.Type == JTokenType.Null) return null;
+            // {"$handle": N} -> live object from the handle table
+            // (HandleArg, shared with the IL2CPP backend).
+            if (HandleArg.TryResolve(tok, Lookup, out var handleValue)) return handleValue;
             if (t == typeof(bool)) return tok.Value<bool>();
             if (t == typeof(int)) return tok.Value<int>();
             if (t == typeof(uint)) return (uint)tok.Value<long>();

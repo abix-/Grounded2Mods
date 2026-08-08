@@ -27,6 +27,9 @@
     <Compile Include="..\cs-shim-common\InputBridge.cs">
       <Link>Common\InputBridge.cs</Link>
     </Compile>
+    <Compile Include="..\cs-shim-common\HandleArg.cs">
+      <Link>Common\HandleArg.cs</Link>
+    </Compile>
     <Compile Include="..\cs-shim-common\TypeCache.cs">
       <Link>Common\TypeCache.cs</Link>
     </Compile>

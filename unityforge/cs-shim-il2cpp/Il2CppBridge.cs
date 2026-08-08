@@ -338,7 +338,7 @@ namespace Unityforge.Shim
                 {
                     var converted = new object[args.Count];
                     for (int i = 0; i < args.Count; i++)
-                        converted[i] = args[i].ToObject(pars[i].ParameterType);
+                        converted[i] = ResolveArg(args[i], pars[i].ParameterType);
                     var result = m.Invoke(obj, converted);
                     var resultJson = JsonConvert.SerializeObject(SerializeSafe(result));
                     return WriteJsonToBuf(resultJson, outBuf, cap);
@@ -374,6 +374,33 @@ namespace Unityforge.Shim
         /// boxed structs) often don't have a Newtonsoft converter
         /// off the shelf; fall back to ToString for those.
         /// </summary>
+        /// <summary>
+        /// Convert one invoke arg. {"$handle": N} resolves to the
+        /// live object (HandleArg, shared); everything else goes
+        /// through Newtonsoft. A resolved proxy that doesn't
+        /// already satisfy the parameter type (e.g. Player into
+        /// ICombatTargetable) is re-cast via the interop generic
+        /// Cast&lt;T&gt;, since proxy interface tables live il2cpp-side.
+        /// </summary>
+        private static object ResolveArg(JToken tok, Type paramType)
+        {
+            if (!HandleArg.TryResolve(tok, Lookup, out var v))
+                return tok.ToObject(paramType);
+            if (v != null
+                && !paramType.IsInstanceOfType(v)
+                && v is Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase b)
+            {
+                try
+                {
+                    var cast = typeof(Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase)
+                        .GetMethod("Cast")?.MakeGenericMethod(paramType);
+                    if (cast != null) return cast.Invoke(b, null);
+                }
+                catch { /* fall through; Invoke surfaces the mismatch */ }
+            }
+            return v;
+        }
+
         /// <summary>
         /// True when the interop proxy property is backed by a
         /// native FIELD (the generator emits a static

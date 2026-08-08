@@ -152,7 +152,9 @@ fn list_methods(args: &Json) -> Result<Json, String> {
     let class = arg_str(args, "class")?;
     let bridge = crate::bridge::try_get()?;
     let c_name = CString::new(class).map_err(|e| format!("bad class: {e}"))?;
-    let mut buf = vec![0u8; 65536];
+    // 256KB: CartelGoon (Schedule 1) overflowed 64KB (found
+    // 2026-08-07); interop game classes carry huge RPC surfaces.
+    let mut buf = vec![0u8; 262144];
     let n = (bridge.list_methods)(
         c_name.as_ptr(),
         buf.as_mut_ptr() as *mut std::os::raw::c_char,
