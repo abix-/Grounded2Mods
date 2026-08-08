@@ -74,10 +74,24 @@ certainty-tracking.md.
    (`ScheduleOne.Cartel.*`: Ambush, CartelActivities,
    CartelAmbushLocation, RobDealer, StealDeadDrop) already
    models faction pressure on regions.
-2. NPCs: how NPCs spawn, path, and despawn; what the cartel/goon
-   NPC classes are (the vanilla cartel update added hostile NPCs
-   and ambushes).
-3. Combat: health, damage application, death, and aggro classes
-   for player and NPCs.
-4. Where kills are observable: the Harmony hook point for combat
-   XP.
+2. NPCs: PARTLY ANSWERED 2026-08-07 (tests/research_npcs.rs).
+   135 live `ScheduleOne.NPCs.NPC` instances in the operator's
+   save. `NPCManager` keeps a static `NPCRegistry: List<NPC>`
+   and static `GetNPC(name)`. Each NPC owns an `NPCHealth`.
+   Still open: the spawn/despawn path (what creates an NPC at
+   runtime) and the cartel/goon classes
+   (CharacterClasses so far: Oscar, Ray, SewerGoblin; the
+   hostile-NPC classes need a dedicated walk).
+3. Combat: PARTLY ANSWERED 2026-08-07. `NPCHealth` (a FishNet
+   NetworkBehaviour) is the whole per-NPC life state: Health as
+   a SyncVar<float>, MaxHealth, IsDead, IsKnockedOut,
+   `TakeDamage`, `Die()`, `KnockOut()`, `Revive()`,
+   `NotifyAttackedByPlayer(int)`, and UnityEvents onDie /
+   onKnockedOut / onDieOrKnockedOut / onRevive. Still open:
+   who applies damage (the caller of TakeDamage) and aggro.
+4. Where kills are observable: ANSWERED 2026-08-07.
+   `NPCHealth.Die` and `NPCHealth.KnockOut` are both
+   Harmony-patchable live (harmony_probe patched and unpatched
+   them clean on the running game). Combat XP hooks there;
+   attribution (was it the player's kill) still needs the
+   damage-source trail from question 3.
