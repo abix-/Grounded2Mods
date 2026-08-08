@@ -21,6 +21,7 @@ modforge = { path = "../modforge" }
 unityforge = { path = "../unityforge" }
 serde_json = { workspace = true }
 parking_lot = { workspace = true }
+fastrand = { workspace = true }
 
 [dev-dependencies]
 serde = { workspace = true }

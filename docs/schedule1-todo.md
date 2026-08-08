@@ -140,7 +140,9 @@ the detail per box.
       knocked out an NPC, log shows "+25 XP for the kill (total
       875) LEVEL UP -> 9"; auto-spend raised Heavy Hands; state
       survived 4+ relaunches.
-- [ ] Kill an NPC, loot drops (cash first), pick it up in-game.
+- [x] Kill an NPC, loot drops (cash first), pick it up in-game.
+      DONE 2026-08-08: kill dropped a rolled cash stack at the
+      body (toughness-scaled), operator picked it up.
 - [ ] Walk into a region, hostile mobs are there to farm; they
       respawn on a timer; their stats scale with player level.
 - [ ] Regions show an owner faction; `faction_state` op agrees
@@ -210,11 +212,13 @@ the detail per box.
 
 ## Loot drops (after levelling works)
 
-- [ ] Loot table v1: cash drop on NPC kill, amount scaled by mob
-      toughness, via the vanilla pickup/dead-drop path from
-      research.
-- [ ] Exit gate: kill a mob in-game, loot appears, player picks
-      it up; no orphaned pickups after save/reload.
+- [x] Loot table v1: cash drop on NPC kill, amount scaled by mob
+      toughness (rolled; specifics behind the spoiler firewall
+      in src/loot.rs), via the proven cash-template clone +
+      FishNet spawn recipe. CONFIRMED in-game 2026-08-08.
+- [ ] Exit gate remainder: no orphaned pickups after
+      save/reload (drops are not saveable scene objects; verify
+      what happens to unclaimed drops across a reload).
 - [ ] Item drops (beyond cash) once cash drops are proven.
 
 ## Mob farming areas (after loot works)

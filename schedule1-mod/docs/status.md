@@ -33,12 +33,19 @@ in the repo's docs/schedule1-todo.md.
 | Research: combat/death/aggro | 10/10 | ANSWERED: NotifyAttackedByPlayer fires per player hit (attribution proven live); melee-to-0 raises KnockOut not Die, so XP credits both |
 | Research: loot + mob spawn paths | 9/10 | ANSWERED for cash: template clone + FishNet spawn recipe proven in-game (operator picked up spawned $100); remaining: item (non-cash) pickup creation when loot tables need it |
 | Combat-XP levelling | 7/10 | EXIT GATE PASSED: operator kill logged "+25 XP ... LEVEL UP -> 9", auto-spend applied, punches confirmed stronger, persistence proven. Open to 10: vitality/regeneration on ice (generator fix), more skills (toughness, gun damage, fleet foot, jump height), baseline-poisoning framework fix, long-play soak |
-| Loot drops | 0/10 | blocked on research; after levelling |
+| Loot drops | 6/10 | WORKING in-game: kills drop rolled, toughness-scaled cash at the body; operator picked it up. Open: unclaimed-drop behavior across save/reload, item (non-cash) drops, affix-count scaling when mob types land |
 | Mob farming areas | 0/10 | blocked on research; after loot |
 | Faction war | 0/10 | blocked on research |
 
 ## Session log
 
+- 2026-08-08 (evening, cont.): loot drops live and confirmed:
+  player kills drop rolled cash (scaled by the mob's max
+  health) at the body via the template-clone + FishNet spawn
+  recipe, queued a frame after the kill hook. Heavy Hands
+  baseline poisoning killed for good by seeding the proven
+  vanilla values at install. Both grind-loop gates (XP + loot)
+  passed in-game the same evening.
 - 2026-08-08 (evening): combat-XP levelling built and live.
   Kill attribution hooks (NotifyAttackedByPlayer + Die +
   KnockOut), endless curve (50 * level^1.3, cap 1024 =

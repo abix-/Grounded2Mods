@@ -21,6 +21,7 @@ use unityforge::ModDef;
 
 mod combat_trace;
 mod killcredit;
+mod loot;
 mod skills;
 
 static MOD_INFO: ModDef = ModDef {

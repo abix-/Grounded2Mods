@@ -267,6 +267,14 @@ fn resolve_slot() -> Option<String> {
 // ---- Install --------------------------------------------------------
 
 pub fn install() {
+    // Seed the proven vanilla values (live-read 2026-08-08 on
+    // 0.4.6f12) so a hot reload never recaptures already-boosted
+    // values as baselines (the poisoning seen same day). A game
+    // update that changes these must re-verify via
+    // tests/levelling.rs instance_prop_probe.
+    HEAVY_HANDS_VANILLA.set_if_unset("MinPunchDamage", 20.0);
+    HEAVY_HANDS_VANILLA.set_if_unset("MaxPunchDamage", 35.0);
+
     unityforge::rpg::ops::register(&TRACKER);
     register_ops();
     let handle = SlotPoller::spawn(

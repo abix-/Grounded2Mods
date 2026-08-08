@@ -59,22 +59,55 @@ pub fn install() {
     );
 }
 
+/// Vector3 arrives as the shim's ToString "(x, y, z)".
+fn parse_vec3(v: &Json) -> Option<(f64, f64, f64)> {
+    let s = v.as_str().or_else(|| v.get("str").and_then(Json::as_str))?;
+    let s = s.trim().trim_start_matches('(').trim_end_matches(')');
+    let mut parts = s.split(',').map(|p| p.trim().parse::<f64>());
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(Ok(x)), Some(Ok(y)), Some(Ok(z))) => Some((x, y, z)),
+        _ => None,
+    }
+}
+
 /// The NPC's stable native pointer from an NPCHealth ctx handle
 /// (releases every handle it takes).
 fn npc_ptr(health_h: i32) -> Option<i64> {
+    npc_info(health_h).map(|(ptr, _, _)| ptr)
+}
+
+/// Pointer, world position, and max health of the NPC behind an
+/// NPCHealth ctx handle (releases every handle it takes).
+fn npc_info(health_h: i32) -> Option<(i64, Option<(f64, f64, f64)>, f32)> {
     if health_h == 0 {
         return None;
     }
     // SAFETY: the shim acquired this handle for this callback and
     // we own it; Drop releases it.
     let obj = unsafe { MonoObject::from_handle(MonoHandle(health_h)) };
+    let max_health = obj
+        .read_field("MaxHealth")
+        .ok()
+        .and_then(|v| v.as_f64())
+        .unwrap_or(100.0) as f32;
     let v = obj.read_field("npc").ok()?;
-    let ptr = v.get("ptr").and_then(Json::as_i64);
+    let ptr = v.get("ptr").and_then(Json::as_i64)?;
+    let mut pos = None;
     if let Some(h) = v.get("handle").and_then(Json::as_i64) {
-        // SAFETY: releasing the chained handle we just took.
-        drop(unsafe { MonoObject::from_handle(MonoHandle(h as i32)) });
+        // SAFETY: chained handle from the read above; we own it.
+        let npc = unsafe { MonoObject::from_handle(MonoHandle(h as i32)) };
+        if let Ok(t) = npc.read_field("transform") {
+            if let Some(th) = t.get("handle").and_then(Json::as_i64) {
+                // SAFETY: chained handle, same ownership rule.
+                let transform = unsafe { MonoObject::from_handle(MonoHandle(th as i32)) };
+                pos = transform
+                    .invoke("get_position", &Json::Array(vec![]))
+                    .ok()
+                    .and_then(|p| parse_vec3(&p));
+            }
+        }
     }
-    ptr
+    Some((ptr, pos, max_health))
 }
 
 fn remember(list: &Mutex<Vec<(i64, Instant)>>, ptr: i64, keep: Duration) {
@@ -122,7 +155,7 @@ extern "C" fn on_down(ctx: *const c_void) -> i32 {
         release_only(ctx as isize as i32);
         return 0;
     }
-    let Some(ptr) = npc_ptr(ctx as isize as i32) else {
+    let Some((ptr, pos, max_health)) = npc_info(ctx as isize as i32) else {
         return 0;
     };
     if !recent(&PLAYER_HITS, ptr, HIT_WINDOW) {
@@ -132,6 +165,9 @@ extern "C" fn on_down(ctx: *const c_void) -> i32 {
         return 0; // already paid for this down
     }
     remember(&CREDITED, ptr, CREDIT_COOLDOWN);
+    if let Some((x, y, z)) = pos {
+        crate::loot::drop_cash_at(x, y, z, max_health);
+    }
     if let Some(r) = TRACKER.record_xp(XP_PER_DOWN) {
         let lvl = if r.new_level > r.old_level {
             format!(" LEVEL UP -> {} (+{} point(s))", r.new_level, r.points_gained)
