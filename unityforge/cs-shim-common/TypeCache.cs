@@ -42,13 +42,22 @@ namespace Unityforge.Shim
             }
             // Pass 2: short-name scan for callers naming a
             // namespaced type by its short name.
+            // GetTypes() can throw on assemblies with unloadable
+            // types (the 0.4.6f12 interop Il2Cppmscorlib has one;
+            // an unknown class name crashed the whole game
+            // 2026-08-08): take the loadable subset and skip
+            // anything worse.
             if (t == null)
             {
                 foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
                 {
-                    foreach (var x in asm.GetTypes())
+                    Type[] types;
+                    try { types = asm.GetTypes(); }
+                    catch (ReflectionTypeLoadException e) { types = e.Types; }
+                    catch { continue; }
+                    foreach (var x in types)
                     {
-                        if (x.Name == name) { t = x; break; }
+                        if (x != null && x.Name == name) { t = x; break; }
                     }
                     if (t != null) break;
                 }

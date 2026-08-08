@@ -62,6 +62,12 @@ pub fn register_builtins() {
             invoke_method,
         ),
         OpDef::new(
+            "invoke_static",
+            "Invoke a STATIC method on a named class (main-thread queued)",
+            "{class: str, method: str, args?: array}",
+            invoke_static,
+        ),
+        OpDef::new(
             "list_singletons",
             "Get the live Singleton<T>.Instance for each named type",
             "{types: [str]}",
@@ -246,6 +252,15 @@ fn invoke_method(args: &Json) -> Result<Json, String> {
         let res = obj.invoke(&method, &m_args);
         std::mem::forget(obj);
         res
+    })?
+}
+
+fn invoke_static(args: &Json) -> Result<Json, String> {
+    let class = arg_str(args, "class")?.to_string();
+    let method = arg_str(args, "method")?.to_string();
+    let m_args = args.get("args").cloned().unwrap_or(Json::Array(vec![]));
+    on_main("invoke_static", std::time::Duration::from_secs(2), move || {
+        crate::mono::invoke_static(&class, &method, &m_args)
     })?
 }
 

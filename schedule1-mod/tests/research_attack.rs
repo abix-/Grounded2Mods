@@ -13,19 +13,8 @@
 //! SKIPs (prints why and passes) when the game is not running.
 
 mod common;
-use common::{api, first_handle, handle_of, ping_or_skip};
-use serde_json::{Value, json};
-
-/// Vector3 arrives as ToString "(x, y, z)"; parse it.
-fn parse_vec3(v: &Value) -> Option<(f64, f64, f64)> {
-    let s = v.as_str().or_else(|| v.get("str").and_then(Value::as_str))?;
-    let s = s.trim().trim_start_matches('(').trim_end_matches(')');
-    let mut parts = s.split(',').map(|p| p.trim().parse::<f64>());
-    match (parts.next(), parts.next(), parts.next()) {
-        (Some(Ok(x)), Some(Ok(y)), Some(Ok(z))) => Some((x, y, z)),
-        _ => None,
-    }
-}
+use common::{api, first_handle, handle_of, parse_vec3, ping_or_skip};
+use serde_json::json;
 
 #[test]
 fn goon_attacks_player() {

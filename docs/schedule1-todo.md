@@ -131,8 +131,10 @@ take region control from factions. Every unchecked box below is
 the concrete path there, in order. Sections after this one carry
 the detail per box.
 
-- [ ] Research proven live: region owner, mob classes, death
-      path, kill hook, loot path (game must be running).
+- [x] Research proven live: region owner, mob classes, death
+      path, kill hook, loot path (game must be running). All
+      five proven by 2026-08-08; evidence in
+      schedule1-mod/docs/research.md + certainty-tracking.md.
 - [ ] Kill an NPC, gain XP, level a combat stat, stat visibly
       changes, survives save/reload.
 - [ ] Kill an NPC, loot drops (cash first), pick it up in-game.
@@ -162,11 +164,19 @@ the detail per box.
       ranks 0/1/3/5/7/9); CartelInfluence singleton holds 0..1
       influence per region. Full detail in
       schedule1-mod/docs/research.md.
-- [ ] NPCs: spawn/path/despawn; the cartel/goon NPC classes.
-- [ ] Combat: health, damage, death, aggro classes.
-- [ ] The kill-observation Harmony hook point for combat XP.
-- [ ] Loot path: how item pickups / dead drops are created in
+- [x] NPCs: spawn/path/despawn; the cartel/goon NPC classes.
+      GoonPool.SpawnGoon + CartelGoon.AttackEntity proven
+      in-game 2026-08-07/08.
+- [x] Combat: health, damage, death, aggro classes. ANSWERED
+      2026-08-08: NotifyAttackedByPlayer fires per player hit
+      (attribution); melee-to-0 raises KnockOut, not Die.
+- [x] The kill-observation Harmony hook point for combat XP.
+      Die + KnockOut prefixes installed and FIRED live during
+      real fights (combat_trace, 2026-08-08).
+- [x] Loot path: how item pickups / dead drops are created in
       the world; prove spawning one at a position via a test.
+      PROVEN 2026-08-08: cash template clone + FishNet spawn,
+      operator picked it up; recipe in research.md 4b.
 - [ ] Mob spawn path: prove spawning a hostile cartel/goon NPC
       at a position via the vanilla machinery, and that it
       fights, dies, and despawns clean.

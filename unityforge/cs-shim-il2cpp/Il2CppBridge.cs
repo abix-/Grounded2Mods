@@ -120,7 +120,43 @@ namespace Unityforge.Shim
         public static readonly InvokeStaticFn InvokeStaticDelegate = InvokeStatic;
         private static int InvokeStatic(IntPtr classNameUtf8, IntPtr methodNameUtf8, IntPtr argsJsonUtf8, IntPtr outBuf, int cap)
         {
-            return -1; // static invoke is not implemented on the IL2CPP backend yet
+            // Mirror of InvokeMethod for statics: resolve the class
+            // via TypeCache, match by name + arg count, convert args
+            // through ResolveArg. Generic method definitions are
+            // skipped (UnityEngine.Object.Instantiate<T> shadows the
+            // plain Instantiate(Object) overload).
+            var className = Marshal.PtrToStringAnsi(classNameUtf8);
+            var name = Marshal.PtrToStringAnsi(methodNameUtf8);
+            if (string.IsNullOrEmpty(className) || string.IsNullOrEmpty(name)) return -1;
+            var t = TypeCache.Resolve(className);
+            if (t == null) return -1;
+            var argsJson = Marshal.PtrToStringAnsi(argsJsonUtf8) ?? "[]";
+            JArray args;
+            try { args = JArray.Parse(argsJson); }
+            catch { return -2; }
+            foreach (var m in t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
+            {
+                if (m.Name != name) continue;
+                if (m.IsGenericMethodDefinition) continue;
+                var pars = m.GetParameters();
+                if (pars.Length != args.Count) continue;
+                try
+                {
+                    var converted = new object[args.Count];
+                    for (int i = 0; i < args.Count; i++)
+                        converted[i] = ResolveArg(args[i], pars[i].ParameterType);
+                    var result = m.Invoke(null, converted);
+                    var resultJson = JsonConvert.SerializeObject(SerializeSafe(result));
+                    return WriteJsonToBuf(resultJson, outBuf, cap);
+                }
+                catch (Exception e)
+                {
+                    var err = "{\"error\":\"" + e.Message.Replace("\"", "\\\"") + "\"}";
+                    WriteJsonToBuf(err, outBuf, cap);
+                    return -3;
+                }
+            }
+            return -1;
         }
         public static readonly ReleaseHandleFn ReleaseHandleDelegate = ReleaseHandle;
         public delegate int ListMethodsFn(IntPtr typeNameUtf8, IntPtr outBuf, int cap);

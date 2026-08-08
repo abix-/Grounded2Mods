@@ -124,14 +124,37 @@ certainty-tracking.md.
    spawn -> AttackEntity -> fight; the {"$handle": N} invoke
    arg passes live objects.
 
-4b. Loot path: PARTLY ANSWERED 2026-08-07.
+4b. Loot path: ANSWERED 2026-08-08 (tests/research_pickup.rs;
+   operator picked up spawned cash in-game: "THAT WORKED").
    `ScheduleOne.ItemFramework.ItemPickup` (70 live instances)
    is the ground-loot object: `ItemToGive: ItemDefinition`,
    `Pickup()`, `DestroyOnPickup`, `onPickup` UnityEvent; there
-   is also a NetworkedItemPickup. `ScheduleOne.Economy.DeadDrop`
-   (25 live, static `DeadDrops` list, `GetRandomEmptyDrop`) is
-   the stash-loot alternative. Still open: the creation call
-   (what instantiates a pickup at a position with a given item).
+   is also a NetworkedItemPickup and a CashPickup (Value:
+   float SyncVar). `ScheduleOne.Economy.DeadDrop` (25 live,
+   static `DeadDrops` list, `GetRandomEmptyDrop`) is the
+   stash-loot alternative.
+   THE CREATION RECIPE (proven live, cash): the game parks
+   prefab templates "$10 Pickup" and "Dynamic Amount Cash
+   Pickup" INACTIVE in a hidden container (walk_class finds
+   them, activeInHierarchy=false, both at one point). Spawning
+   ground cash at a position:
+   1. UnityEngine.Object.Instantiate(template) via the
+      invoke_static op (the returned proxy is base-typed;
+      re-find the clone via walk_class, which downcasts;
+      clones are named "<template>(Clone)").
+   2. gameObject.SetActive(true) (clones inherit the
+      template's hidden state).
+   3. transform.set_position(target).
+   4. FishNet: InstanceFinder.ServerManager.Spawn(clone, null,
+      default Scene). MANDATORY: un-spawned NetworkObject
+      clones are destroyed by the engine within seconds (17
+      earlier clones vanished from the walk).
+   5. write Value, invoke UpdateCashStackVisuals().
+   TrashManager.CreateTrashItem(String, Vector3, Quaternion,
+   Vector3, String, Boolean) -> TrashItem is the public
+   by-name world-item creation call for trash. DropCash /
+   DropItem RPCs exist in metadata but no walked class
+   declares them; not needed, the recipe above covers loot.
 
 4. Where kills are observable: ANSWERED 2026-08-07.
    `NPCHealth.Die` and `NPCHealth.KnockOut` are both

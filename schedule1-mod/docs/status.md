@@ -31,7 +31,7 @@ in the repo's docs/schedule1-todo.md.
 | Research: map regions | 9/10 | ANSWERED: Map.Regions (6 regions, names + enum + ranks proven), CartelInfluence live values read; remaining: exercise ChangeInfluence |
 | Research: NPCs + cartel classes | 10/10 | ANSWERED: spawn AND aggro proven in-game (goon spawned, AttackEntity, operator got attacked) |
 | Research: combat/death/aggro | 10/10 | ANSWERED: NotifyAttackedByPlayer fires per player hit (attribution proven live); melee-to-0 raises KnockOut not Die, so XP credits both |
-| Research: loot + mob spawn paths | 6/10 | ItemPickup + DeadDrop mapped live (spawn path done via GoonPool); open: the pickup creation call |
+| Research: loot + mob spawn paths | 9/10 | ANSWERED for cash: template clone + FishNet spawn recipe proven in-game (operator picked up spawned $100); remaining: item (non-cash) pickup creation when loot tables need it |
 | Combat-XP levelling | 0/10 | blocked on research |
 | Loot drops | 0/10 | blocked on research; after levelling |
 | Mob farming areas | 0/10 | blocked on research; after loot |
@@ -39,6 +39,18 @@ in the repo's docs/schedule1-todo.md.
 
 ## Session log
 
+- 2026-08-08 (later still): loot creation ANSWERED live: cash
+  spawned at the player and picked up in-game. Recipe: clone the
+  inactive "Dynamic Amount Cash Pickup" template, SetActive,
+  position, InstanceFinder.ServerManager.Spawn, set Value,
+  UpdateCashStackVisuals. Un-spawned clones get destroyed, so
+  the FishNet spawn is mandatory. New control-plane pieces:
+  invoke_static op (IL2CPP backend implemented), TypeCache no
+  longer crashes the game on unknown class names (restart-only
+  shim fix, deployed), scripts/restart.ps1 does the full
+  build + redeploy + relaunch loop. ALL RESEARCH GATES for the
+  goal checklist's first box are now proven; gameplay build
+  starts next (combat-XP levelling first).
 - 2026-08-08 (later): kill attribution ANSWERED live via the new
   combat_trace ops (recording prefix hooks on NPCHealth):
   NotifyAttackedByPlayer fires on every player hit, same frame

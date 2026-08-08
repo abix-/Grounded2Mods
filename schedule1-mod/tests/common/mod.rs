@@ -56,6 +56,26 @@ pub fn first_handle(api: &Api<Value>, class: &str) -> Option<i64> {
     handle
 }
 
+/// Vector3 arrives as ToString "(x, y, z)"; parse it.
+pub fn parse_vec3(v: &Value) -> Option<(f64, f64, f64)> {
+    let s = v.as_str().or_else(|| v.get("str").and_then(Value::as_str))?;
+    let s = s.trim().trim_start_matches('(').trim_end_matches(')');
+    let mut parts = s.split(',').map(|p| p.trim().parse::<f64>());
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(Ok(x)), Some(Ok(y)), Some(Ok(z))) => Some((x, y, z)),
+        _ => None,
+    }
+}
+
+/// The local player's world position via Player.transform.
+pub fn player_position(api: &Api<Value>) -> Option<(f64, f64, f64)> {
+    let player = first_handle(api, "ScheduleOne.PlayerScripts.Player")?;
+    let transform = api.op("read_field", json!({"handle": player, "field": "transform"}));
+    let th = handle_of(&transform.result)?;
+    let pos = api.op("invoke_method", json!({"handle": th, "method": "get_position", "args": []}));
+    parse_vec3(&pos.result)
+}
+
 /// Handle carried by a complex value (attached by the shim's
 /// serializer so ops chain generically).
 pub fn handle_of(v: &Value) -> Option<i64> {
