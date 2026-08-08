@@ -262,6 +262,18 @@ prefab path, and S1API is already in the operator's mod stack.
       NPCs visible and solid beside the player
       (tests/research_custom_npcs.rs). The 5-goon supply cap is
       dead.
+- [x] Minted-NPC combat PROVEN 2026-08-08: two minted goons,
+      armed via S1API (knife + baton, weapons by Resources
+      path, guns available: M1911/PumpShotgun/Revolver),
+      ordered onto EACH OTHER via
+      CombatBehaviour.SetAndAttackTarget, fought with no player
+      involvement. NpcFactory: index-tracked mints +
+      AttackPlayer / AttackNpc / Arm.
+- [ ] Melee separation polish: NPC-vs-NPC brawlers path into
+      each other (models collide) while correctly attacking
+      (timeWithinAttackRange counts; field-backed combat config
+      identical to vanilla per research_combat_tuning.rs).
+      Look at non-field-backed combat props or add separation.
 - [ ] Cosmetics: real appearances (police uniform, goon looks)
       and name pools via S1API's appearance/identity APIs; the
       operator saw default bodies + placeholder names (expected

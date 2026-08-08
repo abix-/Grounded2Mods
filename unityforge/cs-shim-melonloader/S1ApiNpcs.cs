@@ -79,6 +79,10 @@ namespace Unityforge.Shim.Schedule1
     /// </summary>
     public static class NpcFactory
     {
+        /// <summary>Minted NPCs by index (the Rust side's handle).</summary>
+        private static readonly System.Collections.Generic.List<S1API.Entities.NPC> Minted =
+            new System.Collections.Generic.List<S1API.Entities.NPC>();
+
         public static string SpawnGoon(float x, float y, float z)
             => Spawn(() => new GoonNpc(), x, y, z);
 
@@ -87,6 +91,55 @@ namespace Unityforge.Shim.Schedule1
 
         public static string SpawnPlayerNpc(float x, float y, float z)
             => Spawn(() => new PlayerNpc(), x, y, z);
+
+        /// <summary>Order a minted NPC onto the player.</summary>
+        public static string AttackPlayer(int index)
+        {
+            try
+            {
+                var npc = Minted[index];
+                npc.CombatBehaviour.SetAndAttackTarget(S1API.Entities.Player.Local);
+                return "{\"ok\":true}";
+            }
+            catch (Exception e)
+            {
+                return Fail(e);
+            }
+        }
+
+        /// <summary>Order minted NPC vs minted NPC (the war).</summary>
+        public static string AttackNpc(int attacker, int target)
+        {
+            try
+            {
+                var a = Minted[attacker];
+                var t = Minted[target];
+                a.CombatBehaviour.SetAndAttackTarget(t);
+                return "{\"ok\":true}";
+            }
+            catch (Exception e)
+            {
+                return Fail(e);
+            }
+        }
+
+        /// <summary>
+        /// Arm a minted NPC with a weapon by Resources path
+        /// (e.g. "Avatar/Equippables/Knife", ".../M1911").
+        /// </summary>
+        public static string Arm(int index, string weaponPath)
+        {
+            try
+            {
+                var npc = Minted[index];
+                npc.CombatBehaviour.SetCurrentWeapon(weaponPath);
+                return "{\"ok\":true,\"weapon\":\"" + weaponPath + "\"}";
+            }
+            catch (Exception e)
+            {
+                return Fail(e);
+            }
+        }
 
         public static string CustomNpcCount()
         {
@@ -119,8 +172,14 @@ namespace Unityforge.Shim.Schedule1
                 if (register == null)
                     return "{\"ok\":false,\"error\":\"RegisterCustomNpcForNetworking not found in S1API\"}";
                 register.Invoke(null, new object[] { npc });
-                return "{\"ok\":true,\"name\":\"" + npc.FirstName + " " + npc.LastName +
-                    "\",\"queued\":true}";
+                int index;
+                lock (Minted)
+                {
+                    index = Minted.Count;
+                    Minted.Add(npc);
+                }
+                return "{\"ok\":true,\"index\":" + index + ",\"name\":\"" +
+                    npc.FirstName + " " + npc.LastName + "\",\"queued\":true}";
             }
             catch (Exception e)
             {
