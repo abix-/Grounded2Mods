@@ -44,24 +44,28 @@ fn walk(api: &Api<Value>, class: &str) -> Option<Vec<Value>> {
     None
 }
 
-fn dump_first(api: &Api<Value>, class: &str) {
-    let Some(instances) = walk(api, class) else {
-        println!("{class}: NOT resolvable live");
-        return;
-    };
-    let Some(handle) = instances.first().and_then(|i| i["handle"].as_i64()) else {
+/// Walk the class, return the first live instance handle.
+/// inspect_object on IL2CPP only shows the interop wrapper's
+/// managed fields (isWrapped/pooledPtr, seen live 2026-08-07),
+/// so named native fields are read via read_field instead.
+fn first_handle(api: &Api<Value>, class: &str) -> Option<i64> {
+    let instances = walk(api, class)?;
+    let handle = instances.first().and_then(|i| i["handle"].as_i64());
+    if handle.is_none() {
         println!("{class}: resolvable but zero live instances (scene-dependent?)");
-        return;
-    };
-    let inspect = api.op("inspect_object", json!({"handle": handle}));
-    if !inspect.ok {
-        println!("{class}: inspect_object failed: {:?}", inspect.error);
-        return;
     }
-    println!(
-        "{class} fields:\n{}",
-        serde_json::to_string_pretty(&inspect.result).unwrap_or_default()
-    );
+    handle
+}
+
+fn read_fields(api: &Api<Value>, class: &str, handle: i64, fields: &[&str]) {
+    for field in fields {
+        let read = api.op("read_field", json!({"handle": handle, "field": field}));
+        if read.ok {
+            println!("{class}.{field} = {}", read.result);
+        } else {
+            println!("{class}.{field}: read_field failed: {:?}", read.error);
+        }
+    }
 }
 
 #[test]
@@ -77,6 +81,20 @@ fn map_region_owner() {
     };
     assert!(ping.ok, "ping not ok: {:?}", ping.error);
 
-    dump_first(&api, "ScheduleOne.Map.Map");
-    dump_first(&api, "ScheduleOne.Cartel.CartelInfluence");
+    if let Some(h) = first_handle(&api, "ScheduleOne.Map.Map") {
+        read_fields(
+            &api,
+            "Map",
+            h,
+            &["Regions", "RegionDict", "Instance"],
+        );
+    }
+    if let Some(h) = first_handle(&api, "ScheduleOne.Cartel.CartelInfluence") {
+        read_fields(
+            &api,
+            "CartelInfluence",
+            h,
+            &["RegionInfluence", "DefaultRegionInfluence"],
+        );
+    }
 }

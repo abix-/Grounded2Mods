@@ -11,14 +11,16 @@
 // - `Il2CppType.From(name)` resolves a System.Type that wraps
 //   an Il2Cpp class. The same `name` string format Mono uses
 //   (e.g. "UnityEngine.Time") works.
-// - All `BindingFlags.* | BindingFlags.Il2CppNonPublic` flags
-//   are needed to see private fields; Il2CppInterop ships a
-//   `Il2CppType.From()` + `GetIl2CppField()` extension on
-//   System.Type.
-// - For value-type reads/writes, Il2CppInterop's
-//   `IL2CPP.il2cpp_field_get_value` / `il2cpp_field_set_value`
-//   work; for boxed reference types use the Field's `GetValue`
-//   / `SetValue` methods on the host object.
+// - Native fields surface on the generated proxy types as
+//   managed PROPERTIES (backed by NativeFieldInfoPtr), not as
+//   managed fields. Field reads/writes therefore consult
+//   GetField first, then GetProperty. Found live 2026-08-07:
+//   GetField alone saw only wrapper internals
+//   (isWrapped/pooledPtr) on ScheduleOne.Map.Map.
+// - Resources.FindObjectsOfTypeAll returns UnityEngine.Object
+//   wrappers; each is downcast to the requested proxy type via
+//   the proxy's (IntPtr) ctor so reflection sees the game
+//   class, not the wrapper.
 // - HarmonyX targeting Il2Cpp methods works the same way as
 //   on Mono once the type is loaded (HarmonyX abstracts it).
 //
@@ -202,7 +204,7 @@ namespace Unityforge.Shim
             {
                 var o = arr[i];
                 if (o == null) continue;
-                int h = Acquire(o);
+                int h = Acquire(DowncastToProxy(t, o));
                 list.Add(new JObject { ["handle"] = h, ["name"] = o.name?.ToString() ?? "" });
             }
             return WriteJsonToBuf(list.ToString(Formatting.None), outBuf, cap);
@@ -220,11 +222,28 @@ namespace Unityforge.Shim
                 try
                 {
                     var v = f.GetValue(obj);
-                    fields[f.Name] = JToken.FromObject(SerializeSafe(v));
+                    fields[f.Name] = JToken.FromObject(SerializeSafe(v) ?? JValue.CreateNull());
                 }
                 catch (Exception e)
                 {
                     fields[f.Name] = "<error: " + e.Message + ">";
+                }
+            }
+            // Native fields surface as properties on the proxy
+            // type; wrapper plumbing declared on Il2CppObjectBase
+            // itself is skipped.
+            foreach (var p in t.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+            {
+                if (!p.CanRead || p.GetIndexParameters().Length > 0) continue;
+                if (p.DeclaringType == typeof(Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase)) continue;
+                try
+                {
+                    var v = p.GetValue(obj);
+                    fields[p.Name] = JToken.FromObject(SerializeSafe(v) ?? JValue.CreateNull());
+                }
+                catch (Exception e)
+                {
+                    fields[p.Name] = "<error: " + e.Message + ">";
                 }
             }
             root["fields"] = fields;
@@ -237,12 +256,20 @@ namespace Unityforge.Shim
             if (obj == null) return -1;
             var name = Marshal.PtrToStringAnsi(fieldNameUtf8);
             if (string.IsNullOrEmpty(name)) return -1;
-            var f = obj.GetType().GetField(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            if (f == null) return -1;
+            var t = obj.GetType();
+            var f = t.GetField(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
             try
             {
-                var v = f.GetValue(obj);
-                return WriteJsonToBuf(JsonConvert.SerializeObject(SerializeSafe(v)), outBuf, cap);
+                if (f != null)
+                {
+                    var v = f.GetValue(obj);
+                    return WriteJsonToBuf(JsonConvert.SerializeObject(SerializeSafe(v)), outBuf, cap);
+                }
+                // Native fields surface as properties on the proxy.
+                var p = t.GetProperty(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                if (p == null || !p.CanRead) return -1;
+                var pv = p.GetValue(obj);
+                return WriteJsonToBuf(JsonConvert.SerializeObject(SerializeSafe(pv)), outBuf, cap);
             }
             catch
             {
@@ -256,13 +283,22 @@ namespace Unityforge.Shim
             if (obj == null) return -2;
             var name = Marshal.PtrToStringAnsi(fieldNameUtf8);
             if (string.IsNullOrEmpty(name)) return -2;
-            var f = obj.GetType().GetField(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            if (f == null) return -2;
+            var t = obj.GetType();
+            var f = t.GetField(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
             var json = Marshal.PtrToStringAnsi(valueJsonUtf8) ?? "";
             try
             {
-                var parsed = JsonConvert.DeserializeObject(json, f.FieldType);
-                f.SetValue(obj, parsed);
+                if (f != null)
+                {
+                    var parsed = JsonConvert.DeserializeObject(json, f.FieldType);
+                    f.SetValue(obj, parsed);
+                    return 0;
+                }
+                // Native fields surface as properties on the proxy.
+                var p = t.GetProperty(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                if (p == null || !p.CanWrite) return -2;
+                var pparsed = JsonConvert.DeserializeObject(json, p.PropertyType);
+                p.SetValue(obj, pparsed);
                 return 0;
             }
             catch
@@ -327,11 +363,44 @@ namespace Unityforge.Shim
         /// boxed structs) often don't have a Newtonsoft converter
         /// off the shelf; fall back to ToString for those.
         /// </summary>
+        /// <summary>
+        /// Rewrap a UnityEngine.Object wrapper as the requested
+        /// interop proxy type so reflection sees the game class.
+        /// Every generated proxy has a public (IntPtr) ctor.
+        /// Falls back to the wrapper if the cast fails.
+        /// </summary>
+        private static object DowncastToProxy(Type t, UnityEngine.Object o)
+        {
+            try
+            {
+                return Activator.CreateInstance(t, o.Pointer) ?? (object)o;
+            }
+            catch
+            {
+                return o;
+            }
+        }
+
         private static object SerializeSafe(object v)
         {
             if (v == null) return null;
             var t = v.GetType();
             if (t.IsPrimitive || v is string) return v;
+            // Il2Cpp objects: Newtonsoft would dump wrapper
+            // plumbing (Pointer, WasCollected, ...). Report the
+            // proxy type + ToString instead; complex values get
+            // walked via their own handle, not serialized here.
+            if (v is Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase il2cpp)
+            {
+                string s;
+                try { s = v.ToString(); } catch { s = "<tostring failed>"; }
+                return new JObject
+                {
+                    ["il2cpp_type"] = t.FullName,
+                    ["ptr"] = (long)il2cpp.Pointer,
+                    ["str"] = s,
+                };
+            }
             try
             {
                 // Try a round-trip through Newtonsoft; if it works,
