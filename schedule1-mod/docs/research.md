@@ -56,17 +56,24 @@ Answers gate the gameplay work (docs/schedule1-plan.md). Each
 answer lands here with its evidence and a row in
 certainty-tracking.md.
 
-1. Map regions: what class owns the town's areas and what state
-   it carries. Candidates found by metadata scan (see
-   certainty-tracking.md): `ScheduleOne.Map.Map` (Regions,
-   RegionDict, MapRegionData, enum EMapRegion) and
-   `ScheduleOne.Cartel.CartelInfluence` (per-region influence
-   with change methods). The vanilla cartel machinery
+1. Map regions: ANSWERED 2026-08-07, proven live by
+   `tests/research_map.rs`. `ScheduleOne.Map.Map` (singleton)
+   owns `Regions: MapRegionData[]` (6 regions). Each
+   MapRegionData carries Name, Region (EMapRegion), IsUnlocked,
+   UnlockedByDefault, RankRequirement, StartingNPCs: NPC[],
+   AdjacentRegions, RegionBounds: PolygonalZone,
+   RegionDeliveryLocations. EMapRegion mapping (proven live):
+   0=Northtown (rank 0), 1=Westville (rank 1), 2=Downtown
+   (rank 3), 3=Docks (rank 5), 4=Suburbia (rank 7), 5=Uptown
+   (rank 9). `ScheduleOne.Cartel.CartelInfluence` (singleton, a
+   FishNet NetworkBehaviour) holds `regionInfluence:
+   List<RegionInfluenceData>` ({Region, Influence: 0..1}) and
+   answers `GetInfluence(EMapRegion)`. Live values seen:
+   Northtown 0.0, Westville 0.3, Downtown 0.1, Docks 0.65,
+   Suburbia 1.0, Uptown 0.85. The vanilla cartel machinery
    (`ScheduleOne.Cartel.*`: Ambush, CartelActivities,
    CartelAmbushLocation, RobDealer, StealDeadDrop) already
-   models faction pressure on regions. Live proof pending:
-   `tests/research_map.rs` (skipped 2026-08-07, game not
-   running).
+   models faction pressure on regions.
 2. NPCs: how NPCs spawn, path, and despawn; what the cartel/goon
    NPC classes are (the vanilla cartel update added hostile NPCs
    and ambushes).

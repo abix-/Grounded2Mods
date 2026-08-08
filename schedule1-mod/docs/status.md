@@ -27,8 +27,8 @@ in the repo's docs/schedule1-todo.md.
 
 | Row | Score | Up next |
 | --- | --- | --- |
-| Control plane (research surface) | 8/10 | crate deployed and answering; smoke-level ops proven via il2cpp-smoke; needs its own first live run + list_methods coverage on game classes |
-| Research: map regions | 3/10 | candidates cited from metadata (ScheduleOne.Map.Map, CartelInfluence); run tests/research_map.rs against the live game |
+| Control plane (research surface) | 9/10 | generic and live-proven: handle chaining walks any structure (arrays/lists/objects) with no new code; main-thread safe after the 0xc0000005 lesson; remaining: harmony_probe unproven on a game class |
+| Research: map regions | 9/10 | ANSWERED: Map.Regions (6 regions, names + enum + ranks proven), CartelInfluence live values read; remaining: exercise ChangeInfluence |
 | Research: NPCs + cartel classes | 0/10 | walk the NPC classes live |
 | Research: combat/death/aggro | 0/10 | find the death path |
 | Research: loot + mob spawn paths | 0/10 | find pickup/dead-drop creation and the NPC spawn path |
