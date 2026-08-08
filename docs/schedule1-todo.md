@@ -112,6 +112,16 @@
   firing (Time.get_realtimeSinceStartup), control plane
   answering, generation-based hot reload working. The
   research phase can start on top of this.
+- 2026-08-07 late: game updated again (0.4.6f11 -> 0.4.6f12),
+  forcing interop regeneration, and the generator crashed at a
+  FOURTH site the first three patches missed:
+  Pass16ScanMethodRefs -> XrefScanMetadataGenerationUtil.
+  FindMetadataInitForMethod throws ArgumentOutOfRangeException
+  decoding some f12 method bodies. Patched in the same clone
+  (scan failure = "no metadata init" for that method, the
+  existing no-answer path), rebuilt with the 1.5.1.0 pin,
+  deployed to game net6 + Vortex staging (now hardlinked, so
+  one copy serves both). Upstream offer now covers four sites.
 
 ## The goal checklist (added 2026-08-07)
 
