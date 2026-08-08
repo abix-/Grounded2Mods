@@ -243,6 +243,29 @@ mob's types), and per-region difficulty come with this slice.
 - [ ] Exit gate: operator farms one region for several respawn
       cycles; kills grant XP + loot; MelonLoader log clean.
 
+## Custom NPCs (the war's supply; next session's slice)
+
+Operator decision 2026-08-08: the war needs far more than the
+vanilla 5-goon pool; build custom NPCs: GOONS, POLICE, and
+PLAYER NPCs to start. Research done (research.md question 5):
+live-goon cloning is a dead end (three init-layer failure
+stacks captured); the working recipe is S1API's registered-
+prefab path, and S1API is already in the operator's mod stack.
+
+- [ ] Shim references S1API.dll (HintPath to the game's Mods/);
+      define the NPC types (goon, police, citizen) as S1API NPC
+      subclasses (ConfigurePrefab + OnCreated); expose a
+      spawn_custom_npc bridge fn / op. Study
+      ifbars.github.io/S1API basic-npc-creation + the
+      BigWillyMod example first. S1API clone lives in the
+      session scratchpad (s1api/).
+- [ ] Re-base farming's forces on minted NPCs (vanilla goons
+      stay for vanilla systems); prove in-game: spawn 10+ of
+      our goons, they fight, die, pay XP/loot/influence.
+- [ ] Arm them: weapons cost cash (the war economy money sink);
+      vanilla Ambush carries the arming machinery
+      (RangedWeapons/MeleeWeapons, rank-gated) worth studying.
+
 ## Faction war (in slices, each verified in-game)
 
 - [ ] Ownership map: factions own regions; `faction_state` op.

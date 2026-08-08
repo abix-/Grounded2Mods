@@ -403,12 +403,25 @@ namespace Unityforge.Shim
                 }
                 catch (Exception e)
                 {
-                    var err = "{\"error\":\"" + e.Message.Replace("\"", "\\\"") + "\"}";
+                    var err = "{\"error\":\"" + Unwrap(e, t.Name + "." + name).Replace("\"", "\\\"") + "\"}";
                     WriteJsonToBuf(err, outBuf, cap);
                     return -3;
                 }
             }
             return -1;
+        }
+
+        /// <summary>
+        /// The message that actually explains the failure:
+        /// unwrap TargetInvocationException layers and log the
+        /// inner stack to the player log.
+        /// </summary>
+        private static string Unwrap(Exception e, string where)
+        {
+            while (e is System.Reflection.TargetInvocationException tie && tie.InnerException != null)
+                e = tie.InnerException;
+            ShimLogger.Warn($"invoke {where} threw: {e.GetType().Name}: {e.Message}\n{e.StackTrace}");
+            return e.GetType().Name + ": " + e.Message;
         }
 
         private static void ReleaseHandle(int handle)
@@ -487,6 +500,17 @@ namespace Unityforge.Shim
         /// </summary>
         private static object ResolveArg(JToken tok, Type paramType)
         {
+            // Il2CppStructArray<Vector3> from a JSON array of
+            // {x,y,z}: needed for calls like Ambush.SpawnAmbush
+            // (Newtonsoft cannot construct interop arrays).
+            if (paramType == typeof(Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppStructArray<UnityEngine.Vector3>)
+                && tok is JArray arr)
+            {
+                var native = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppStructArray<UnityEngine.Vector3>(arr.Count);
+                for (int i = 0; i < arr.Count; i++)
+                    native[i] = arr[i].ToObject<UnityEngine.Vector3>();
+                return native;
+            }
             if (!HandleArg.TryResolve(tok, Lookup, out var v))
                 return tok.ToObject(paramType);
             if (v != null

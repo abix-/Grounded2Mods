@@ -156,7 +156,25 @@ certainty-tracking.md.
    DropItem RPCs exist in metadata but no walked class
    declares them; not needed, the recipe above covers loot.
 
-4. Where kills are observable: ANSWERED 2026-08-07.
+5. NPC supply (custom NPCs): ANSWERED IN PRINCIPLE 2026-08-08
+   (tests/research_pool_grow.rs + research_prefabs.rs). The
+   vanilla cartel fields exactly 5 goon objects (GoonPool.goons,
+   fixed array; UnspawnedGoonCount tracks them; killed goons
+   recycle). Cloning a live goon CANNOT be spawned: each init
+   layer faults in turn (NPCInventory null lists unless the
+   clone is activated first; ConfigureGoonSettings RPC needs an
+   initialized NetworkObject; ServerManager.Spawn dies in
+   NPC.OnStartServer on missing registry state); full stacks in
+   the test output 2026-08-08. THE way (S1API's, read from its
+   source): clone a REGISTERED FishNet prefab from
+   NetworkManager.SpawnablePrefabs (104 entries live; the NPC
+   base here is "BaseEmployee"; also "Player"; NO goon or police
+   prefab), normalize inactive, spawnablePrefabs.AddObject the
+   new prefab, then network-spawn instances of it. Decision:
+   custom NPCs (our goons, police, player garrison) ride S1API
+   itself (already in the operator's mod stack); the shim
+   defines the NPC types and exposes spawn_custom_npc.
+6. Where kills are observable: ANSWERED 2026-08-07.
    `NPCHealth.Die` and `NPCHealth.KnockOut` are both
    Harmony-patchable live (harmony_probe patched and unpatched
    them clean on the running game). Combat XP hooks there;

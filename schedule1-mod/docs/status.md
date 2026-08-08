@@ -39,6 +39,20 @@ in the repo's docs/schedule1-todo.md.
 
 ## Session log
 
+- 2026-08-08 (night): the influence war is LIVE: persistent
+  garrisons across all cartel regions (sized by influence,
+  strongest zones fed first from the 5-goon vanilla pool),
+  kills bleed cartel influence via ChangeInfluence, takeover
+  trigger armed. Supply research finished: live-goon cloning is
+  a dead end (three failure stacks captured); custom NPCs
+  (goons, police, player NPCs, per the operator) ride S1API's
+  registered-prefab recipe next session. Shim gained: Vector3[]
+  invoke args, inner-exception unwrapping (opaque invoke errors
+  now carry full IL2CPP stacks). Mob hold-at-post via
+  SetDestination is unreliable (throws for exit-walking goons);
+  the ambush machinery (SpawnAmbush, arms its goons) is the
+  candidate replacement, untested live.
+
 - 2026-08-08 (evening, cont.): loot drops live and confirmed:
   player kills drop rolled cash (scaled by the mob's max
   health) at the body via the template-clone + FishNet spawn

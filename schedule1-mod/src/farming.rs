@@ -320,14 +320,32 @@ fn war_pass() -> Result<(), String> {
         parse_vec3(&t.invoke("get_position", &json!([]))?).ok_or("bad player position")?
     };
 
-    // Fill every under-strength cartel region, a few per pass.
+    // The cartel's supply is the vanilla goon pool (5 objects in
+    // this game). Check it before spawning, and give the scarce
+    // goons to the strongest zones first. Growing the pool is a
+    // backlog research item.
+    let mut supply = {
+        let pool_ty = MonoType::find("Il2CppScheduleOne.Cartel.GoonPool")
+            .ok_or("GoonPool type not found")?;
+        let pools = pool_ty.walk(false)?;
+        let pool_h = pools
+            .as_array()
+            .and_then(|a| a.first())
+            .and_then(|i| i["handle"].as_i64())
+            .ok_or("no live GoonPool")?;
+        let pool = own(pool_h);
+        pool.invoke("get_UnspawnedGoonCount", &json!([]))?
+            .as_i64()
+            .unwrap_or(0)
+    };
+
     let now = Instant::now();
     let mut spawned = 0usize;
+    // Every cartel region that is under strength and off its
+    // reinforcement cooldown, strongest grip first.
+    let mut wanting: Vec<(usize, f64, String, (f64, f64, f64))> = Vec::new();
     let region_count = REGIONS.lock().len();
     for idx in 0..region_count {
-        if spawned >= SPAWNS_PER_PASS || FORCES.lock().len() >= TOTAL_LIVE_CAP {
-            break;
-        }
         let (name, rank, owner, post, ready) = {
             let mut regions = REGIONS.lock();
             let r = &mut regions[idx];
@@ -357,12 +375,19 @@ fn war_pass() -> Result<(), String> {
             .iter()
             .filter(|m| m.region_idx == idx && m.faction == Faction::Cartel)
             .count();
-        if live >= target {
-            continue;
+        if live < target {
+            wanting.push((idx, influence, name, post));
+        }
+    }
+    wanting.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    for (idx, _, name, post) in wanting {
+        if spawned >= SPAWNS_PER_PASS || supply <= 0 || FORCES.lock().len() >= TOTAL_LIVE_CAP {
+            break;
         }
         match spawn_mob(idx, &name, post) {
             Ok(reinforcement) => {
                 spawned += 1;
+                supply -= 1;
                 if reinforcement {
                     mono::log(
                         LogLevel::Info,
@@ -370,10 +395,17 @@ fn war_pass() -> Result<(), String> {
                     );
                 }
             }
-            Err(e) => mono::log(
-                LogLevel::Warn,
-                &format!("schedule1-mod: spawn in {name} failed: {e}"),
-            ),
+            Err(e) => {
+                // Pool dry mid-pass is normal scarcity, not an
+                // error worth spamming.
+                if !e.contains("carried no handle") {
+                    mono::log(
+                        LogLevel::Warn,
+                        &format!("schedule1-mod: spawn in {name} failed: {e}"),
+                    );
+                }
+                break;
+            }
         }
     }
 
