@@ -183,12 +183,27 @@ the detail per box.
 
 ## Combat RPG levelling
 
-- [ ] XP on NPC kill via one Harmony postfix on the death path.
-- [ ] Player combat stats as SkillDefs with unityforge field
-      effects (list drafted from research findings).
-- [ ] Persistence per save slot via `modforge::rpg::store`.
-- [ ] Exit gate: kill grants XP in-game, leveled stat visibly
-      changes, save/reload persists, `skill_state` op agrees.
+- [x] XP on player kills: prefixes on NPCHealth
+      NotifyAttackedByPlayer + Die + KnockOut with per-NPC
+      attribution and dedupe (src/killcredit.rs, 2026-08-08).
+- [x] Skills as SkillDefs: Heavy Hands (punch damage, instance
+      props, exact math proven). Vitality + regeneration ON ICE:
+      static field-backed setters crash 0.4.6f12 (see below).
+- [x] Persistence per save slot (LoadManager save folder name);
+      proven across 4+ relaunches. Endless curve + auto-spend
+      per the operator.
+- [ ] Exit gate: kill grants XP in-game (operator sees the
+      console line), punches feel stronger, save/reload
+      persists, `skill_state` agrees. Control-plane half PROVEN
+      2026-08-08; operator confirmation pending.
+- [ ] Fix the interop generator's 4th patch site properly (the
+      skipped metadata init breaks static field-backed property
+      SETTERS: set_MaxHealth crashes the game; getters fine).
+      Clone lives in the factoriobot session scratchpad. Then
+      vitality + regeneration come off the ice.
+- [ ] Framework: hot reload recaptures live (already-boosted)
+      values as vanilla baselines; persist vanilla in the store
+      or re-zero effects on shutdown.
 
 ## Loot drops (after levelling works)
 
@@ -201,9 +216,22 @@ the detail per box.
 
 ## Mob farming areas (after loot works)
 
+Design direction from the operator (2026-08-08): Diablo 2/3 and
+Path of Exile style mob variety keeps the killing fun. Mobs roll
+MODIFIER TYPES (the Diablo champion/rare affix model: extra
+fast, extra strong, regenerating, deadly, tough, and similar);
+harder mobs roll MORE types at once; more types = more XP and
+better loot. The affix list, visuals (how the player reads a
+mob's types), and per-region difficulty come with this slice.
+
 - [ ] Per-region mob spawner on the vanilla spawn machinery:
       density per region, respawn timer, despawn when the player
       leaves.
+- [ ] Mob modifier types (the Diablo affix model above): roll on
+      spawn, applied via the goon's own stats (NPCHealth
+      MaxHealth, movement speed, damage); affix count scales
+      with region difficulty; XP and loot scale with affix
+      count.
 - [ ] Mob stats scale with player level (never trivializes).
 - [ ] Exit gate: operator farms one region for several respawn
       cycles; kills grant XP + loot; MelonLoader log clean.

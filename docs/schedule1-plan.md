@@ -23,6 +23,25 @@ proof target, with two gameplay goals from the operator:
    (cartel NPCs, item pickups/dead drops), never spawned from
    nothing that the game cannot render or persist.
 
+Standing design principle (operator, 2026-08-08): the operator
+designs these mods and then plays them, so anything fully known
+is mentally solved and boring. Preventing THEIR boredom is the
+main point. Every system must therefore stay interesting to
+someone who knows its rules:
+
+- Rolled, not authored: mob affix packs, loot, and rare events
+  roll from hidden tables at runtime (the Diablo/PoE model).
+- Reactive: the director reads the player's actual state
+  (level, cash, territory, deaths) and pushes back; its input
+  is the player, so its behavior cannot be pre-solved (the
+  Left 4 Dead AI Director + RimWorld Randy Random model; the
+  plan's director split).
+- Emergent: NPC-vs-NPC faction war runs without the player, so
+  each save's world diverges on its own.
+- Spoiler firewall: the operator approves system SHAPES; exact
+  numbers, tables, affix lists, and rare-event triggers live in
+  code and in clearly marked doc sections the operator skips.
+
 Constraints, settled with the operator:
 
 - Stay on the IL2CPP default branch. The operator's 7 Vortex mods

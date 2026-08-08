@@ -20,6 +20,8 @@
 use unityforge::ModDef;
 
 mod combat_trace;
+mod killcredit;
+mod skills;
 
 static MOD_INFO: ModDef = ModDef {
     name: "Schedule1Mod",
@@ -40,6 +42,8 @@ fn on_init() {
     unityforge::ops::register_builtins();
     unityforge::selector::register_builtins();
     combat_trace::register_ops();
+    skills::install();
+    killcredit::install();
 
     let kind = unityforge::unity::runtime_kind()
         .map(|k| format!("{k:?}"))

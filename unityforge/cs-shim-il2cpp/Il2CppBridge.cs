@@ -134,6 +134,28 @@ namespace Unityforge.Shim
             JArray args;
             try { args = JArray.Parse(argsJson); }
             catch { return -2; }
+            // Generated static SETTERS write through cached
+            // NativeFieldInfoPtr statics; on 0.4.6f12 some of
+            // those lazy inits are skipped (the patched
+            // generator's scan-failure fallback) and the write
+            // faults natively (set_MaxHealth crashed the game
+            // 2026-08-08, get was fine). Intercept float set_X
+            // and write the il2cpp static field directly with a
+            // FieldInfo resolved fresh by name.
+            if (name.StartsWith("set_") && args.Count == 1
+                && t.GetProperty(name.Substring(4),
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)?.PropertyType == typeof(float))
+            {
+                // NEVER fall through to the generated setter here:
+                // it faults natively when its cached field ptr is
+                // one of the f12 scan-failure casualties.
+                var r = TrySetStaticFloatField(t, name.Substring(4), args[0]);
+                if (r != null) return WriteJsonToBuf(r, outBuf, cap);
+                WriteJsonToBuf("{\"error\":\"static float field '" + name.Substring(4) +
+                    "' not directly writable (see player log); generated setter refused (native-fault hazard)\"}",
+                    outBuf, cap);
+                return -3;
+            }
             foreach (var m in t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
             {
                 if (m.Name != name) continue;
@@ -393,6 +415,51 @@ namespace Unityforge.Shim
         {
             if (handle == 0) return;
             lock (_lock) _handles.Remove(handle);
+        }
+
+        /// <summary>
+        /// Write a FLOAT il2cpp static field directly:
+        /// class from the proxy's identity (assembly + original
+        /// namespace + name), runtime_class_init, field by name,
+        /// il2cpp_field_static_set_value. Returns a result JSON
+        /// string when handled, null to fall through to the
+        /// normal method invoke (not a float property, no such
+        /// il2cpp field, or any resolution failure).
+        /// </summary>
+        private static unsafe string TrySetStaticFloatField(Type t, string fieldName, JToken value)
+        {
+            try
+            {
+                var prop = t.GetProperty(fieldName,
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                if (prop == null || prop.PropertyType != typeof(float)) return null;
+                var ns = t.Namespace ?? "";
+                if (ns.StartsWith("Il2Cpp")) ns = ns.Substring("Il2Cpp".Length);
+                var asm = t.Assembly.GetName().Name;
+                if (asm != null && asm.StartsWith("Il2Cpp")) asm = asm.Substring("Il2Cpp".Length);
+                var klass = Il2CppInterop.Runtime.IL2CPP.GetIl2CppClass(asm + ".dll", ns, t.Name);
+                if (klass == IntPtr.Zero)
+                {
+                    ShimLogger.Warn($"static-set {t.FullName}.{fieldName}: il2cpp class not found (asm={asm}.dll ns={ns} name={t.Name})");
+                    return null;
+                }
+                Il2CppInterop.Runtime.IL2CPP.il2cpp_runtime_class_init(klass);
+                var field = Il2CppInterop.Runtime.IL2CPP.il2cpp_class_get_field_from_name(
+                    klass, fieldName);
+                if (field == IntPtr.Zero)
+                {
+                    ShimLogger.Warn($"static-set {t.FullName}.{fieldName}: no il2cpp field of that name on the class");
+                    return null;
+                }
+                float v = value.ToObject<float>();
+                Il2CppInterop.Runtime.IL2CPP.il2cpp_field_static_set_value(field, &v);
+                return "{\"static_field_written\":true,\"value\":" +
+                    v.ToString(System.Globalization.CultureInfo.InvariantCulture) + "}";
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         // ---- helpers ---------------------------------------------------

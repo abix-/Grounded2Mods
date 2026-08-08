@@ -32,13 +32,30 @@ in the repo's docs/schedule1-todo.md.
 | Research: NPCs + cartel classes | 10/10 | ANSWERED: spawn AND aggro proven in-game (goon spawned, AttackEntity, operator got attacked) |
 | Research: combat/death/aggro | 10/10 | ANSWERED: NotifyAttackedByPlayer fires per player hit (attribution proven live); melee-to-0 raises KnockOut not Die, so XP credits both |
 | Research: loot + mob spawn paths | 9/10 | ANSWERED for cash: template clone + FishNet spawn recipe proven in-game (operator picked up spawned $100); remaining: item (non-cash) pickup creation when loot tables need it |
-| Combat-XP levelling | 0/10 | blocked on research |
+| Combat-XP levelling | 6/10 | WORKING: kill hooks + endless curve + auto-spend + per-save persistence proven; Heavy Hands (punch damage) applies exactly. Open: in-game kill-XP line + feel confirmation from the operator; vitality/regeneration on ice (static setters crash 0.4.6f12, generator fix needed); baseline poisoning on hot reload needs the framework fix |
 | Loot drops | 0/10 | blocked on research; after levelling |
 | Mob farming areas | 0/10 | blocked on research; after loot |
 | Faction war | 0/10 | blocked on research |
 
 ## Session log
 
+- 2026-08-08 (evening): combat-XP levelling built and live.
+  Kill attribution hooks (NotifyAttackedByPlayer + Die +
+  KnockOut), endless curve (50 * level^1.3, cap 1024 =
+  unreachable), auto-spend to lowest skill, per-save-slot
+  persistence via LoadManager's save folder (proven across 4+
+  relaunches). Heavy Hands (punch damage x5 at max) applies
+  with exact math. THREE game crashes bisected to one cause:
+  static field-backed property SETTERS crash 0.4.6f12 (getters
+  fine, instance writes fine); presumed fallout of the patched
+  generator's skipped metadata init. Vitality + regeneration
+  (PlayerHealth statics) on ice until the generator fix.
+  Operator design decisions recorded: endless levelling, more
+  skills (toughness, gun damage, fleet foot, jump height),
+  auto-spend, loot by mob toughness, Diablo-style mob affix
+  types, phone-app UI later, and the standing anti-boredom
+  principle (rolled/reactive/emergent + spoiler firewall) in
+  the plan.
 - 2026-08-08 (later still): loot creation ANSWERED live: cash
   spawned at the player and picked up in-game. Recipe: clone the
   inactive "Dynamic Amount Cash Pickup" template, SetActive,
