@@ -57,7 +57,16 @@ answer lands here with its evidence and a row in
 certainty-tracking.md.
 
 1. Map regions: what class owns the town's areas and what state
-   it carries.
+   it carries. Candidates found by metadata scan (see
+   certainty-tracking.md): `ScheduleOne.Map.Map` (Regions,
+   RegionDict, MapRegionData, enum EMapRegion) and
+   `ScheduleOne.Cartel.CartelInfluence` (per-region influence
+   with change methods). The vanilla cartel machinery
+   (`ScheduleOne.Cartel.*`: Ambush, CartelActivities,
+   CartelAmbushLocation, RobDealer, StealDeadDrop) already
+   models faction pressure on regions. Live proof pending:
+   `tests/research_map.rs` (skipped 2026-08-07, game not
+   running).
 2. NPCs: how NPCs spawn, path, and despawn; what the cartel/goon
    NPC classes are (the vanilla cartel update added hostile NPCs
    and ambushes).

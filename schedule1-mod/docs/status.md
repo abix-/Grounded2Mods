@@ -23,7 +23,7 @@ pressure, NPC-vs-NPC, director split).
 | Row | Score | Up next |
 | --- | --- | --- |
 | Control plane (research surface) | 8/10 | crate deployed and answering; smoke-level ops proven via il2cpp-smoke; needs its own first live run + list_methods coverage on game classes |
-| Research: map regions | 0/10 | find the region-owning class live |
+| Research: map regions | 3/10 | candidates cited from metadata (ScheduleOne.Map.Map, CartelInfluence); run tests/research_map.rs against the live game |
 | Research: NPCs + cartel classes | 0/10 | walk the NPC classes live |
 | Research: combat/death/aggro | 0/10 | find the death path |
 | Combat-XP levelling | 0/10 | blocked on research |
