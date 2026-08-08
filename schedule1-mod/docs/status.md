@@ -29,8 +29,8 @@ in the repo's docs/schedule1-todo.md.
 | --- | --- | --- |
 | Control plane (research surface) | 10/10 | generic and live-proven end to end: handle chaining walks any structure, main-thread safe, harmony_probe proven on a game class (NPCHealth.Die) |
 | Research: map regions | 9/10 | ANSWERED: Map.Regions (6 regions, names + enum + ranks proven), CartelInfluence live values read; remaining: exercise ChangeInfluence |
-| Research: NPCs + cartel classes | 9/10 | SPAWN PROVEN IN-GAME (goon visible, interactable); open: tasking a goon so it stays and fights (aggro/behaviour) |
-| Research: combat/death/aggro | 6/10 | NPCHealth fully mapped (SyncVar health, Die/KnockOut/TakeDamage, death events); kill hook PROVEN patchable; open: damage-source attribution + aggro |
+| Research: NPCs + cartel classes | 10/10 | ANSWERED: spawn AND aggro proven in-game (goon spawned, AttackEntity, operator got attacked) |
+| Research: combat/death/aggro | 8/10 | NPCHealth mapped, kill hook patchable, aggro proven via AttackEntity; open: damage-source attribution for XP credit |
 | Research: loot + mob spawn paths | 6/10 | ItemPickup + DeadDrop mapped live (spawn path done via GoonPool); open: the pickup creation call |
 | Combat-XP levelling | 0/10 | blocked on research |
 | Loot drops | 0/10 | blocked on research; after levelling |
@@ -39,6 +39,13 @@ in the repo's docs/schedule1-todo.md.
 
 ## Session log
 
+- 2026-08-08: THE LOOP IS REAL. Goon spawned via GoonPool and
+  ordered onto the player via AttackEntity; operator got
+  attacked in-game. Control plane finished: handles flow both
+  directions ({"$handle": N} args). Game updated twice under us
+  (0.4.6f11 -> f12); interop generator needed a fourth
+  null-scan patch, deployed and proven by a clean regeneration.
+  Remaining research: XP kill attribution, pickup creation call.
 - 2026-08-07 (evening): map regions research ANSWERED live.
   Along the way three control-plane defects found and fixed:
   IL2CPP native fields are proxy properties (reads always

@@ -104,9 +104,13 @@ certainty-tracking.md.
    SPAWN PROVEN IN-GAME 2026-08-07 (tests/research_spawn.rs):
    goons spawned at the player's position, visible and
    interactable. Lesson: an untasked goon walks to the nearest
-   exit building and leaves. Farmable mobs therefore need a
-   behaviour attached at spawn (attack the player / guard the
-   region); that is the open aggro question below.
+   exit building and leaves.
+   AGGRO PROVEN IN-GAME 2026-08-08 (tests/research_attack.rs):
+   `CartelGoon.AttackEntity(ICombatTargetable, bool)` with the
+   player as target makes the goon hunt and attack (operator
+   confirmed being attacked). The full farmable-mob loop is
+   spawn -> AttackEntity -> fight; the {"$handle": N} invoke
+   arg passes live objects.
 
 4b. Loot path: PARTLY ANSWERED 2026-08-07.
    `ScheduleOne.ItemFramework.ItemPickup` (70 live instances)
