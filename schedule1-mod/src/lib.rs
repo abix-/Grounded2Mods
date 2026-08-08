@@ -19,6 +19,8 @@
 
 use unityforge::ModDef;
 
+mod combat_trace;
+
 static MOD_INFO: ModDef = ModDef {
     name: "Schedule1Mod",
     version: "0.1.0",
@@ -37,6 +39,7 @@ unityforge::unityforge_mod!(MOD_INFO);
 fn on_init() {
     unityforge::ops::register_builtins();
     unityforge::selector::register_builtins();
+    combat_trace::register_ops();
 
     let kind = unityforge::unity::runtime_kind()
         .map(|k| format!("{k:?}"))

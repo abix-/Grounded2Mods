@@ -30,7 +30,7 @@ in the repo's docs/schedule1-todo.md.
 | Control plane (research surface) | 10/10 | generic and live-proven end to end: handle chaining walks any structure, main-thread safe, harmony_probe proven on a game class (NPCHealth.Die) |
 | Research: map regions | 9/10 | ANSWERED: Map.Regions (6 regions, names + enum + ranks proven), CartelInfluence live values read; remaining: exercise ChangeInfluence |
 | Research: NPCs + cartel classes | 10/10 | ANSWERED: spawn AND aggro proven in-game (goon spawned, AttackEntity, operator got attacked) |
-| Research: combat/death/aggro | 8/10 | NPCHealth mapped, kill hook patchable, aggro proven via AttackEntity; open: damage-source attribution for XP credit |
+| Research: combat/death/aggro | 10/10 | ANSWERED: NotifyAttackedByPlayer fires per player hit (attribution proven live); melee-to-0 raises KnockOut not Die, so XP credits both |
 | Research: loot + mob spawn paths | 6/10 | ItemPickup + DeadDrop mapped live (spawn path done via GoonPool); open: the pickup creation call |
 | Combat-XP levelling | 0/10 | blocked on research |
 | Loot drops | 0/10 | blocked on research; after levelling |
@@ -39,6 +39,12 @@ in the repo's docs/schedule1-todo.md.
 
 ## Session log
 
+- 2026-08-08 (later): kill attribution ANSWERED live via the new
+  combat_trace ops (recording prefix hooks on NPCHealth):
+  NotifyAttackedByPlayer fires on every player hit, same frame
+  as TakeDamage; melee-to-0 raises KnockOut, not Die. XP design:
+  record player hits per NPC, credit on Die OR KnockOut.
+  Remaining research: the pickup creation call.
 - 2026-08-08: THE LOOP IS REAL. Goon spawned via GoonPool and
   ordered onto the player via AttackEntity; operator got
   attacked in-game. Control plane finished: handles flow both

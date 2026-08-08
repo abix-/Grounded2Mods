@@ -82,13 +82,25 @@ certainty-tracking.md.
    runtime) and the cartel/goon classes
    (CharacterClasses so far: Oscar, Ray, SewerGoblin; the
    hostile-NPC classes need a dedicated walk).
-3. Combat: PARTLY ANSWERED 2026-08-07. `NPCHealth` (a FishNet
-   NetworkBehaviour) is the whole per-NPC life state: Health as
-   a SyncVar<float>, MaxHealth, IsDead, IsKnockedOut,
+3. Combat: ANSWERED 2026-08-08 (tests/research_killcredit.rs,
+   combat_trace ops in src/combat_trace.rs). `NPCHealth` (a
+   FishNet NetworkBehaviour) is the whole per-NPC life state:
+   Health as a SyncVar<float>, MaxHealth, IsDead, IsKnockedOut,
    `TakeDamage`, `Die()`, `KnockOut()`, `Revive()`,
    `NotifyAttackedByPlayer(int)`, and UnityEvents onDie /
-   onKnockedOut / onDieOrKnockedOut / onRevive. Still open:
-   who applies damage (the caller of TakeDamage) and aggro.
+   onKnockedOut / onDieOrKnockedOut / onRevive.
+   KILL ATTRIBUTION PROVEN LIVE: on every player melee hit,
+   `NotifyAttackedByPlayer` fires in the same frame as
+   `TakeDamage` (operator punched a Dealer and an NPC to 0
+   health; 5 hit pairs each, health 100 -> 78.9 -> 57.6 ->
+   34.9 -> 13.7 -> down). TakeDamage(Single, Boolean, Boolean)
+   carries no attacker, so NotifyAttackedByPlayer IS the
+   attribution signal: XP credit = prefix on it recording
+   (npc ptr, time), then the down hook checks for a recent
+   player hit on that NPC. Punching to 0 raises `KnockOut`,
+   NOT `Die`: the XP hook must credit both down paths.
+   The prefix reads pre-hit Health, so per-hit damage is
+   derivable. Aggro is AttackEntity (question 2b).
 2b. Mob spawning: ANSWERED 2026-08-07 (tests/research_cartel.rs).
    `ScheduleOne.Cartel.Cartel` (singleton) is the faction brain:
    Status (ECartelStatus), HourPass tick, and it owns

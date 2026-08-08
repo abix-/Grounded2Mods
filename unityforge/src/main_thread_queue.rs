@@ -65,6 +65,33 @@ impl MainThreadQueue {
         n
     }
 
+    /// Enqueue `f` and block until the drain runs it, up to
+    /// `timeout`. The run-on-main-and-wait pattern every op that
+    /// touches Unity needs (on IL2CPP an off-main native call is
+    /// a process crash, not an exception).
+    pub fn run<T, F>(&self, label: &str, timeout: std::time::Duration, f: F) -> Result<T, String>
+    where
+        T: Send + 'static,
+        F: FnOnce() -> T + Send + 'static,
+    {
+        use std::sync::Arc;
+        let result: Arc<Mutex<Option<T>>> = Arc::new(Mutex::new(None));
+        let r2 = result.clone();
+        self.push(move || {
+            *r2.lock() = Some(f());
+        });
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            if let Some(r) = result.lock().take() {
+                return Ok(r);
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(format!("{label}: main-thread queue timed out"));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.pending.load(Ordering::Relaxed)
     }
