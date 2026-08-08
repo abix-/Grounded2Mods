@@ -36,12 +36,23 @@ pub fn drop_cash_at(x: f64, y: f64, z: f64, toughness: f32) {
     });
 }
 
-fn handle_of(v: &Json) -> Option<i64> {
+pub(crate) fn handle_of(v: &Json) -> Option<i64> {
     v.get("handle").and_then(Json::as_i64)
 }
 
+/// Vector3 arrives as the shim's ToString "(x, y, z)".
+pub(crate) fn parse_vec3(v: &Json) -> Option<(f64, f64, f64)> {
+    let s = v.as_str().or_else(|| v.get("str").and_then(Json::as_str))?;
+    let s = s.trim().trim_start_matches('(').trim_end_matches(')');
+    let mut parts = s.split(',').map(|p| p.trim().parse::<f64>());
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(Ok(x)), Some(Ok(y)), Some(Ok(z))) => Some((x, y, z)),
+        _ => None,
+    }
+}
+
 /// SAFETY wrapper: own a handle so Drop releases it.
-fn own(h: i64) -> MonoObject {
+pub(crate) fn own(h: i64) -> MonoObject {
     // SAFETY: caller passes a handle just acquired from the shim
     // for this call path; ownership transfers here.
     unsafe { MonoObject::from_handle(MonoHandle(h as i32)) }

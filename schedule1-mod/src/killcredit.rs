@@ -59,16 +59,7 @@ pub fn install() {
     );
 }
 
-/// Vector3 arrives as the shim's ToString "(x, y, z)".
-fn parse_vec3(v: &Json) -> Option<(f64, f64, f64)> {
-    let s = v.as_str().or_else(|| v.get("str").and_then(Json::as_str))?;
-    let s = s.trim().trim_start_matches('(').trim_end_matches(')');
-    let mut parts = s.split(',').map(|p| p.trim().parse::<f64>());
-    match (parts.next(), parts.next(), parts.next()) {
-        (Some(Ok(x)), Some(Ok(y)), Some(Ok(z))) => Some((x, y, z)),
-        _ => None,
-    }
-}
+use crate::loot::parse_vec3;
 
 /// The NPC's stable native pointer from an NPCHealth ctx handle
 /// (releases every handle it takes).
@@ -165,10 +156,19 @@ extern "C" fn on_down(ctx: *const c_void) -> i32 {
         return 0; // already paid for this down
     }
     remember(&CREDITED, ptr, CREDIT_COOLDOWN);
+    // Farm mobs carry rolled XP + loot multipliers; anything
+    // else pays base.
+    let (xp_mult, loot_mult) = match crate::farming::on_mob_down(ptr) {
+        Some((xm, lm, label)) => {
+            mono::log(LogLevel::Info, &format!("schedule1-mod: {label} is down"));
+            (xm, lm)
+        }
+        None => (1.0, 1.0),
+    };
     if let Some((x, y, z)) = pos {
-        crate::loot::drop_cash_at(x, y, z, max_health);
+        crate::loot::drop_cash_at(x, y, z, max_health * loot_mult);
     }
-    if let Some(r) = TRACKER.record_xp(XP_PER_DOWN) {
+    if let Some(r) = TRACKER.record_xp((XP_PER_DOWN as f32 * xp_mult) as u64) {
         let lvl = if r.new_level > r.old_level {
             format!(" LEVEL UP -> {} (+{} point(s))", r.new_level, r.points_gained)
         } else {

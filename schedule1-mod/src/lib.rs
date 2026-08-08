@@ -20,6 +20,7 @@
 use unityforge::ModDef;
 
 mod combat_trace;
+mod farming;
 mod killcredit;
 mod loot;
 mod skills;
@@ -32,7 +33,7 @@ static MOD_INFO: ModDef = ModDef {
     // (established by the il2cpp-smoke run this crate replaces).
     http_port: 17175,
     on_init: Some(on_init),
-    on_tick: None,
+    on_tick: Some(on_tick),
     on_shutdown: Some(on_shutdown),
     tabs: &[],
 };
@@ -43,6 +44,7 @@ fn on_init() {
     unityforge::ops::register_builtins();
     unityforge::selector::register_builtins();
     combat_trace::register_ops();
+    farming::register_ops();
     skills::install();
     killcredit::install();
 
@@ -53,6 +55,10 @@ fn on_init() {
         unityforge::mono::LogLevel::Info,
         &format!("schedule1-mod: ready (runtime={kind})"),
     );
+}
+
+fn on_tick(_now: f32) {
+    farming::tick();
 }
 
 fn on_shutdown() {
