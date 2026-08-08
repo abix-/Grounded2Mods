@@ -39,6 +39,15 @@ in the repo's docs/schedule1-todo.md.
 
 ## Session log
 
+- 2026-08-07 (evening): map regions research ANSWERED live.
+  Along the way three control-plane defects found and fixed:
+  IL2CPP native fields are proxy properties (reads always
+  missed), game-touching ops ran off the main thread (one
+  0xc0000005 game crash during an inspect), and complex values
+  were dead ends (now carry live handles, so every structure
+  chains through the existing ops with no new code). One
+  MelonLoader crash fixed: a Vortex sweep removed the patched
+  Il2CppInterop.Common.dll; restored from the staging package.
 - 2026-08-07: crate created on the proven MelonLoader shim path
   (smoke checklist PASSED same day). Game is 0.4.6f11 with the
   operator's patched interop generator; several third-party mods

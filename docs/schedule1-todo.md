@@ -145,7 +145,13 @@ the detail per box.
       `harmony_probe` op to unityforge ops (no-op prefix patch,
       report, unpatch) to prove per-target patchability on game
       classes without a restart.
-- [ ] Map regions: the class that owns town areas + its state.
+- [x] Map regions: the class that owns town areas + its state.
+      ANSWERED 2026-08-07: ScheduleOne.Map.Map singleton owns
+      Regions: MapRegionData[] (6 regions, EMapRegion 0-5 =
+      Northtown/Westville/Downtown/Docks/Suburbia/Uptown, unlock
+      ranks 0/1/3/5/7/9); CartelInfluence singleton holds 0..1
+      influence per region. Full detail in
+      schedule1-mod/docs/research.md.
 - [ ] NPCs: spawn/path/despawn; the cartel/goon NPC classes.
 - [ ] Combat: health, damage, death, aggro classes.
 - [ ] The kill-observation Harmony hook point for combat XP.
