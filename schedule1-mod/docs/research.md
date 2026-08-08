@@ -101,6 +101,12 @@ certainty-tracking.md.
    rides this pool; no from-nothing spawning needed.
    CartelGoon's own method list overflows list_methods' 64KB
    buffer (control-plane nit, not a blocker).
+   SPAWN PROVEN IN-GAME 2026-08-07 (tests/research_spawn.rs):
+   goons spawned at the player's position, visible and
+   interactable. Lesson: an untasked goon walks to the nearest
+   exit building and leaves. Farmable mobs therefore need a
+   behaviour attached at spawn (attack the player / guard the
+   region); that is the open aggro question below.
 
 4b. Loot path: PARTLY ANSWERED 2026-08-07.
    `ScheduleOne.ItemFramework.ItemPickup` (70 live instances)
