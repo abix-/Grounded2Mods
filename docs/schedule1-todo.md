@@ -252,13 +252,20 @@ live-goon cloning is a dead end (three init-layer failure
 stacks captured); the working recipe is S1API's registered-
 prefab path, and S1API is already in the operator's mod stack.
 
-- [ ] Shim references S1API.dll (HintPath to the game's Mods/);
-      define the NPC types (goon, police, citizen) as S1API NPC
-      subclasses (ConfigurePrefab + OnCreated); expose a
-      spawn_custom_npc bridge fn / op. Study
-      ifbars.github.io/S1API basic-npc-creation + the
-      BigWillyMod example first. S1API clone lives in the
-      session scratchpad (s1api/).
+- [x] DONE 2026-08-08 (consolidated in the shim per the
+      operator): S1ApiNpcs.cs defines GoonNpc / PoliceNpc /
+      PlayerNpc (S1API subclasses) + NpcFactory public statics
+      (SpawnGoon/SpawnPolice/SpawnPlayerNpc/CustomNpcCount)
+      reached via invoke_static; construction + reflection call
+      into S1API's RegisterCustomNpcForNetworking queues the
+      real network-spawn pipeline. PROVEN IN-GAME: five minted
+      NPCs visible and solid beside the player
+      (tests/research_custom_npcs.rs). The 5-goon supply cap is
+      dead.
+- [ ] Cosmetics: real appearances (police uniform, goon looks)
+      and name pools via S1API's appearance/identity APIs; the
+      operator saw default bodies + placeholder names (expected
+      for v1).
 - [ ] Re-base farming's forces on minted NPCs (vanilla goons
       stay for vanilla systems); prove in-game: spawn 10+ of
       our goons, they fight, die, pay XP/loot/influence.

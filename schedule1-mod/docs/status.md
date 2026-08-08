@@ -39,6 +39,15 @@ in the repo's docs/schedule1-todo.md.
 
 ## Session log
 
+- 2026-08-08 (late night): THE SUPPLY CAP IS DEAD. Custom NPC
+  minting proven in-game: the shim's S1API-backed NpcFactory
+  (GoonNpc / PoliceNpc / PlayerNpc + invoke_static statics)
+  spawned five visible NPCs on demand at exact positions. The
+  key that made them real: S1API's internal
+  RegisterCustomNpcForNetworking via reflection (a bare
+  constructor leaves them invisible). Open: cosmetics (looks +
+  names are defaults), combat/despawn/save behavior of minted
+  NPCs, then re-base the war's forces on them.
 - 2026-08-08 (night): the influence war is LIVE: persistent
   garrisons across all cartel regions (sized by influence,
   strongest zones fed first from the 5-goon vanilla pool),

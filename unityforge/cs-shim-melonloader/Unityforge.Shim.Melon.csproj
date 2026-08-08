@@ -84,6 +84,13 @@
       <Private>false</Private>
       <HintPath>$(InteropDir)\UnityEngine.InputLegacyModule.dll</HintPath>
     </Reference>
+    <!-- Schedule 1 only: S1API for custom NPC minting
+         (S1ApiNpcs.cs). Lazily loaded at first NpcFactory use,
+         so the shim still runs without it. -->
+    <Reference Include="S1API.Il2Cpp.MelonLoader" Condition="'$(MelonLoaderDir)' != ''">
+      <Private>false</Private>
+      <HintPath>$(MelonLoaderDir)\..\Mods\S1API.Il2Cpp.MelonLoader.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>
