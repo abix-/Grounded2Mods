@@ -455,6 +455,44 @@ namespace Unityforge.Shim.Schedule1
             }
         }
 
+        public static string SetResponsesBase(int index)
+        {
+            try
+            {
+                var npc = Minted[index];
+                var s1npc = GetS1NPC(npc);
+                if (s1npc == null)
+                    return "{\"ok\":false,\"error\":\"S1NPC not resolved\"}";
+
+                var oldResp = s1npc.Responses;
+                string oldType = oldResp != null ? oldResp.GetType().FullName : "null";
+                bool isCivilian = oldResp is Il2CppScheduleOne.NPCs.Responses.NPCResponses_Civilian;
+                bool isBase = oldResp is Il2CppScheduleOne.NPCs.Responses.NPCResponses;
+
+                if (isBase && !isCivilian)
+                    return "{\"ok\":true,\"was\":\"" + oldType + "\",\"is_civilian\":" + isCivilian.ToString().ToLower() + ",\"is_base\":" + isBase.ToString().ToLower() + ",\"changed\":false}";
+
+                var go = oldResp != null ? oldResp.gameObject : s1npc.gameObject;
+                if (oldResp != null)
+                    UnityEngine.Object.Destroy(oldResp);
+
+                var baseResp = go.AddComponent<
+                    Il2CppScheduleOne.NPCs.Responses.NPCResponses>();
+
+                s1npc.Responses = baseResp;
+
+                if (s1npc.Awareness != null)
+                    s1npc.Awareness.Responses = baseResp;
+
+                string newType = baseResp.GetType().FullName;
+                return "{\"ok\":true,\"was\":\"" + oldType + "\",\"is_civilian\":" + isCivilian.ToString().ToLower() + ",\"is_base\":" + isBase.ToString().ToLower() + ",\"now\":\"" + newType + "\",\"changed\":true}";
+            }
+            catch (Exception e)
+            {
+                return Fail(e);
+            }
+        }
+
         public static string EnableIdleBehaviour(int index)
         {
             try
@@ -649,6 +687,36 @@ namespace Unityforge.Shim.Schedule1
                 .Replace("\r", "")
                 .Replace("\n", " ");
             return "{\"ok\":false,\"error\":\"" + msg + "\"}";
+        }
+
+        public static string RetaliateAgainstPlayer(int index)
+        {
+            try
+            {
+                var npc = Minted[index];
+                var s1npc = GetS1NPC(npc);
+                if (s1npc == null)
+                    return "{\"ok\":false,\"error\":\"S1NPC not resolved\"}";
+
+                var combat = s1npc.Behaviour?.CombatBehaviour;
+                if (combat == null)
+                    return "{\"ok\":false,\"error\":\"CombatBehaviour is null\"}";
+
+                var player = Il2CppScheduleOne.PlayerScripts.Player.Local;
+                if (player == null)
+                    return "{\"ok\":false,\"error\":\"no local player\"}";
+
+                var nob = player.GetComponent<Il2CppFishNet.Object.NetworkObject>();
+                if (nob == null)
+                    return "{\"ok\":false,\"error\":\"player has no NetworkObject\"}";
+
+                combat.SetTargetAndEnable_Server(nob);
+                return "{\"ok\":true}";
+            }
+            catch (Exception e)
+            {
+                return Fail(e);
+            }
         }
     }
 }

@@ -936,37 +936,56 @@ certainty-tracking.md.
    Il2Cpp bindings. Needs further research on how the
    game creates these.
 
-7. **NPCResponses: root cause of custom goons not fighting back**
+7. **NPCResponses: RETRACTED as root cause**
 
-   The NPC response system is what bridges damage events to
-   behaviour activation. The base class is NPCResponses
-   (Il2CppScheduleOne.NPCs.Responses.NPCResponses). It
-   declares response methods: RespondToFirstNonLethalAttack,
-   RespondToRepeatedNonLethalAttack, RespondToLethalAttack,
-   ImpactReceived, RespondToAnnoyingImpact, RespondToAimedAt.
+   RETRACTED (2026-08-09): the NPCResponses hypothesis was
+   wrong. Both vanilla cartel goons and custom goons have the
+   same base NPCResponses class at runtime. SetResponsesBase
+   confirmed was=NPCResponses, changed=false on a fresh
+   custom goon. The NPCResponses_Civilian code in S1API
+   (NPC.cs line 3416) either silently fails or gets replaced
+   back by later initialization.
 
-   NPCResponses_Civilian is a subclass that OVERRIDES these
-   methods with civilian reactions (flee, cower, call police).
-   It adds ExecuteThreatResponse and GetThreatResponse which
-   select from an EAttackResponse enum of non-combat options.
+   The real difference is the NPC type itself: vanilla cartel
+   goons are Il2CppScheduleOne.Cartel.CartelGoon (a subclass
+   with 48 declared methods including ConfigureGoonSettings,
+   AttackEntity, goonMates, Spawn/Despawn RPCs). Custom goons
+   are base Il2CppScheduleOne.NPCs.NPC. All other components
+   (Responses, Actions, Awareness, Behaviour, Health) are
+   identical types on both.
 
-   FINDING (2026-08-09, research_responses.rs):
-   Vanilla cartel goons use the BASE NPCResponses class.
-   S1API hardcodes NPCResponses_Civilian on all custom NPCs
-   (NPC.cs line 3416). This is the root cause: when a custom
-   goon gets punched, NPCResponses_Civilian routes the event
-   to civilian reactions instead of combat.
+   ConfigureGoonSettings(3 params) is called during vanilla
+   goon spawn and likely sets up the aggressive behavior. Its
+   body is stripped from IL2CPP metadata, so the exact setup
+   is unknown.
 
-   FIX PATH: Add a shim method that replaces the Responses
-   component on a custom goon from NPCResponses_Civilian
-   to NPCResponses, then re-links Awareness.Responses.
+8. **Working retaliation path: SetTargetAndEnable_Server**
 
-   The NPCAwareness component reads damage/vision events and
-   calls the Responses component's methods. The Responses
-   component then triggers the appropriate behaviours through
-   NPCActions. The chain: Awareness detects event, calls
-   Responses.RespondTo*, Responses triggers NPCActions which
-   enables/activates the right behaviour in the priority
-   stack. NPCResponses (base) triggers CombatBehaviour.
-   NPCResponses_Civilian triggers FleeBehaviour,
-   CoweringBehaviour, CallPoliceBehaviour instead.
+   PROVEN (2026-08-09, research_retaliation.rs):
+   CombatBehaviour.SetTargetAndEnable_Server(playerNetworkObject)
+   makes a custom goon attack the player. The goon entered
+   CombatBehaviour (pri=50, overrides idle at pri=0), hunted
+   the player, and killed them. Operator confirmed in game.
+
+   The shim method RetaliateAgainstPlayer(index) wraps this:
+   gets the NPC's CombatBehaviour, gets Player.Local's
+   NetworkObject, calls SetTargetAndEnable_Server.
+
+   AUTOMATIC RETALIATION PATH (not yet wired):
+   1. Player punches custom goon
+   2. Game fires NPCHealth.NotifyAttackedByPlayer
+   3. Rust killcredit prefix hook already detects this call
+   4. Hook checks if the NPC pointer matches a custom goon
+   5. If yes, calls RetaliateAgainstPlayer(index) via
+      invoke_static
+   6. Goon enters CombatBehaviour, attacks the player
+
+   BLOCKED: C# Harmony postfix on NotifyAttackedByPlayer
+   fails with "IL Compile Error" on this game version. The
+   Rust prefix hook (already working for kill attribution)
+   is the path for automatic triggering.
+
+   ALSO PROVEN: CombatBehaviour deactivates on its own when
+   the target is out of range or after GiveUpTime (30s
+   default). The goon returns to its previous behaviour
+   (idle hold) automatically.
