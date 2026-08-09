@@ -384,19 +384,20 @@ Tests in schedule1-mod/tests/research_*.rs.
       PROVEN 2026-08-09: enabling CombatBehaviour (pri=50) on
       a custom goon does NOT make it fight back. When punched,
       the goon goes FaceTargetBehaviour then CallPoliceBehaviour
-      then UnconsciousBehaviour. The NPC's AI picks civilian
-      reactions (face, call police, cower) over combat even
-      though CombatBehaviour is enabled. CombatBehaviour never
-      activated during the test.
-      Next: try disabling CallPoliceBehaviour + FleeBehaviour +
-      CoweringBehaviour so those cannot preempt combat. Or use
-      AttackPlayer via the existing retaliation hook approach.
-- [ ] Build the retaliation hook: make garrison goons fight
-      back when attacked. Two approaches to try:
-      (1) Disable civilian behaviours (CallPolice, Flee,
-      Cowering) so CombatBehaviour wins by priority.
-      (2) Use a Harmony postfix on NotifyAttackedByPlayer to
-      call AttackPlayer on the guard when hit.
+      then UnconsciousBehaviour. CombatBehaviour never activated.
+- [x] Vanilla goon behaviour stack compared. PROVEN 2026-08-09:
+      vanilla cartel goons (from GoonPool) have 17 behaviours,
+      ALL disabled, none active, same as custom goons at rest.
+      Vanilla goons fight back because the cartel AI calls
+      AttackEntity on them, not because their behaviour stack
+      is different. Custom goons have no cartel AI backing them.
+      The fix is calling AttackPlayer on our goon when it takes
+      damage, through the NotifyAttackedByPlayer hook that
+      killcredit.rs already installs.
+- [ ] Build the retaliation hook: in killcredit.rs, when
+      NotifyAttackedByPlayer fires on one of our garrison NPCs,
+      call AttackPlayer on that NPC via the factory. This is the
+      same path the cartel AI uses for vanilla goons.
 - [ ] After combat ends, does the goon return to idle hold or
       does it wander? Needs testing once retaliation works.
 - [ ] Transient NRE in NPCScheduleManager.OnMinPass on custom
