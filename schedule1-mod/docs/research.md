@@ -721,9 +721,14 @@ certainty-tracking.md.
    (7 active: chemists, cleaners, handlers, botanists), AND
    our minted S1API NPCs (S1API_GoonNpc, S1API_PoliceNpc,
    S1API_PlayerNpc, all inactive). Our minted NPCs carry it.
-   UNPROVEN: where it comes from (S1API, base prefab, or
-   game init). UNPROVEN: whether setting IdlePoint and
-   enabling it actually holds the NPC at that point.
+   SOURCE PROVEN: on minted NPCs, IdleBehaviour sits on a
+   child GameObject named "Wait ouside (Inactive) (Disabled)"
+   under a parent named "Behaviour". This matches S1API's
+   AddComponent pattern (child GO under the behaviour
+   container), confirming S1API adds it during init, not the
+   base prefab.
+   UNPROVEN: whether setting IdlePoint and enabling it
+   actually holds the NPC at that point.
    Source: tests/research_behaviours_deep.rs idle_behaviour_owners
    5 orphaned instances (24-28) throw NullReferenceException
    on get_Npc (no parent NPC set, leftover from AddComponent).
@@ -773,11 +778,11 @@ certainty-tracking.md.
      searchRoutine            - nullable (coroutine)
      onSuccessfulHit          - nullable (event)
    162 instances vs 152 NPCs: 10 extra instances exist.
-   HYPOTHESIS: extras are PursuitBehaviour sharing the
-   component (PursuitBehaviour extends CombatBehaviour in
-   IL2CPP). Not verified. Already on every minted NPC via
-   S1API. The key combat API: SetAndAttackTarget (proven in
-   goon-vs-goon combat tests).
+   All 162 report runtime type CombatBehaviour (not
+   PursuitBehaviour). The extras' source is unknown.
+   Already on every minted NPC via S1API. The key combat
+   API: SetAndAttackTarget (proven in goon-vs-goon combat
+   tests).
 
    SUMMARY FOR GARRISON GOONS:
 
