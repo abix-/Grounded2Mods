@@ -379,14 +379,24 @@ Tests in schedule1-mod/tests/research_*.rs.
       automatically fight back when attacked. CombatBehaviour
       never activates. Guard went Idle to Dead without ever
       entering Combat. PROVEN 2026-08-08:
-      tests/research_priority.rs. The mod must detect damage
-      and call SetAndAttackTarget on the guard (a retaliation
-      hook).
-- [ ] Build the retaliation hook: detect when a guard on idle
-      takes damage, call AttackNpc to make it fight back.
-      Needs a Harmony postfix on TakeDamage or
-      NotifyAttackedByPlayer that checks if the target is one
-      of our guards and triggers combat.
+      tests/research_priority.rs.
+- [x] EnableCombatBehaviour added to shim and tested.
+      PROVEN 2026-08-09: enabling CombatBehaviour (pri=50) on
+      a custom goon does NOT make it fight back. When punched,
+      the goon goes FaceTargetBehaviour then CallPoliceBehaviour
+      then UnconsciousBehaviour. The NPC's AI picks civilian
+      reactions (face, call police, cower) over combat even
+      though CombatBehaviour is enabled. CombatBehaviour never
+      activated during the test.
+      Next: try disabling CallPoliceBehaviour + FleeBehaviour +
+      CoweringBehaviour so those cannot preempt combat. Or use
+      AttackPlayer via the existing retaliation hook approach.
+- [ ] Build the retaliation hook: make garrison goons fight
+      back when attacked. Two approaches to try:
+      (1) Disable civilian behaviours (CallPolice, Flee,
+      Cowering) so CombatBehaviour wins by priority.
+      (2) Use a Harmony postfix on NotifyAttackedByPlayer to
+      call AttackPlayer on the guard when hit.
 - [ ] After combat ends, does the goon return to idle hold or
       does it wander? Needs testing once retaliation works.
 - [ ] Transient NRE in NPCScheduleManager.OnMinPass on custom

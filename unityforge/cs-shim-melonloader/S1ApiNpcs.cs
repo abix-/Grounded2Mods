@@ -425,6 +425,36 @@ namespace Unityforge.Shim.Schedule1
         /// pattern S1API uses (LocationBasedActionSpec): activate
         /// the GameObject, Enable_Networked, ActivateBehaviour_Server.
         /// </summary>
+        public static string EnableCombatBehaviour(int index)
+        {
+            try
+            {
+                var npc = Minted[index];
+                var s1npc = GetS1NPC(npc);
+                if (s1npc == null)
+                    return "{\"ok\":false,\"error\":\"S1NPC not resolved\"}";
+                var beh = s1npc.Behaviour;
+                if (beh == null)
+                    return "{\"ok\":false,\"error\":\"NPCBehaviour is null\"}";
+
+                var combat = beh.GetComponentInChildren<
+                    Il2CppScheduleOne.Combat.CombatBehaviour>(true);
+                if (combat == null)
+                    return "{\"ok\":false,\"error\":\"CombatBehaviour not found\"}";
+
+                if (combat.gameObject != null && !combat.gameObject.activeSelf)
+                    combat.gameObject.SetActive(true);
+
+                combat.Enable_Networked();
+
+                return GetBehaviourState(index);
+            }
+            catch (Exception e)
+            {
+                return Fail(e);
+            }
+        }
+
         public static string EnableIdleBehaviour(int index)
         {
             try
