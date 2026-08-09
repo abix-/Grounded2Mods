@@ -403,10 +403,12 @@ Tests in schedule1-mod/tests/research_*.rs.
 
 - [x] Cash loot drop via template clone + FishNet spawn. Operator
       picked up spawned cash in-game. PROVEN 2026-08-08.
-- [ ] Loot drop regression on custom NPCs. ServerManager.Spawn
-      returns type mismatch (GameObject vs NetworkObject). Root
-      cause needed. The same recipe worked on vanilla goon kills.
-      VALUE: without this, farming custom mobs gives no reward.
+- [x] Loot drop regression on custom NPCs. NOT REPRODUCING
+      2026-08-09: player killed a Tough Armed goon (mint=14,
+      ptr=1832516674336), loot dropped ($166, loot_mult=4.09),
+      XP awarded (+100, level up to 12). The full kill chain
+      works on custom NPCs. The earlier regression was transient
+      or already fixed by a prior shim/mod change.
 - [ ] Unclaimed loot on save/reload. Drops are not saveable
       scene objects. Do they vanish? Persist? Corrupt?
 
