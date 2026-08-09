@@ -144,6 +144,25 @@ namespace Unityforge.Shim.Schedule1
             }
         }
 
+        public static string SetSpeedMultiplier(int index, float multiplier)
+        {
+            try
+            {
+                var npc = Minted[index];
+                float before = npc.Movement.SpeedMultiplier;
+                npc.Movement.SpeedMultiplier = multiplier;
+                float after = npc.Movement.SpeedMultiplier;
+                return "{\"ok\":true,\"before\":" +
+                    before.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                    ",\"after\":" +
+                    after.ToString(System.Globalization.CultureInfo.InvariantCulture) + "}";
+            }
+            catch (Exception e)
+            {
+                return Fail(e);
+            }
+        }
+
         /// <summary>
         /// Arm a minted NPC with a weapon by Resources path
         /// (e.g. "Avatar/Equippables/Knife", ".../M1911").
@@ -155,6 +174,34 @@ namespace Unityforge.Shim.Schedule1
                 var npc = Minted[index];
                 npc.CombatBehaviour.SetCurrentWeapon(weaponPath);
                 return "{\"ok\":true,\"weapon\":\"" + weaponPath + "\"}";
+            }
+            catch (Exception e)
+            {
+                return Fail(e);
+            }
+        }
+
+        public static string KillNpc(int index)
+        {
+            try
+            {
+                var npc = Minted[index];
+                npc.Kill();
+                return "{\"ok\":true}";
+            }
+            catch (Exception e)
+            {
+                return Fail(e);
+            }
+        }
+
+        public static string DespawnNpc(int index)
+        {
+            try
+            {
+                var npc = Minted[index];
+                UnityEngine.Object.Destroy(npc.gameObject);
+                return "{\"ok\":true}";
             }
             catch (Exception e)
             {
@@ -260,13 +307,318 @@ namespace Unityforge.Shim.Schedule1
             }
         }
 
+        /// <summary>
+        /// Read the full behaviour state of a minted NPC:
+        /// IdleBehaviour exists/active/enabled/idlePoint,
+        /// behaviourStack count, enabledBehaviours count,
+        /// activeBehaviour type+priority. Pure diagnostic.
+        /// </summary>
+        public static string GetBehaviourState(int index)
+        {
+            try
+            {
+                var npc = Minted[index];
+                var s1npc = GetS1NPC(npc);
+                if (s1npc == null)
+                    return "{\"ok\":false,\"error\":\"S1NPC not resolved\"}";
+
+                var beh = s1npc.Behaviour;
+                if (beh == null)
+                    return "{\"ok\":false,\"error\":\"NPCBehaviour is null\"}";
+
+                int stackCount = 0;
+                if (beh.behaviourStack != null)
+                    stackCount = beh.behaviourStack.Count;
+
+                int enabledCount = 0;
+                if (beh.enabledBehaviours != null)
+                    enabledCount = beh.enabledBehaviours.Count;
+
+                string activeType = "null";
+                int activePri = -999;
+                var active = beh.activeBehaviour;
+                if (active != null)
+                {
+                    activeType = active.GetIl2CppType().FullName;
+                    activePri = active.Priority;
+                }
+
+                // Find IdleBehaviour in children
+                var idle = beh.GetComponentInChildren<
+                    Il2CppScheduleOne.NPCs.Behaviour.IdleBehaviour>(true);
+                bool idleExists = idle != null;
+                bool idleActive = false;
+                bool idleEnabled = false;
+                bool idlePointSet = false;
+                int idleIndex = -1;
+                if (idle != null)
+                {
+                    idleActive = idle.Active;
+                    idleEnabled = idle.Enabled;
+                    idlePointSet = idle.IdlePoint != null;
+                    idleIndex = idle.BehaviourIndex;
+                }
+
+                // Build enabled list
+                var enabledList = new System.Text.StringBuilder("[");
+                if (beh.enabledBehaviours != null)
+                {
+                    for (int i = 0; i < beh.enabledBehaviours.Count; i++)
+                    {
+                        if (i > 0) enabledList.Append(",");
+                        var b = beh.enabledBehaviours[i];
+                        if (b != null)
+                            enabledList.Append("{\"type\":\"" +
+                                b.GetIl2CppType().Name + "\",\"pri\":" +
+                                b.Priority + "}");
+                    }
+                }
+                enabledList.Append("]");
+
+                // Build stack list (types + priorities)
+                var stackList = new System.Text.StringBuilder("[");
+                if (beh.behaviourStack != null)
+                {
+                    for (int i = 0; i < beh.behaviourStack.Count; i++)
+                    {
+                        if (i > 0) stackList.Append(",");
+                        var b = beh.behaviourStack[i];
+                        if (b != null)
+                            stackList.Append("{\"type\":\"" +
+                                b.GetIl2CppType().Name +
+                                "\",\"pri\":" + b.Priority +
+                                ",\"active\":" + (b.Active ? "true" : "false") +
+                                ",\"enabled\":" + (b.Enabled ? "true" : "false") +
+                                ",\"idx\":" + b.BehaviourIndex + "}");
+                    }
+                }
+                stackList.Append("]");
+
+                // NPC position
+                var pos = npc.gameObject.transform.position;
+
+                return "{\"ok\":true" +
+                    ",\"stack_count\":" + stackCount +
+                    ",\"enabled_count\":" + enabledCount +
+                    ",\"active_type\":\"" + activeType + "\"" +
+                    ",\"active_pri\":" + activePri +
+                    ",\"idle_exists\":" + (idleExists ? "true" : "false") +
+                    ",\"idle_active\":" + (idleActive ? "true" : "false") +
+                    ",\"idle_enabled\":" + (idleEnabled ? "true" : "false") +
+                    ",\"idle_point_set\":" + (idlePointSet ? "true" : "false") +
+                    ",\"idle_index\":" + idleIndex +
+                    ",\"enabled_list\":" + enabledList +
+                    ",\"stack\":" + stackList +
+                    ",\"pos_x\":" + pos.x.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                    ",\"pos_y\":" + pos.y.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                    ",\"pos_z\":" + pos.z.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                    "}";
+            }
+            catch (Exception e)
+            {
+                return Fail(e);
+            }
+        }
+
+        /// <summary>
+        /// Enable IdleBehaviour on a minted NPC using the same
+        /// pattern S1API uses (LocationBasedActionSpec): activate
+        /// the GameObject, Enable_Networked, ActivateBehaviour_Server.
+        /// </summary>
+        public static string EnableIdleBehaviour(int index)
+        {
+            try
+            {
+                var npc = Minted[index];
+                var s1npc = GetS1NPC(npc);
+                if (s1npc == null)
+                    return "{\"ok\":false,\"error\":\"S1NPC not resolved\"}";
+                var beh = s1npc.Behaviour;
+                if (beh == null)
+                    return "{\"ok\":false,\"error\":\"NPCBehaviour is null\"}";
+
+                var idle = beh.GetComponentInChildren<
+                    Il2CppScheduleOne.NPCs.Behaviour.IdleBehaviour>(true);
+                if (idle == null)
+                    return "{\"ok\":false,\"error\":\"IdleBehaviour not found\"}";
+
+                if (idle.gameObject != null && !idle.gameObject.activeSelf)
+                    idle.gameObject.SetActive(true);
+
+                idle.Enable_Networked();
+                if (idle.BehaviourIndex >= 0)
+                    beh.ActivateBehaviour_Server(idle.BehaviourIndex);
+
+                return GetBehaviourState(index);
+            }
+            catch (Exception e)
+            {
+                return Fail(e);
+            }
+        }
+
+        /// <summary>
+        /// Set IdleBehaviour's IdlePoint on a minted NPC to a
+        /// world position, then enable the behaviour. Creates a
+        /// persistent Transform at the target point.
+        /// </summary>
+        public static string SetIdlePoint(int index, float x, float y, float z)
+        {
+            try
+            {
+                var npc = Minted[index];
+                var s1npc = GetS1NPC(npc);
+                if (s1npc == null)
+                    return "{\"ok\":false,\"error\":\"S1NPC not resolved\"}";
+                var beh = s1npc.Behaviour;
+                if (beh == null)
+                    return "{\"ok\":false,\"error\":\"NPCBehaviour is null\"}";
+
+                var idle = beh.GetComponentInChildren<
+                    Il2CppScheduleOne.NPCs.Behaviour.IdleBehaviour>(true);
+                if (idle == null)
+                    return "{\"ok\":false,\"error\":\"IdleBehaviour not found\"}";
+
+                // Create a persistent GameObject to hold the idle
+                // point Transform (it must outlive the call).
+                var pointGo = new UnityEngine.GameObject("IdlePoint_" + index);
+                pointGo.transform.position = new UnityEngine.Vector3(x, y, z);
+                // Parent it to the NPC so it doesn't get GC'd
+                pointGo.transform.SetParent(npc.gameObject.transform, true);
+
+                idle.IdlePoint = pointGo.transform;
+
+                // Enable the behaviour
+                if (idle.gameObject != null && !idle.gameObject.activeSelf)
+                    idle.gameObject.SetActive(true);
+                idle.Enable_Networked();
+                if (idle.BehaviourIndex >= 0)
+                    beh.ActivateBehaviour_Server(idle.BehaviourIndex);
+
+                return GetBehaviourState(index);
+            }
+            catch (Exception e)
+            {
+                return Fail(e);
+            }
+        }
+
+        /// <summary>
+        /// Add FootPatrolBehaviour to a minted NPC, create a
+        /// PatrolGroup, assign a named FootPatrolRoute, add the
+        /// NPC to the group, refresh the behaviour stack.
+        /// </summary>
+        public static string AddFootPatrol(int index, string routeName)
+        {
+            try
+            {
+                var npc = Minted[index];
+                var s1npc = GetS1NPC(npc);
+                if (s1npc == null)
+                    return "{\"ok\":false,\"error\":\"S1NPC not resolved\"}";
+                var beh = s1npc.Behaviour;
+                if (beh == null)
+                    return "{\"ok\":false,\"error\":\"NPCBehaviour is null\"}";
+
+                // Find the named FootPatrolRoute in the scene
+                var allRoutes = UnityEngine.Object.FindObjectsOfType<
+                    Il2CppScheduleOne.NPCs.Behaviour.FootPatrolRoute>(true);
+                Il2CppScheduleOne.NPCs.Behaviour.FootPatrolRoute route = null;
+                foreach (var r in allRoutes)
+                {
+                    if (r != null && r.RouteName == routeName)
+                    {
+                        route = r;
+                        break;
+                    }
+                }
+                if (route == null)
+                    return "{\"ok\":false,\"error\":\"FootPatrolRoute '\" + routeName + \"' not found\"}";
+
+                // Create FootPatrolBehaviour on a child GameObject
+                var fpGo = new UnityEngine.GameObject("FootPatrolBehaviour");
+                fpGo.transform.SetParent(beh.transform, false);
+                var fpb = fpGo.AddComponent<
+                    Il2CppScheduleOne.NPCs.Behaviour.FootPatrolBehaviour>();
+                fpb.Priority = 3;
+
+                // Set ownership (same pattern as S1API RepairBehaviourOwnership)
+                fpb.beh = beh;
+
+                // Init events
+                fpb.onEnable ??= new UnityEngine.Events.UnityEvent();
+                fpb.onDisable ??= new UnityEngine.Events.UnityEvent();
+                fpb.onBegin ??= new UnityEngine.Events.UnityEvent();
+                fpb.onEnd ??= new UnityEngine.Events.UnityEvent();
+
+                // PatrolGroup has no default constructor in Il2Cpp bindings.
+                // Needs further research on how the game creates these.
+                return "{\"ok\":false,\"error\":\"AddFootPatrol not yet implemented: PatrolGroup constructor unknown\"}";
+            }
+            catch (Exception e)
+            {
+                return Fail(e);
+            }
+        }
+
+        /// <summary>
+        /// Enable FootPatrolBehaviour on a minted NPC (must have
+        /// been added via AddFootPatrol first).
+        /// </summary>
+        public static string EnableFootPatrol(int index)
+        {
+            try
+            {
+                var npc = Minted[index];
+                var s1npc = GetS1NPC(npc);
+                if (s1npc == null)
+                    return "{\"ok\":false,\"error\":\"S1NPC not resolved\"}";
+                var beh = s1npc.Behaviour;
+                if (beh == null)
+                    return "{\"ok\":false,\"error\":\"NPCBehaviour is null\"}";
+
+                var fpb = beh.GetComponentInChildren<
+                    Il2CppScheduleOne.NPCs.Behaviour.FootPatrolBehaviour>(true);
+                if (fpb == null)
+                    return "{\"ok\":false,\"error\":\"FootPatrolBehaviour not found (call AddFootPatrol first)\"}";
+
+                if (fpb.gameObject != null && !fpb.gameObject.activeSelf)
+                    fpb.gameObject.SetActive(true);
+                fpb.Enable_Networked();
+                if (fpb.BehaviourIndex >= 0)
+                    beh.ActivateBehaviour_Server(fpb.BehaviourIndex);
+
+                return GetBehaviourState(index);
+            }
+            catch (Exception e)
+            {
+                return Fail(e);
+            }
+        }
+
+        /// <summary>
+        /// Get the S1NPC (game-side NPC component) from an S1API
+        /// wrapper via reflection.
+        /// </summary>
+        private static Il2CppScheduleOne.NPCs.NPC GetS1NPC(S1API.Entities.NPC npc)
+        {
+            var field = typeof(S1API.Entities.NPC).GetField(
+                "S1NPC",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            return field?.GetValue(npc) as Il2CppScheduleOne.NPCs.NPC;
+        }
+
         private static string Fail(Exception e)
         {
             while (e is System.Reflection.TargetInvocationException tie && tie.InnerException != null)
                 e = tie.InnerException;
             ShimLogger.Warn($"NpcFactory: {e.GetType().Name}: {e.Message}\n{e.StackTrace}");
-            return "{\"ok\":false,\"error\":\"" +
-                (e.GetType().Name + ": " + e.Message).Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"}";
+            var msg = (e.GetType().Name + ": " + e.Message)
+                .Replace("\\", "\\\\")
+                .Replace("\"", "\\\"")
+                .Replace("\r", "")
+                .Replace("\n", " ");
+            return "{\"ok\":false,\"error\":\"" + msg + "\"}";
         }
     }
 }

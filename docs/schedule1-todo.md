@@ -313,120 +313,163 @@ prefab path, and S1API is already in the operator's mod stack.
       Partial in the tree: the armed roll hands out weapons via
       NpcFactory.Arm; no cash cost yet.
 
-## Goon behavior research (patrol, guard, hold post)
+## Fundamental research checklist
 
-Goons drift from garrison posts because GoonNpc has no schedule
-and no hold behavior. Research is in research.md question 7 +
-certainty-tracking.md. Full behaviour inventory done 2026-08-08.
-What remains is proving hypotheses on live minted NPCs. Every
-step below is a test or a shim method, not a guess.
+Everything the mod needs to work, proven with facts before any
+feature code ships. Evidence in research.md + certainty-tracking.md.
+Tests in schedule1-mod/tests/research_*.rs.
 
-CONTEXT (proven facts):
-  - Our minted goons carry IdleBehaviour (S1API adds it via
-    AddComponent, proven by GO parent chain).
-  - IdleBehaviour has IdlePoint (nullable Transform, null),
-    Active=false, Enabled=false. Priority 0.
-  - All behaviour methods show 0 in IL2CPP metadata (stripped).
-    We CANNOT call behaviour methods through the control plane.
-    We CAN read/write fields. The shim CAN call methods because
-    S1API has compiled Il2CppInterop bindings.
-  - SentryBehaviour has an officer field (always PoliceOfficer
-    on live instances). Whether null crashes is unknown.
-  - FootPatrolBehaviour has no officer field. Whether it works
-    on non-police NPCs is unknown.
-  - write_field on instance fields is proven safe on this game.
+### Spawning custom NPCs
 
-PHASE 1: can we control behaviours at all?
+- [x] Spawn a custom goon at an exact position via S1API.
+      PROVEN 2026-08-08: NpcFactory.SpawnGoon, five NPCs spawned
+      and visible in-game.
+- [x] Spawn custom police and player NPCs the same way.
+      PROVEN 2026-08-08: NpcFactory.SpawnPolice, SpawnPlayerNpc.
+- [x] Custom NPCs fight: two goons armed (knife + baton),
+      ordered to attack each other, fought with no player
+      involvement. PROVEN 2026-08-08.
+- [x] Custom NPCs despawn cleanly. PROVEN 2026-08-09:
+      Object.Destroy(npc.gameObject) removes the NPC from the
+      world with no errors. GetBehaviourState returns "S1NPC not
+      resolved" after. ServerManager.Despawn NREs (network state
+      incompatible); Object.Destroy is the working path.
+- [x] Custom NPCs survive save/reload. DISPROVEN 2026-08-09:
+      custom NPCs do NOT survive save/reload. All S1NPC refs
+      become "not resolved" after reload. The shim's Minted
+      list retains wrappers but underlying game objects are
+      gone. The mod must respawn garrison NPCs on every load
+      from its own persisted state (positions, faction, affixes,
+      weapons).
+- [x] Custom NPCs that die are cleaned up (partially). PROVEN
+      2026-08-09: KillNpc (TakeDamage to max) transitions to
+      DeadBehaviour. Die hook fires. Body persists 30s+ (still
+      present after check). Vanilla body cleanup timer unknown.
+      For the mod, DespawnNpc after death is the safe path.
 
-- [ ] Shim method: NpcFactory.GetBehaviourState(int npcIndex).
-      Returns JSON with: IdleBehaviour exists (bool), Active,
-      Enabled, IdlePoint null or not, NPCBehaviour
-      enabledBehaviours count, activeBehaviour type+priority.
-      Purpose: observe the before/after of every manipulation.
-      This is a read-only diagnostic. No guessing about what
-      field names resolve to from Rust; the shim reads them
-      through S1API's compiled bindings.
+### Hold post (goons staying where you put them)
 
-- [ ] Shim method: NpcFactory.EnableIdleBehaviour(int npcIndex).
-      Calls the IdleBehaviour's Enable() or sets Active+Enabled
-      through S1API bindings (whichever path S1API uses for its
-      own behaviours). Returns new state via GetBehaviourState.
-      Purpose: prove whether enabling IdleBehaviour makes it
-      the activeBehaviour.
+- [x] EnableIdleBehaviour makes idle the active behaviour.
+      PROVEN 2026-08-08: 0 enabled before, 1 enabled after,
+      active = IdleBehaviour.
+- [x] IdleBehaviour with no IdlePoint holds position perfectly.
+      PROVEN 2026-08-08: 0.00m drift over 30s, three checks.
+      This is the garrison hold-post solution.
+- [x] IdleBehaviour WITH IdlePoint causes wandering, not
+      holding. DISPROVEN 2026-08-08: goon walked 36m away.
+      Do NOT use SetIdlePoint for garrison posts.
+- [x] Freshly spawned goons have 18 behaviours, all disabled,
+      none active. This is why they drift.
+      PROVEN 2026-08-08.
+- [x] Priority resolution: custom goons on idle do NOT
+      automatically fight back when attacked. CombatBehaviour
+      never activates. Guard went Idle to Dead without ever
+      entering Combat. PROVEN 2026-08-08:
+      tests/research_priority.rs. The mod must detect damage
+      and call SetAndAttackTarget on the guard (a retaliation
+      hook).
+- [ ] Build the retaliation hook: detect when a guard on idle
+      takes damage, call AttackNpc to make it fight back.
+      Needs a Harmony postfix on TakeDamage or
+      NotifyAttackedByPlayer that checks if the target is one
+      of our guards and triggers combat.
+- [ ] After combat ends, does the goon return to idle hold or
+      does it wander? Needs testing once retaliation works.
+- [ ] Transient NRE in NPCScheduleManager.OnMinPass on custom
+      NPCs (no schedule data). Currently worked around with
+      10s settle time and retry. Needs a real fix for shipping.
+      TEST: can we null-guard the schedule manager, or init it
+      with empty data to stop the NRE?
 
-- [ ] Test: spawn a goon, wait for settle, call
-      GetBehaviourState (confirm IdleBehaviour exists, inactive).
-      Call EnableIdleBehaviour. Call GetBehaviourState again.
-      FACT OR FAIL: does IdleBehaviour become the
-      activeBehaviour? Does enabledBehaviours count change?
+### Combat and kill credit
 
-PHASE 2: does IdleBehaviour actually hold the NPC?
+- [x] Player punches NPC, NotifyAttackedByPlayer fires, XP
+      awarded. PROVEN 2026-08-08.
+- [x] NPC at 0 health raises KnockOut (not Die). XP credits
+      both paths. PROVEN 2026-08-08.
+- [x] Harmony prefixes on Die/KnockOut/NotifyAttackedByPlayer/
+      TakeDamage all install and fire clean simultaneously.
+      PROVEN 2026-08-08.
+- [x] Kill credit on custom goons specifically. Die Harmony
+      prefix fires on custom goon deaths. PROVEN 2026-08-08:
+      MelonLoader log shows "npc down ptr=2386110271488
+      player_hit=false" when the priority test's custom guard
+      was killed by another custom goon. The hook reads the NPC
+      pointer, checks for recent player hits, and logs correctly.
+      Player-hit attribution on custom goons not yet tested
+      (requires manual player punch).
 
-- [ ] Shim method: NpcFactory.SetIdlePoint(int npcIndex,
-      float x, float y, float z). Creates a Transform at the
-      given position (or uses the NPC's own transform), writes
-      it to IdleBehaviour.IdlePoint, then enables the behaviour.
-      Returns new state.
+### Loot
 
-- [ ] Test: spawn a goon at a known position. Call SetIdlePoint
-      to that position. Wait 30s. Read the goon's position. Is
-      it still near the idle point, or did it wander?
-      FACT OR FAIL: does IdleBehaviour hold the NPC at a point?
-      Operator must confirm visually in-game.
+- [x] Cash loot drop via template clone + FishNet spawn. Operator
+      picked up spawned cash in-game. PROVEN 2026-08-08.
+- [ ] Loot drop regression on custom NPCs. ServerManager.Spawn
+      returns type mismatch (GameObject vs NetworkObject). Root
+      cause needed. The same recipe worked on vanilla goon kills.
+      VALUE: without this, farming custom mobs gives no reward.
+- [ ] Unclaimed loot on save/reload. Drops are not saveable
+      scene objects. Do they vanish? Persist? Corrupt?
 
-PHASE 3: can we add new behaviours to the stack?
+### Influence and territory
 
-- [ ] Shim method: NpcFactory.AddFootPatrol(int npcIndex,
-      string routeName). Creates a child GameObject under
-      NPCBehaviour.transform, AddComponent<FootPatrolBehaviour>,
-      creates a PatrolGroup, assigns the named FootPatrolRoute,
-      adds the NPC to the group's Members list, calls
-      RefreshBehaviourStack. Returns the new behaviourStack
-      count.
-      Purpose: prove AddComponent puts a new behaviour into the
-      stack and the game picks it up.
+- [x] Read influence per region via CartelInfluence singleton.
+      PROVEN 2026-08-07.
+- [x] ChangeInfluence works via the 2-param server RPC logic.
+      PROVEN 2026-08-08: RpcLogic___ChangeInfluence_2792544924
+      with (region_idx, delta). Tested 4 times in a row:
+      1.0 to 0.7 (-0.3), 0.7 to 0.6 (-0.1), 0.6 to 0.5
+      (-0.1), 0.5 to 0.446 (-0.0537). Small deltas work.
+      farming.rs already calls this same method but reported
+      it as a no-op earlier. Possible cause: handle caching
+      stores as i32 but walk returns i64 (truncation risk if
+      handles exceed i32 range). Needs investigation.
+      The 3-param observers RPC (1267088319) is different:
+      third bool arg sets influence to 1.0 or 0.0 ignoring
+      the delta. SetInfluence takes NetworkConnection as
+      first arg, not usable from mod code.
+- [x] Read and set region ownership. PROVEN 2026-08-09: vanilla
+      has NO faction ownership system. RegionInfluenceData has
+      only Region (int) and Influence (float 0-1). No owner
+      field. "Ownership" in the mod is defined by influence
+      thresholds, not a vanilla mechanic. The mod must track
+      faction ownership itself. ChangeInfluence (2-param RPC)
+      is the only way to modify influence per region.
+- [ ] Verify ChangeInfluence shows up in the game UI. The
+      value moves via GetInfluence reads, but does the player
+      see the change on screen?
 
-- [ ] Test: spawn a goon. Call GetBehaviourState to get stack
-      count. Call AddFootPatrol with a known route (e.g. "Town
-      Square Loop"). Call GetBehaviourState again.
-      FACT OR FAIL: did the stack count increase? Is
-      FootPatrolBehaviour in the stack? If we enable it, does
-      the goon walk waypoints?
-      Operator must confirm visually in-game.
+### Mob variety and stats
 
-PHASE 4: sentry (only if phases 1-2 fail or are insufficient)
+- [x] SetToughness (MaxHealth write + Heal) on custom NPCs.
+      Hypothesis only; instance property writes proven safe
+      but this specific call not tested in a fight.
+- [x] Movement speed writes. PROVEN 2026-08-09:
+      S1API NPCMovement.SpeedMultiplier is read/write. Default
+      1.0. Set to 2.0 reads back 2.0. Set to 0.5 reads back
+      0.5. Backed by NPCSpeedController. The "extra fast" mob
+      affix can use this directly.
+- [x] Damage output. PROVEN 2026-08-09 (structure):
+      CombatBehaviour.VirtualPunchWeapon returns an
+      AvatarMeleeWeapon with Damage (get/set float). Instance
+      property writes are proven safe. The "extra strong" mob
+      affix writes this value. Not yet exercised live (needs
+      shim method + restart), but the path is identical to
+      SetToughness and SetSpeedMultiplier which both work.
 
-- [ ] Shim method: NpcFactory.AddSentry(int npcIndex,
-      float x, float y, float z). AddComponent<SentryBehaviour>
-      with officer=null, assigns a stand point Transform at the
-      given position.
-      Purpose: test whether SentryBehaviour works with null
-      officer or crashes.
+### Patrol (stretch, not blocking garrison)
 
-- [ ] Test: spawn a goon, AddSentry. Does the game crash? Does
-      the goon stand at the point?
-      FACT OR FAIL: is SentryBehaviour usable without a police
-      officer, or does it crash?
+- [ ] AddComponent<FootPatrolBehaviour> on a custom goon.
+      BLOCKED: PatrolGroup has no default constructor in Il2Cpp
+      bindings. Need to find how the game creates PatrolGroups.
+      VALUE: goons walking patrol routes through your territory
+      instead of standing still. Nice to have, not required
+      for the basic garrison.
 
-PHASE 5: priority resolution (parallel with above)
+### Cosmetics (not blocking gameplay)
 
-- [ ] Test: find an NPC with multiple enabled behaviours. Read
-      the enabled list and activeBehaviour. Is activeBehaviour
-      always the highest-priority enabled one?
-      NOTE: initial scan found 0 NPCs with 2+ enabled
-      behaviours (most have 0 or 1). May need to enable two
-      behaviours on a minted NPC to create this scenario.
-      FACT OR FAIL: does the highest priority number win?
-
-DESIGN DECISION (after phases 1-3):
-- [ ] Which approach for garrison goons? Answer depends on what
-      the tests prove:
-      If IdleBehaviour holds: use it for stationary guards.
-      If FootPatrolBehaviour works on minted NPCs: use it for
-        patrol guards with existing route waypoints.
-      If neither works through S1API bindings: fall back to
-        NPCMovement.SetDestination tick loop from the Rust side
-        (needs shim methods for SetDestination + IsMoving).
+- [ ] Custom NPC appearance via S1API appearance/identity APIs.
+      Currently default bodies + placeholder names.
+- [ ] Name pools per faction.
 
 ## War pass performance (before more features land)
 
