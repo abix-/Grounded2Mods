@@ -388,16 +388,16 @@ Tests in schedule1-mod/tests/research_*.rs.
 - [x] Vanilla goon behaviour stack compared. PROVEN 2026-08-09:
       vanilla cartel goons (from GoonPool) have 17 behaviours,
       ALL disabled, none active, same as custom goons at rest.
-      Vanilla goons fight back because the cartel AI calls
-      AttackEntity on them, not because their behaviour stack
-      is different. Custom goons have no cartel AI backing them.
-      The fix is calling AttackPlayer on our goon when it takes
-      damage, through the NotifyAttackedByPlayer hook that
-      killcredit.rs already installs.
-- [ ] Build the retaliation hook: in killcredit.rs, when
-      NotifyAttackedByPlayer fires on one of our garrison NPCs,
-      call AttackPlayer on that NPC via the factory. This is the
-      same path the cartel AI uses for vanilla goons.
+      The behaviour stack is not the difference. Something else
+      triggers vanilla goons to fight back. What calls
+      AttackEntity on a vanilla goon when it gets hit is UNKNOWN.
+- [ ] Find the vanilla retaliation trigger: what code path
+      calls AttackEntity/SetAndAttackTarget on a vanilla goon
+      when the player punches it? Harmony postfix on
+      SetAndAttackTarget, punch a vanilla goon, read the call
+      stack. Until this is answered, the retaliation fix is
+      guesswork.
+- [ ] Build the retaliation hook once the trigger path is known.
 - [ ] After combat ends, does the goon return to idle hold or
       does it wander? Needs testing once retaliation works.
 - [ ] Transient NRE in NPCScheduleManager.OnMinPass on custom
