@@ -124,6 +124,27 @@ namespace Unityforge.Shim.Schedule1
         }
 
         /// <summary>
+        /// Tough roll: raise a minted NPC's max health and heal
+        /// it to full (per-instance MaxHealth; unlike the
+        /// player's crash-prone static).
+        /// </summary>
+        public static string SetToughness(int index, float maxHealth)
+        {
+            try
+            {
+                var npc = Minted[index];
+                npc.MaxHealth = maxHealth;
+                npc.Heal((int)maxHealth);
+                return "{\"ok\":true,\"max_health\":" +
+                    maxHealth.ToString(System.Globalization.CultureInfo.InvariantCulture) + "}";
+            }
+            catch (Exception e)
+            {
+                return Fail(e);
+            }
+        }
+
+        /// <summary>
         /// Arm a minted NPC with a weapon by Resources path
         /// (e.g. "Avatar/Equippables/Knife", ".../M1911").
         /// </summary>
@@ -178,7 +199,59 @@ namespace Unityforge.Shim.Schedule1
                     index = Minted.Count;
                     Minted.Add(npc);
                 }
-                return "{\"ok\":true,\"index\":" + index + ",\"name\":\"" +
+                // The game-side NPC component's il2cpp pointer:
+                // the identity our kill hooks see (NPCHealth.npc).
+                long ptr = 0;
+                try
+                {
+                    var s1npcField = typeof(S1API.Entities.NPC).GetField(
+                        "S1NPC",
+                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    if (s1npcField?.GetValue(npc) is Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase b)
+                        ptr = (long)b.Pointer;
+                }
+                catch (Exception e)
+                {
+                    ShimLogger.Warn($"NpcFactory: npc ptr read failed: {e.Message}");
+                }
+                // Unique per-mint ID. Two stores must agree:
+                // 1. NPCPrefabIdentity.Id on the clone's
+                //    GameObject (so S1API's NPCStart postfix
+                //    propagates the unique ID when Start fires).
+                // 2. The framework data store (what wrapper.ID
+                //    reads via NPCDataAccess.GetId). Without
+                //    this, any ReconcileAllCustomNpc pass during
+                //    the 3-6s settle window sees the shared
+                //    prefab ID and warns per duplicate per pass.
+                try
+                {
+                    var asm = typeof(S1API.Entities.NPC).Assembly;
+                    var baseId = npc.ID;
+                    var unique = (string.IsNullOrEmpty(baseId) ? "modforge" : baseId) + "_" + index;
+
+                    // Store 1: the component (for Start).
+                    var identityType = asm.GetType("S1API.Internal.Entities.NPCPrefabIdentity");
+                    var getComp = typeof(UnityEngine.GameObject)
+                        .GetMethod("GetComponent", System.Type.EmptyTypes)
+                        ?.MakeGenericMethod(identityType);
+                    var identity = getComp?.Invoke(npc.gameObject, null);
+                    var idProp = identityType?.GetProperty(
+                        "Id",
+                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    if (identity != null && idProp != null)
+                        idProp.SetValue(identity, unique);
+
+                    // Store 2: the framework data (for wrapper.ID
+                    // right now). NPC.ID { protected set } calls
+                    // NPCDataAccess.ApplyId(S1NPC, value).
+                    var wrapperIdProp = typeof(S1API.Entities.NPC).GetProperty("ID");
+                    wrapperIdProp?.SetValue(npc, unique);
+                }
+                catch (Exception e)
+                {
+                    ShimLogger.Warn($"NpcFactory: unique-id assignment failed: {e.Message}");
+                }
+                return "{\"ok\":true,\"index\":" + index + ",\"ptr\":" + ptr + ",\"name\":\"" +
                     npc.FirstName + " " + npc.LastName + "\",\"queued\":true}";
             }
             catch (Exception e)

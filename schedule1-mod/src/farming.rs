@@ -21,12 +21,15 @@
 //! GoonPool.SpawnGoon, AttackEntity, goon Health/Movement
 //! writes, SetDestination.
 
+use std::mem::ManuallyDrop;
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use serde_json::json;
 
-use unityforge::mono::{self, LogLevel, MonoType};
+use unityforge::bridge::MonoHandle;
+use unityforge::mono::{self, LogLevel, MonoObject, MonoType};
 
 use crate::loot::{handle_of, own, parse_vec3};
 
@@ -49,7 +52,8 @@ struct Region {
 struct Mob {
     region_idx: usize,
     faction: Faction,
-    goon_h: i64,
+    /// NpcFactory mint index (the C# side's handle).
+    minted_index: i64,
     npc_ptr: i64,
     post: (f64, f64, f64),
     aggro_radius: f64,
@@ -58,6 +62,30 @@ struct Mob {
     xp_mult: f32,
     loot_mult: f32,
     last_order: Instant,
+    /// Rolled at spawn, applied once the S1API pipeline has
+    /// materialized the NPC (a few seconds after minting).
+    spawned_at: Instant,
+    pending_toughness: Option<f32>,
+    pending_weapon: Option<&'static str>,
+    affixes_applied: bool,
+}
+
+/// How long after minting before affixes land (the S1API spawn
+/// pipeline settles in 3-6s).
+const AFFIX_DELAY: Duration = Duration::from_secs(8);
+
+const FACTORY: &str = "Unityforge.Shim.Schedule1.NpcFactory";
+
+/// The factory answers with a JSON STRING; parse it.
+fn factory_call(method: &str, args: serde_json::Value) -> Result<serde_json::Value, String> {
+    let v = mono::invoke_static(FACTORY, method, &args)?;
+    let s = v.as_str().ok_or_else(|| format!("{method}: non-string factory result: {v}"))?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(s).map_err(|e| format!("{method}: bad factory json: {e}"))?;
+    if parsed["ok"].as_bool() != Some(true) {
+        return Err(format!("{method}: {}", parsed["error"]));
+    }
+    Ok(parsed)
 }
 
 static REGIONS: Mutex<Vec<Region>> = Mutex::new(Vec::new());
@@ -69,16 +97,25 @@ static KILLS_BY_REGION: Mutex<Vec<(String, u32)>> = Mutex::new(Vec::new());
 const PASS_EVERY: Duration = Duration::from_secs(4);
 const HOLD_ORDER_EVERY: Duration = Duration::from_secs(12);
 const ANCHOR_JITTER: f64 = 12.0;
-const STRAY_LIMIT: f64 = 30.0;
 const TOTAL_LIVE_CAP: usize = 24;
 const SPAWNS_PER_PASS: usize = 2;
 const REINFORCE_SECS: (u64, u64) = (90, 240);
 const INFLUENCE_PER_KILL: (f64, f64) = (0.03, 0.06);
 
+/// Verbose war logging (set false to quiet down once proven).
+const WAR_VERBOSE: bool = true;
+
+fn vlog(msg: &str) {
+    if WAR_VERBOSE {
+        mono::log(LogLevel::Info, &format!("schedule1-mod [war]: {msg}"));
+    }
+}
+
 pub fn tick() {
     if !crate::skills::SETTLED.load(std::sync::atomic::Ordering::Relaxed) {
         FORCES.lock().clear();
         REGIONS.lock().clear();
+        INFLUENCE_HANDLE.store(0, Ordering::Relaxed);
         return;
     }
     {
@@ -113,7 +150,6 @@ pub fn on_mob_down(npc_ptr: i64) -> Option<(f32, f32, String)> {
     let mut forces = FORCES.lock();
     let i = forces.iter().position(|m| m.npc_ptr == npc_ptr)?;
     let m = forces.remove(i);
-    drop(own(m.goon_h));
     let live_here = forces.iter().filter(|x| x.region_idx == m.region_idx).count();
     drop(forces);
 
@@ -130,6 +166,10 @@ pub fn on_mob_down(npc_ptr: i64) -> Option<(f32, f32, String)> {
             None => String::new(),
         }
     };
+    vlog(&format!(
+        "mob down: {} (ptr={npc_ptr}) in {region_name}, {live_here} still alive here",
+        m.label
+    ));
     {
         let mut kills = KILLS_BY_REGION.lock();
         match kills.iter_mut().find(|(n, _)| *n == region_name) {
@@ -142,8 +182,15 @@ pub fn on_mob_down(npc_ptr: i64) -> Option<(f32, f32, String)> {
     if m.faction == Faction::Cartel {
         let delta = INFLUENCE_PER_KILL.0
             + fastrand::f64() * (INFLUENCE_PER_KILL.1 - INFLUENCE_PER_KILL.0);
+        let before = get_influence(m.region_idx).unwrap_or(-1.0);
+        vlog(&format!(
+            "influence change: {region_name} before={before:.4} delta={delta:.4}"
+        ));
         match change_influence(m.region_idx, -delta) {
             Ok(now_at) => {
+                vlog(&format!(
+                    "influence result: {region_name} now={now_at:.4} (was {before:.4})"
+                ));
                 mono::log(
                     LogLevel::Info,
                     &format!("schedule1-mod: the cartel's grip on {region_name} weakens"),
@@ -180,8 +227,17 @@ fn roll_reinforce() -> Duration {
 
 // ---- game plumbing ---------------------------------------------------
 
-fn cartel_influence_instance() -> Result<unityforge::mono::MonoObject, String> {
-    // Not a Singleton<T>; the one live instance comes via a walk.
+/// Cached handle for the one live CartelInfluence instance.
+/// Populated on first use, never released (the singleton lives
+/// the whole session). Cleared to 0 when REGIONS reset (game
+/// not settled / scene change).
+static INFLUENCE_HANDLE: AtomicI32 = AtomicI32::new(0);
+
+fn cartel_influence_cached() -> Result<ManuallyDrop<MonoObject>, String> {
+    let h = INFLUENCE_HANDLE.load(Ordering::Relaxed);
+    if h != 0 {
+        return Ok(ManuallyDrop::new(unsafe { MonoObject::from_handle(MonoHandle(h)) }));
+    }
     let ty = MonoType::find("Il2CppScheduleOne.Cartel.CartelInfluence")
         .ok_or("CartelInfluence type not found")?;
     let walked = ty.walk(false)?;
@@ -190,11 +246,12 @@ fn cartel_influence_instance() -> Result<unityforge::mono::MonoObject, String> {
         .and_then(|a| a.first())
         .and_then(|i| i["handle"].as_i64())
         .ok_or("no live CartelInfluence")?;
-    Ok(own(ih))
+    INFLUENCE_HANDLE.store(ih as i32, Ordering::Relaxed);
+    Ok(ManuallyDrop::new(unsafe { MonoObject::from_handle(MonoHandle(ih as i32)) }))
 }
 
 fn get_influence(region_idx: usize) -> Result<f64, String> {
-    let inst = cartel_influence_instance()?;
+    let inst = cartel_influence_cached()?;
     Ok(inst
         .invoke("GetInfluence", &json!([region_idx as i64]))?
         .as_f64()
@@ -202,11 +259,16 @@ fn get_influence(region_idx: usize) -> Result<f64, String> {
 }
 
 /// Move a region's influence through the game's own machinery
-/// and report where it landed.
+/// and report where it landed. Calls the RpcLogic directly
+/// because the public ChangeInfluence is a FishNet ServerRpc
+/// stub whose serialization round-trip silently drops our
+/// invoke (the value never moves).
 fn change_influence(region_idx: usize, delta: f64) -> Result<f64, String> {
-    let inst = cartel_influence_instance()?;
-    inst.invoke("ChangeInfluence", &json!([region_idx as i64, delta]))?;
-    drop(inst);
+    let inst = cartel_influence_cached()?;
+    inst.invoke(
+        "RpcLogic___ChangeInfluence_2792544924",
+        &json!([region_idx as i64, delta]),
+    )?;
     get_influence(region_idx)
 }
 
@@ -320,29 +382,10 @@ fn war_pass() -> Result<(), String> {
         parse_vec3(&t.invoke("get_position", &json!([]))?).ok_or("bad player position")?
     };
 
-    // The cartel's supply is the vanilla goon pool (5 objects in
-    // this game). Check it before spawning, and give the scarce
-    // goons to the strongest zones first. Growing the pool is a
-    // backlog research item.
-    let mut supply = {
-        let pool_ty = MonoType::find("Il2CppScheduleOne.Cartel.GoonPool")
-            .ok_or("GoonPool type not found")?;
-        let pools = pool_ty.walk(false)?;
-        let pool_h = pools
-            .as_array()
-            .and_then(|a| a.first())
-            .and_then(|i| i["handle"].as_i64())
-            .ok_or("no live GoonPool")?;
-        let pool = own(pool_h);
-        pool.invoke("get_UnspawnedGoonCount", &json!([]))?
-            .as_i64()
-            .unwrap_or(0)
-    };
-
+    // Supply is unlimited now (minted NPCs via the shim's
+    // S1API-backed NpcFactory); TOTAL_LIVE_CAP is the guard.
     let now = Instant::now();
     let mut spawned = 0usize;
-    // Every cartel region that is under strength and off its
-    // reinforcement cooldown, strongest grip first.
     let mut wanting: Vec<(usize, f64, String, (f64, f64, f64))> = Vec::new();
     let region_count = REGIONS.lock().len();
     for idx in 0..region_count {
@@ -353,8 +396,6 @@ fn war_pass() -> Result<(), String> {
                 continue;
             }
             let post = r.posts[fastrand::usize(0..r.posts.len())];
-            // Reinforcement timer gates refills AFTER casualties;
-            // the initial fill (no casualties yet) is immediate.
             let ready = match r.next_reinforce {
                 None => true,
                 Some(t) if now >= t => {
@@ -381,13 +422,12 @@ fn war_pass() -> Result<(), String> {
     }
     wanting.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     for (idx, _, name, post) in wanting {
-        if spawned >= SPAWNS_PER_PASS || supply <= 0 || FORCES.lock().len() >= TOTAL_LIVE_CAP {
+        if spawned >= SPAWNS_PER_PASS || FORCES.lock().len() >= TOTAL_LIVE_CAP {
             break;
         }
         match spawn_mob(idx, &name, post) {
             Ok(reinforcement) => {
                 spawned += 1;
-                supply -= 1;
                 if reinforcement {
                     mono::log(
                         LogLevel::Info,
@@ -396,86 +436,79 @@ fn war_pass() -> Result<(), String> {
                 }
             }
             Err(e) => {
-                // Pool dry mid-pass is normal scarcity, not an
-                // error worth spamming.
-                if !e.contains("carried no handle") {
-                    mono::log(
-                        LogLevel::Warn,
-                        &format!("schedule1-mod: spawn in {name} failed: {e}"),
-                    );
-                }
+                mono::log(
+                    LogLevel::Warn,
+                    &format!("schedule1-mod: spawn in {name} failed: {e}"),
+                );
                 break;
             }
         }
     }
 
-    hold_posts(ppos.0, ppos.2, player_h);
+    hold_posts(ppos.0, ppos.2);
     Ok(())
 }
 
-/// Keep stationed mobs at their posts; aggro when the player is
-/// close. One order per mob per window.
-fn hold_posts(px: f64, pz: f64, player_h: i64) {
+/// Aggro pass over the standing forces: a mob whose POST is
+/// within its rolled radius of the player gets the attack order
+/// through the factory (minted NPCs idle at their posts;
+/// BaseEmployee stock does not exit-walk like cartel goons, so
+/// no hold orders needed).
+fn hold_posts(px: f64, pz: f64) {
     let now = Instant::now();
-    let mut forces = FORCES.lock();
-    for g in forces.iter_mut() {
-        if g.aggroed || now.duration_since(g.last_order) < HOLD_ORDER_EVERY {
-            continue;
-        }
-        g.last_order = now;
-        let goon = own(g.goon_h);
-        let mut gpos = None;
-        if let Ok(t) = goon.read_field("transform") {
-            if let Some(th) = handle_of(&t) {
-                let tr = own(th);
-                gpos = tr.invoke("get_position", &json!([])).ok().and_then(|p| parse_vec3(&p));
-            }
-        }
-        std::mem::forget(goon); // the registry keeps the handle
-        let Some((gx, _, gz)) = gpos else { continue };
-        let d_player = ((gx - px).powi(2) + (gz - pz).powi(2)).sqrt();
-        if d_player <= g.aggro_radius {
-            let goon = own(g.goon_h);
-            let r = goon.invoke("AttackEntity", &json!([{"$handle": player_h}, true]));
-            std::mem::forget(goon);
-            if r.is_ok() {
-                g.aggroed = true;
-                mono::log(LogLevel::Info, &format!("schedule1-mod: {} noticed you", g.label));
-            }
-            continue;
-        }
-        let d_post = ((gx - g.post.0).powi(2) + (gz - g.post.2).powi(2)).sqrt();
-        if d_post > STRAY_LIMIT {
-            let goon = own(g.goon_h);
-            if let Ok(mv) = goon.read_field("Movement") {
-                if let Some(mh) = handle_of(&mv) {
-                    let m = own(mh);
-                    let _ = m.invoke(
-                        "SetDestination",
-                        &json!([{"x": g.post.0, "y": g.post.1, "z": g.post.2}]),
-                    );
+    let mut orders: Vec<(usize, i64, String)> = Vec::new();
+    let mut affix_work: Vec<(usize, i64, Option<f32>, Option<&'static str>)> = Vec::new();
+    {
+        let mut forces = FORCES.lock();
+        for (i, g) in forces.iter_mut().enumerate() {
+            // Affixes land once the S1API spawn pipeline settled.
+            if !g.affixes_applied && now.duration_since(g.spawned_at) >= AFFIX_DELAY {
+                g.affixes_applied = true;
+                if g.pending_toughness.is_some() || g.pending_weapon.is_some() {
+                    affix_work.push((i, g.minted_index, g.pending_toughness, g.pending_weapon));
                 }
             }
-            std::mem::forget(goon);
+            if g.aggroed || now.duration_since(g.last_order) < HOLD_ORDER_EVERY {
+                continue;
+            }
+            g.last_order = now;
+            let d_player = ((g.post.0 - px).powi(2) + (g.post.2 - pz).powi(2)).sqrt();
+            if d_player <= g.aggro_radius {
+                orders.push((i, g.minted_index, g.label.clone()));
+            }
+        }
+    }
+    for (_, minted, toughness, weapon) in affix_work {
+        if let Some(t) = toughness {
+            match factory_call("SetToughness", json!([minted, t])) {
+                Ok(_) => vlog(&format!("affix: mint={minted} SetToughness({t:.0}) ok")),
+                Err(e) => vlog(&format!("affix: mint={minted} SetToughness FAILED: {e}")),
+            }
+        }
+        if let Some(w) = weapon {
+            match factory_call("Arm", json!([minted, w])) {
+                Ok(_) => vlog(&format!("affix: mint={minted} Arm({w}) ok")),
+                Err(e) => vlog(&format!("affix: mint={minted} Arm FAILED: {e}")),
+            }
+        }
+    }
+    for (i, minted, label) in orders {
+        if factory_call("AttackPlayer", json!([minted])).is_ok() {
+            if let Some(g) = FORCES.lock().get_mut(i) {
+                g.aggroed = true;
+            }
+            vlog(&format!("aggro: {label} (mint={minted}) ordered onto player"));
         }
     }
 }
 
-/// Spawn one cartel mob at a post. Returns true when it was a
-/// reinforcement (the region already took casualties).
+/// Spawn one cartel mob at a post via the minted-NPC factory.
+/// Returns true when it was a reinforcement (the region already
+/// took casualties).
 fn spawn_mob(region_idx: usize, region_name: &str, post: (f64, f64, f64)) -> Result<bool, String> {
-    let pool_ty =
-        MonoType::find("Il2CppScheduleOne.Cartel.GoonPool").ok_or("GoonPool type not found")?;
-    let pools = pool_ty.walk(false)?;
-    let pool_h = pools
-        .as_array()
-        .and_then(|a| a.first())
-        .and_then(|i| i["handle"].as_i64())
-        .ok_or("no live GoonPool")?;
-    let pool = own(pool_h);
-    let spawn = pool.invoke("SpawnGoon", &json!([{"x": post.0, "y": post.1, "z": post.2}]))?;
-    let goon_h = handle_of(&spawn).ok_or("SpawnGoon carried no handle")?;
-    let goon = own(goon_h);
+    let spawn = factory_call("SpawnGoon", json!([post.0, post.1, post.2]))?;
+    let minted_index = spawn["index"].as_i64().ok_or("no mint index")?;
+    let npc_ptr = spawn["ptr"].as_i64().filter(|p| *p != 0).ok_or("no npc ptr from factory")?;
 
     // Roll the mob's types.
     let roll = fastrand::f32();
@@ -491,44 +524,34 @@ fn spawn_mob(region_idx: usize, region_name: &str, post: (f64, f64, f64)) -> Res
     let mut names: Vec<&str> = Vec::new();
     let mut xp_mult = 1.0f32;
     let mut loot_mult = 1.0f32;
-    let mut pool_types = ["tough", "swift", "veteran"];
+    let mut pool_types = ["tough", "armed", "veteran"];
     fastrand::shuffle(&mut pool_types);
 
-    let health = goon.read_field("Health")?;
-    let health_h = handle_of(&health).ok_or("goon Health carried no handle")?;
-    let health_obj = own(health_h);
-    let mut npc_ptr = None;
-    if let Ok(npc) = health_obj.read_field("npc") {
-        npc_ptr = npc.get("ptr").and_then(serde_json::Value::as_i64);
-        if let Some(h) = handle_of(&npc) {
-            drop(own(h));
-        }
-    }
+    let mut pending_toughness = None;
+    let mut pending_weapon = None;
     for ty_name in pool_types.iter().take(affix_count) {
         match *ty_name {
             "tough" => {
                 let mult = 2.0 + fastrand::f32() * 2.0;
-                let _ = health_obj.write_field("Health", &json!(100.0 * mult));
+                pending_toughness = Some(100.0 * mult);
                 xp_mult += 1.0;
                 loot_mult += mult * 0.5;
                 names.push("Tough");
             }
-            "swift" => {
-                if let Ok(mv) = goon.read_field("Movement") {
-                    if let Some(mh) = handle_of(&mv) {
-                        let m = own(mh);
-                        let cur = m
-                            .read_field("MoveSpeedMultiplier")
-                            .ok()
-                            .and_then(|v| v.as_f64())
-                            .unwrap_or(1.0);
-                        let boost = 1.3 + fastrand::f64() * 0.5;
-                        let _ = m.write_field("MoveSpeedMultiplier", &json!(cur * boost));
-                        xp_mult += 0.5;
-                        loot_mult += 0.5;
-                        names.push("Swift");
-                    }
-                }
+            "armed" => {
+                // The weapon roll: mostly melee, sometimes a gun.
+                let w = fastrand::f32();
+                let (weapon, bonus) = if w < 0.5 {
+                    ("Avatar/Equippables/Baton", 0.5)
+                } else if w < 0.85 {
+                    ("Avatar/Equippables/Knife", 0.75)
+                } else {
+                    ("Avatar/Equippables/M1911", 2.0)
+                };
+                pending_weapon = Some(weapon);
+                xp_mult += bonus;
+                loot_mult += bonus;
+                names.push("Armed");
             }
             "veteran" => {
                 // Pays more, shows nothing. Mystery on purpose.
@@ -545,12 +568,7 @@ fn spawn_mob(region_idx: usize, region_name: &str, post: (f64, f64, f64)) -> Res
     } else {
         format!("a {} goon", names.join(" "))
     };
-    let Some(ptr) = npc_ptr else {
-        return Err("goon npc ptr unreadable".into());
-    };
     let aggro_radius = 14.0 + fastrand::f64() * 12.0;
-    let goon_h_kept = goon.handle().0 as i64;
-    std::mem::forget(goon);
     let reinforcement = REGIONS
         .lock()
         .get(region_idx)
@@ -559,8 +577,8 @@ fn spawn_mob(region_idx: usize, region_name: &str, post: (f64, f64, f64)) -> Res
     FORCES.lock().push(Mob {
         region_idx,
         faction: Faction::Cartel,
-        goon_h: goon_h_kept,
-        npc_ptr: ptr,
+        minted_index,
+        npc_ptr,
         post,
         aggro_radius,
         aggroed: false,
@@ -568,7 +586,15 @@ fn spawn_mob(region_idx: usize, region_name: &str, post: (f64, f64, f64)) -> Res
         xp_mult,
         loot_mult,
         last_order: Instant::now(),
+        spawned_at: Instant::now(),
+        pending_toughness,
+        pending_weapon,
+        affixes_applied: false,
     });
+    vlog(&format!(
+        "spawned: {label} mint={minted_index} ptr={npc_ptr} in {region_name} at ({:.0},{:.0},{:.0}) aggro_r={aggro_radius:.0} xp={xp_mult:.2} loot={loot_mult:.2}",
+        post.0, post.1, post.2
+    ));
     if !reinforcement {
         mono::log(
             LogLevel::Info,
@@ -586,7 +612,9 @@ pub fn register_ops() {
         "The war map: per region owner, influence, strength target, live force, casualties; live mob positions. No rolled specifics (spoiler firewall).",
         "{}",
         |_args| {
-            let snapshot: Vec<(i64, String, (f64, f64, f64), bool)> = {
+            // Posts (assigned stations), not live transforms:
+            // minted NPCs idle at their posts.
+            let mobs: Vec<serde_json::Value> = {
                 let regions = REGIONS.lock();
                 FORCES
                     .lock()
@@ -596,7 +624,11 @@ pub fn register_ops() {
                             .get(g.region_idx)
                             .map(|r| r.name.clone())
                             .unwrap_or_else(|| "?".into());
-                        (g.goon_h, region, g.post, g.aggroed)
+                        json!({
+                            "region": region,
+                            "post": {"x": g.post.0, "y": g.post.1, "z": g.post.2},
+                            "aggroed": g.aggroed,
+                        })
                     })
                     .collect()
             };
@@ -624,33 +656,6 @@ pub fn register_ops() {
                                 "live": live,
                                 "casualties": r.casualties,
                                 "reinforcement_pending": r.next_reinforce.is_some(),
-                            })
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            let mobs = unityforge::main_thread_queue::MAIN_QUEUE
-                .run("farm_state_mobs", std::time::Duration::from_secs(2), move || {
-                    snapshot
-                        .into_iter()
-                        .map(|(goon_h, region, post, aggroed)| {
-                            let goon = own(goon_h);
-                            let mut pos = None;
-                            if let Ok(t) = goon.read_field("transform") {
-                                if let Some(th) = handle_of(&t) {
-                                    let tr = own(th);
-                                    pos = tr
-                                        .invoke("get_position", &json!([]))
-                                        .ok()
-                                        .and_then(|p| parse_vec3(&p));
-                                }
-                            }
-                            std::mem::forget(goon);
-                            json!({
-                                "region": region,
-                                "post": {"x": post.0, "y": post.1, "z": post.2},
-                                "pos": pos.map(|(x, y, z)| json!({"x": x, "y": y, "z": z})),
-                                "aggroed": aggroed,
                             })
                         })
                         .collect::<Vec<_>>()

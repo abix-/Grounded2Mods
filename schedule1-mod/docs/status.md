@@ -34,11 +34,29 @@ in the repo's docs/schedule1-todo.md.
 | Research: loot + mob spawn paths | 9/10 | ANSWERED for cash: template clone + FishNet spawn recipe proven in-game (operator picked up spawned $100); remaining: item (non-cash) pickup creation when loot tables need it |
 | Combat-XP levelling | 7/10 | EXIT GATE PASSED: operator kill logged "+25 XP ... LEVEL UP -> 9", auto-spend applied, punches confirmed stronger, persistence proven. Open to 10: vitality/regeneration on ice (generator fix), more skills (toughness, gun damage, fleet foot, jump height), baseline-poisoning framework fix, long-play soak |
 | Loot drops | 6/10 | WORKING in-game: kills drop rolled, toughness-scaled cash at the body; operator picked it up. Open: unclaimed-drop behavior across save/reload, item (non-cash) drops, affix-count scaling when mob types land |
-| Mob farming areas | 0/10 | blocked on research; after loot |
-| Faction war | 0/10 | blocked on research |
+| Mob farming areas | 2/10 | unblocked: garrison spawner + rolled mob types (tough/armed/veteran) built; minted-NPC re-base sits UNCOMMITTED in the tree, compiles, NOT run in-game; player-level scaling and despawn-on-leave not started |
+| Faction war | 3/10 | garrisons + influence bleed + takeover trigger proven in-game (vanilla-goon version); minted re-base unverified; ownership map op, player takeover, NPC-vs-NPC region contests not built |
 
 ## Session log
 
+- 2026-08-08 (uncommitted, in the tree): farming re-based onto
+  minted NPCs, BUILT BUT NOT RUN IN-GAME. war_pass now spawns
+  through NpcFactory (the vanilla 5-goon supply check deleted;
+  TOTAL_LIVE_CAP is the guard), mob types re-rolled as tough
+  (SetToughness) / armed (baton, knife, or M1911 roll) /
+  veteran, applied 8s after minting once the S1API pipeline
+  settles; hold-at-post orders dropped entirely on the untested
+  assumption that minted BaseEmployee NPCs idle at their posts
+  (now a hypothesis row in certainty-tracking.md); farm_state
+  reports posts, not live positions. Shim additions:
+  NpcFactory.SetToughness, per-mint unique game-side ID (kills
+  S1API's duplicate-ID warning spam), game-side NPC ptr
+  returned at mint (the kill-hook identity). Evidence so far:
+  cargo check and the shim dotnet build both pass 2026-08-08.
+  NO in-game evidence: the exit-gate run (10+ minted goons
+  fight, die, pay XP/loot/influence) has not happened.
+  tests/research_farming.rs added (vanilla-goon
+  MaxHealth/Health/movement write probe), never run live.
 - 2026-08-08 (late night): THE SUPPLY CAP IS DEAD. Custom NPC
   minting proven in-game: the shim's S1API-backed NpcFactory
   (GoonNpc / PoliceNpc / PlayerNpc + invoke_static statics)

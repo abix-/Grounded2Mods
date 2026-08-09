@@ -13,6 +13,9 @@
 //! Runs queued on the main thread, one frame after the kill, so
 //! nothing heavy executes inside the Die/KnockOut prefix.
 
+use std::mem::ManuallyDrop;
+use std::sync::atomic::{AtomicI32, Ordering};
+
 use serde_json::{Value as Json, json};
 
 use unityforge::bridge::MonoHandle;
@@ -20,6 +23,11 @@ use unityforge::main_thread_queue::MAIN_QUEUE;
 use unityforge::mono::{self, LogLevel, MonoObject, MonoType};
 
 const TEMPLATE_NAME: &str = "Dynamic Amount Cash Pickup";
+
+/// Cached handle for the inactive CashPickup template object.
+static TEMPLATE_HANDLE: AtomicI32 = AtomicI32::new(0);
+/// Cached handle for the FishNet ServerManager singleton.
+static SERVER_MGR_HANDLE: AtomicI32 = AtomicI32::new(0);
 
 /// Queue a cash drop at the downed NPC's feet. `toughness` is
 /// the NPC's max health; the payout rolls off it.
@@ -58,36 +66,58 @@ pub(crate) fn own(h: i64) -> MonoObject {
     unsafe { MonoObject::from_handle(MonoHandle(h as i32)) }
 }
 
-fn spawn_cash(x: f64, y: f64, z: f64, amount: f64) -> Result<(), String> {
+fn cached_template() -> Result<i32, String> {
+    let h = TEMPLATE_HANDLE.load(Ordering::Relaxed);
+    if h != 0 {
+        return Ok(h);
+    }
     let ty = MonoType::find("Il2CppScheduleOne.ItemFramework.CashPickup")
         .ok_or("CashPickup type not found")?;
-
-    // The inactive template, by its scene name.
     let walked = ty.walk(true)?;
     let list = walked.as_array().cloned().unwrap_or_default();
-    let mut template = None;
+    let mut found = None;
     for i in &list {
         let name = i["name"].as_str().unwrap_or("");
-        let Some(h) = i["handle"].as_i64() else { continue };
-        if template.is_none() && name == TEMPLATE_NAME {
-            template = Some(h);
+        let Some(ih) = i["handle"].as_i64() else { continue };
+        if found.is_none() && name == TEMPLATE_NAME {
+            found = Some(ih as i32);
         } else {
-            drop(own(h));
+            drop(own(ih));
         }
     }
-    let template = template.ok_or("cash template not found in scene")?;
+    let th = found.ok_or("cash template not found in scene")?;
+    TEMPLATE_HANDLE.store(th, Ordering::Relaxed);
+    Ok(th)
+}
 
-    let clone = mono::invoke_static(
+fn cached_server_mgr() -> Result<ManuallyDrop<MonoObject>, String> {
+    let h = SERVER_MGR_HANDLE.load(Ordering::Relaxed);
+    if h != 0 {
+        return Ok(ManuallyDrop::new(unsafe { MonoObject::from_handle(MonoHandle(h)) }));
+    }
+    let sm = mono::invoke_static("Il2CppFishNet.InstanceFinder", "get_ServerManager", &json!([]))?;
+    let sh = handle_of(&sm).ok_or("no ServerManager")? as i32;
+    SERVER_MGR_HANDLE.store(sh, Ordering::Relaxed);
+    Ok(ManuallyDrop::new(unsafe { MonoObject::from_handle(MonoHandle(sh)) }))
+}
+
+fn spawn_cash(x: f64, y: f64, z: f64, amount: f64) -> Result<(), String> {
+    let template_h = cached_template()?;
+
+    let clone_v = mono::invoke_static(
         "UnityEngine.Object",
         "Instantiate",
-        &json!([{"$handle": template}]),
+        &json!([{"$handle": template_h}]),
     )?;
-    drop(own(handle_of(&clone).ok_or("Instantiate returned no handle")? as i64));
-    drop(own(template));
+    drop(own(handle_of(&clone_v).ok_or("Instantiate returned no handle")?));
 
-    // The clone comes back base-typed; re-find it as a CashPickup
-    // via the walk (Unity names clones "<template>(Clone)"),
-    // then rename it so the next drop is unambiguous.
+    // Re-find the clone as a CashPickup (the Instantiate return
+    // is typed as UnityEngine.Object; the shim cannot resolve
+    // CashPickup methods on it). Unity names clones
+    // "<template>(Clone)"; rename it so the next drop finds a
+    // clean slate.
+    let ty = MonoType::find("Il2CppScheduleOne.ItemFramework.CashPickup")
+        .ok_or("CashPickup type not found")?;
     let walked = ty.walk(true)?;
     let list = walked.as_array().cloned().unwrap_or_default();
     let mut clone_h = None;
@@ -114,10 +144,14 @@ fn spawn_cash(x: f64, y: f64, z: f64, amount: f64) -> Result<(), String> {
     }
 
     // FishNet spawn so the world owns it (proven mandatory).
-    let sm = mono::invoke_static("Il2CppFishNet.InstanceFinder", "get_ServerManager", &json!([]))?;
-    let sm_h = handle_of(&sm).ok_or("no ServerManager")?;
-    let sm_obj = own(sm_h);
-    sm_obj.invoke("Spawn", &json!([{"$handle": go_h}, null, {}]))?;
+    // CashPickup inherits NetworkBehaviour which exposes
+    // NetworkObject as a property (avoids the GetComponent
+    // type-resolution issue in IL2CPP).
+    let net_obj = cash.invoke("get_NetworkObject", &json!([]))?;
+    let net_h = handle_of(&net_obj).ok_or("no NetworkObject on cash clone")?;
+    let sm = cached_server_mgr()?;
+    sm.invoke("Spawn", &json!([{"$handle": net_h}, null, {}]))?;
+    drop(own(net_h));
 
     cash.write_field("Value", &json!(amount))?;
     cash.invoke("UpdateCashStackVisuals", &json!([]))?;

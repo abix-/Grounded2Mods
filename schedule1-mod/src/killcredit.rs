@@ -29,9 +29,33 @@ const HIT_WINDOW: Duration = Duration::from_secs(15);
 /// One credit per NPC per this long (KnockOut then Die = one).
 const CREDIT_COOLDOWN: Duration = Duration::from_secs(60);
 const XP_PER_DOWN: u64 = 25;
+const RING_CAP: usize = 32;
 
-static PLAYER_HITS: Mutex<Vec<(i64, Instant)>> = Mutex::new(Vec::new());
-static CREDITED: Mutex<Vec<(i64, Instant)>> = Mutex::new(Vec::new());
+struct HitRing {
+    buf: [Option<(i64, Instant)>; RING_CAP],
+    next: usize,
+}
+
+impl HitRing {
+    const fn new() -> Self {
+        Self { buf: [None; RING_CAP], next: 0 }
+    }
+
+    fn remember(&mut self, ptr: i64) {
+        self.buf[self.next] = Some((ptr, Instant::now()));
+        self.next = (self.next + 1) % RING_CAP;
+    }
+
+    fn recent(&self, ptr: i64, window: Duration) -> bool {
+        let now = Instant::now();
+        self.buf.iter().any(|slot| {
+            slot.is_some_and(|(p, t)| p == ptr && now.duration_since(t) < window)
+        })
+    }
+}
+
+static PLAYER_HITS: Mutex<HitRing> = Mutex::new(HitRing::new());
+static CREDITED: Mutex<HitRing> = Mutex::new(HitRing::new());
 
 pub fn install() {
     let targets: [(&str, extern "C" fn(*const c_void) -> i32); 3] = [
@@ -101,19 +125,6 @@ fn npc_info(health_h: i32) -> Option<(i64, Option<(f64, f64, f64)>, f32)> {
     Some((ptr, pos, max_health))
 }
 
-fn remember(list: &Mutex<Vec<(i64, Instant)>>, ptr: i64, keep: Duration) {
-    let now = Instant::now();
-    let mut l = list.lock();
-    l.retain(|(p, t)| *p != ptr && now.duration_since(*t) < keep);
-    l.push((ptr, now));
-}
-
-fn recent(list: &Mutex<Vec<(i64, Instant)>>, ptr: i64, window: Duration) -> bool {
-    let now = Instant::now();
-    list.lock()
-        .iter()
-        .any(|(p, t)| *p == ptr && now.duration_since(*t) < window)
-}
 
 /// Inert until the loaded game settles (crash guard: never touch
 /// half-initialized instances during a save load). The ctx
@@ -136,7 +147,7 @@ extern "C" fn on_player_hit(ctx: *const c_void) -> i32 {
         return 0;
     }
     if let Some(ptr) = npc_ptr(ctx as isize as i32) {
-        remember(&PLAYER_HITS, ptr, HIT_WINDOW);
+        PLAYER_HITS.lock().remember(ptr);
     }
     0
 }
@@ -149,23 +160,39 @@ extern "C" fn on_down(ctx: *const c_void) -> i32 {
     let Some((ptr, pos, max_health)) = npc_info(ctx as isize as i32) else {
         return 0;
     };
-    if !recent(&PLAYER_HITS, ptr, HIT_WINDOW) {
-        return 0; // not the player's kill
+    let player_hit = PLAYER_HITS.lock().recent(ptr, HIT_WINDOW);
+    let already_credited = CREDITED.lock().recent(ptr, CREDIT_COOLDOWN);
+    mono::log(
+        LogLevel::Info,
+        &format!(
+            "schedule1-mod [kill]: npc down ptr={ptr} player_hit={player_hit} already_credited={already_credited} max_health={max_health:.0} pos={pos:?}"
+        ),
+    );
+    if !player_hit {
+        return 0;
     }
-    if recent(&CREDITED, ptr, CREDIT_COOLDOWN) {
-        return 0; // already paid for this down
+    if already_credited {
+        return 0;
     }
-    remember(&CREDITED, ptr, CREDIT_COOLDOWN);
-    // Farm mobs carry rolled XP + loot multipliers; anything
-    // else pays base.
+    CREDITED.lock().remember(ptr);
     let (xp_mult, loot_mult) = match crate::farming::on_mob_down(ptr) {
         Some((xm, lm, label)) => {
             mono::log(LogLevel::Info, &format!("schedule1-mod: {label} is down"));
             (xm, lm)
         }
-        None => (1.0, 1.0),
+        None => {
+            mono::log(
+                LogLevel::Info,
+                &format!("schedule1-mod [kill]: ptr={ptr} not in garrison forces (vanilla NPC?)"),
+            );
+            (1.0, 1.0)
+        }
     };
     if let Some((x, y, z)) = pos {
+        mono::log(
+            LogLevel::Info,
+            &format!("schedule1-mod [kill]: dropping loot at ({x:.0},{y:.0},{z:.0}) max_health={max_health:.0} loot_mult={loot_mult:.2}"),
+        );
         crate::loot::drop_cash_at(x, y, z, max_health * loot_mult);
     }
     if let Some(r) = TRACKER.record_xp((XP_PER_DOWN as f32 * xp_mult) as u64) {

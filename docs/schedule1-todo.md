@@ -216,6 +216,15 @@ the detail per box.
       toughness (rolled; specifics behind the spoiler firewall
       in src/loot.rs), via the proven cash-template clone +
       FishNet spawn recipe. CONFIRMED in-game 2026-08-08.
+- [ ] BUG 2026-08-08: loot drop regressed on the minted-NPC
+      build. ServerManager.Spawn returns "Object of type
+      UnityEngine.GameObject cannot be converted to type
+      Il2CppFishNet.Object.NetworkObject". The same recipe
+      worked last session on vanilla goon kills. RCA needed:
+      the invoke passes a GameObject but Spawn expects a
+      NetworkObject; the earlier recipe may have relied on an
+      implicit conversion or overload that the current invoke
+      path no longer hits.
 - [ ] Exit gate remainder: no orphaned pickups after
       save/reload (drops are not saveable scene objects; verify
       what happens to unclaimed drops across a reload).
@@ -233,12 +242,19 @@ mob's types), and per-region difficulty come with this slice.
 
 - [ ] Per-region mob spawner on the vanilla spawn machinery:
       density per region, respawn timer, despawn when the player
-      leaves.
+      leaves. Partial: the war garrison spawner (farming.rs)
+      covers cartel regions with influence-sized posts and
+      reinforce timers; despawn-on-leave not built; the minted
+      version is unverified in-game.
 - [ ] Mob modifier types (the Diablo affix model above): roll on
       spawn, applied via the goon's own stats (NPCHealth
       MaxHealth, movement speed, damage); affix count scales
       with region difficulty; XP and loot scale with affix
-      count.
+      count. Partial in the tree: tough/armed/veteran roll at
+      spawn with XP/loot multipliers; swift was dropped in the
+      minted re-base (movement-speed anchor unproven); no
+      visuals, no region-difficulty scaling; unverified
+      in-game.
 - [ ] Mob stats scale with player level (never trivializes).
 - [ ] Exit gate: operator farms one region for several respawn
       cycles; kills grant XP + loot; MelonLoader log clean.
@@ -281,9 +297,53 @@ prefab path, and S1API is already in the operator's mod stack.
 - [ ] Re-base farming's forces on minted NPCs (vanilla goons
       stay for vanilla systems); prove in-game: spawn 10+ of
       our goons, they fight, die, pay XP/loot/influence.
+      PARTIAL 2026-08-08: minted garrisons spawn, affix rolls
+      land (Arm + SetToughness ok), aggro fires, kill
+      attribution chain works (player_hit, XP awarded), mob
+      removed from forces correctly. Unique per-mint ID fix
+      landed (zero S1API duplicate warnings). Two bugs found:
+      (1) ChangeInfluence is a no-op (before=0.6500,
+      delta=-0.0537, after=0.6500; the game accepts the call
+      but the value does not move). (2) Loot drop regressed
+      (ServerManager.Spawn type mismatch: GameObject vs
+      NetworkObject). Both need RCA.
 - [ ] Arm them: weapons cost cash (the war economy money sink);
       vanilla Ambush carries the arming machinery
       (RangedWeapons/MeleeWeapons, rank-gated) worth studying.
+      Partial in the tree: the armed roll hands out weapons via
+      NpcFactory.Arm; no cash cost yet.
+
+## War pass performance (before more features land)
+
+The war pass runs every 4 seconds and does redundant work that
+scales badly. Fix this before adding more regions or mobs.
+
+- [ ] Cache the CartelInfluence handle at session level. Right
+      now every `get_influence` call walks the entire type to
+      find the one live instance (2 IL2CPP calls per region per
+      pass = 10 wasted calls every 4 seconds). Cache the handle
+      once after regions load, reuse it for all reads. Add a
+      staleness guard (null check or scene-change reset).
+- [ ] Stop reading the player's position every pass. The only
+      consumer is aggro distance checks. Move aggro detection
+      onto the NPC itself: S1API CombatBehaviour already has
+      target detection. At spawn time, give the NPC a guard
+      behavior (attack hostiles near its post). The mod never
+      needs to know where the player is. Research needed: what
+      S1API exposes for guard/patrol/detection behaviors.
+- [ ] Cache the CashPickup template handle for loot drops.
+      Right now each loot drop walks ALL CashPickup instances
+      in the scene twice (once to find the template, once to
+      re-find the clone). Cache the template handle at first
+      use. Investigate using the Instantiate return handle
+      directly to skip the second walk entirely.
+- [ ] Replace the PLAYER_HITS growable vec with a fixed-size
+      ring buffer. The vec grows during sustained combat and
+      scans linearly on every punch and every death. A 32-slot
+      ring with oldest-eviction caps both memory and scan time.
+- [ ] After the above: raise PASS_EVERY from 4s to something
+      slower if the pass is cheap enough, or keep it if spawn
+      responsiveness matters. Document the decision.
 
 ## Faction war (in slices, each verified in-game)
 
