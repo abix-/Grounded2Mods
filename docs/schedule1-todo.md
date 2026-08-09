@@ -125,11 +125,19 @@
 
 ## The goal checklist (added 2026-08-07)
 
-The operator's goal: FF7-style grind loop, then conquest. Run
-around an area farming mobs, kill them, get loot, level up, then
-take region control from factions. Every unchecked box below is
-the concrete path there, in order. Sections after this one carry
-the detail per box.
+The operator's goal: an ongoing three-faction war for territory.
+Player, cartel, and police all fight each other constantly.
+Cartel and player fight for drug-selling control. Police fight
+everyone for law enforcement presence. A zone can have both a
+drug-war garrison (cartel or player NPCs) AND a police garrison
+at the same time, because those are separate influence tracks.
+
+The grind loop: walk into a region, farm hostile mobs, get XP
+and loot, level up, then take control from factions by clearing
+their forces. Money is the war economy: every NPC (yours, cartel,
+police) costs its faction cash to spawn. Deaths cost the faction
+money to replace. The player spends earned loot to field their
+own forces and hold territory.
 
 - [x] Research proven live: region owner, mob classes, death
       path, kill hook, loot path (game must be running). All
@@ -240,21 +248,27 @@ harder mobs roll MORE types at once; more types = more XP and
 better loot. The affix list, visuals (how the player reads a
 mob's types), and per-region difficulty come with this slice.
 
-- [ ] Per-region mob spawner on the vanilla spawn machinery:
-      density per region, respawn timer, despawn when the player
-      leaves. Partial: the war garrison spawner (farming.rs)
-      covers cartel regions with influence-sized posts and
-      reinforce timers; despawn-on-leave not built; the minted
-      version is unverified in-game.
+All three factions (cartel, police, player) use the same spawn
+and affix machinery. The spawner serves the war: each faction's
+garrison in a region is sized by that faction's influence on the
+relevant track. Cartel and player share the drug influence track.
+Police use the separate police presence track. A region can hold
+garrisons from two tracks at once.
+
+- [ ] Per-region mob spawner for all three factions: garrison
+      size driven by influence, respawn timer, body cleanup via
+      DespawnNpc after death. Partial: farming.rs covers cartel
+      with influence-sized posts and reinforce timers; police
+      and player garrisons not built; body cleanup not built;
+      reload respawn not built (custom NPCs vanish on reload).
 - [ ] Mob modifier types (the Diablo affix model above): roll on
       spawn, applied via the goon's own stats (NPCHealth
       MaxHealth, movement speed, damage); affix count scales
       with region difficulty; XP and loot scale with affix
       count. Partial in the tree: tough/armed/veteran roll at
-      spawn with XP/loot multipliers; swift was dropped in the
-      minted re-base (movement-speed anchor unproven); no
-      visuals, no region-difficulty scaling; unverified
-      in-game.
+      spawn with XP/loot multipliers; swift dropped (speed
+      write proven but not re-added); no visuals, no
+      region-difficulty scaling; unverified in-game.
 - [ ] Mob stats scale with player level (never trivializes).
 - [ ] Exit gate: operator farms one region for several respawn
       cycles; kills grant XP + loot; MelonLoader log clean.
@@ -507,16 +521,72 @@ scales badly. Fix this before adding more regions or mobs.
 
 ## Faction war (in slices, each verified in-game)
 
-- [ ] Ownership map: factions own regions; `faction_state` op.
-- [ ] NPC-vs-player contests: attacks on the player and their
-      dealing areas, frequency up, enemy stats scale with player
-      level.
+Three factions: player, cartel, police. Every pair fights the
+other two. This is a constant, ongoing war for regional control.
+
+### Two influence tracks per region
+
+Drug influence (0 to 1): shared between cartel and player. One
+goes up, the other goes down. Whoever holds more drug influence
+controls the region for selling. This is the track that
+CartelInfluence already stores (vanilla 0-1 float per region).
+The mod reinterprets it: high = cartel controls, low = player
+controls. Killing cartel goons lowers it; killing player NPCs
+raises it (from cartel attacks or police raids).
+
+Police presence (0 to 1): separate from drug influence. A region
+can have high police presence AND high cartel influence at the
+same time. Police NPCs spawn based on police presence, not drug
+influence. Police fight both cartel and player NPCs on sight.
+The mod tracks this value itself (vanilla has no police
+influence field).
+
+A zone can therefore have up to two garrisons simultaneously:
+one from the drug war (cartel or player NPCs) and one from the
+police. A full region might have 5 cartel goons AND 5 police
+officers, all hostile to each other and to the player.
+
+### Money as the war economy
+
+Every NPC costs its faction cash to spawn. Reinforcements after
+deaths cost the faction again. This is the money sink that keeps
+loot meaningful.
+
+Player: spends earned cash to deploy their own goons in regions
+they control. Losing a goon costs the player the replacement
+price. Holding territory means ongoing upkeep.
+
+Cartel: has its own war chest (invisible to the player). Cartel
+goon deaths drain it. When the chest is low, reinforcements slow
+down or stop. The cartel earns from regions it controls (passive
+income over time). Losing regions starves the cartel.
+
+Police: funded separately (budget, not drug money). Police
+presence scales with crime activity in a region (more drug
+fighting = more police). Police do not run out of money the way
+cartel and player do, but their response scales up and down.
+
+### Work items
+
+- [ ] Ownership map: three factions own regions; `faction_state`
+      op shows drug influence, police presence, and who controls
+      each region.
+- [ ] Player garrison deployment: spend cash to place your own
+      goons in a region you control. They hold post, fight
+      hostiles, and cost you to replace if killed.
+- [ ] Cartel war chest: passive income from controlled regions,
+      spent on reinforcements. Visible to the player only
+      through the cartel's behavior (fast or slow reinforcement).
+- [ ] Police presence track: scales with drug activity per
+      region. Police spawn independently of drug influence.
+      Police attack both cartel and player NPCs on sight.
+- [ ] NPC-vs-NPC combat: cartel goons attack player goons and
+      police. Police attack cartel and player goons. All three
+      factions fight each other with no player involvement.
 - [ ] Territory pressure: losing a region costs the player
-      (customers/dealers in that region).
-- [ ] Player takeover: clearing a region's mobs/influence flips
-      ownership to the player; holding it pays off (customers/
-      dealers safe there).
-- [ ] NPC-vs-NPC contests: factions fight each other for regions
-      without player involvement.
-- [ ] Director split: random event rolls and adaptive pressure as
-      two separate layers, never merged.
+      (customers/dealers in that region become unsafe).
+- [ ] Player takeover: clearing a region's cartel forces and
+      drug influence flips ownership to the player; holding it
+      pays off (safe dealing territory).
+- [ ] Director: random event rolls (police crackdowns, cartel
+      pushes) and adaptive pressure as two separate layers.
