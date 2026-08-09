@@ -905,17 +905,68 @@ certainty-tracking.md.
    Group (PatrolGroup) to function. PatrolGroup only needs
    Route (FootPatrolRoute) and Members (List<NPC>).
 
-   HYPOTHETICAL APPROACHES (none tested on minted NPCs):
-   Approach 1: IdleBehaviour. Exists on our minted goons
-     (proven). Set IdlePoint, enable it. UNTESTED: whether
-     this holds the NPC at the point.
-   Approach 2: AddComponent<FootPatrolBehaviour>. Create a
-     PatrolGroup + route. UNTESTED: whether AddComponent
-     works for this type on a minted NPC.
-   Approach 3: NPCMovement.SetDestination tick loop.
-     UNTESTED: whether SetDestination works on minted NPCs
-     (only Warp is proven).
+   PROVEN APPROACH: IdleBehaviour hold-post (no IdlePoint).
+   EnableIdleBehaviour (S1API enable pattern: SetActive +
+   Enable_Networked + ActivateBehaviour_Server) makes idle
+   the activeBehaviour on a minted goon. With NO IdlePoint
+   set, the NPC holds perfectly at its current position:
+   0.00m drift over 30s (three 10s checks, all identical).
+   tests/research_behaviours_hold.rs.
 
-   NEXT STEP: prove one of these on a live minted goon.
-   The simplest test: spawn a goon, find its IdleBehaviour,
-   set IdlePoint, enable it, observe whether the goon stays.
+   DISPROVEN: SetIdlePoint causes WANDERING, not holding.
+   A goon with IdlePoint set walked 36m away from the
+   target over several minutes, not toward it. IdlePoint
+   does NOT mean "stand here". Do NOT use SetIdlePoint
+   for garrison posts. tests/research_behaviours_phase1.rs.
+
+   CAVEAT: EnableIdleBehaviour can hit a transient NRE in
+   NPCScheduleManager.OnMinPass during game-minute ticks
+   (minted NPCs have no schedule). Retry succeeds. Use
+   10s+ settle time after spawn, or add retry logic.
+
+   GARRISON RECIPE (proven):
+   1. SpawnGoon(x, y, z) at the garrison post
+   2. Wait 10s for spawn pipeline
+   3. EnableIdleBehaviour(index)
+   4. NPC holds at spawn position indefinitely
+
+   REMAINING UNTESTED:
+   AddComponent<FootPatrolBehaviour> for patrol routes.
+   BLOCKED: PatrolGroup has no default constructor in
+   Il2Cpp bindings. Needs further research on how the
+   game creates these.
+
+7. **NPCResponses: root cause of custom goons not fighting back**
+
+   The NPC response system is what bridges damage events to
+   behaviour activation. The base class is NPCResponses
+   (Il2CppScheduleOne.NPCs.Responses.NPCResponses). It
+   declares response methods: RespondToFirstNonLethalAttack,
+   RespondToRepeatedNonLethalAttack, RespondToLethalAttack,
+   ImpactReceived, RespondToAnnoyingImpact, RespondToAimedAt.
+
+   NPCResponses_Civilian is a subclass that OVERRIDES these
+   methods with civilian reactions (flee, cower, call police).
+   It adds ExecuteThreatResponse and GetThreatResponse which
+   select from an EAttackResponse enum of non-combat options.
+
+   FINDING (2026-08-09, research_responses.rs):
+   Vanilla cartel goons use the BASE NPCResponses class.
+   S1API hardcodes NPCResponses_Civilian on all custom NPCs
+   (NPC.cs line 3416). This is the root cause: when a custom
+   goon gets punched, NPCResponses_Civilian routes the event
+   to civilian reactions instead of combat.
+
+   FIX PATH: Add a shim method that replaces the Responses
+   component on a custom goon from NPCResponses_Civilian
+   to NPCResponses, then re-links Awareness.Responses.
+
+   The NPCAwareness component reads damage/vision events and
+   calls the Responses component's methods. The Responses
+   component then triggers the appropriate behaviours through
+   NPCActions. The chain: Awareness detects event, calls
+   Responses.RespondTo*, Responses triggers NPCActions which
+   enables/activates the right behaviour in the priority
+   stack. NPCResponses (base) triggers CombatBehaviour.
+   NPCResponses_Civilian triggers FleeBehaviour,
+   CoweringBehaviour, CallPoliceBehaviour instead.
