@@ -313,6 +313,121 @@ prefab path, and S1API is already in the operator's mod stack.
       Partial in the tree: the armed roll hands out weapons via
       NpcFactory.Arm; no cash cost yet.
 
+## Goon behavior research (patrol, guard, hold post)
+
+Goons drift from garrison posts because GoonNpc has no schedule
+and no hold behavior. Research is in research.md question 7 +
+certainty-tracking.md. Full behaviour inventory done 2026-08-08.
+What remains is proving hypotheses on live minted NPCs. Every
+step below is a test or a shim method, not a guess.
+
+CONTEXT (proven facts):
+  - Our minted goons carry IdleBehaviour (S1API adds it via
+    AddComponent, proven by GO parent chain).
+  - IdleBehaviour has IdlePoint (nullable Transform, null),
+    Active=false, Enabled=false. Priority 0.
+  - All behaviour methods show 0 in IL2CPP metadata (stripped).
+    We CANNOT call behaviour methods through the control plane.
+    We CAN read/write fields. The shim CAN call methods because
+    S1API has compiled Il2CppInterop bindings.
+  - SentryBehaviour has an officer field (always PoliceOfficer
+    on live instances). Whether null crashes is unknown.
+  - FootPatrolBehaviour has no officer field. Whether it works
+    on non-police NPCs is unknown.
+  - write_field on instance fields is proven safe on this game.
+
+PHASE 1: can we control behaviours at all?
+
+- [ ] Shim method: NpcFactory.GetBehaviourState(int npcIndex).
+      Returns JSON with: IdleBehaviour exists (bool), Active,
+      Enabled, IdlePoint null or not, NPCBehaviour
+      enabledBehaviours count, activeBehaviour type+priority.
+      Purpose: observe the before/after of every manipulation.
+      This is a read-only diagnostic. No guessing about what
+      field names resolve to from Rust; the shim reads them
+      through S1API's compiled bindings.
+
+- [ ] Shim method: NpcFactory.EnableIdleBehaviour(int npcIndex).
+      Calls the IdleBehaviour's Enable() or sets Active+Enabled
+      through S1API bindings (whichever path S1API uses for its
+      own behaviours). Returns new state via GetBehaviourState.
+      Purpose: prove whether enabling IdleBehaviour makes it
+      the activeBehaviour.
+
+- [ ] Test: spawn a goon, wait for settle, call
+      GetBehaviourState (confirm IdleBehaviour exists, inactive).
+      Call EnableIdleBehaviour. Call GetBehaviourState again.
+      FACT OR FAIL: does IdleBehaviour become the
+      activeBehaviour? Does enabledBehaviours count change?
+
+PHASE 2: does IdleBehaviour actually hold the NPC?
+
+- [ ] Shim method: NpcFactory.SetIdlePoint(int npcIndex,
+      float x, float y, float z). Creates a Transform at the
+      given position (or uses the NPC's own transform), writes
+      it to IdleBehaviour.IdlePoint, then enables the behaviour.
+      Returns new state.
+
+- [ ] Test: spawn a goon at a known position. Call SetIdlePoint
+      to that position. Wait 30s. Read the goon's position. Is
+      it still near the idle point, or did it wander?
+      FACT OR FAIL: does IdleBehaviour hold the NPC at a point?
+      Operator must confirm visually in-game.
+
+PHASE 3: can we add new behaviours to the stack?
+
+- [ ] Shim method: NpcFactory.AddFootPatrol(int npcIndex,
+      string routeName). Creates a child GameObject under
+      NPCBehaviour.transform, AddComponent<FootPatrolBehaviour>,
+      creates a PatrolGroup, assigns the named FootPatrolRoute,
+      adds the NPC to the group's Members list, calls
+      RefreshBehaviourStack. Returns the new behaviourStack
+      count.
+      Purpose: prove AddComponent puts a new behaviour into the
+      stack and the game picks it up.
+
+- [ ] Test: spawn a goon. Call GetBehaviourState to get stack
+      count. Call AddFootPatrol with a known route (e.g. "Town
+      Square Loop"). Call GetBehaviourState again.
+      FACT OR FAIL: did the stack count increase? Is
+      FootPatrolBehaviour in the stack? If we enable it, does
+      the goon walk waypoints?
+      Operator must confirm visually in-game.
+
+PHASE 4: sentry (only if phases 1-2 fail or are insufficient)
+
+- [ ] Shim method: NpcFactory.AddSentry(int npcIndex,
+      float x, float y, float z). AddComponent<SentryBehaviour>
+      with officer=null, assigns a stand point Transform at the
+      given position.
+      Purpose: test whether SentryBehaviour works with null
+      officer or crashes.
+
+- [ ] Test: spawn a goon, AddSentry. Does the game crash? Does
+      the goon stand at the point?
+      FACT OR FAIL: is SentryBehaviour usable without a police
+      officer, or does it crash?
+
+PHASE 5: priority resolution (parallel with above)
+
+- [ ] Test: find an NPC with multiple enabled behaviours. Read
+      the enabled list and activeBehaviour. Is activeBehaviour
+      always the highest-priority enabled one?
+      NOTE: initial scan found 0 NPCs with 2+ enabled
+      behaviours (most have 0 or 1). May need to enable two
+      behaviours on a minted NPC to create this scenario.
+      FACT OR FAIL: does the highest priority number win?
+
+DESIGN DECISION (after phases 1-3):
+- [ ] Which approach for garrison goons? Answer depends on what
+      the tests prove:
+      If IdleBehaviour holds: use it for stationary guards.
+      If FootPatrolBehaviour works on minted NPCs: use it for
+        patrol guards with existing route waypoints.
+      If neither works through S1API bindings: fall back to
+        NPCMovement.SetDestination tick loop from the Rust side
+        (needs shim methods for SetDestination + IsMoving).
+
 ## War pass performance (before more features land)
 
 The war pass runs every 4 seconds and does redundant work that
