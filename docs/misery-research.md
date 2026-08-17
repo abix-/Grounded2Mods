@@ -1515,3 +1515,105 @@ Other useful settings in the same struct:
   HungerSpeed=0.49, ThirstSpeed=0.51, HeadshotDamage=2.0,
   RespawnHealth=0.5, WeightLimit=3.0. All 24 Double fields and
   5 Bool fields are exposed in the Gameplay tab.
+
+## 24. The vendor system
+
+Found in the UE4SS object dump, 2026-08-17. No live reads yet.
+
+### 24.1 BP_VendorComponent_C
+
+`/Game/SurvivalGameKitV2/Components/BP_VendorComponent`, the
+component that drives all vendor behavior. Attached to vendor
+actors like `BP_Technician_C` and the base class
+`BP_MasterVendorBuildPart_C`.
+
+| Offset | Type | Name |
+|--------|------|------|
+| 0x2C8 | Double | `RestockTime` |
+| 0x2D0 | Bool | `UseStockLimits` |
+| 0x2D1 | Bool | `Restock` |
+| 0x2D8 | Array | `BuyList` (TArray of S_VendorBuy) |
+| 0x2E8 | Array | `SellList` (TArray of S_VendorSell) |
+| 0x2F8 | Double | `CurrentRestockTime` |
+| 0x300 | Array | `VenderStock` (TArray of Int) |
+
+Functions: `SaveVenderData`, `LoadComponentData`,
+`RestockCheckTimer`, `StockLimitCheck`.
+
+The game spells it "Vender" in some places and "Vendor" in
+others, like "Emmision" / "Emission". Both spellings matter
+when searching.
+
+### 24.2 S_VendorSell (what the vendor buys from the player)
+
+`/Game/SurvivalGameKitV2/Blueprints/Other/Structs/S_VendorSell`
+
+| Offset | Type | Name (GUID-suffixed in dump) |
+|--------|------|------|
+| 0x00 | Struct | `Item` (item reference, same struct as S_VendorBuy) |
+| 0x18 | Array | `Price` (array of item/quantity structs, the payment the vendor gives) |
+| 0x28 | Array | `Category` (array of Byte, which vendor tab categories this appears in) |
+
+### 24.3 S_VendorBuy (what the player buys from the vendor)
+
+`/Game/SurvivalGameKitV2/Blueprints/Other/Structs/S_VendorBuy`
+
+| Offset | Type | Name (GUID-suffixed in dump) |
+|--------|------|------|
+| 0x00 | Struct | `Item` (item reference) |
+| 0x18 | Array | `Price` (array of item/quantity structs, the cost) |
+| 0x28 | Int | `Stock` (how many the vendor has) |
+| 0x30 | Array | `Category` (array of Byte) |
+
+### 24.4 Vendor actors
+
+Vendor actors live under
+`/Game/SurvivalGameKitV2/Blueprints/BuildParts/Traders/`.
+Found so far: `BP_Technician_C`. The base class is
+`BP_MasterVendorBuildPart_C` under `BuildParts/`.
+
+Both have a `BP_VendorComponent_C` instance, named
+`BP_VenderComponent_GEN_VARIABLE` in the dump (the template
+copy; the live instance will have a different name).
+
+### 24.5 Vendor UI widgets
+
+| Class | Role |
+|-------|------|
+| `BP_VendorMenu_C` | The vendor screen. Has `BuyPanel`, `SellPanel`, `VenderInventory`, `PlayerInventory` refs |
+| `BP_VendorListing_C` | One row in the buy/sell list. Has `SellListing` (Bool), `VenderSellListing` (S_VendorSell), `VenderBuyListing` (S_VendorBuy) |
+| `BP_VendorListingTooltips_C` | Tooltip for a vendor listing |
+
+`BP_VendorMenu_C` functions: `InitializeVenderMenu`,
+`PopulateBuyList`, `PopulateSellList`,
+`PopulateBuyCategorySelection`, `PopulateSellCategorySelection`,
+`StringToCraftingCategory`. The populate functions take a
+`ListingCategory` byte and loop over the buy/sell arrays,
+filtering by category.
+
+### 24.6 How selling works (inferred, not confirmed)
+
+The `SellList` on `BP_VendorComponent_C` is the list of items
+the vendor will accept from the player. Each entry names the
+item and what the vendor pays for it. `PopulateSellList` loops
+over this array, filtered by category, to build the sell UI.
+
+This means selling is a whitelist: if an item is not in the
+`SellList`, the vendor will not buy it. To change what can be
+sold, modify the `SellList` array on the live vendor component.
+
+### 24.7 What we do not know yet
+
+- The live contents of `BuyList` and `SellList` on a real
+  vendor. Need to find a live `BP_Technician_C` instance and
+  read its component.
+- The struct type at offset 0x00 in both S_VendorSell and
+  S_VendorBuy (the `Item` field). It is the same struct in
+  both, probably a soft class reference or a row handle into
+  `ItemList`.
+- Whether modifying `SellList` at runtime takes effect
+  immediately or only when the menu is opened.
+- How many vendor actors exist in a typical expedition, and
+  whether different vendors have different sell lists.
+- Whether the category byte maps to `E_CraftingCategory` or
+  a vendor-specific enum.

@@ -33,5 +33,6 @@
 - [ ] Kill detection: hook or poll for XP source
 - [ ] Craft detection: find event for XP source
 - [ ] RPG persistence (JSON save/load for level, XP, allocations)
+- [ ] Vendor sell list modification: read live SellList from BP_VendorComponent_C, understand struct layout, build a mod feature to add/remove items (section 24 of research doc)
 - [ ] Research biome number to area mapping (section 19.4)
 - [ ] Research what depends on shining regeneration before shipping permanent freeze
