@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>QuasimorphMod</AssemblyName>
+    <Version>0.1.0</Version>
+    <LangVersion>9.0</LangVersion>
+    <RootNamespace>QuasimorphMod</RootNamespace>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Quasimorph game assembly. Set GameDir to the game's root
+         folder (the one containing Quasimorph.exe).
+         Example: dotnet build -p:GameDir="D:\Steam\steamapps\common\Quasimorph" -->
+    <Reference Include="Assembly-CSharp" Condition="'$(GameDir)' != ''">
+      <Private>false</Private>
+      <HintPath>$(GameDir)\Quasimorph_Data\Managed\Assembly-CSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine" Condition="'$(GameDir)' != ''">
+      <Private>false</Private>
+      <HintPath>$(GameDir)\Quasimorph_Data\Managed\UnityEngine.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule" Condition="'$(GameDir)' != ''">
+      <Private>false</Private>
+      <HintPath>$(GameDir)\Quasimorph_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>

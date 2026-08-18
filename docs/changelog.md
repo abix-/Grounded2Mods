@@ -60,6 +60,7 @@ Newest first.
 | `unityforge` | [x] S1ApiNpcs: fix IL2CPP type checks, add SetAggression and InspectCombatConfig | `GetIl2CppType()` replaces `GetType()` for correct IL2CPP runtime type resolution. `SetAggression` writes aggression via IL2CPP field reflection. `InspectCombatConfig` dumps response types and combat config for research. |
 | `unityforge` | [x] Add Assembly-CSharp and FishNet.Runtime references to csproj | Enables direct use of Schedule 1 game types (behaviours, NPCs, patrol routes) and FishNet (NetworkBehaviour base). |
 | `scrapmechanic` | [x] Better Survival mod: initial commit | Lua mod with 1000 inventory slots, half fuel consumption, no inventory loss on death, no building restrictions. 40 files (scripts, configs, game databases). |
+| `quasimorph` | [x] Initial scaffold: csproj, build script, stub ModMain, research doc | Unity Mono mod using first-party mod API (no BepInEx/MelonLoader). Research doc covers hook types, mod structure, console commands. |
 
 ## 2026-05-14 (relocated from todo.md: unityforge / wwm-mod / naming completions)
 
