@@ -1,9 +1,13 @@
-//! Engine-agnostic mission runner: a go-somewhere-and-return state
-//! machine used by survivalist vendor, steal, trade, scavenge,
-//! murder, and courier modules.
+//! Engine-agnostic mission system. Two lifecycle shapes:
 //!
-//! Games implement [`Mission`] for their mission struct and call
-//! [`advance`] (single) or [`advance_all`] (batch) each tick.
+//! **Missions** (go-and-return): [`Mission`] trait, [`advance`],
+//! [`advance_all`]. Used by vendor, steal, trade, scavenge, murder,
+//! and courier modules.
+//!
+//! **Contracts** (offered/owed/paying): [`Contract`] trait,
+//! [`advance_contract`]. Used by work-board systems (bounty,
+//! clear-the-threat).
+//!
 //! [`should_tick`] provides the shared cadence-gating pattern.
 
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -129,4 +133,49 @@ pub fn should_tick(now: f32, cadence: f32, last: &AtomicU32) -> bool {
     } else {
         false
     }
+}
+
+// ---- contracts (offered/owed/paying lifecycle) ------------------
+
+/// The three phases of a work-board contract.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ContractPhase {
+    /// Posted on the board; waiting for the player to fulfill.
+    Offered,
+    /// Condition met; payment delivery pending.
+    Owed,
+    /// Payment in transit.
+    Paying,
+}
+
+/// A work-board contract: offered, owed, paying, done.
+///
+/// Games implement this on their contract enum. The enum's
+/// variants carry phase-specific data; [`Contract::advance`]
+/// consumes the current variant and returns the next (or None
+/// when the contract is finished).
+pub trait Contract: Sized {
+    fn phase(&self) -> ContractPhase;
+    fn advance(self, now: f32) -> Result<Option<Self>, String>;
+    fn label(&self) -> String;
+}
+
+/// Drive a singleton contract forward one tick. Takes the
+/// contract out of the slot, advances it, and puts the result
+/// back. On error the contract is consumed (the advance impl
+/// is responsible for cleanup before returning Err).
+pub fn advance_contract<C: Contract>(
+    slot: &Mutex<Option<C>>,
+    now: f32,
+    on_error: impl Fn(String),
+) {
+    let mut guard = slot.lock();
+    let Some(contract) = guard.take() else { return };
+    *guard = match contract.advance(now) {
+        Ok(next) => next,
+        Err(e) => {
+            on_error(e);
+            None
+        }
+    };
 }

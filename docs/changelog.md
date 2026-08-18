@@ -21,6 +21,12 @@ Newest first.
 - Put new days above older days. Add rows to the existing table when that date already exists.
 - Entries before 2026-08-17 keep their existing historical format.
 
+## 2026-08-18
+
+| System | Item | Done when |
+|---|---|---|
+| `modforge` | [x] Add Contract trait (ContractPhase, advance_contract) to modforge::mission for the offered/owed/paying work-board lifecycle; survivalist bounty and threat refactored to implement it | modforge::mission has Contract trait; bounty.rs and threat.rs use it with should_tick + advance_contract. |
+
 ## 2026-08-17
 
 | System | Item | Done when |

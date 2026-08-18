@@ -20,6 +20,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use parking_lot::Mutex;
 use serde_json::{Value as Json, json};
 
+use modforge::mission::{self, Contract, ContractPhase};
 use modforge::ops::{OP_REGISTRY, OpDef};
 use unityforge::mono::{self, LogLevel, MonoObject};
 
@@ -68,6 +69,81 @@ enum ClearThreat {
     Paying(courier::Courier),
 }
 
+impl Contract for ClearThreat {
+    fn phase(&self) -> ContractPhase {
+        match self {
+            ClearThreat::Offered { .. } => ContractPhase::Offered,
+            ClearThreat::Owed { .. } => ContractPhase::Owed,
+            ClearThreat::Paying(_) => ContractPhase::Paying,
+        }
+    }
+
+    fn advance(self, now: f32) -> Result<Option<Self>, String> {
+        Ok(match self {
+            ClearThreat::Offered {
+                camp_h,
+                camp_name,
+                threat_id,
+                members,
+                player_kills,
+                pays,
+                quest_h,
+                expires,
+            } => advance_offered(
+                camp_h,
+                camp_name,
+                threat_id,
+                members,
+                player_kills,
+                pays,
+                quest_h,
+                expires,
+                now,
+            ),
+            ClearThreat::Owed { camp_h, camp_name, waiting_logged } => {
+                match courier::launch(
+                    camp_h,
+                    &camp_name,
+                    &format!("the raiders at {camp_name}'s door"),
+                    now,
+                ) {
+                    courier::Launch::Launched(c) => Some(ClearThreat::Paying(c)),
+                    courier::Launch::Waiting => {
+                        if !waiting_logged {
+                            mono::log(
+                                LogLevel::Info,
+                                &format!(
+                                    "survivalist-mod: threat: {camp_name} owes for the cleared threat but has no free member to send; waiting"
+                                ),
+                            );
+                        }
+                        Some(ClearThreat::Owed { camp_h, camp_name, waiting_logged: true })
+                    }
+                    courier::Launch::Void => {
+                        drop(own(camp_h));
+                        None
+                    }
+                }
+            }
+            ClearThreat::Paying(c) => courier::step(c, now).map(ClearThreat::Paying),
+        })
+    }
+
+    fn label(&self) -> String {
+        match self {
+            ClearThreat::Offered { camp_name, .. } => {
+                format!("clear threat at {camp_name}")
+            }
+            ClearThreat::Owed { camp_name, .. } => {
+                format!("threat debt from {camp_name}")
+            }
+            ClearThreat::Paying(c) => {
+                format!("threat payment via {}", c.courier_name)
+            }
+        }
+    }
+}
+
 static STATE: Mutex<Option<ClearThreat>> = Mutex::new(None);
 static LAST_SCAN_BITS: AtomicU32 = AtomicU32::new(0);
 static LAST_TICK_BITS: AtomicU32 = AtomicU32::new(0);
@@ -75,14 +151,12 @@ static LAST_NOW_BITS: AtomicU32 = AtomicU32::new(0);
 
 pub fn tick(now: f32) {
     LAST_NOW_BITS.store(now.to_bits(), Ordering::Relaxed);
-    let last_tick = f32::from_bits(LAST_TICK_BITS.load(Ordering::Relaxed));
-    if now - last_tick >= MISSION_TICK_SECS {
-        LAST_TICK_BITS.store(now.to_bits(), Ordering::Relaxed);
-        advance(now);
+    if mission::should_tick(now, MISSION_TICK_SECS, &LAST_TICK_BITS) {
+        mission::advance_contract(&STATE, now, |e| {
+            mono::log(LogLevel::Warn, &format!("survivalist-mod: threat advance failed: {e}"));
+        });
     }
-    let last_scan = f32::from_bits(LAST_SCAN_BITS.load(Ordering::Relaxed));
-    if now - last_scan >= THREAT_SCAN_PERIOD_SECS {
-        LAST_SCAN_BITS.store(now.to_bits(), Ordering::Relaxed);
+    if mission::should_tick(now, THREAT_SCAN_PERIOD_SECS, &LAST_SCAN_BITS) {
         if STATE.lock().is_some() {
             return;
         }
@@ -300,61 +374,6 @@ pub fn on_death(member: &MonoObject) {
             ),
         );
     }
-}
-
-// ---- advancing ---------------------------------------------------------------
-
-fn advance(now: f32) {
-    let mut slot = STATE.lock();
-    let Some(state) = slot.take() else { return };
-    *slot = match state {
-        ClearThreat::Offered {
-            camp_h,
-            camp_name,
-            threat_id,
-            members,
-            player_kills,
-            pays,
-            quest_h,
-            expires,
-        } => advance_offered(
-            camp_h,
-            camp_name,
-            threat_id,
-            members,
-            player_kills,
-            pays,
-            quest_h,
-            expires,
-            now,
-        ),
-        ClearThreat::Owed { camp_h, camp_name, waiting_logged } => {
-            match courier::launch(
-                camp_h,
-                &camp_name,
-                &format!("the raiders at {camp_name}'s door"),
-                now,
-            ) {
-                courier::Launch::Launched(c) => Some(ClearThreat::Paying(c)),
-                courier::Launch::Waiting => {
-                    if !waiting_logged {
-                        mono::log(
-                            LogLevel::Info,
-                            &format!(
-                                "survivalist-mod: threat: {camp_name} owes for the cleared threat but has no free member to send; waiting"
-                            ),
-                        );
-                    }
-                    Some(ClearThreat::Owed { camp_h, camp_name, waiting_logged: true })
-                }
-                courier::Launch::Void => {
-                    drop(own(camp_h));
-                    None
-                }
-            }
-        }
-        ClearThreat::Paying(c) => courier::step(c, now).map(ClearThreat::Paying),
-    };
 }
 
 /// One offered step: lapse, camp death, or the game dropping the

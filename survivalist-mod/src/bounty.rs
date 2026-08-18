@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use parking_lot::Mutex;
 use serde_json::{Value as Json, json};
 
+use modforge::mission::{self, Contract, ContractPhase};
 use modforge::ops::{OP_REGISTRY, OpDef};
 use unityforge::mono::{self, LogLevel, MonoObject};
 
@@ -71,6 +72,90 @@ enum Bounty {
     Paying(courier::Courier),
 }
 
+impl Contract for Bounty {
+    fn phase(&self) -> ContractPhase {
+        match self {
+            Bounty::Offered { .. } => ContractPhase::Offered,
+            Bounty::Owed { .. } => ContractPhase::Owed,
+            Bounty::Paying(_) => ContractPhase::Paying,
+        }
+    }
+
+    fn advance(self, now: f32) -> Result<Option<Self>, String> {
+        Ok(match self {
+            Bounty::Offered {
+                hirer_h,
+                hirer_name,
+                mark_h,
+                mark_id,
+                mark_name,
+                enemy_name,
+                pays,
+                quest_h,
+                expires,
+            } => {
+                if advance_offered(hirer_h, &hirer_name, mark_h, &mark_name, expires, now) {
+                    board::close(quest_h, false);
+                    drop(own(hirer_h));
+                    drop(own(mark_h));
+                    None
+                } else {
+                    Some(Bounty::Offered {
+                        hirer_h,
+                        hirer_name,
+                        mark_h,
+                        mark_id,
+                        mark_name,
+                        enemy_name,
+                        pays,
+                        quest_h,
+                        expires,
+                    })
+                }
+            }
+            Bounty::Owed { hirer_h, hirer_name, mark_name, waiting_logged } => {
+                match courier::launch(
+                    hirer_h,
+                    &hirer_name,
+                    &format!("the bounty on {mark_name}"),
+                    now,
+                ) {
+                    courier::Launch::Launched(c) => Some(Bounty::Paying(c)),
+                    courier::Launch::Waiting => {
+                        if !waiting_logged {
+                            mono::log(
+                                LogLevel::Info,
+                                &format!(
+                                    "survivalist-mod: bounty: {hirer_name} owes for {mark_name} but has no free member to send; waiting"
+                                ),
+                            );
+                        }
+                        Some(Bounty::Owed {
+                            hirer_h,
+                            hirer_name,
+                            mark_name,
+                            waiting_logged: true,
+                        })
+                    }
+                    courier::Launch::Void => {
+                        drop(own(hirer_h));
+                        None
+                    }
+                }
+            }
+            Bounty::Paying(c) => courier::step(c, now).map(Bounty::Paying),
+        })
+    }
+
+    fn label(&self) -> String {
+        match self {
+            Bounty::Offered { mark_name, .. } => format!("bounty on {mark_name}"),
+            Bounty::Owed { mark_name, .. } => format!("bounty debt for {mark_name}"),
+            Bounty::Paying(c) => format!("bounty payment via {}", c.courier_name),
+        }
+    }
+}
+
 static BOUNTY: Mutex<Option<Bounty>> = Mutex::new(None);
 static LAST_SCAN_BITS: AtomicU32 = AtomicU32::new(0);
 static LAST_TICK_BITS: AtomicU32 = AtomicU32::new(0);
@@ -79,14 +164,12 @@ static LAST_NOW_BITS: AtomicU32 = AtomicU32::new(0);
 
 pub fn tick(now: f32) {
     LAST_NOW_BITS.store(now.to_bits(), Ordering::Relaxed);
-    let last_tick = f32::from_bits(LAST_TICK_BITS.load(Ordering::Relaxed));
-    if now - last_tick >= MISSION_TICK_SECS {
-        LAST_TICK_BITS.store(now.to_bits(), Ordering::Relaxed);
-        advance(now);
+    if mission::should_tick(now, MISSION_TICK_SECS, &LAST_TICK_BITS) {
+        mission::advance_contract(&BOUNTY, now, |e| {
+            mono::log(LogLevel::Warn, &format!("survivalist-mod: bounty advance failed: {e}"));
+        });
     }
-    let last_scan = f32::from_bits(LAST_SCAN_BITS.load(Ordering::Relaxed));
-    if now - last_scan >= BOUNTY_SCAN_PERIOD_SECS {
-        LAST_SCAN_BITS.store(now.to_bits(), Ordering::Relaxed);
+    if mission::should_tick(now, BOUNTY_SCAN_PERIOD_SECS, &LAST_SCAN_BITS) {
         if BOUNTY.lock().is_some() {
             return;
         }
@@ -304,67 +387,6 @@ pub fn on_death(member: &MonoObject) {
         );
         drop(own(hirer_h));
     }
-}
-
-// ---- advancing ---------------------------------------------------------------
-
-fn advance(now: f32) {
-    let mut slot = BOUNTY.lock();
-    let Some(state) = slot.take() else { return };
-    *slot = match state {
-        Bounty::Offered {
-            hirer_h,
-            hirer_name,
-            mark_h,
-            mark_id,
-            mark_name,
-            enemy_name,
-            pays,
-            quest_h,
-            expires,
-        } => {
-            if advance_offered(hirer_h, &hirer_name, mark_h, &mark_name, expires, now) {
-                board::close(quest_h, false);
-                drop(own(hirer_h));
-                drop(own(mark_h));
-                None
-            } else {
-                Some(Bounty::Offered {
-                    hirer_h,
-                    hirer_name,
-                    mark_h,
-                    mark_id,
-                    mark_name,
-                    enemy_name,
-                    pays,
-                    quest_h,
-                    expires,
-                })
-            }
-        }
-        Bounty::Owed { hirer_h, hirer_name, mark_name, waiting_logged } => {
-            match courier::launch(hirer_h, &hirer_name, &format!("the bounty on {mark_name}"), now)
-            {
-                courier::Launch::Launched(c) => Some(Bounty::Paying(c)),
-                courier::Launch::Waiting => {
-                    if !waiting_logged {
-                        mono::log(
-                            LogLevel::Info,
-                            &format!(
-                                "survivalist-mod: bounty: {hirer_name} owes for {mark_name} but has no free member to send; waiting"
-                            ),
-                        );
-                    }
-                    Some(Bounty::Owed { hirer_h, hirer_name, mark_name, waiting_logged: true })
-                }
-                courier::Launch::Void => {
-                    drop(own(hirer_h));
-                    None
-                }
-            }
-        }
-        Bounty::Paying(c) => courier::step(c, now).map(Bounty::Paying),
-    };
 }
 
 /// True = the offer is void; clean up.
