@@ -6,7 +6,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 use ueforge::ue;
-use ueforge::ue::{read_at, TArray};
+use ueforge::ue::{read_at, TArray, tarray};
 
 const VENDOR_ACTOR_CLASS: &str = "BP_MasterVendorBuildPart_C";
 const VENDOR_COMP_OFFSET: usize = 0x3B8;
@@ -63,13 +63,10 @@ fn current_sell_names(comp: *const u8) -> HashSet<String> {
         Some(r) => r,
         None => return names,
     };
-    let arr = sell_tarray(comp);
-    if arr.is_empty() { return names; }
-    let data = arr.data;
-    for i in 0..(arr.num as usize) {
-        let base = i * SELL_STRIDE;
-        let fname_idx: u32 = unsafe { read_at(data, base + 0x08) };
-        let fname_num: u32 = unsafe { read_at(data, base + 0x0C) };
+    let header = unsafe { comp.add(SELL_LIST_OFFSET) };
+    for (_i, elem) in unsafe { tarray::iter_stride(header, SELL_STRIDE) } {
+        let fname_idx: u32 = unsafe { read_at(elem, 0x08) };
+        let fname_num: u32 = unsafe { read_at(elem, 0x0C) };
         let raw: u64 = (fname_idx as u64) | ((fname_num as u64) << 32);
         let fname = ue::FName::from_u64(raw);
         names.insert(unsafe { rt.name_resolver.to_string(fname) });

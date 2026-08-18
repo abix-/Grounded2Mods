@@ -17,7 +17,7 @@ use serde::Serialize;
 use serde_json::Value as Json;
 use ueforge::debug::{CatalogEntry, DamageRing, PlayerStateView, ProcessSnapshot};
 pub use ueforge::debug::DamageEvent;
-use ueforge::envelope::{OpResponse as UespyResponse, parse_request};
+use ueforge::envelope::handle_request;
 use ueforge::ops::{OP_REGISTRY, OpDef};
 use ueforge::pe_queue::DrainSite;
 
@@ -149,46 +149,13 @@ pub fn spawn(port: u16) {
         |body| {
             let _t = ueforge::counters::time_scope(&crate::counters::TIME_NS_HTTP_HANDLE);
             ueforge::counters::bump(&crate::counters::HTTP_REQUESTS);
-            let resp = handle(body);
+            let resp = handle_request(body, &OP_REGISTRY, build_snapshot);
             serde_json::to_vec(&resp).unwrap_or_else(|_| b"{}".to_vec())
         },
         |msg| ueforge::log!("{}", msg),
     );
 }
 
-type OpResponse = UespyResponse<Snapshot>;
-
-fn handle(body: &str) -> OpResponse {
-    let (op, args) = match parse_request(body) {
-        Ok(v) => v,
-        Err(e) => return error_response("<parse-error>", e),
-    };
-
-    if op == "snapshot" {
-        return ok_response(&op, Json::Null);
-    }
-    if op.is_empty() {
-        return error_response(
-            "<missing>",
-            "missing 'op' field; try op:'list_ops' for the catalog",
-        );
-    }
-    match OP_REGISTRY.dispatch(&op, &args) {
-        Some(r) => to_response(&op, r),
-        None => error_response(
-            &op,
-            format!("unknown op '{op}'; try op:'list_ops' for the catalog"),
-        ),
-    }
-}
-
-fn ok_response(op: &str, result: Json) -> OpResponse {
-    OpResponse::ok(op, result, build_snapshot())
-}
-
-fn to_response(op: &str, r: Result<Json, String>) -> OpResponse {
-    OpResponse::from_result(op, r, build_snapshot())
-}
 
 fn op_simulate_apply_damage(_args: &Json) -> Result<Json, String> {
     // Disabled: calling ApplyDamageFromInfo via process_event from
@@ -313,10 +280,6 @@ fn exec_apply_damage(amount: f32, type_flags: u32) -> Result<Json, String> {
         "current_damage_delta": cd_after - cd_before,
         "max_health": max_before,
     }))
-}
-
-fn error_response(op: &str, err: impl Into<String>) -> OpResponse {
-    OpResponse::err(op, err, build_snapshot())
 }
 
 #[derive(Serialize)]

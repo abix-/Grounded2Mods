@@ -92,6 +92,23 @@ pub unsafe fn grow_raw(header_ptr: *mut u8, stride: usize, new_max: i32) -> Resu
     Ok(())
 }
 
+/// Iterate a TArray of fixed-stride structs at `header_ptr`.
+/// Yields `(index, element_ptr)` for each entry. The element
+/// pointer is valid for `stride` bytes.
+///
+/// # Safety
+/// `header_ptr` must point at a valid TArray header (16 bytes).
+/// Each element must be at least `stride` bytes.
+pub unsafe fn iter_stride(
+    header_ptr: *const u8,
+    stride: usize,
+) -> impl Iterator<Item = (usize, *const u8)> {
+    let data_ptr = unsafe { *(header_ptr as *const *const u8) };
+    let num = unsafe { *((header_ptr as usize + 8) as *const i32) };
+    let count = if data_ptr.is_null() || num <= 0 { 0 } else { num as usize };
+    (0..count).map(move |i| (i, unsafe { data_ptr.add(i * stride) }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

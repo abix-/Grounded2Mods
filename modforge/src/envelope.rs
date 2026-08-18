@@ -116,3 +116,36 @@ pub fn parse_request(body: &str) -> Result<(String, Json), String> {
     let args = v.get("args").cloned().unwrap_or(Json::Null);
     Ok((op, args))
 }
+
+/// Standard request handler shared across all mod debug endpoints.
+/// Parses the body, dispatches "snapshot" and empty-op cases, then
+/// falls through to the op registry. The `snapshot` closure builds
+/// the game-specific snapshot for the response envelope.
+pub fn handle_request<S: Serialize>(
+    body: &str,
+    registry: &crate::ops::OpRegistry,
+    snapshot: impl Fn() -> S,
+) -> OpResponse<S> {
+    let (op, args) = match parse_request(body) {
+        Ok(v) => v,
+        Err(e) => return OpResponse::err("<parse-error>", e, snapshot()),
+    };
+    if op == "snapshot" {
+        return OpResponse::ok(&op, Json::Null, snapshot());
+    }
+    if op.is_empty() {
+        return OpResponse::err(
+            "<missing>",
+            "missing 'op' field; try op:'list_ops' for the catalog",
+            snapshot(),
+        );
+    }
+    match registry.dispatch(&op, &args) {
+        Some(r) => OpResponse::from_result(&op, r, snapshot()),
+        None => OpResponse::err(
+            &op,
+            format!("unknown op '{op}'; try op:'list_ops' for the catalog"),
+            snapshot(),
+        ),
+    }
+}

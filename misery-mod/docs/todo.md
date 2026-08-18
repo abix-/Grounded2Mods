@@ -26,9 +26,9 @@
 ## DRY into ueforge
 
 - [x] Pointer chain following: ueforge::ue::follow_ptr_chain. Used by speed.rs, shining.rs, vendors.rs
-- [ ] TArray stride iteration: generic "iterate a TArray of fixed-stride structs, extract typed fields at known offsets". Used by vendors.rs for reading sell list FNames
+- [x] TArray stride iteration: ueforge::ue::tarray::iter_stride. Used by vendors.rs
 - [x] DataTable row name map: ueforge::ue::datatable::row_name_map. Used by vendors.rs and debug.rs
-- [ ] Debug HTTP boilerplate: snapshot + handle + error_response + spawn pattern repeats across mods (misery, outworld-station, grounded2)
+- [x] Debug HTTP boilerplate: modforge::envelope::handle_request. Used by misery, outworld-station, grounded2
 
 ## Not started
 
