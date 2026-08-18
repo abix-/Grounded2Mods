@@ -2,11 +2,6 @@
 
 | Priority | System | Todo | Done when |
 |---:|---|---|---|
-| 1 | `modforge::client::research` | [ ] Add `read_f64(api, addr, offset) -> f64` typed field reader (matches existing `read_f32`) | `read_f64` available; misery tests use it instead of local `as_f64`. |
-| 1 | `modforge::client::research` | [ ] Add byte-slice decoders: `from_le_i32(&[u8], usize) -> i32`, `from_le_u32`, `from_le_u64`, `from_le_f64` for decoding fields from a pre-fetched buffer without an API call | Byte-slice decoders in research module; no local `read_u64_le` / `as_f64` copies in any test. |
-| 1 | `modforge::client::research` | [ ] Add `fname_from_parts(api, comparison_index: u32, number: u32) -> Option<String>` that packs two u32 into FName u64 and resolves | `fname_from_parts` available; misery vendor tests use it instead of local `try_fname`. |
-| 1 | `modforge::client::research` | [ ] Add `TArrayHeader` struct + `read_tarray_header(api, addr, offset) -> Option<TArrayHeader>` for reading ptr/num/max from a UE TArray at a known offset | `read_tarray_header` available; misery vendor tests use it instead of local copies. |
-| 1 | `modforge::client::research` | [ ] Retire `misery-mod/tests/common/mod.rs`: replace with `use modforge::client::{Api, research}`, keep only misery-specific thin wrappers (`api_or_skip` port env var, `offsets_live` check) | `common/mod.rs` has zero duplicated helpers; all shared logic comes from `modforge::client::research`. |
 | 1 | `cs-shim-common` | [ ] Fix the silently broken Harmony bridge in HarmonyBridge.cs: PatchPrefix + PatchPostfix construct target from instance-method lambda which HarmonyLib rejects; replace with a static dispatcher keyed by patch handle | Rust-side patch_prefix / patch_postfix calls fire in-game. |
 | 1 | `ueforge` | [ ] Add ueforge::features module with Features builder (.once(), .on_each_load(), .on_first_table(), .install()) | Features builder available; one mod uses it. |
 | 1 | `misery-mod` | [ ] Convert misery-mod on_unreal_init to use the features builder | misery-mod uses ueforge::features() instead of manual thread spawns. |

@@ -28,6 +28,8 @@ Newest first.
 | `misery` | [x] Fix all tabs breaking after main menu reload | Tabs re-render after reload without crashing. |
 | `misery` | [x] Document stale OWS tweaks DLL removal | `misery-mod/docs/research.md` updated. |
 | `misery` | [x] Vendor system research, section 24 | `misery-mod/docs/research.md` section 24 written with offset map and sell list structure. |
+| `modforge` | [x] Add `read_f64`, byte-slice decoders, `fname_from_parts`, `TArrayHeader`/`read_tarray_header` to `modforge::client::research` | All helpers available; 14 misery test files use them instead of local copies. |
+| `misery` | [x] DRY all research tests: retire duplicated helpers from `common/mod.rs` and per-test locals | `common/mod.rs` has zero shared helpers; all 12 research/set tests use `modforge::client::research`. Net 316 lines removed. |
 | `misery` | [x] Vendor food sell list expansion | `vendors.rs` adds all food items to Barman's sell list via TArray grow + template clone. |
 | `ueforge` | [x] Add `follow_ptr_chain` and `row_name_map` to DRY misery callers | Both functions in `ueforge::ue`, misery callers collapsed. |
 | `ueforge` | [x] Add `struct_fields` module | `ueforge::ue::struct_fields` provides field offset resolution. |
