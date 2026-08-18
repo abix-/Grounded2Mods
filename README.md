@@ -97,18 +97,18 @@ See [`unityforge/`](unityforge/) and [`docs/unityforge-plan.md`](docs/unityforge
 
 ## Game-side mods
 
-| Game | Engine / loader | What it does | Rating |
+| Game | Engine / loader | Features | Rating |
 |---|---|---|---|
-| [Grounded 2](grounded2-mod/) | ueforge (UE5 / UE4SS) | RPG / level-up. 13 skills, target ~25. | 4/10 |
-| [MISERY](misery-mod/) | ueforge (UE5 / UE4SS) | Emission (shining) timer extension. | 2/10 |
-| [Outworld Station](outworld-station-mod/) | ueforge (UE5 / UE4SS) | Stack-size tweak (MaxCanStack multiplier). | 3/10 |
-| [Schedule 1](schedule1-mod/) | unityforge (IL2CPP / MelonLoader) | Combat-XP levelling, loot drops, farming, kill credit. | 3/10 |
-| [Survivalist](survivalist-mod/) | unityforge (native mod loader) | Storyteller, bounty, trade, war, settler systems. | 1/10 |
-| [Wild West Miner](wwm-mod/) | unityforge (Mono / BepInEx) | RPG / level-up + demo-end block. | 2/10 |
-| [Horsey Game](horsey-mod/) | modforge (PE inject) | Cheats + research. Fatigue suppressor, money/year/horse ops. | 3/10 |
-| [Scrap Mechanic](scrapmechanic-mod/) | Lua (native) | Better Survival overhaul. Not a Rust crate. | 3/10 |
-| [Quasimorph](quasimorph-mod/) | C# (BepInEx) | Initial scaffold. Not a Rust crate. | 1/10 |
-| (il2cpp-smoke) | unityforge (IL2CPP) | End-to-end test of the IL2CPP path. | n/a |
+| [Grounded 2](grounded2-mod/) | ueforge (UE5 / UE4SS) | 14-skill RPG (backpack, hunger, thirst, attack damage, armor, move speed, jump height, glide speed, fall resistance, impact resistance, lifesteal, max health, leap distance, health regen), XP levelling, save persistence, damage hook, fall damage hook, inventory hook, ImGui overlay | 4/10 |
+| [MISERY](misery-mod/) | ueforge (UE5 / UE4SS) | Emission timer control, 10x stack sizes, playtest nag suppression, 2x movement speed, vendor food expansion, ImGui overlay | 2/10 |
+| [Outworld Station](outworld-station-mod/) | ueforge (UE5 / UE4SS) | Stack size multiplier, dynamic data table tweaks, ImGui overlay | 3/10 |
+| [Schedule 1](schedule1-mod/) | unityforge (IL2CPP / MelonLoader) | Combat-XP levelling, heavy hands skill, cash loot drops, farming, kill credit, combat trace | 3/10 |
+| [Survivalist](survivalist-mod/) | unityforge (native mod loader) | Storyteller, bounty, trade, war, settler, horde, infection, predation, scavenge, murder, stranger, courier, genome, growth, quality, upgrade, vendor, chronicle | 1/10 |
+| [Wild West Miner](wwm-mod/) | unityforge (Mono / BepInEx) | Demo-end block, RPG levelling (parked) | 2/10 |
+| [Horsey Game](horsey-mod/) | modforge (PE inject) | Fatigue suppressor, money/year/horse ops, debug mode unlock, gene research surface, chromosome viewer, scene inspector, PE injector, hot reload | 3/10 |
+| [Scrap Mechanic](scrapmechanic-mod/) | Lua (native) | Better Survival overhaul (not Rust) | 3/10 |
+| [Quasimorph](quasimorph-mod/) | C# (BepInEx) | Scaffold only (not Rust) | 1/10 |
+| (il2cpp-smoke) | unityforge (IL2CPP) | IL2CPP path end-to-end test | n/a |
 
 > **Rating scale:** 10/10 = ready for 1000 players, fun, zero bugs.
 
