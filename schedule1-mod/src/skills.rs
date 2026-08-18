@@ -23,7 +23,6 @@ use std::time::Duration;
 
 use serde_json::{Value as Json, json};
 
-use modforge::args::arg_str;
 use modforge::ops::{OP_REGISTRY, OpDef};
 use modforge::rpg::poller::{PollerHandle, SlotPoller};
 use modforge::rpg::progress::sqrt_progress;
@@ -287,86 +286,14 @@ pub fn install() {
 }
 
 fn register_ops() {
-    OP_REGISTRY.register_many([
-        OpDef::new(
-            "skill_state",
-            "Snapshot of the schedule1-mod skill state (xp, level, points, per-skill levels)",
-            "{}",
-            |_args| {
-                let snapshot = TRACKER.with_state(|s| {
-                    let mut skills = serde_json::Map::new();
-                    for skill in CATALOG.iter() {
-                        skills.insert(
-                            skill.id.to_string(),
-                            json!({
-                                "level": s.level_of(skill.id),
-                                "max_level": skill.max_level,
-                                "effect": TRACKER.format_effect(skill, s.level_of(skill.id)),
-                            }),
-                        );
-                    }
-                    json!({
-                        "xp": s.xp,
-                        "level": s.level,
-                        "skill_points": s.skill_points,
-                        "skills": Json::Object(skills),
-                    })
-                });
-                Ok(snapshot.unwrap_or_else(|| json!({"active": false, "msg": "no slot active"})))
-            },
-        ),
-        OpDef::new(
-            "skill_add_xp",
-            "DEBUG: manually award XP",
-            "{amount: u64}",
-            |args| {
-                let amount = args.get("amount").and_then(Json::as_u64).unwrap_or(0);
-                let Some(result) = TRACKER.record_xp(amount) else {
-                    return Err("no slot active or save failed".into());
-                };
-                Ok(json!({
-                    "awarded": result.awarded,
-                    "total_xp": result.total_xp,
-                    "old_level": result.old_level,
-                    "new_level": result.new_level,
-                    "points_gained": result.points_gained,
-                }))
-            },
-        ),
-        OpDef::new(
-            "skill_levelup",
-            "Spend points on a skill",
-            "{id: str, count?: u32}",
-            |args| {
-                let id = arg_str(args, "id")?;
-                let count = args.get("count").and_then(Json::as_u64).unwrap_or(1) as u32;
-                let spent = TRACKER.spend_skill_points(id, count);
-                Ok(json!({
-                    "id": id,
-                    "spent": spent,
-                    "level": TRACKER.with_state(|s| s.level_of(id)).unwrap_or(0),
-                }))
-            },
-        ),
-        OpDef::new(
-            "effects_enable",
-            "Crash bisection: arm or disarm the skill effect bodies (inert by default)",
-            "{on: bool}",
-            |args| {
-                let on = args.get("on").and_then(Json::as_bool).unwrap_or(false);
-                EFFECTS_ENABLED.store(on, std::sync::atomic::Ordering::Relaxed);
-                Ok(json!({"effects_enabled": on}))
-            },
-        ),
-        OpDef::new(
-            "skill_grant_points",
-            "DEBUG: grant skill points without earning them",
-            "{n: u32}",
-            |args| {
-                let n = args.get("n").and_then(Json::as_u64).unwrap_or(1) as u32;
-                let ok = TRACKER.debug_grant_skill_points(n);
-                Ok(json!({"granted": ok, "n": n}))
-            },
-        ),
-    ]);
+    OP_REGISTRY.register_many([OpDef::new(
+        "effects_enable",
+        "Crash bisection: arm or disarm the skill effect bodies (inert by default)",
+        "{on: bool}",
+        |args| {
+            let on = args.get("on").and_then(Json::as_bool).unwrap_or(false);
+            EFFECTS_ENABLED.store(on, std::sync::atomic::Ordering::Relaxed);
+            Ok(json!({"effects_enabled": on}))
+        },
+    )]);
 }

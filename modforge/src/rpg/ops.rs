@@ -1,6 +1,6 @@
 //! Generic RPG op handlers for the framework's HTTP endpoint.
 //!
-//! Game crates register the standard five op set against
+//! Game crates register the standard op set against
 //! [`crate::ops::OP_REGISTRY`] in one call:
 //!
 //! ```ignore
@@ -8,8 +8,9 @@
 //! ```
 //!
 //! Registers: `skill_toggle`, `skill_spend`, `skill_refund`,
-//! `reload_slot`, `set_skill_points`. Generic over the engine
-//! type so both frameworks reuse the same handlers.
+//! `reload_slot`, `set_skill_points`, `skill_state`,
+//! `skill_add_xp`. Generic over the engine type so both
+//! frameworks reuse the same handlers.
 
 use serde_json::Value as Json;
 
@@ -123,7 +124,15 @@ pub fn skill_state<E: Engine>(tracker: &Tracker<E>) -> Result<Json, String> {
     let snapshot = tracker.with_state(|s| {
         let mut skills = serde_json::Map::new();
         for skill in tracker.catalog().iter() {
-            skills.insert(skill.id.to_string(), serde_json::json!(s.level_of(skill.id)));
+            let lv = s.level_of(skill.id);
+            skills.insert(
+                skill.id.to_string(),
+                serde_json::json!({
+                    "level": lv,
+                    "max_level": skill.max_level,
+                    "effect": tracker.format_effect(skill, lv),
+                }),
+            );
         }
         serde_json::json!({
             "xp": s.xp,

@@ -25,6 +25,8 @@ Newest first.
 
 | System | Item | Done when |
 |---|---|---|
+| `modforge` | [x] Enrich `skill_state` op to include `max_level` and `effect` text per skill | Framework `skill_state` now returns the same rich format schedule1 had locally. |
+| `schedule1-mod` | [x] Remove 4 duplicate RPG ops (`skill_state`, `skill_add_xp`, `skill_levelup`, `skill_grant_points`) from `register_ops`; keep only `effects_enable` | schedule1 uses framework ops; only the game-specific `effects_enable` remains local. |
 | `modforge` | [x] Add `skill_state` and `skill_add_xp` to `modforge::rpg::ops::register`; all RPG mods get 7 standard ops for free | Framework registers 7 ops; wwm-mod removed 5 duplicate custom ops (net -65 lines). |
 | `modforge` | [x] Add generic research helpers to `modforge::client`: `ping_or_skip`, `handle_of`, `count_of`, `dump_sequence`, `print_declared_methods`, `fields`, `parse_vec3` | Helpers available to all mods via `modforge::client`. |
 | `unityforge` | [x] Add `unityforge::client` module with `find_instances` (renamed from walk), `first_handle`, `first_handle_inactive`, `field_exists` | Unity-specific research helpers in `unityforge::client`; re-exports `modforge::client::*`. |
