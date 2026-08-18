@@ -82,6 +82,7 @@ pub mod envelope;
 pub mod fall;
 pub mod hook;
 pub mod hot_reload;
+pub mod input;
 pub mod inventory;
 // log moved to modforge in Phase 0b. Both the module and the
 // log!() macro re-export through this single `pub use`.
