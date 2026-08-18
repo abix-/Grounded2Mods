@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["grounded2-mod", "horsey-mod", "il2cpp-smoke", "modforge", "outworld-station-mod", "schedule1-mod", "survivalist-mod", "ueforge", "unityforge", "wwm-mod"]
+members = ["grounded2-mod", "horsey-mod", "il2cpp-smoke", "misery-mod", "modforge", "outworld-station-mod", "schedule1-mod", "survivalist-mod", "ueforge", "unityforge", "wwm-mod"]
 exclude = ["vendor/hudhook"]
 # Note: `decomp/` is intentionally NOT a workspace member yet. It depends on
 # r2sleigh which depends on libsla-sys, which does not currently build on

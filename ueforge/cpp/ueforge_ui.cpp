@@ -151,6 +151,16 @@ void ueforge_ui_tree_pop() { ImGui::TreePop(); }
 void ueforge_ui_begin_group() { ImGui::BeginGroup(); }
 void ueforge_ui_end_group()   { ImGui::EndGroup(); }
 
+bool ueforge_ui_begin_child(const char* s, std::size_t n,
+                            float w, float h) {
+    char buf[256];
+    std::size_t len = n < 255 ? n : 255;
+    std::memcpy(buf, s, len);
+    buf[len] = '\0';
+    return ImGui::BeginChild(buf, ImVec2(w, h), ImGuiChildFlags_Borders);
+}
+void ueforge_ui_end_child() { ImGui::EndChild(); }
+
 // ueforge_ui_enable_imgui lives in ueforge_shim.cpp; mods that want
 // it call ueforge::build::CppShim's compile() (which compiles
 // ueforge_shim.cpp and links UE4SS.lib for the cdylib).

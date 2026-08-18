@@ -71,6 +71,9 @@ unsafe extern "C" {
 
     fn ueforge_ui_begin_group();
     fn ueforge_ui_end_group();
+
+    fn ueforge_ui_begin_child(s: *const c_char, n: usize, w: f32, h: f32) -> bool;
+    fn ueforge_ui_end_child();
 }
 
 #[inline]
@@ -213,6 +216,14 @@ impl Default for Group {
 impl Drop for Group {
     fn drop(&mut self) { end_group(); }
 }
+
+// ---- child regions (scrollable) ----
+
+pub fn begin_child(id: &str, w: f32, h: f32) -> bool {
+    let (p, n) = raw(id);
+    unsafe { ueforge_ui_begin_child(p, n, w, h) }
+}
+pub fn end_child() { unsafe { ueforge_ui_end_child() } }
 
 // ---- trees ----
 
