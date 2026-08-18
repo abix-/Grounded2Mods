@@ -10,6 +10,7 @@
 //! settings, etc.) lives in modforge and is consumed natively.
 
 pub mod bridge;
+pub mod client;
 pub mod hook;
 pub mod il2cpp;
 pub mod input;

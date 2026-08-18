@@ -760,3 +760,124 @@ pub fn sample_thread_modules<S: DeserializeOwned>(
     }
     ThreadModulesReport::from_value(&r.result)
 }
+
+// ---- Generic research helpers ------------------------------------
+//
+// These work over the JSON op protocol any modforge-based mod
+// exposes. Unity and UE mods alike can use them.
+
+/// Ping the control plane. Returns None (with a SKIP message) if
+/// unreachable, so tests pass without a running game.
+pub fn ping_or_skip<S: DeserializeOwned>(api: &Api<S>) -> Option<()> {
+    match api.try_op("ping", json!({})) {
+        Ok(r) if r.ok => Some(()),
+        Ok(r) => panic!("ping not ok: {:?}", r.error),
+        Err(e) => {
+            eprintln!(
+                "SKIP: no control plane answering ({e}); launch the game with the mod loaded"
+            );
+            None
+        }
+    }
+}
+
+/// Handle attached by the shim's serializer so ops chain.
+pub fn handle_of(v: &Value) -> Option<i64> {
+    v.get("handle").and_then(Value::as_i64)
+}
+
+/// Element count of a sequence: tries get_Length then get_Count.
+pub fn count_of<S: DeserializeOwned>(api: &Api<S>, h: i64) -> Option<i64> {
+    for getter in ["get_Length", "get_Count"] {
+        let r = api.op(
+            "invoke_method",
+            json!({"handle": h, "method": getter, "args": []}),
+        );
+        if r.ok {
+            return r.result.as_i64();
+        }
+    }
+    None
+}
+
+/// Walk a sequence handle: get_Item(i) per element, inspect each,
+/// print fields, release handles.
+pub fn dump_sequence<S: DeserializeOwned>(api: &Api<S>, label: &str, seq: i64) {
+    let Some(n) = count_of(api, seq) else {
+        println!("{label}: no get_Length/get_Count answered");
+        return;
+    };
+    println!("{label}: {n} element(s)");
+    for i in 0..n {
+        let item = api.op(
+            "invoke_method",
+            json!({"handle": seq, "method": "get_Item", "args": [i]}),
+        );
+        if !item.ok {
+            println!("{label}[{i}]: get_Item failed: {:?}", item.error);
+            continue;
+        }
+        let Some(eh) = handle_of(&item.result) else {
+            println!("{label}[{i}] = {}", item.result);
+            continue;
+        };
+        let inspect = api.op("inspect_object", json!({"handle": eh}));
+        println!(
+            "{label}[{i}]:\n{}",
+            serde_json::to_string_pretty(&inspect.result).unwrap_or_default()
+        );
+        api.op("release_handle", json!({"handle": eh}));
+    }
+    api.op("release_handle", json!({"handle": seq}));
+}
+
+/// Print methods declared directly on a class (filters out inherited).
+pub fn print_declared_methods<S: DeserializeOwned>(api: &Api<S>, class: &str) {
+    let r = api.op("list_methods", json!({"class": class}));
+    if !r.ok {
+        println!("list_methods({class}) failed: {:?}", r.error);
+        return;
+    }
+    let empty = vec![];
+    let methods = r.result["methods"].as_array().unwrap_or(&empty);
+    println!("{class} declares:");
+    for m in methods {
+        if m["declared_on"].as_str() != Some(class) {
+            continue;
+        }
+        println!(
+            "  {}({}) -> {}{}",
+            m["name"].as_str().unwrap_or("?"),
+            m["params"].as_i64().unwrap_or(-1),
+            m["return"].as_str().unwrap_or("?"),
+            if m["static"].as_bool() == Some(true) {
+                " [static]"
+            } else {
+                ""
+            },
+        );
+    }
+}
+
+/// Field name to value map from inspect_object.
+pub fn fields<S: DeserializeOwned>(api: &Api<S>, handle: i64) -> Option<Value> {
+    let r = api.op("inspect_object", json!({"handle": handle}));
+    if r.ok {
+        Some(r.result)
+    } else {
+        None
+    }
+}
+
+/// Parse a Vector3 string "(x, y, z)" into a tuple.
+pub fn parse_vec3(v: &Value) -> Option<(f64, f64, f64)> {
+    let s = v
+        .as_str()
+        .or_else(|| v.get("str").and_then(Value::as_str))?;
+    let s = s.trim().trim_start_matches('(').trim_end_matches(')');
+    let mut parts = s.split(',').map(|p| p.trim().parse::<f64>());
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(Ok(x)), Some(Ok(y)), Some(Ok(z))) => Some((x, y, z)),
+        _ => None,
+    }
+}
