@@ -6,6 +6,7 @@
 //! UE4SS object dump. See docs/misery-research.md section 8.6.
 
 use ueforge::ue;
+use ueforge::ue::{read_at, write_at};
 
 pub const STRUCT_BASE: usize = 0x218;
 const GI_CLASS: &str = "BP_SGKGameInstance_C";
@@ -71,24 +72,8 @@ impl std::fmt::Display for FieldValue {
 }
 
 pub fn game_instance_ptr() -> Result<*const u8, String> {
-    let rt = ue::try_runtime().ok_or("ue runtime not initialized")?;
-    let view = unsafe { ue::GObjectsView::from_image(rt.image_base, rt.platform_offsets) };
-    if !view.is_valid() {
-        return Err("gobjects view invalid".into());
-    }
-    for obj in view.iter() {
-        if obj.is_default_object() {
-            continue;
-        }
-        let class = match obj.class() {
-            Some(c) => c,
-            None => continue,
-        };
-        if class.as_object().name() == GI_CLASS {
-            return Ok(obj.as_ptr());
-        }
-    }
-    Err("no game instance found".into())
+    ue::actor::find_object(GI_CLASS, None, false)
+        .ok_or_else(|| "no game instance found".into())
 }
 
 pub fn read_field(field: &FieldDef) -> Result<FieldValue, String> {
@@ -96,11 +81,11 @@ pub fn read_field(field: &FieldDef) -> Result<FieldValue, String> {
     let abs = STRUCT_BASE + field.offset;
     match field.ty {
         FieldType::Double => {
-            let v: f64 = unsafe { (ptr.add(abs) as *const f64).read_unaligned() };
+            let v: f64 = unsafe { read_at(ptr, abs) };
             Ok(FieldValue::Double(v))
         }
         FieldType::Bool => {
-            let v: u8 = unsafe { *ptr.add(abs) };
+            let v: u8 = unsafe { read_at(ptr, abs) };
             Ok(FieldValue::Bool(v != 0))
         }
     }
@@ -108,8 +93,7 @@ pub fn read_field(field: &FieldDef) -> Result<FieldValue, String> {
 
 pub fn write_double(field: &FieldDef, value: f64) -> Result<(), String> {
     let ptr = game_instance_ptr()?;
-    let abs = STRUCT_BASE + field.offset;
-    unsafe { (ptr.add(abs) as *mut f64).write_unaligned(value) };
+    unsafe { write_at(ptr, STRUCT_BASE + field.offset, value) };
     ueforge::log::log(format_args!(
         "gameplay: {} = {value}", field.name
     ));
@@ -118,8 +102,7 @@ pub fn write_double(field: &FieldDef, value: f64) -> Result<(), String> {
 
 pub fn write_bool(field: &FieldDef, value: bool) -> Result<(), String> {
     let ptr = game_instance_ptr()?;
-    let abs = STRUCT_BASE + field.offset;
-    unsafe { *((ptr.add(abs)) as *mut u8) = value as u8 };
+    unsafe { write_at(ptr, STRUCT_BASE + field.offset, value as u8) };
     ueforge::log::log(format_args!(
         "gameplay: {} = {value}", field.name
     ));
