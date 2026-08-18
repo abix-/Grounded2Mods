@@ -24,6 +24,7 @@
 //! ```
 
 use std::ffi::c_void;
+use std::sync::OnceLock;
 
 use serde_json::Value as Json;
 
@@ -292,6 +293,24 @@ pub fn register_builtins() {
             |_args| Ok(crate::data_table::reapply_persisted()),
         ),
         OpDef::new(
+            "list_row_names",
+            "List every row name in a DataTable (no field decoding)",
+            "{table_name: str}",
+            |args| list_row_names(args),
+        ),
+        OpDef::new(
+            "list_row_fnames",
+            "List row names with raw FName keys for a DataTable",
+            "{table_name: str}",
+            |args| list_row_fnames(args),
+        ),
+        OpDef::new(
+            "inspect_gmalloc",
+            "Resolve GMalloc via patternsleuth and dump vtable (read-only)",
+            "{}",
+            |_args| inspect_gmalloc(),
+        ),
+        OpDef::new(
             "list_ops",
             "Auto-generated catalog of every registered debug op",
             "{}",
@@ -348,6 +367,12 @@ where
             "{selector: str, offset?: u64, hex: str}",
             move |args| write_bytes(args, resolver),
         ),
+        OpDef::new(
+            "tarray_grow",
+            "Grow a TArray via GMalloc->Malloc to a larger max capacity",
+            "{instance_selector: str, offset: u64, stride: u64, new_max: i32}",
+            move |args| tarray_grow(args, resolver),
+        ),
     ]);
 }
 
@@ -391,12 +416,11 @@ where
         return Err(format!("length {length} > 1MB cap"));
     }
     let obj = resolve(&selector)?;
-    check_object_bounds(obj, offset, length)?;
+    let is_raw_addr = selector.starts_with("addr:");
+    if !is_raw_addr {
+        check_object_bounds(obj, offset, length)?;
+    }
     let mut out = vec![0u8; length];
-    // SAFETY: check_object_bounds verified `[offset, offset+length)`
-    // lies within `obj`'s allocation; copy_nonoverlapping reads
-    // `length` bytes from that region into the freshly-allocated
-    // `out` vector (non-overlapping because `out` is a new alloc).
     unsafe {
         let base = obj.field_ptr(offset);
         std::ptr::copy_nonoverlapping(base, out.as_mut_ptr(), length);
@@ -421,12 +445,10 @@ where
         return Err(format!("bytes len {} > 1MB cap", bytes.len()));
     }
     let obj = resolve(&selector)?;
-    check_object_bounds(obj, offset, bytes.len())?;
-    // SAFETY: check_object_bounds verified the write range fits;
-    // bytes is a Vec<u8> from the parsed hex input; the
-    // destination is owned by `obj`. copy_nonoverlapping
-    // semantics: source and destination don't alias (bytes
-    // came from a separate heap allocation).
+    let is_raw_addr = selector.starts_with("addr:");
+    if !is_raw_addr {
+        check_object_bounds(obj, offset, bytes.len())?;
+    }
     unsafe {
         let dst = obj.field_ptr(offset) as *mut u8;
         std::ptr::copy_nonoverlapping(bytes.as_ptr(), dst, bytes.len());
@@ -669,4 +691,113 @@ pub fn exec_call(
     Ok(serde_json::json!({
         "parms_hex_after": hex::encode(&parms),
     }))
+}
+
+fn list_row_names(args: &Json) -> Result<Json, String> {
+    let table_name = arg_str(args, "table_name")?;
+    let table = crate::ue::datatable::find_by_short_name(table_name)
+        .ok_or_else(|| format!("table '{table_name}' not found"))?;
+    let name_map = unsafe { crate::ue::datatable::row_name_map(table) };
+    let mut names: Vec<String> = name_map.into_keys().collect();
+    names.sort();
+    Ok(serde_json::json!({
+        "table_name": table_name,
+        "count": names.len(),
+        "rows": names,
+    }))
+}
+
+fn list_row_fnames(args: &Json) -> Result<Json, String> {
+    let table_name = arg_str(args, "table_name")?;
+    let table = crate::ue::datatable::find_by_short_name(table_name)
+        .ok_or_else(|| format!("table '{table_name}' not found"))?;
+    let name_map = unsafe { crate::ue::datatable::row_name_map(table) };
+    let mut rows: Vec<Json> = name_map
+        .into_iter()
+        .map(|(name, key)| {
+            serde_json::json!({
+                "name": name,
+                "fname_idx": (key & 0xFFFF_FFFF) as u32,
+                "fname_num": (key >> 32) as u32,
+            })
+        })
+        .collect();
+    rows.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+    Ok(serde_json::json!({
+        "table_name": table_name,
+        "count": rows.len(),
+        "rows": rows,
+    }))
+}
+
+static GMALLOC_ADDR: OnceLock<usize> = OnceLock::new();
+
+fn resolve_gmalloc() -> Result<usize, String> {
+    if let Some(addr) = GMALLOC_ADDR.get() {
+        return Ok(*addr);
+    }
+    let resolved = crate::ue::resolvers::resolve_image_offsets()
+        .map_err(|e| format!("patternsleuth failed: {e}"))?;
+    let base = crate::ue::platform::host_image_base();
+    let abs = base + resolved.gmalloc;
+    crate::log!("GMalloc resolved at {abs:#x}");
+    let _ = GMALLOC_ADDR.set(abs);
+    Ok(abs)
+}
+
+fn inspect_gmalloc() -> Result<Json, String> {
+    let gmalloc_global_addr = resolve_gmalloc()?;
+    unsafe {
+        let fmalloc_ptr = *(gmalloc_global_addr as *const *const u8);
+        if fmalloc_ptr.is_null() {
+            return Err("GMalloc is null".into());
+        }
+        let vtable_ptr = *(fmalloc_ptr as *const *const usize);
+        let mut slots = Vec::new();
+        for i in 0..10 {
+            let entry = *vtable_ptr.add(i);
+            slots.push(format!("{entry:#x}"));
+        }
+        Ok(serde_json::json!({
+            "gmalloc_global": format!("{gmalloc_global_addr:#x}"),
+            "fmalloc_ptr": format!("{:#x}", fmalloc_ptr as usize),
+            "vtable_ptr": format!("{:#x}", vtable_ptr as usize),
+            "vtable_slots": slots,
+        }))
+    }
+}
+
+fn tarray_grow<F>(args: &Json, resolve: F) -> Result<Json, String>
+where
+    F: FnOnce(&str) -> Result<&'static UObject, String>,
+{
+    let selector = arg_str(args, "instance_selector")?.to_string();
+    let offset = arg_u64(args, "offset", None)? as usize;
+    let stride = arg_u64(args, "stride", None)? as usize;
+    let new_max = arg_u64(args, "new_max", None)? as i32;
+
+    if new_max <= 0 || new_max > 1024 {
+        return Err(format!("new_max {new_max} out of range (1..1024)"));
+    }
+
+    let obj = resolve(&selector)?;
+    let header_ptr = unsafe { obj.field_ptr(offset) };
+
+    unsafe {
+        let old_ptr = *(header_ptr as *const *mut u8);
+        let old_num = *((header_ptr as usize + 8) as *const i32);
+        let old_max = *((header_ptr as usize + 12) as *const i32);
+
+        crate::ue::tarray::grow_raw(header_ptr, stride, new_max)?;
+
+        let new_ptr = *(header_ptr as *const *mut u8);
+        Ok(serde_json::json!({
+            "old_ptr": format!("{:#x}", old_ptr as u64),
+            "new_ptr": format!("{:#x}", new_ptr as u64),
+            "old_max": old_max,
+            "new_max": new_max,
+            "num": old_num,
+            "stride": stride,
+        }))
+    }
 }

@@ -29,6 +29,7 @@
 - [x] TArray stride iteration: ueforge::ue::tarray::iter_stride. Used by vendors.rs
 - [x] DataTable row name map: ueforge::ue::datatable::row_name_map. Used by vendors.rs and debug.rs
 - [x] Debug HTTP boilerplate: modforge::envelope::handle_request. Used by misery, outworld-station, grounded2
+- [x] Engine-generic debug ops: list_row_names, list_row_fnames, inspect_gmalloc, tarray_grow moved to ueforge::ops::register_builtins (+ register_with_resolver for tarray_grow)
 
 ## Not started
 
