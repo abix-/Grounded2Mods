@@ -25,6 +25,7 @@ Newest first.
 
 | System | Item | Done when |
 |---|---|---|
+| `modforge` | [x] Add `mission_accessors!` macro to `modforge::mission` and extract 4 Unity helpers (`is_npc_alive`, `dist_sq_to_building`, `send_squad_home`, `remove_squad_and_drop`) into survivalist common.rs; all 5 mission trait impls repointed (net -129 lines) | Each mission trait impl contains only game-specific logic. |
 | `modforge` | [x] Lift mission runner into `modforge::mission`: Mission trait with Stage (Going/Returning), Step (Continue/Transition/Complete), advance/advance_all batch loop, should_tick cadence helper | Engine-agnostic mission runner available; survivalist vendor/steal/trade/scavenge/murder repointed at framework trait. |
 | `unityforge` | [x] Add `UnityStaticPropAdditiveEffect` and `UnityInstancePropMultiplyEffect` to `unityforge::rpg::std_effect` | Two new framework effect types for static properties and instance properties. |
 | `schedule1-mod` | [x] Repoint catalog at framework effect types; local Effect impls replaced by thin `Il2CppGuardedEffect` wrapper for MAIN_QUEUE + bisection guard | schedule1 skills.rs has no local read/write logic; uses framework effect types. |
