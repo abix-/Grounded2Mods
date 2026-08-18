@@ -405,6 +405,15 @@ pub fn read_f32<S: DeserializeOwned>(api: &Api<S>, addr: u64, offset: u64) -> f3
     f32::from_le_bytes([b[0], b[1], b[2], b[3]])
 }
 
+/// Read an `f64` at `offset`. Returns 0.0 on failure.
+pub fn read_f64<S: DeserializeOwned>(api: &Api<S>, addr: u64, offset: u64) -> f64 {
+    let b = read_bytes(api, addr, offset, 8);
+    if b.len() < 8 {
+        return 0.0;
+    }
+    f64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]])
+}
+
 /// Read a `u8` at `offset`. Returns 0 on failure.
 pub fn read_u8<S: DeserializeOwned>(api: &Api<S>, addr: u64, offset: u64) -> u8 {
     let b = read_bytes(api, addr, offset, 1);
@@ -418,6 +427,75 @@ pub fn read_u64<S: DeserializeOwned>(api: &Api<S>, addr: u64, offset: u64) -> u6
         return 0;
     }
     u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]])
+}
+
+// ----------------------------------------------------------------
+// Byte-slice decoders: decode typed fields from a pre-fetched
+// buffer without issuing another API call.
+// ----------------------------------------------------------------
+
+pub fn from_le_i32(buf: &[u8], off: usize) -> i32 {
+    i32::from_le_bytes(buf[off..off + 4].try_into().unwrap())
+}
+
+pub fn from_le_u32(buf: &[u8], off: usize) -> u32 {
+    u32::from_le_bytes(buf[off..off + 4].try_into().unwrap())
+}
+
+pub fn from_le_u64(buf: &[u8], off: usize) -> u64 {
+    u64::from_le_bytes(buf[off..off + 8].try_into().unwrap())
+}
+
+pub fn from_le_f32(buf: &[u8], off: usize) -> f32 {
+    f32::from_le_bytes(buf[off..off + 4].try_into().unwrap())
+}
+
+pub fn from_le_f64(buf: &[u8], off: usize) -> f64 {
+    f64::from_le_bytes(buf[off..off + 8].try_into().unwrap())
+}
+
+// ----------------------------------------------------------------
+// TArray header reading.
+// ----------------------------------------------------------------
+
+pub struct TArrayHeader {
+    pub ptr: u64,
+    pub num: i32,
+    pub max: i32,
+}
+
+/// Read a UE TArray header (ptr, num, max) at `offset` from `addr`.
+/// Returns `None` if the read fails or returns too few bytes.
+pub fn read_tarray_header<S: DeserializeOwned>(
+    api: &Api<S>,
+    addr: u64,
+    offset: u64,
+) -> Option<TArrayHeader> {
+    let b = read_bytes(api, addr, offset, 16);
+    if b.len() < 16 {
+        return None;
+    }
+    Some(TArrayHeader {
+        ptr: from_le_u64(&b, 0),
+        num: from_le_i32(&b, 8),
+        max: from_le_i32(&b, 12),
+    })
+}
+
+// ----------------------------------------------------------------
+// FName helpers.
+// ----------------------------------------------------------------
+
+/// Resolve an FName from its two u32 components (comparison_index
+/// and number) by packing them into the u64 format and calling
+/// `fname_to_string`.
+pub fn fname_from_parts<S: DeserializeOwned>(
+    api: &Api<S>,
+    comparison_index: u32,
+    number: u32,
+) -> Option<String> {
+    let packed: u64 = (comparison_index as u64) | ((number as u64) << 32);
+    fname_to_string(api, packed)
 }
 
 // ----------------------------------------------------------------

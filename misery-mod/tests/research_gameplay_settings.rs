@@ -10,7 +10,8 @@
 //! ```
 
 mod common;
-use common::{api_or_skip, offsets_live, read_bytes};
+use common::{api_or_skip, offsets_live};
+use modforge::client::research;
 
 #[test]
 fn read_gameplay_settings_live() {
@@ -19,7 +20,11 @@ fn read_gameplay_settings_live() {
         println!("SKIP: offsets not live");
         return;
     }
-    let sel = "first_class:BP_GlobalManager_C";
+    let Some(inst) = research::find_live_instance(&api, "BP_GlobalManager_C") else {
+        println!("no live BP_GlobalManager_C");
+        return;
+    };
+    let addr = inst.addr;
 
     let fields: &[(&str, u64, &str)] = &[
         ("ShiningsTimer",           0x218 + 0x00, "f64"),
@@ -38,19 +43,11 @@ fn read_gameplay_settings_live() {
     for (name, offset, ty) in fields {
         match *ty {
             "f64" => {
-                let Some(bytes) = read_bytes(&api, sel, *offset, 8) else {
-                    println!("{name} @ +0x{offset:x}: read failed");
-                    continue;
-                };
-                let val = f64::from_le_bytes(bytes[..8].try_into().unwrap());
+                let val = research::read_f64(&api, addr, *offset);
                 println!("{name} @ +0x{offset:x}: {val}");
             }
             "bool" => {
-                let Some(bytes) = read_bytes(&api, sel, *offset, 1) else {
-                    println!("{name} @ +0x{offset:x}: read failed");
-                    continue;
-                };
-                let val = bytes[0] != 0;
+                let val = research::read_u8(&api, addr, *offset) != 0;
                 println!("{name} @ +0x{offset:x}: {val}");
             }
             _ => {}

@@ -9,7 +9,8 @@
 //! ```
 
 mod common;
-use common::{api_or_skip, offsets_live, read_bytes, selector_of};
+use common::{api_or_skip, offsets_live};
+use modforge::client::research;
 use serde_json::json;
 
 const CHAR_COMP: &str = "BP_CharacterComponent_C";
@@ -47,42 +48,27 @@ fn set_movement_map_speeds() {
         return;
     }
 
-    let r = api.op("walk_class", json!({"class": CHAR_COMP}));
-    if !r.ok {
-        println!("walk_class failed");
-        return;
-    }
-    let arr = r.result["instances"].as_array().cloned().unwrap_or_default();
-    let cc = arr.iter().find(|i| {
-        let name = i["full_name"].as_str().unwrap_or("");
-        name.contains("PersistentLevel") && i["is_cdo"].as_bool() != Some(true)
-    });
+    let instances = research::walk_class_instances(&api, CHAR_COMP, 100);
+    let cc = instances.iter().find(|i| i.full_name.contains("PersistentLevel"));
     let Some(cc) = cc else {
         println!("no live BP_CharacterComponent_C");
         return;
     };
-    let Some(cc_sel) = selector_of(cc) else { return };
+    let cc_addr = cc.addr;
 
-    let inv_ptr_bytes = read_bytes(&api, &cc_sel, INV_PTR_OFFSET, 8);
-    let Some(ipb) = inv_ptr_bytes else {
-        println!("failed to read PlayerInventory pointer");
+    let Some(inv_ptr) = research::read_component_ptr(&api, cc_addr, INV_PTR_OFFSET) else {
+        println!("PlayerInventory pointer is null or read failed");
         return;
     };
-    let inv_ptr = u64::from_le_bytes(ipb[..8].try_into().unwrap());
-    if inv_ptr == 0 {
-        println!("PlayerInventory pointer is null");
-        return;
-    }
-    let inv_sel = format!("addr:0x{inv_ptr:x}");
-    println!("PlayerInventory at {inv_sel}");
+    println!("PlayerInventory at addr:0x{inv_ptr:x}");
 
-    let header = read_bytes(&api, &inv_sel, MOVEMENT_SPEEDS_MAP, 16);
-    let Some(hdr) = header else {
+    let hdr = research::read_bytes(&api, inv_ptr, MOVEMENT_SPEEDS_MAP, 16);
+    if hdr.len() < 16 {
         println!("failed to read TMap header");
         return;
-    };
-    let elem_ptr = u64::from_le_bytes(hdr[0..8].try_into().unwrap());
-    let num = i32::from_le_bytes(hdr[8..12].try_into().unwrap());
+    }
+    let elem_ptr = research::from_le_u64(&hdr, 0);
+    let num = research::from_le_i32(&hdr, 8);
     println!("TMap: {num} entries, elements at 0x{elem_ptr:x}");
 
     if elem_ptr == 0 || num <= 0 {
@@ -90,13 +76,12 @@ fn set_movement_map_speeds() {
         return;
     }
 
-    let elem_sel = format!("addr:0x{elem_ptr:x}");
     let total_bytes = num as u64 * TMAP_STRIDE;
-    let elem_data = read_bytes(&api, &elem_sel, 0, total_bytes);
-    let Some(data) = elem_data else {
+    let data = research::read_bytes(&api, elem_ptr, 0, total_bytes);
+    if data.is_empty() {
         println!("failed to read element data");
         return;
-    };
+    }
 
     for ov in OVERRIDES {
         let slot = (0..num as usize).find(|&s| {
@@ -108,9 +93,9 @@ fn set_movement_map_speeds() {
             continue;
         };
         let base = slot as u64 * TMAP_STRIDE;
-        let old = f64::from_le_bytes(data[slot * 24 + 8..slot * 24 + 16].try_into().unwrap());
+        let old = research::from_le_f64(&data, slot * 24 + 8);
         let value_offset = base + 8;
-        let ok = write_bytes_op(&api, &elem_sel, value_offset, &ov.value.to_le_bytes());
+        let ok = write_bytes_op(&api, &format!("addr:0x{elem_ptr:x}"), value_offset, &ov.value.to_le_bytes());
         if ok {
             println!("{}: {} -> {} (slot {slot})", ov.label, old, ov.value);
         } else {
@@ -119,16 +104,16 @@ fn set_movement_map_speeds() {
     }
 
     println!("\nverifying...");
-    let verify = read_bytes(&api, &elem_sel, 0, total_bytes);
-    let Some(vdata) = verify else {
+    let vdata = research::read_bytes(&api, elem_ptr, 0, total_bytes);
+    if vdata.is_empty() {
         println!("verify read failed");
         return;
-    };
+    }
     for slot in 0..num as usize {
         let base = slot * TMAP_STRIDE as usize;
         if base + 16 > vdata.len() { break; }
         let key = vdata[base];
-        let value = f64::from_le_bytes(vdata[base+8..base+16].try_into().unwrap());
+        let value = research::from_le_f64(&vdata, base + 8);
         println!("  key {key}: {value:.1}");
     }
 }

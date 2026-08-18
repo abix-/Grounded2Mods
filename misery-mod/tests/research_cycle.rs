@@ -17,7 +17,8 @@
 //! `WWM_WATCH_SECS` (default 420) caps the run.
 
 mod common;
-use common::{api_or_skip, as_f64, as_i32, first_instance, offsets_live, read_bytes, selector_of};
+use common::{api_or_skip, offsets_live};
+use modforge::client::research;
 
 const EMISSIONS_COUNT: u64 = 0x2A8;
 const TIME_UNTIL_EMMISION: u64 = 0x2B0;
@@ -38,30 +39,30 @@ fn watch_cycle() {
         println!("SKIP: offsets not live");
         return;
     }
-    let Some(inst) = first_instance(&api, GLOBAL_MANAGER) else {
+    let Some(inst) = research::find_live_instance(&api, GLOBAL_MANAGER) else {
         println!("no live {GLOBAL_MANAGER}");
         return;
     };
-    let Some(sel) = selector_of(&inst) else {
-        println!("instance has no selector");
-        return;
-    };
+    let addr = inst.addr;
 
     let budget: u64 = std::env::var("WWM_WATCH_SECS")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(420);
 
-    println!("watching {sel} for up to {budget}s");
+    println!("watching {} for up to {budget}s", inst.addr_selector);
     let start = std::time::Instant::now();
     let mut prev_time: Option<f64> = None;
     let mut prev_count: Option<i32> = None;
     let mut siren_logged = false;
 
     while start.elapsed().as_secs() < budget {
-        let t = read_bytes(&api, &sel, TIME_UNTIL_EMMISION, 8).and_then(|b| as_f64(&b));
-        let c = read_bytes(&api, &sel, EMISSIONS_COUNT, 4).and_then(|b| as_i32(&b));
-        let f = read_bytes(&api, &sel, FREEZE_TIMER, 1).and_then(|b| b.first().copied());
+        let tb = research::read_bytes(&api, addr, TIME_UNTIL_EMMISION, 8);
+        let t = if tb.len() >= 8 { Some(research::from_le_f64(&tb, 0)) } else { None };
+        let cb = research::read_bytes(&api, addr, EMISSIONS_COUNT, 4);
+        let c = if cb.len() >= 4 { Some(research::from_le_i32(&cb, 0)) } else { None };
+        let fb = research::read_bytes(&api, addr, FREEZE_TIMER, 1);
+        let f = fb.first().copied();
         let secs = start.elapsed().as_secs_f64();
 
         if let (Some(t), Some(c)) = (t, c) {

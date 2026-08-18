@@ -10,7 +10,8 @@
 //! ```
 
 mod common;
-use common::{api_or_skip, offsets_live, read_bytes};
+use common::{api_or_skip, offsets_live};
+use modforge::client::research;
 
 #[test]
 fn scan_for_settings() {
@@ -23,18 +24,20 @@ fn scan_for_settings() {
         "BP_GlobalManager_C",
         "BP_SGKGameInstance_C",
     ] {
-        let sel = format!("first_class:{class}");
         println!("=== {class} ===");
-        scan(&api, &sel);
+        let Some(inst) = research::find_live_instance(&api, class) else {
+            println!("  no live instance");
+            continue;
+        };
+        scan(&api, inst.addr);
     }
 }
 
-fn scan(api: &common::Api, sel: &str) {
+fn scan(api: &common::Api, addr: u64) {
     for off in (0x28..0x1000).step_by(8) {
-        let Some(bytes) = read_bytes(&api, sel, off, 8) else {
-            continue;
-        };
-        let val = f64::from_le_bytes(bytes[..8].try_into().unwrap());
+        let bytes = research::read_bytes(api, addr, off, 8);
+        if bytes.len() < 8 { continue; }
+        let val = research::from_le_f64(&bytes, 0);
         if val > 0.001 && val < 10000.0 && val.is_finite() {
             let marker = if (val - 22.0).abs() < 0.01 { " <-- 22!" } else { "" };
             println!("+0x{off:03x}: {val}{marker}");

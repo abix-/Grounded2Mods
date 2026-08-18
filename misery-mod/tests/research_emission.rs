@@ -12,8 +12,8 @@
 //! ```
 
 mod common;
-use common::{api_or_skip, as_f64, as_i32, first_instance, offsets_live, read_bytes,
-              selector_of, show};
+use common::{api_or_skip, offsets_live, show};
+use modforge::client::research;
 use serde_json::json;
 
 /// Property offsets on BP_GlobalManager_C, from the object dump
@@ -90,15 +90,11 @@ fn read_emission_fields() {
         println!("SKIP: offsets not live yet");
         return;
     }
-    let Some(inst) = first_instance(&api, GLOBAL_MANAGER) else {
+    let Some(inst) = research::find_live_instance(&api, GLOBAL_MANAGER) else {
         println!("no live {GLOBAL_MANAGER}");
         return;
     };
-    let Some(sel) = selector_of(&inst) else {
-        println!("instance has no selector: {inst}");
-        return;
-    };
-    println!("selector: {sel}  ({})", inst["full_name"]);
+    println!("selector: {}  ({})", inst.addr_selector, inst.full_name);
 
     for (name, off, len) in [
         ("EmissionsCount", EMISSIONS_COUNT, 4u64),
@@ -107,12 +103,13 @@ fn read_emission_fields() {
         ("FirstEmissionOffset", FIRST_EMISSION_OFFSET, 8),
         ("EmissionRandomDeviation", EMISSION_RANDOM_DEVIATION, 8),
     ] {
-        let Some(bytes) = read_bytes(&api, &sel, off, len) else {
+        let bytes = research::read_bytes(&api, inst.addr, off, len);
+        if bytes.is_empty() {
             continue;
-        };
+        }
         let decoded = match len {
-            8 => format!("{:?}", as_f64(&bytes)),
-            4 => format!("{:?}", as_i32(&bytes)),
+            8 => format!("{}", research::from_le_f64(&bytes, 0)),
+            4 => format!("{}", research::from_le_i32(&bytes, 0)),
             _ => format!("{}", bytes.first().copied().unwrap_or(0)),
         };
         println!("  {name:<24} +0x{off:03X} = {decoded}  raw={bytes:02X?}");
@@ -129,29 +126,27 @@ fn sample_countdown() {
         println!("SKIP: offsets not live yet");
         return;
     }
-    let Some(inst) = first_instance(&api, GLOBAL_MANAGER) else {
+    let Some(inst) = research::find_live_instance(&api, GLOBAL_MANAGER) else {
         println!("no live {GLOBAL_MANAGER}");
         return;
     };
-    let Some(sel) = selector_of(&inst) else {
-        println!("instance has no selector");
-        return;
-    };
+    let addr = inst.addr;
 
     println!("sampling TimeUntilEmmision every 2s, 6 times");
     let start = std::time::Instant::now();
     let mut prev: Option<(f64, f64)> = None;
     for i in 0..6 {
         let secs = start.elapsed().as_secs_f64();
-        match read_bytes(&api, &sel, TIME_UNTIL_EMMISION, 8).and_then(|b| as_f64(&b)) {
-            Some(v) => {
-                let rate = prev
-                    .map(|(pt, pv)| format!("  ({:+.3}/s)", (v - pv) / (secs - pt)))
-                    .unwrap_or_default();
-                println!("  t={secs:6.2}s  TimeUntilEmmision = {v}{rate}");
-                prev = Some((secs, v));
-            }
-            None => println!("  t={secs:6.2}s  unreadable"),
+        let b = research::read_bytes(&api, addr, TIME_UNTIL_EMMISION, 8);
+        if b.len() >= 8 {
+            let v = research::from_le_f64(&b, 0);
+            let rate = prev
+                .map(|(pt, pv)| format!("  ({:+.3}/s)", (v - pv) / (secs - pt)))
+                .unwrap_or_default();
+            println!("  t={secs:6.2}s  TimeUntilEmmision = {v}{rate}");
+            prev = Some((secs, v));
+        } else {
+            println!("  t={secs:6.2}s  unreadable");
         }
         if i < 5 {
             std::thread::sleep(std::time::Duration::from_secs(2));
@@ -171,28 +166,23 @@ fn read_gameplay_settings() {
         println!("SKIP: offsets not live");
         return;
     }
-    let Some(inst) = first_instance(&api, "BP_SGKGameInstance_C") else {
+    let Some(inst) = research::find_live_instance(&api, "BP_SGKGameInstance_C") else {
         println!("no live BP_SGKGameInstance_C");
         return;
     };
-    let Some(sel) = selector_of(&inst) else { return };
-    println!("selector: {sel}  ({})", inst["full_name"]);
+    let addr = inst.addr;
+    println!("selector: {}  ({})", inst.addr_selector, inst.full_name);
 
     const SETTINGS: u64 = 0x218;
-    if let Some(b) = read_bytes(&api, &sel, 0x210, 1) {
-        println!("  DifficultyPreset      +0x210 = {:?}", b.first());
-    }
-    // S_GameplaySettings field order from the object dump
-    // (docs/research.md section 8.2).
+    println!("  DifficultyPreset      +0x210 = {}", research::read_u8(&api, addr, 0x210));
     for (name, rel) in [
         ("ShiningsTimer", 0x00u64),
         ("DayLength", 0x08),
         ("NightLength", 0x10),
         ("WeatherCycleDuration", 0x18),
     ] {
-        if let Some(v) = read_bytes(&api, &sel, SETTINGS + rel, 8).and_then(|b| as_f64(&b)) {
-            println!("  {name:<21} +0x{:03X} = {v}", SETTINGS + rel);
-        }
+        let v = research::read_f64(&api, addr, SETTINGS + rel);
+        println!("  {name:<21} +0x{:03X} = {v}", SETTINGS + rel);
     }
 }
 
@@ -207,17 +197,11 @@ fn read_world_regeneration() {
         println!("SKIP: offsets not live");
         return;
     }
-    // Four instances, subclassed (factory, and others). Read
-    // them all: the first one read 0/0 and that may be true only
-    // of that generator.
-    let r = api.op("walk_class", json!({"class": "BP_WorldGeneration_Base_C"}));
-    let empty = vec![];
-    for inst in r.result["instances"].as_array().unwrap_or(&empty) {
-        let name = inst["full_name"].as_str().unwrap_or("?");
-        let Some(sel) = selector_of(inst) else { continue };
-        let refresh = read_bytes(&api, &sel, 0x2B8, 4).and_then(|b| as_i32(&b));
-        let past = read_bytes(&api, &sel, 0x2F8, 4).and_then(|b| as_i32(&b));
-        println!("  EmissionCountForRefresh={refresh:?}  EmissionsPast={past:?}  {name}");
+    let instances = research::walk_class_instances(&api, "BP_WorldGeneration_Base_C", 100);
+    for inst in &instances {
+        let refresh = research::read_i32(&api, inst.addr, 0x2B8);
+        let past = research::read_i32(&api, inst.addr, 0x2F8);
+        println!("  EmissionCountForRefresh={refresh}  EmissionsPast={past}  {}", inst.full_name);
     }
 }
 
@@ -233,24 +217,16 @@ fn read_respawn_on_emission() {
         return;
     }
 
-    if let Some(gi) = first_instance(&api, "BP_SGKGameInstance_C")
-        && let Some(sel) = selector_of(&gi)
-        && let Some(b) = read_bytes(&api, &sel, 0x218 + 0xBB, 1)
-    {
-        println!("GameplaySettings.RespawnOnEmission = {:?}", b.first());
+    if let Some(gi) = research::find_live_instance(&api, "BP_SGKGameInstance_C") {
+        let v = research::read_u8(&api, gi.addr, 0x218 + 0xBB);
+        println!("GameplaySettings.RespawnOnEmission = {v}");
     }
 
-    // walk_class returns the archetype (a GEN_VARIABLE template)
-    // alongside the real component, and the template's flags mean
-    // nothing. Read every instance and label them.
-    let r = api.op("walk_class", json!({"class": "BP_PlayerInventory_C"}));
-    let empty = vec![];
-    for inst in r.result["instances"].as_array().unwrap_or(&empty) {
-        let name = inst["full_name"].as_str().unwrap_or("?");
-        let Some(sel) = selector_of(inst) else { continue };
-        let v = read_bytes(&api, &sel, 0x133A, 1).and_then(|b| b.first().copied());
-        let kind = if name.contains("GEN_VARIABLE") { "template" } else { "live" };
-        println!("  [{kind}] RespawnOnEmission = {v:?}  {name}");
+    let instances = research::walk_class_instances_with_cdo(&api, "BP_PlayerInventory_C", 100);
+    for inst in &instances {
+        let v = research::read_u8(&api, inst.addr, 0x133A);
+        let kind = if inst.full_name.contains("GEN_VARIABLE") { "template" } else { "live" };
+        println!("  [{kind}] RespawnOnEmission = {v}  {}", inst.full_name);
     }
 }
 
@@ -266,8 +242,8 @@ fn read_current_biome() {
         println!("SKIP: offsets not live");
         return;
     }
-    let Some(inst) = first_instance(&api, GLOBAL_MANAGER) else { return };
-    let Some(sel) = selector_of(&inst) else { return };
+    let Some(inst) = research::find_live_instance(&api, GLOBAL_MANAGER) else { return };
+    let addr = inst.addr;
 
     for (name, off, len) in [
         ("CurrentGeneratedLevel", 0x2C8u64, 1u64),
@@ -276,11 +252,12 @@ fn read_current_biome() {
         ("FirstSave", 0x2FA, 1),
         ("CurrentWorldSeed", 0x2BC, 4),
     ] {
-        let Some(b) = read_bytes(&api, &sel, off, len) else { continue };
+        let b = research::read_bytes(&api, addr, off, len);
+        if b.is_empty() { continue; }
         let v = if len == 4 {
-            format!("{:?}", as_i32(&b))
+            format!("{}", research::from_le_i32(&b, 0))
         } else {
-            format!("{:?}", b.first())
+            format!("{}", b.first().copied().unwrap_or(0))
         };
         println!("  {name:<22} +0x{off:03X} = {v}");
     }
@@ -302,34 +279,22 @@ fn diagnose_missing_manager() {
             w.ok, w.result["total"], w.error);
     }
 
-    // NEVER read an actor offset off `singleton:` (the class
-    // default object). A CDO is not laid out like a live actor,
-    // so the read lands on invalid memory. Doing exactly that
-    // crashed the game on 2026-08-14, mid-session. Only
-    // `first_class:` / `addr:` selectors point at real actors.
     let r = api.op("read_bytes",
         json!({"instance_selector": "first_class:BP_GlobalManager_C",
                "offset": 0x2B0, "length": 8}));
     println!("first_class read: ok={} err={:?}", r.ok, r.error);
 
-    let Some(door) = first_instance(&api, "BP_ExpeditionDoor_C") else {
+    let Some(door) = research::find_live_instance(&api, "BP_ExpeditionDoor_C") else {
         println!("no expedition door either");
         return;
     };
-    let Some(dsel) = selector_of(&door) else { return };
-    let Some(b) = read_bytes(&api, &dsel, 0x448, 8) else { return };
-    let addr = u64::from_le_bytes(b[..8].try_into().unwrap_or_default());
-    println!("door {dsel} -> GlobalManager = 0x{addr:X}");
-    if addr == 0 {
+    let Some(mgr_ptr) = research::read_component_ptr(&api, door.addr, 0x448) else {
         println!("door's GlobalManager pointer is null");
         return;
-    }
-    let msel = format!("addr:0x{addr:X}");
-    println!("TimeUntilEmmision = {:?}",
-        read_bytes(&api, &msel, 0x2B0, 8).and_then(|b| as_f64(&b)));
-    println!("EmissionsCount    = {:?}",
-        read_bytes(&api, &msel, 0x2A8, 4).and_then(|b| as_i32(&b)));
-    println!("FreezeTimer?      = {:?}",
-        read_bytes(&api, &msel, 0x2B8, 1).and_then(|b| b.first().copied()));
-    println!("USE THIS SELECTOR: {msel}");
+    };
+    println!("door {} -> GlobalManager = 0x{mgr_ptr:X}", door.addr_selector);
+    println!("TimeUntilEmmision = {}", research::read_f64(&api, mgr_ptr, 0x2B0));
+    println!("EmissionsCount    = {}", research::read_i32(&api, mgr_ptr, 0x2A8));
+    println!("FreezeTimer?      = {}", research::read_u8(&api, mgr_ptr, 0x2B8));
+    println!("USE THIS SELECTOR: addr:0x{mgr_ptr:X}");
 }

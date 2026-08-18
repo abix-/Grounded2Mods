@@ -17,7 +17,8 @@
 //! ```
 
 mod common;
-use common::{api_or_skip, as_f64, offsets_live, read_bytes, selector_of};
+use common::{api_or_skip, offsets_live};
+use modforge::client::research;
 use serde_json::json;
 
 const CHAR_COMP: &str = "BP_CharacterComponent_C";
@@ -31,21 +32,6 @@ const CHAR_STANCE: u64 = 0x19F;
 const USE_HOLDABLE_SPEEDS: u64 = 0x358;
 const MOVEMENT_SPEEDS_MAP: u64 = 0xFE8;
 
-fn live_instance(api: &common::Api, class: &str) -> Option<(String, serde_json::Value)> {
-    let r = api.op("walk_class", json!({"class": class}));
-    if !r.ok { return None; }
-    let arr = r.result["instances"].as_array()?.clone();
-    arr.into_iter()
-        .find(|i| {
-            let name = i["full_name"].as_str().unwrap_or("");
-            name.contains("PersistentLevel") && i["is_cdo"].as_bool() != Some(true)
-        })
-        .and_then(|i| {
-            let sel = selector_of(&i)?;
-            Some((sel, i))
-        })
-}
-
 #[test]
 #[ignore = "needs live game"]
 fn read_all_speed_fields() {
@@ -55,49 +41,36 @@ fn read_all_speed_fields() {
         return;
     }
 
-    // BP_CharacterComponent_C
     println!("=== BP_CharacterComponent_C ===");
-    let r = api.op("walk_class", json!({"class": CHAR_COMP}));
-    let arr = r.result["instances"].as_array().cloned().unwrap_or_default();
-    println!("{} instance(s)", arr.len());
-    for inst in &arr {
-        let name = inst["full_name"].as_str().unwrap_or("?");
-        let is_cdo = inst["is_cdo"].as_bool() == Some(true);
-        let Some(sel) = selector_of(inst) else { continue };
-        let ms = read_bytes(&api, &sel, MOVEMENT_SPEED, 8).and_then(|b| as_f64(&b));
-        let mws = read_bytes(&api, &sel, MAX_WALK_SPEED_CC, 8).and_then(|b| as_f64(&b));
-        let sprint = read_bytes(&api, &sel, SPRINTING, 1).map(|b| b[0]);
-        let stance = read_bytes(&api, &sel, CHAR_STANCE, 1).map(|b| b[0]);
-        println!("  {name} (cdo={is_cdo})");
-        println!("    MovementSpeed  +0x200 = {ms:?}");
-        println!("    MaxWalkSpeed   +0x278 = {mws:?}");
-        println!("    Sprinting      +0x19D = {sprint:?}");
-        println!("    CharacterStance+0x19F = {stance:?}");
+    let instances = research::walk_class_instances_with_cdo(&api, CHAR_COMP, 100);
+    println!("{} instance(s)", instances.len());
+    for inst in &instances {
+        let ms = research::read_f64(&api, inst.addr, MOVEMENT_SPEED);
+        let mws = research::read_f64(&api, inst.addr, MAX_WALK_SPEED_CC);
+        let sprint = research::read_u8(&api, inst.addr, SPRINTING);
+        let stance = research::read_u8(&api, inst.addr, CHAR_STANCE);
+        println!("  {} (cdo={})", inst.full_name, !inst.full_name.contains("PersistentLevel"));
+        println!("    MovementSpeed  +0x200 = {ms}");
+        println!("    MaxWalkSpeed   +0x278 = {mws}");
+        println!("    Sprinting      +0x19D = {sprint}");
+        println!("    CharacterStance+0x19F = {stance}");
     }
 
-    // BP_PlayerInventory_C
     println!("\n=== BP_PlayerInventory_C ===");
-    let r2 = api.op("walk_class", json!({"class": PLAYER_INV}));
-    let arr2 = r2.result["instances"].as_array().cloned().unwrap_or_default();
-    println!("{} instance(s)", arr2.len());
-    for inst in &arr2 {
-        let name = inst["full_name"].as_str().unwrap_or("?");
-        let is_cdo = inst["is_cdo"].as_bool() == Some(true);
-        if !name.contains("PersistentLevel") && !is_cdo { continue; }
-        let Some(sel) = selector_of(inst) else { continue };
+    let instances2 = research::walk_class_instances_with_cdo(&api, PLAYER_INV, 100);
+    println!("{} instance(s)", instances2.len());
+    for inst in &instances2 {
+        if !inst.full_name.contains("PersistentLevel") { continue; }
+        let use_hold = research::read_u8(&api, inst.addr, USE_HOLDABLE_SPEEDS);
+        println!("  {}", inst.full_name);
+        println!("    UseHoldableMovementSpeeds +0x358 = {use_hold}");
 
-        let use_hold = read_bytes(&api, &sel, USE_HOLDABLE_SPEEDS, 1).map(|b| b[0]);
-        println!("  {name} (cdo={is_cdo})");
-        println!("    UseHoldableMovementSpeeds +0x358 = {use_hold:?}");
-
-        // Read raw bytes around MovementSpeeds map to see the TMap header
-        let map_raw = read_bytes(&api, &sel, MOVEMENT_SPEEDS_MAP, 80);
-        if let Some(raw) = &map_raw {
-            println!("    MovementSpeeds +0xFE8 raw ({} bytes): {}", raw.len(), hex::encode(raw));
+        let map_raw = research::read_bytes(&api, inst.addr, MOVEMENT_SPEEDS_MAP, 80);
+        if !map_raw.is_empty() {
+            println!("    MovementSpeeds +0xFE8 raw ({} bytes): {}", map_raw.len(), hex::encode(&map_raw));
         }
     }
 
-    // Engine CMC (player only)
     println!("\n=== CharacterMovementComponent (player) ===");
     let r3 = api.op("walk_class", json!({"class": "CharacterMovementComponent"}));
     let arr3 = r3.result["instances"].as_array().cloned().unwrap_or_default();
@@ -105,40 +78,32 @@ fn read_all_speed_fields() {
         let name = inst["full_name"].as_str().unwrap_or("");
         if !name.contains("PersistentLevel") || !name.contains("SGKMasterCharacter") { continue; }
         if inst["is_cdo"].as_bool() == Some(true) { continue; }
-        let Some(sel) = selector_of(inst) else { continue };
+        let Some(addr_str) = inst["addr"].as_str() else { continue };
+        let Ok(addr) = u64::from_str_radix(addr_str.trim_start_matches("0x"), 16) else { continue };
 
-        let as_f32 = |b: &[u8]| -> f32 {
-            f32::from_le_bytes([b[0], b[1], b[2], b[3]])
-        };
-        let mws = read_bytes(&api, &sel, 0x248, 4).map(|b| as_f32(&b));
-        let mwsc = read_bytes(&api, &sel, 0x24C, 4).map(|b| as_f32(&b));
-        let max_accel = read_bytes(&api, &sel, 0x254, 4).map(|b| as_f32(&b));
-        let max_fly = read_bytes(&api, &sel, 0x250, 4).map(|b| as_f32(&b));
-        let max_custom = read_bytes(&api, &sel, 0x258, 4).map(|b| as_f32(&b));
+        let mws = research::read_f32(&api, addr, 0x248);
+        let mwsc = research::read_f32(&api, addr, 0x24C);
+        let max_fly = research::read_f32(&api, addr, 0x250);
+        let max_accel = research::read_f32(&api, addr, 0x254);
+        let max_custom = research::read_f32(&api, addr, 0x258);
 
         println!("  {name}");
-        println!("    MaxWalkSpeed         +0x248 = {mws:?}");
-        println!("    MaxWalkSpeedCrouched  +0x24C = {mwsc:?}");
-        println!("    MaxFlySpeed          +0x250 = {max_fly:?}");
-        println!("    MaxAcceleration      +0x254 = {max_accel:?}");
-        println!("    MaxCustomMovement    +0x258 = {max_custom:?}");
+        println!("    MaxWalkSpeed         +0x248 = {mws}");
+        println!("    MaxWalkSpeedCrouched  +0x24C = {mwsc}");
+        println!("    MaxFlySpeed          +0x250 = {max_fly}");
+        println!("    MaxAcceleration      +0x254 = {max_accel}");
+        println!("    MaxCustomMovement    +0x258 = {max_custom}");
     }
 
-    // BP_MasterHoldable_C
     println!("\n=== BP_MasterHoldable_C (holdable speeds) ===");
-    let r4 = api.op("walk_class", json!({"class": "BP_MasterHoldable_C"}));
-    if r4.ok {
-        let arr4 = r4.result["instances"].as_array().cloned().unwrap_or_default();
-        let live: Vec<_> = arr4.iter()
-            .filter(|i| i["is_cdo"].as_bool() != Some(true) && i["full_name"].as_str().unwrap_or("").contains("PersistentLevel"))
-            .collect();
-        println!("{} live instance(s)", live.len());
-        for inst in live.iter().take(3) {
-            let name = inst["full_name"].as_str().unwrap_or("?");
-            let Some(sel) = selector_of(inst) else { continue };
-            let use_hold = read_bytes(&api, &sel, USE_HOLDABLE_SPEEDS, 1).map(|b| b[0]);
-            println!("  {name}");
-            println!("    UseHoldableMovementSpeeds +0x358 = {use_hold:?}");
-        }
+    let holdables = research::walk_class_instances(&api, "BP_MasterHoldable_C", 100);
+    let live: Vec<_> = holdables.iter()
+        .filter(|i| i.full_name.contains("PersistentLevel"))
+        .collect();
+    println!("{} live instance(s)", live.len());
+    for inst in live.iter().take(3) {
+        let use_hold = research::read_u8(&api, inst.addr, USE_HOLDABLE_SPEEDS);
+        println!("  {}", inst.full_name);
+        println!("    UseHoldableMovementSpeeds +0x358 = {use_hold}");
     }
 }

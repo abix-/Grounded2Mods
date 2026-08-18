@@ -15,7 +15,8 @@
 //! ```
 
 mod common;
-use common::{api_or_skip, as_f64, first_instance, offsets_live, read_bytes, selector_of};
+use common::{api_or_skip, offsets_live};
+use modforge::client::research;
 use serde_json::json;
 
 const TIME_UNTIL_EMMISION: u64 = 0x2B0;
@@ -40,15 +41,16 @@ fn set_freeze(on: bool) {
         println!("SKIP: offsets not live");
         return;
     }
-    let Some(inst) = first_instance(&api, GLOBAL_MANAGER) else {
+    let Some(inst) = research::find_live_instance(&api, GLOBAL_MANAGER) else {
         println!("no live {GLOBAL_MANAGER}");
         return;
     };
-    let Some(sel) = selector_of(&inst) else { return };
+    let addr = inst.addr;
+    let sel = &inst.addr_selector;
 
-    let before = read_bytes(&api, &sel, TIME_UNTIL_EMMISION, 8).and_then(|b| as_f64(&b));
-    println!("before: TimeUntilEmmision={before:?} freeze={:?}",
-        read_bytes(&api, &sel, FREEZE_TIMER, 1).and_then(|b| b.first().copied()));
+    let before = research::read_f64(&api, addr, TIME_UNTIL_EMMISION);
+    let freeze_flag = research::read_u8(&api, addr, FREEZE_TIMER);
+    println!("before: TimeUntilEmmision={before} freeze={freeze_flag}");
 
     let w = api.op(
         "write_bytes",
@@ -58,26 +60,20 @@ fn set_freeze(on: bool) {
     assert!(w.ok, "write_bytes failed: {:?}", w.error);
     println!("wrote FreezeTimer? = {}", on as u8);
 
-    // The write landing is not the point; the countdown stopping
-    // is. Sample either side of a wait and compare.
-    let t0 = read_bytes(&api, &sel, TIME_UNTIL_EMMISION, 8).and_then(|b| as_f64(&b));
+    let t0 = research::read_f64(&api, addr, TIME_UNTIL_EMMISION);
     std::thread::sleep(std::time::Duration::from_secs(6));
-    let t1 = read_bytes(&api, &sel, TIME_UNTIL_EMMISION, 8).and_then(|b| as_f64(&b));
-    let flag = read_bytes(&api, &sel, FREEZE_TIMER, 1).and_then(|b| b.first().copied());
+    let t1 = research::read_f64(&api, addr, TIME_UNTIL_EMMISION);
+    let flag = research::read_u8(&api, addr, FREEZE_TIMER);
 
-    println!("after 6s: {t0:?} -> {t1:?}  freeze flag={flag:?}");
-    match (t0, t1) {
-        (Some(a), Some(b)) if on => {
-            let moved = a - b;
-            println!("countdown moved {moved} in 6s (frozen means ~0)");
-            assert!(
-                moved.abs() < 1.0,
-                "FreezeTimer? was set but the countdown still ran ({a} -> {b})"
-            );
-        }
-        (Some(a), Some(b)) => {
-            println!("countdown moved {} in 6s (unfrozen means ~6)", a - b);
-        }
-        _ => println!("could not read the countdown"),
+    println!("after 6s: {t0} -> {t1}  freeze flag={flag}");
+    if on {
+        let moved = t0 - t1;
+        println!("countdown moved {moved} in 6s (frozen means ~0)");
+        assert!(
+            moved.abs() < 1.0,
+            "FreezeTimer? was set but the countdown still ran ({t0} -> {t1})"
+        );
+    } else {
+        println!("countdown moved {} in 6s (unfrozen means ~6)", t0 - t1);
     }
 }
