@@ -41,6 +41,22 @@ pub use uobject::{
     init_runtime, runtime, try_runtime,
 };
 
+/// Read a `Copy` value from a raw pointer at a byte offset.
+///
+/// # Safety
+/// `ptr.add(offset)` must be valid for `size_of::<T>()` bytes.
+pub unsafe fn read_at<T: Copy>(ptr: *const u8, offset: usize) -> T {
+    unsafe { (ptr.add(offset) as *const T).read_unaligned() }
+}
+
+/// Write a `Copy` value to a raw pointer at a byte offset.
+///
+/// # Safety
+/// `ptr.add(offset)` must be valid for `size_of::<T>()` bytes.
+pub unsafe fn write_at<T: Copy>(ptr: *const u8, offset: usize, value: T) {
+    unsafe { (ptr.add(offset) as *mut T).write_unaligned(value) }
+}
+
 /// Look up a class by name and pass its first non-CDO instance to
 /// `f`. Returns `None` if the class isn't loaded or no live
 /// instance exists yet.

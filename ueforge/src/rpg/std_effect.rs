@@ -490,9 +490,7 @@ fn apply_status_effect(
         crate::log!("rpg/std_effect: status-effect: table not loaded yet");
         return 0;
     };
-    let row_fname_handle = unsafe {
-        std::mem::transmute_copy::<u64, crate::ue::FName>(&row_fname)
-    };
+    let row_fname_handle = crate::ue::FName::from_u64(row_fname);
     let Some(row_ptr) = (unsafe {
         crate::ue::datatable::row_value_by_fname(table, row_fname_handle)
     }) else {

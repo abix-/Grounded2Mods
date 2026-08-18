@@ -1152,7 +1152,7 @@ pub fn snapshot_table(table_name: &str, max_rows: Option<usize>) -> Option<Json>
                     continue;
                 }
             }
-            let fname = std::mem::transmute::<u64, crate::ue::fname::FName>(fname_key);
+            let fname = crate::ue::FName::from_u64(fname_key);
             let row_name = rt.name_resolver.to_string(fname);
             let fields_json = decode_row_fields(row_ptr, &schema);
             rows.push(json!({

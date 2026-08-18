@@ -352,11 +352,7 @@ impl Effect<UeEngine> for StatusEffectApply {
             crate::log!("rpg/effect: status-effect: table not loaded yet");
             return;
         };
-        // SAFETY: row_fname is an opaque u64 we pass through to
-        // the engine; the FName layout is verified at compile time.
-        let row_fname_handle = unsafe {
-            std::mem::transmute_copy::<u64, crate::ue::FName>(&self.status.row_fname)
-        };
+        let row_fname_handle = crate::ue::FName::from_u64(self.status.row_fname);
         // SAFETY: row_value_by_fname does its own bounds check on
         // the table.
         let Some(row_ptr) =

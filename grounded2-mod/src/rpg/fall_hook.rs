@@ -193,7 +193,7 @@ fn collect_status_effects(player: &UObject) -> Vec<StatusEffectEntry> {
         let row_name = unsafe {
             ueforge::ue::runtime()
                 .name_resolver
-                .to_string(std::mem::transmute::<u64, ueforge::ue::FName>(raw_fname))
+                .to_string(ueforge::ue::FName::from_u64(raw_fname))
         };
         let table_name = unsafe {
             table_ptr

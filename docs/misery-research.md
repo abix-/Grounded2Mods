@@ -1518,7 +1518,8 @@ Other useful settings in the same struct:
 
 ## 24. The vendor system
 
-Found in the UE4SS object dump, 2026-08-17. No live reads yet.
+Found in the UE4SS object dump, 2026-08-17. Live reads confirmed
+2026-08-17 via `research_vendors` test suite.
 
 ### 24.1 BP_VendorComponent_C
 
@@ -1569,12 +1570,24 @@ when searching.
 
 Vendor actors live under
 `/Game/SurvivalGameKitV2/Blueprints/BuildParts/Traders/`.
-Found so far: `BP_Technician_C`. The base class is
-`BP_MasterVendorBuildPart_C` under `BuildParts/`.
+The base class is `BP_MasterVendorBuildPart_C` under
+`BuildParts/`. The vendor component is at offset 0x3B8 on
+each actor.
 
-Both have a `BP_VendorComponent_C` instance, named
-`BP_VenderComponent_GEN_VARIABLE` in the dump (the template
-copy; the live instance will have a different name).
+Seven vendor actors confirmed live in the safe hub:
+
+| Actor | Address (session) |
+|-------|-------------------|
+| `BP_Barman_C_1` | 0x1B89B2DE470 |
+| `BP_GunDealerReal_C_1` | 0x1B89B2D2F50 |
+| `BP_Hunter_C_1` | 0x1B89B2D4300 |
+| `BP_Medic_C_2` | 0x1B89B2D46F0 |
+| `BP_ResourseSaler_C_3` | 0x1B89B2D2770 |
+| `BP_Technician2_C_1` | 0x1B89B2D9D90 |
+| `BP_Vasya_C_5` | 0x1B89B2D2B60 |
+
+All seven inherit from `BP_MasterVendorBuildPart_C` and each
+has a `BP_VendorComponent_C` instance.
 
 ### 24.5 Vendor UI widgets
 
@@ -1591,29 +1604,345 @@ copy; the live instance will have a different name).
 `ListingCategory` byte and loop over the buy/sell arrays,
 filtering by category.
 
-### 24.6 How selling works (inferred, not confirmed)
+### 24.6 Entry layout (confirmed live, 2026-08-17)
 
-The `SellList` on `BP_VendorComponent_C` is the list of items
-the vendor will accept from the player. Each entry names the
-item and what the vendor pays for it. `PopulateSellList` loops
-over this array, filtered by category, to build the sell UI.
+The Item field (bytes 0x00 to 0x18) is an FDataTableRowHandle:
+8-byte pointer to a shared allocation (not a UObject, not in
+the GObjects array) plus an 8-byte FName (comparison_index i32
++ number u32). The FName resolves to item row names like
+`Food_BreadGood`, `Weapon_AK47`, `Resource_Rubles`.
 
-This means selling is a whitelist: if an item is not in the
-`SellList`, the vendor will not buy it. To change what can be
-sold, modify the `SellList` array on the live vendor component.
+S_VendorSell stride is 0x38. S_VendorBuy stride is 0x40 (the
+Stock int at 0x28 pushes Category to 0x30).
 
-### 24.7 What we do not know yet
+All prices use `Resource_Rubles` (FName `0x192e11`) as the
+currency item. The price quantity is at offset 0x10 within the
+price array element (e.g. 0x14 = 20 rubles). Sell list
+entries have 1 price element. Buy list entries also have 1
+price element despite the earlier raw read showing num=4; this
+needs re-examination.
 
-- The live contents of `BuyList` and `SellList` on a real
-  vendor. Need to find a live `BP_Technician_C` instance and
-  read its component.
-- The struct type at offset 0x00 in both S_VendorSell and
-  S_VendorBuy (the `Item` field). It is the same struct in
-  both, probably a soft class reference or a row handle into
-  `ItemList`.
-- Whether modifying `SellList` at runtime takes effect
-  immediately or only when the menu is opened.
-- How many vendor actors exist in a typical expedition, and
-  whether different vendors have different sell lists.
+### 24.7 Complete vendor inventories (live, 2026-08-17)
+
+All data from `research_vendors::dump_all_vendors` test.
+
+**Barman** (BP_Barman_C_1)
+- Buys from player (sell list, 8): Food_SeedsCarrot,
+  Food_SeedsCucumber, Food_SeedsTomato, Food_SeedsWheat,
+  Food_Cucumber, Food_Tomato, Food_Carrot, Food_BreadGood.
+- Sells to player (buy list, 11): Food_CoackroachRaw,
+  Food_BreadGood, Food_KabachkiGood, Food_SgushenkaGood,
+  Food_TushenkaGood, Consumable_Cigaret, Drink_WaterBottle,
+  Drink_Vodka, Drink_Beer, Drink_Energetic, Food_MRE.
+
+**GunDealer** (BP_GunDealerReal_C_1)
+- Buys from player (sell list, 11): Weapon_PM, Weapon_TT33,
+  Weapon_Obrez, Weapon_Mosin, Weapon_PPSH, Weapon_TOZ,
+  Weapon_Kiparis, Weapon_AK74, Weapon_SVD, Weapon_VAL,
+  Weapon_Saiga12.
+- Sells to player (buy list, 15): Holdable_Detector,
+  Ammo_7.62, Ammo_9mm, Ammo_Buckshot, Ammo_5.45, Ammo_9.39,
+  Holdable_RGD5, Magazine_PM, Magazine_TT33, Magazine_PPSH,
+  Magazine_Kiparis, Magazine_AK74, Magazine_Saiga12,
+  Magazine_Val, Magazine_SVD.
+
+**Hunter** (BP_Hunter_C_1)
+- Buys from player (sell list, 23): Resource_BoarHead,
+  Resource_DeerHead, BuildPart_DeerSkin, Food_DeerMeatRaw,
+  Resource_SwamperMoss, Food_SwamperMeatRaw,
+  Resource_TwinsFeet, Resource_TwinsHead,
+  Equipment_RatWolfHide, Resource_RatwolfHead,
+  Resource_AssemblyFlesh, Resource_AssemblyMetal,
+  Food_Caviar_Crab, Resource_CrabEye, Resource_CrabLeg,
+  Resource_GraftBones, Resource_GraftFlesh,
+  Resource_CrayFishTail, Resource_ChuvirlaFist,
+  Resource_ChuvirlaHead, Resource_ScreamerHead,
+  Resource_ScreamerLungs, Resource_GhoulParts.
+- Sells to player (buy list, 5): Weapon_TOZ,
+  Food_CoackroachCooked, Food_DeerMeatCooked,
+  Food_SwamperMeatCooked, BuildPart_CarcassCatfish.
+
+**Medic** (BP_Medic_C_2)
+- Buys from player (sell list, 12): Artifact_Calculator,
+  Artifact_Clocks, Artifact_Dosimeter, Artifact_GP5Filter,
+  Artifact_Iron, Artifact_Nevolyashka, Artifact_Rubiks,
+  Artifact_Shkatulka, Artifact_Soap, Artifact_Star,
+  Artifact_ToyTruck, Artifact_Yola.
+- Sells to player (buy list, 7): Consumable_Bandage,
+  Consumable_Vitamins, Consumable_Medkit,
+  Consumable_CarMedkit, Consumable_AntiRadPils,
+  Consumable_AntiRad, Consumable_AntiDipressPils.
+
+**ResourseSaler** (BP_ResourseSaler_C_3)
+- Buys from player (sell list, 21): Resource_Glass,
+  Resource_Electronics, Resource_Scrap, Resource_Wood,
+  Resource_Gasoline, Resource_Coalbag, Resource_Drill,
+  Resource_LeghtBulb, Resource_Gamebrik, Resource_Radio,
+  Resource_Wires, Resource_ArmorPlate, Resource_ItemAntenna,
+  Resource_ItemTrash_01 through Resource_ItemTrash_08.
+- Sells to player (buy list, 14): Resource_Glass,
+  Resource_Plastic, Resource_Electronics, Resource_Scrap,
+  Resource_Wood, Resource_Gasoline, Resource_Coalbag,
+  Resource_BegginerToolbox, Resource_RegularToolbox,
+  Resource_AdvancedToolbox, Resource_GunPartsAssultRifle,
+  Resource_GunPartsPistols, Resource_GunPartsRifle,
+  Resource_GunPartsShotguns.
+
+**Technician** (BP_Technician2_C_1)
+- Buys from player (sell list, 11): Resource_Weapon_PM,
+  Resource_Weapon_TT33, Resource_Weapon_Obrez,
+  Resource_Weapon_Mosin, Resource_Weapon_PPSH,
+  Resource_Weapon_TOZ, Resource_Weapon_Kiparis,
+  Resource_Weapon_AK74, Resource_Weapon_SVD,
+  Resource_Weapon_VAL, Resource_Weapon_Saiga12.
+- Sells to player (buy list, 11, prices=4 each): Weapon_PM,
+  Weapon_TT33, Weapon_Obrez, Weapon_Mosin, Weapon_PPSH,
+  Weapon_Kiparis, Weapon_TOZ, Weapon_AK74, Weapon_VAL,
+  Weapon_Saiga12, Weapon_SVD.
+
+**Vasya** (BP_Vasya_C_5)
+- Buys from player (sell list, 15): Equipment_SportUniform,
+  Equipment_FurCoat, Equipment_BanditSuit,
+  Equipment_FieldJacket, Equipment_TuristOutfit,
+  Equipment_WorkerSuit, Equipment_HunterSuit,
+  Equipment_HunterVest, Equipment_KitelJacket,
+  Equipment_MiliaryVest, Equipment_PoliceBushlat,
+  Equipment_PoliceVest, Equipment_TentCape,
+  Equipment_WinterUniform, Equipment_SovietTacticalRig.
+- Sells to player (buy list, 10): Equipment_Gasmask,
+  Equipment_HamsterGasmask, Equipment_GasmaskPKM2,
+  Equipment_Hazmatsuit, Resource_BrokenHazmatSuit,
+  Equipment_SchoolBackpack, Equipment_SovietBackpack,
+  Equipment_TacticalBackpack, Equipment_HunterBackpack,
+  Equipment_HikingBackpack.
+
+All buy list entries have stock=1. All sell list prices=1
+except Technician buy list which has prices=4 (likely
+Resource_Weapon parts as multi-item crafting cost).
+
+### 24.8 How selling works (confirmed live, 2026-08-17)
+
+The `SellList` on `BP_VendorComponent_C` is the whitelist of
+items the vendor will accept from the player. Each entry names
+the item and what the vendor pays for it. `PopulateSellList`
+loops over this array, filtered by category, to build the sell
+UI.
+
+Selling is a whitelist: if an item is not in the `SellList`,
+the vendor will not buy it.
+
+### 24.9 Runtime sell list modification (confirmed, 2026-08-17)
+
+Adding an entry to a vendor's `SellList` at runtime works
+immediately. The vendor menu reads the live TArray contents
+when it opens. No restart, no reload, no re-initialization
+needed.
+
+Proven by adding Resource_Plastic to ResourseSaler's sell
+list via `research_vendors::add_plastic_to_resourcesaler_sell_list`.
+The item appeared in the vendor's sell tab and the player
+could sell plastic to the vendor on the same session.
+
+**How to add an entry:**
+1. Read the SellList TArray header from the vendor component
+   (offset 0x2E8: pointer, num, max).
+2. Check that num < max (there is slack in the allocation).
+   All observed vendors have max > num (e.g. 21/26).
+3. Clone an existing sell list entry as a template (0x38
+   bytes). This preserves the shared item pointer at 0x00,
+   the price array, and the category array.
+4. Overwrite bytes 0x08..0x0C with the target item's FName
+   comparison_index, and 0x0C..0x10 with 0 (FName number).
+   Get the FName from any existing entry that references the
+   same item (e.g. the buy list, or another vendor's list).
+5. Write the new 0x38-byte entry at offset num * 0x38 from
+   the array data pointer.
+6. Increment num by 1 at the TArray header (offset 0x2E8 + 8
+   on the component). Leave max unchanged.
+
+The price and category arrays in the cloned template point to
+existing allocations. The new entry reuses those pointers, so
+the vendor pays the same price as the template item. To set a
+custom price, the price array data would need its own
+allocation (not yet implemented).
+
+### 24.10 FDataTableRowHandle layout (confirmed, 2026-08-17)
+
+The 0x18-byte Item field in each buy/sell entry is:
+
+| Offset | Size | Content |
+|--------|------|---------|
+| 0x00 | 8 | DataTable pointer (shared across all entries) |
+| 0x08 | 4 | FName comparison_index (item row name) |
+| 0x0C | 4 | FName number (always 0) |
+| 0x10 | 8 | Unknown field (always 0x1 in all observed entries) |
+
+All 14 ResourseSaler buy entries share the same DataTable
+pointer (`0x239cff8cf00` in this session). This pointer is
+the same across all vendors, buy and sell.
+
+### 24.11 Resource_SewingKit (confirmed working, 2026-08-17)
+
+Resource_SewingKit exists in the game. Confirmed via:
+- Texture files at `/Game/Textures/Icons/Resource/SewingKit/`
+  (`T_SewingKit_InvIcon`, `T_SewingKit_QuickIcon`)
+- Row 148 in `MasterItemList` DataTable (496 rows)
+- Also present in `CraftingRecipesList` (102 rows) and
+  `MasterCraftingRecipeList` (102 rows)
+- FName: comparison_index=`0x192f7a`, number=0
+
+Resource_SewingKit is NOT in `ItemList` (the DataTable all
+existing vendor entries reference). It is only in
+`MasterItemList`, which is a CompositeDataTable. Despite
+this mismatch, adding it to ResourseSaler's buy list using
+the same DataTable pointer as existing entries works. The
+vendor UI displays the item correctly and the player can
+buy it. The FDataTableRowHandle's DataTable pointer does
+not need to match the table the row actually lives in.
+
+### 24.12 TArray growth (confirmed working, 2026-08-17)
+
+ResourseSaler's buy list had num=14, max=14 (no slack).
+The sell list expansion technique (section 24.9) relies on
+max > num. When there is no slack, the TArray must be grown.
+
+Solved via `tarray_grow` op in the mod's control plane.
+Uses `std::alloc::alloc_zeroed` (Rust standard allocator,
+backed by the Windows process heap) to allocate a new
+buffer, copies the old entries, and updates the TArray
+header. The old buffer is leaked (tiny, harmless).
+
+GMalloc was resolved via patternsleuth for future use, but
+the vtable slot layout needs further research (slots 1
+through 4 all resolve to the same address, making the
+`Malloc` slot ambiguous). The Rust allocator works
+reliably for TArray buffers since UE never tries to
+`Free` or `Realloc` vendor list arrays during gameplay.
+
+Proven by growing ResourseSaler's buy list from 14/14 to
+14/30 via `research_vendors::add_sewingkit_to_resourcesaler_buy_list`.
+
+**How to grow a full TArray:**
+1. Read the TArray header (pointer, num, max) from the
+   component at the list's offset.
+2. Call `tarray_grow` with the component selector, offset,
+   stride, and desired new_max. The op allocates a new
+   buffer, copies old entries, zeros new slots, and
+   updates the header's pointer and max.
+3. After growth, num < max, so the standard entry-addition
+   procedure (section 24.9 steps 3 through 6) works.
+
+### 24.13 Runtime buy list modification (confirmed, 2026-08-17)
+
+Adding an entry to a vendor's `BuyList` at runtime works
+immediately, same as sell list modification (section 24.9).
+
+Proven by adding Resource_SewingKit to ResourseSaler's buy
+list via `research_vendors::add_sewingkit_to_resourcesaler_buy_list`.
+The item appeared in the vendor's buy tab and the player
+could purchase the sewing kit on the same session.
+
+**How to add a buy list entry:**
+1. Read the BuyList TArray header from the vendor component
+   (offset 0x2D8: pointer, num, max).
+2. If num >= max, grow the array first (section 24.12).
+3. Get the target item's FName via `list_row_fnames` op
+   on the appropriate DataTable (e.g. MasterItemList).
+4. Clone an existing buy list entry as a template (0x40
+   bytes). This preserves the DataTable pointer at 0x00,
+   the price array, and the category array.
+5. Overwrite bytes 0x08..0x0C with the target item's FName
+   comparison_index, and 0x0C..0x10 with 0 (FName number).
+6. Set stock at offset 0x28 (i32, e.g. 1).
+7. Write the new 0x40-byte entry at offset num * 0x40 from
+   the array data pointer.
+8. Increment num by 1 at the TArray header (offset 0x2D8 + 8
+   on the component). Leave max unchanged.
+
+The price and category arrays in the cloned template point
+to existing allocations. The new entry reuses those pointers,
+so the item costs the same as the template item.
+
+### 24.14 Bulk sell list expansion (confirmed, 2026-08-17)
+
+Added all 31 edible food items (27 ready to eat + 4 seeds) to
+the Barman's sell list so the player can sell any edible food.
+The Barman originally accepted only 8 items. 23 new entries
+were added in one batch.
+
+Proven by `research_vendor_food::add_all_food_to_barman_sell_list`.
+All 31 items appeared in the vendor's sell tab immediately.
+
+**Procedure (batch sell list expansion):**
+1. Read the SellList TArray header (offset 0x2E8).
+2. Compare existing entries against the target item list.
+3. Resolve FNames for all missing items via `list_row_fnames`
+   on MasterItemList (ItemList may return 0 rows depending
+   on game state; MasterItemList is the reliable source).
+4. If num + missing_count > max, grow the TArray first
+   (section 24.12). Barman grew from 8/8 to 8/41.
+5. Clone sell entry 0 as a 0x38-byte template.
+6. For each missing item: overwrite bytes 0x08..0x10 with
+   the item's FName (comparison_index + number=0), write
+   at offset num * 0x38, increment a running counter.
+7. Write the final count to the TArray header (offset
+   0x2E8 + 8 on the component).
+
+The template's DataTable pointer (0x00), price array (0x18),
+and category array (0x28) are reused. All new items cost
+the same as entry 0 and share its category.
+
+### 24.15 All 19 DataTables (confirmed, 2026-08-17)
+
+Discovered via `discover_data_tables` with `refresh=true`,
+180,870 GObjects scanned:
+
+| Table | Rows |
+|-------|------|
+| DifficultyList | (not counted) |
+| CraftingRecipesList | 102 |
+| ItemList | 496 |
+| MasterCraftingRecipeList | 102 |
+| MasterCookingList | (not counted) |
+| CookingList | (not counted) |
+| MasterSpawnerList | (not counted) |
+| ItemSpawnerList | (not counted) |
+| InventoryGridLayout | (not counted) |
+| BuildPartList | (not counted) |
+| MasterBuildPartList | (not counted) |
+| MasterItemList | 496 |
+| MasterGridLayoutList | (not counted) |
+| MasterDeviceList | (not counted) |
+| DeviceList | (not counted) |
+| LOOK_Presets | (not counted) |
+| DT_Weather | (not counted) |
+| DT_Artifacts | (not counted) |
+| DT_PlayerStatDescr | (not counted) |
+
+### 24.16 GMalloc vtable (researched, 2026-08-17)
+
+GMalloc resolved via patternsleuth at image-relative offset.
+The global pointer dereferences to an FMalloc object. The
+vtable has 10+ slots. Slots 1 through 4 all point to the
+same address (`0x7ff62d4b81a0`), which is unusual. Slot 0
+is the destructor. The identical slots may be stub overrides
+or merged function bodies in the concrete allocator class.
+The Malloc slot has not been positively identified. Further
+research needed if GMalloc allocation is ever required
+instead of the Rust standard allocator.
+
+### 24.17 What we do not know yet
+
+- Whether expedition vendors (outside the safe hub) have
+  different sell/buy lists.
 - Whether the category byte maps to `E_CraftingCategory` or
-  a vendor-specific enum.
+  a vendor-specific enum. Barman sell list has cats=2, all
+  others have cats=1.
+- The Technician buy list has prices=4 per entry (all other
+  vendors have prices=1). Need to decode those 4 price
+  elements to understand if the cost is multi-resource
+  (e.g. rubles + gun parts + scrap).
+- How to allocate a new price array for custom pricing on
+  added entries (currently reuses the template's price).
+- Which GMalloc vtable slot is Malloc (slots 1 through 4
+  are identical, slot 5 or later may be the real one).

@@ -33,6 +33,6 @@
 - [ ] Kill detection: hook or poll for XP source
 - [ ] Craft detection: find event for XP source
 - [ ] RPG persistence (JSON save/load for level, XP, allocations)
-- [ ] Vendor sell list modification: read live SellList from BP_VendorComponent_C, understand struct layout, build a mod feature to add/remove items (section 24 of research doc)
+- [ ] Vendor list modification: build a mod feature to add items to any vendor's buy or sell list on load. Research complete: sell list expansion (section 24.9), TArray growth for full lists (section 24.12), buy list expansion (section 24.13), bulk sell list expansion (section 24.14) all proven working. Batch addition of 23 food items to Barman confirmed. Needs: item list config, auto-apply on game load, UI tab
 - [ ] Research biome number to area mapping (section 19.4)
 - [ ] Research what depends on shining regeneration before shipping permanent freeze

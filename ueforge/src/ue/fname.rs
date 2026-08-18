@@ -53,6 +53,13 @@ const _: () = {
 const FNAME_INDEX_SANITY_MAX: i32 = 16 * 1024 * 1024;
 
 impl FName {
+    pub fn from_u64(raw: u64) -> Self {
+        Self {
+            comparison_index: (raw & 0xFFFF_FFFF) as i32,
+            number: (raw >> 32) as u32,
+        }
+    }
+
     pub fn is_none(self) -> bool {
         self.comparison_index == 0 && self.number == 0
     }

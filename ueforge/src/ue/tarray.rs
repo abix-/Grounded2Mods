@@ -1,5 +1,4 @@
 // TArray<T> = { data: *mut T, num: i32, max: i32 }. 16 bytes.
-// Read-only borrowed view. We never construct or grow these from Rust.
 
 use std::slice;
 
@@ -30,15 +29,67 @@ impl<T> TArray<T> {
         self.num <= 0 || self.data.is_null()
     }
 
+    /// Grow this TArray to `new_max` capacity using `size_of::<T>()`
+    /// as the element stride. See [`grow_raw`] for the untyped variant.
+    ///
+    /// # Safety
+    /// Caller must ensure `self` points at a valid, live TArray
+    /// header in game memory and that no other thread is mutating
+    /// the same array concurrently.
+    pub unsafe fn grow(&mut self, new_max: i32) -> Result<(), String> {
+        let header = self as *mut TArray<T> as *mut u8;
+        unsafe { grow_raw(header, std::mem::size_of::<T>(), new_max) }
+    }
+
     pub unsafe fn as_slice(&self) -> &[T] {
         if self.is_empty() {
             return &[];
         }
-        // SAFETY: caller's `unsafe fn` contract: `data` must
-        // point at `num` valid `T`s (we don't construct or grow
-        // these from Rust; the producer is the engine).
         unsafe { slice::from_raw_parts(self.data, self.num as usize) }
     }
+}
+
+/// Grow a TArray at `header_ptr` (16 bytes: pointer + num + max)
+/// to `new_max` capacity with the given element `stride`.
+/// Allocates a new zeroed buffer, copies existing entries, and
+/// updates pointer and max. The old buffer is leaked.
+///
+/// # Safety
+/// `header_ptr` must point at a valid TArray header (16 bytes).
+pub unsafe fn grow_raw(header_ptr: *mut u8, stride: usize, new_max: i32) -> Result<(), String> {
+    let old_ptr = unsafe { *(header_ptr as *const *mut u8) };
+    let old_num = unsafe { *((header_ptr as usize + 8) as *const i32) };
+    let old_max = unsafe { *((header_ptr as usize + 12) as *const i32) };
+
+    if new_max <= old_max {
+        return Err(format!(
+            "new_max ({new_max}) must exceed current max ({old_max})"
+        ));
+    }
+    if old_num < 0 || old_num > old_max {
+        return Err(format!("corrupt TArray: num={old_num} max={old_max}"));
+    }
+
+    let new_size = (new_max as usize) * stride;
+    let layout = std::alloc::Layout::from_size_align(new_size, 16)
+        .map_err(|e| format!("bad layout: {e}"))?;
+    let new_ptr = unsafe { std::alloc::alloc_zeroed(layout) };
+    if new_ptr.is_null() {
+        return Err("allocation failed".into());
+    }
+
+    let old_bytes = (old_num as usize) * stride;
+    if !old_ptr.is_null() && old_bytes > 0 {
+        unsafe {
+            std::ptr::copy_nonoverlapping(old_ptr, new_ptr, old_bytes);
+        }
+    }
+
+    unsafe {
+        *(header_ptr as *mut *mut u8) = new_ptr;
+        *((header_ptr as usize + 12) as *mut i32) = new_max;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -50,9 +101,6 @@ mod tests {
         let a: TArray<i32> = TArray::default();
         assert_eq!(a.len(), 0);
         assert!(a.is_empty());
-        // SAFETY: is_empty short-circuits before the slice
-        // construction; null data is the documented "no slice"
-        // signal.
         let s = unsafe { a.as_slice() };
         assert!(s.is_empty());
     }
@@ -64,10 +112,7 @@ mod tests {
             num: -5,
             max: 0,
         };
-        // Negative num: garbage state from engine. Walker MUST
-        // NOT slice -5 elements out of any pointer.
         assert!(a.is_empty());
-        // SAFETY: see above. is_empty short-circuits.
         let s = unsafe { a.as_slice() };
         assert!(s.is_empty());
     }
@@ -76,7 +121,7 @@ mod tests {
     fn null_data_is_empty() {
         let a: TArray<u32> = TArray {
             data: std::ptr::null_mut(),
-            num: 7, // non-zero but data is null
+            num: 7,
             max: 7,
         };
         assert!(a.is_empty());
@@ -92,18 +137,10 @@ mod tests {
         };
         assert_eq!(a.len(), 4);
         assert!(!a.is_empty());
-        // SAFETY: buf lives for the test scope and a borrows
-        // its address; slice construction is safe within the
-        // same scope.
         let s = unsafe { a.as_slice() };
         assert_eq!(s, &[11, 22, 33, 44]);
     }
 
-    // Property test: arbitrary `num` / `max` combinations with
-    // arbitrary non-null `data` must never produce a non-empty
-    // slice when `num` is negative or zero, and must never crash
-    // the `is_empty` check. Pairs with the hand-written boundary
-    // cases above.
     proptest::proptest! {
         #[test]
         fn is_empty_holds_for_garbage_headers(
@@ -111,9 +148,6 @@ mod tests {
             max in proptest::prelude::any::<i32>(),
             data_addr in proptest::prelude::any::<usize>(),
         ) {
-            // Pointer is constructed from an arbitrary integer.
-            // We never deref it: only `len()` / `is_empty()` are
-            // exercised. Both are pointer-safe queries.
             let a: TArray<u8> = TArray {
                 data: data_addr as *mut u8,
                 num,
@@ -129,10 +163,6 @@ mod tests {
 
     #[test]
     fn repr_c_layout_matches_engine() {
-        // The TArray<T> = { data, num, max } layout is 16 bytes
-        // on x86-64 with #[repr(C)]; the engine's TArray ABI
-        // matches. If a future Rust ABI change shifts this we'd
-        // silently mis-decode every data table row.
         assert_eq!(std::mem::size_of::<TArray<u8>>(), 16);
         assert_eq!(std::mem::size_of::<TArray<u64>>(), 16);
         assert_eq!(std::mem::size_of::<TArray<*const u8>>(), 16);

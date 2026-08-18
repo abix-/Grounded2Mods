@@ -10,6 +10,7 @@
 //!           +0xFE8 -> MovementSpeeds TMap
 
 use ueforge::ue;
+use ueforge::ue::{read_at, write_at};
 
 const ACTOR_CLASS: &str = "BP_SGKMasterCharacter_C";
 const CHAR_COMP_OFFSET: usize = 0x740;
@@ -28,50 +29,23 @@ const BASE_SPEEDS: &[(u8, f64)] = &[
     (11, 100.0),
 ];
 
-fn read<T: Copy>(ptr: *const u8, offset: usize) -> T {
-    unsafe { (ptr.add(offset) as *const T).read_unaligned() }
-}
-
-fn write<T: Copy>(ptr: *const u8, offset: usize, value: T) {
-    unsafe { (ptr.add(offset) as *mut T).write_unaligned(value) }
-}
-
 fn inventory_ptr() -> Result<*const u8, String> {
-    let rt = ue::try_runtime().ok_or("ue runtime not initialized")?;
-    let view = unsafe { ue::GObjectsView::from_image(rt.image_base, rt.platform_offsets) };
-    if !view.is_valid() {
-        return Err("gobjects view invalid".into());
+    let actor = ue::actor::find_actor(ACTOR_CLASS, None)
+        .ok_or("no live player character found")?;
+    let comp: u64 = unsafe { read_at(actor, CHAR_COMP_OFFSET) };
+    if comp == 0 {
+        return Err("character component is null".into());
     }
-    for obj in view.iter() {
-        if obj.is_default_object() {
-            continue;
-        }
-        let class = match obj.class() {
-            Some(c) => c,
-            None => continue,
-        };
-        if class.as_object().name() != ACTOR_CLASS {
-            continue;
-        }
-        if !obj.full_name().contains("PersistentLevel") {
-            continue;
-        }
-        let actor = obj.as_ptr();
-        let comp: u64 = read(actor, CHAR_COMP_OFFSET);
-        if comp == 0 {
-            continue;
-        }
-        let inv: u64 = read(comp as *const u8, INV_PTR_OFFSET);
-        if inv != 0 {
-            return Ok(inv as *const u8);
-        }
+    let inv: u64 = unsafe { read_at(comp as *const u8, INV_PTR_OFFSET) };
+    if inv == 0 {
+        return Err("inventory pointer is null".into());
     }
-    Err("no live player character found".into())
+    Ok(inv as *const u8)
 }
 
 fn tmap_element_ptr(inv: *const u8) -> Result<(*const u8, i32), String> {
-    let elem_ptr: u64 = read(inv, MOVEMENT_SPEEDS_MAP);
-    let num: i32 = read(inv, MOVEMENT_SPEEDS_MAP + 8);
+    let elem_ptr: u64 = unsafe { read_at(inv, MOVEMENT_SPEEDS_MAP) };
+    let num: i32 = unsafe { read_at(inv, MOVEMENT_SPEEDS_MAP + 8) };
     if elem_ptr == 0 || num <= 0 {
         return Err("MovementSpeeds map is empty".into());
     }
@@ -80,17 +54,17 @@ fn tmap_element_ptr(inv: *const u8) -> Result<(*const u8, i32), String> {
 
 fn find_slot(elements: *const u8, num: i32, key: u8) -> Option<usize> {
     (0..num as usize).find(|&s| {
-        let k: u8 = read(elements, s * TMAP_STRIDE);
+        let k: u8 = unsafe { read_at(elements, s * TMAP_STRIDE) };
         k == key
     })
 }
 
 fn read_speed(elements: *const u8, slot: usize) -> f64 {
-    read(elements, slot * TMAP_STRIDE + 8)
+    unsafe { read_at(elements, slot * TMAP_STRIDE + 8) }
 }
 
 fn write_speed(elements: *const u8, slot: usize, value: f64) {
-    write(elements, slot * TMAP_STRIDE + 8, value);
+    unsafe { write_at(elements, slot * TMAP_STRIDE + 8, value) }
 }
 
 pub struct MapEntry {
@@ -103,7 +77,7 @@ pub fn current_all() -> Result<Vec<MapEntry>, String> {
     let (elems, num) = tmap_element_ptr(inv)?;
     let mut out = Vec::new();
     for slot in 0..num as usize {
-        let key: u8 = read(elems, slot * TMAP_STRIDE);
+        let key: u8 = unsafe { read_at(elems, slot * TMAP_STRIDE) };
         let speed = read_speed(elems, slot);
         out.push(MapEntry { key, speed });
     }
