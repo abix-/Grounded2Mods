@@ -53,6 +53,18 @@ pub fn register<E: Engine>(tracker: &'static Tracker<E>) {
             "{count: u64}",
             move |args| set_skill_points(tracker, args),
         ),
+        OpDef::new(
+            "skill_state",
+            "Snapshot of RPG state (xp, level, points, per-skill levels)",
+            "{}",
+            move |_args| skill_state(tracker),
+        ),
+        OpDef::new(
+            "skill_add_xp",
+            "Manually award XP (debug)",
+            "{amount: u64}",
+            move |args| skill_add_xp(tracker, args),
+        ),
     ]);
 }
 
@@ -107,6 +119,36 @@ pub fn set_skill_points<E: Engine>(tracker: &Tracker<E>, args: &Json) -> Result<
     Ok(serde_json::json!({"granted": count}))
 }
 
+pub fn skill_state<E: Engine>(tracker: &Tracker<E>) -> Result<Json, String> {
+    let snapshot = tracker.with_state(|s| {
+        let mut skills = serde_json::Map::new();
+        for skill in tracker.catalog().iter() {
+            skills.insert(skill.id.to_string(), serde_json::json!(s.level_of(skill.id)));
+        }
+        serde_json::json!({
+            "xp": s.xp,
+            "level": s.level,
+            "skill_points": s.skill_points,
+            "skills": Json::Object(skills),
+        })
+    });
+    Ok(snapshot.unwrap_or_else(|| serde_json::json!({"active": false, "msg": "no slot active"})))
+}
+
+pub fn skill_add_xp<E: Engine>(tracker: &Tracker<E>, args: &Json) -> Result<Json, String> {
+    let amount = arg_u64(args, "amount", None)?;
+    let Some(result) = tracker.record_xp(amount) else {
+        return Err("no slot active or save failed".into());
+    };
+    Ok(serde_json::json!({
+        "awarded": result.awarded,
+        "total_xp": result.total_xp,
+        "old_level": result.old_level,
+        "new_level": result.new_level,
+        "points_gained": result.points_gained,
+    }))
+}
+
 /// Stable op names this module registers. Dispatchers that
 /// want to advertise their op list can interleave with their
 /// own ops.
@@ -116,4 +158,6 @@ pub const OP_NAMES: &[&str] = &[
     "skill_refund",
     "reload_slot",
     "set_skill_points",
+    "skill_state",
+    "skill_add_xp",
 ];

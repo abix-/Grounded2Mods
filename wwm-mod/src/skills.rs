@@ -15,10 +15,6 @@ use std::ffi::c_void;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use serde_json::{Value as Json, json};
-
-use modforge::args::arg_str;
-use modforge::ops::{OP_REGISTRY, OpDef};
 use modforge::rpg::poller::{PollerHandle, SlotPoller};
 use modforge::rpg::vanilla::VanillaCache;
 use modforge::rpg::xp::Curve;
@@ -202,11 +198,7 @@ pub fn render_tab() {
 }
 
 pub fn install() {
-    // Framework's standard RPG op set: skill_toggle / skill_spend /
-    // skill_refund / reload_slot / set_skill_points. Wired against
-    // our static TRACKER<UnityEngine>.
     unityforge::rpg::ops::register(&TRACKER);
-    register_ops();
     install_hooks();
     spawn_slot_poller();
 }
@@ -219,107 +211,6 @@ fn spawn_slot_poller() {
         || TRACKER.deactivate_slot(),
     );
     let _ = POLLER.set(handle);
-}
-
-fn register_ops() {
-    OP_REGISTRY.register_many([
-        OpDef::new(
-            "skill_state",
-            "Snapshot of the wwm-mod skill state",
-            "{}",
-            |_args| {
-                let snapshot = TRACKER.with_state(|s| {
-                    let mut skills = serde_json::Map::new();
-                    for skill in CATALOG.iter() {
-                        skills.insert(
-                            skill.id.to_string(),
-                            json!(s.level_of(skill.id)),
-                        );
-                    }
-                    json!({
-                        "xp": s.xp,
-                        "level": s.level,
-                        "skill_points": s.skill_points,
-                        "skills": Json::Object(skills),
-                    })
-                });
-                Ok(snapshot.unwrap_or_else(|| {
-                    json!({
-                        "active": false,
-                        "msg": "no slot active",
-                    })
-                }))
-            },
-        ),
-        OpDef::new(
-            "skill_add_xp",
-            "Manually award XP (debug)",
-            "{amount: u64}",
-            |args| {
-                let amount = args.get("amount").and_then(Json::as_u64).unwrap_or(0);
-                let Some(result) = TRACKER.record_xp(amount) else {
-                    return Err("no slot active or save failed".into());
-                };
-                Ok(json!({
-                    "awarded": result.awarded,
-                    "total_xp": result.total_xp,
-                    "old_level": result.old_level,
-                    "new_level": result.new_level,
-                    "points_gained": result.points_gained,
-                }))
-            },
-        ),
-        OpDef::new(
-            "skill_levelup",
-            "Spend points on a skill",
-            "{id: str, count?: u32}",
-            |args| {
-                let id = arg_str(args, "id")?;
-                let count = args
-                    .get("count")
-                    .and_then(Json::as_u64)
-                    .unwrap_or(1) as u32;
-                let spent = TRACKER.spend_skill_points(id, count);
-                Ok(json!({
-                    "id": id,
-                    "spent": spent,
-                    "level": TRACKER
-                        .with_state(|s| s.level_of(id))
-                        .unwrap_or(0),
-                }))
-            },
-        ),
-        OpDef::new(
-            "skill_refund",
-            "Refund points from a skill",
-            "{id: str, count?: u32}",
-            |args| {
-                let id = arg_str(args, "id")?;
-                let count = args
-                    .get("count")
-                    .and_then(Json::as_u64)
-                    .unwrap_or(1) as u32;
-                let refunded = TRACKER.refund_skill_points(id, count);
-                Ok(json!({
-                    "id": id,
-                    "refunded": refunded,
-                    "level": TRACKER
-                        .with_state(|s| s.level_of(id))
-                        .unwrap_or(0),
-                }))
-            },
-        ),
-        OpDef::new(
-            "skill_grant_points",
-            "DEBUG: grant skill points without earning them",
-            "{n: u32}",
-            |args| {
-                let n = args.get("n").and_then(Json::as_u64).unwrap_or(1) as u32;
-                let ok = TRACKER.debug_grant_skill_points(n);
-                Ok(json!({"granted": ok, "n": n}))
-            },
-        ),
-    ]);
 }
 
 fn install_hooks() {
