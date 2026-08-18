@@ -25,7 +25,7 @@ use serde_json::{Value as Json, json};
 use unityforge::mono::{self, LogLevel};
 
 use crate::common::{ctype, display_name, for_each_community, handle_of, own, with};
-use crate::genome::{self, Trait};
+use crate::genome;
 
 /// Seconds between murder scans; the knife is rare.
 const MURDER_SCAN_PERIOD_SECS: f32 = 240.0;
@@ -167,7 +167,7 @@ fn launch_scan(now: f32) -> Result<(), String> {
                 if looter && genome::is_conscript(char_id) {
                     continue;
                 }
-                let g = genome::individual(char_id, &t).get(Trait::Guile);
+                let g = genome::individual(char_id, &t)[genome::GUILE];
                 franchise += 1;
                 sum += g;
                 if g >= MURDER_GUILE_FLOOR {
@@ -321,7 +321,7 @@ fn pick_operative(
             if !alive || !human || !conscious || squadded || Some(id) == leader_id {
                 continue;
             }
-            let g = genome::individual(id, camp_ctype).get(Trait::Guile);
+            let g = genome::individual(id, camp_ctype)[genome::GUILE];
             if best.as_ref().map(|(_, _, bg)| g > *bg).unwrap_or(true) {
                 let name = member
                     .invoke("GetDisplayNameString", &json!([]))
@@ -377,10 +377,10 @@ fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
         with(m.operative_h, |o| o.invoke("get_AliveAndNotZombie", &json!([])))? == json!(true);
     if !operative_alive {
         for &v in &m.voter_ids {
-            genome::reinforce_individual(v, Trait::Guile, false, 2.0);
-            genome::reinforce_individual(v, Trait::Aggression, false, 1.0);
+            genome::reinforce_individual(v, genome::GUILE, false, 2.0);
+            genome::reinforce_individual(v, genome::AGGRESSION, false, 1.0);
         }
-        genome::reinforce(m.camp_id, Trait::Guile, false, 2.0);
+        genome::reinforce(m.camp_id, genome::GUILE, false, 2.0);
         crate::chronicle::post(&format!(
             "an assassin from {} was cut down in {}",
             m.camp_name, m.victim_camp_name
@@ -470,9 +470,9 @@ fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
                 // The kill. The dark art paid; the franchise
                 // learns it works.
                 for &v in &m.voter_ids {
-                    genome::reinforce_individual(v, Trait::Guile, true, 1.5);
+                    genome::reinforce_individual(v, genome::GUILE, true, 1.5);
                 }
-                genome::reinforce(m.camp_id, Trait::Guile, true, 1.5);
+                genome::reinforce(m.camp_id, genome::GUILE, true, 1.5);
                 crate::chronicle::post(&format!(
                     "{}, leader of {}, has been assassinated",
                     m.victim_name, m.victim_camp_name
@@ -492,9 +492,9 @@ fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
                 // Blown: the mark lives and the camp knows the
                 // cost of a bungled knife.
                 for &v in &m.voter_ids {
-                    genome::reinforce_individual(v, Trait::Guile, false, 1.0);
+                    genome::reinforce_individual(v, genome::GUILE, false, 1.0);
                 }
-                genome::reinforce(m.camp_id, Trait::Guile, false, 1.0);
+                genome::reinforce(m.camp_id, genome::GUILE, false, 1.0);
                 mono::log(
                     LogLevel::Info,
                     &format!(

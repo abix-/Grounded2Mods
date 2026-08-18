@@ -179,7 +179,7 @@ fn consume(winner: MonoObject, loser: MonoObject) -> Result<(), String> {
         LogLevel::Info,
         &format!(
             "survivalist-mod: PREDATION -- {winner_name} (aggression {:.2}) consumed {loser_name}: absorbed {absorbed} survivor(s), who carried off {goods} looted good(s). {loser_name} is EXTINCT.",
-            wg.get(genome::Trait::Aggression)
+            wg[genome::AGGRESSION]
         ),
     );
     Ok(())

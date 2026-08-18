@@ -37,7 +37,7 @@ use unityforge::mono::{self, LogLevel, MonoObject};
 use crate::common::{
     base_centre, ctype, display_name, for_each_community, handle_of, list_len, on_main_thread, own,
 };
-use crate::genome::{self, Trait};
+use crate::genome;
 
 /// Seconds between survival scans (real time). Slower than the
 /// growth/recruit ticks: desperation is a slow build, and one
@@ -115,7 +115,7 @@ const EXTORTION_MENACE_FLOOR: f64 = 0.5;
 struct Experiment {
     faction_id: i64,
     voter_ids: Vec<i64>,
-    traits: Vec<Trait>,
+    traits: Vec<usize>,
     before_members: i64,
     before_nutrition: f64,
     eval_at: f32,
@@ -142,7 +142,7 @@ fn tally_vote(
     com: &MonoObject,
     ctype: &str,
     floor: f64,
-    score: impl Fn(&genome::Genome) -> f64,
+    score: impl Fn(&[f64]) -> f64,
 ) -> Result<Vote, String> {
     let looter = ctype == "Looter";
     let mut franchise = 0i64;
@@ -309,7 +309,7 @@ fn genome_status(_args: &Json) -> Result<Json, String> {
         out.push(json!({
             "name": name,
             "type": ctype,
-            "traits": g.to_json(),
+            "traits": genome::to_json(&g),
         }));
     }
     Ok(json!({"factions": out}))
@@ -420,10 +420,10 @@ fn desperation_scan(now: f32) -> Result<(), String> {
         // enfranchised survivors vote their own genomes. Two
         // ballots per scan: the hunger raid (raw aggression) and
         // the ambition war (aggression/expansionism blend).
-        let vote = tally_vote(&com, &t, RAID_AGGRESSION_FLOOR, |g| g.get(Trait::Aggression))?;
+        let vote = tally_vote(&com, &t, RAID_AGGRESSION_FLOOR, |g| g[genome::AGGRESSION])?;
         let voted_to_raid = vote.franchise > 0 && vote.for_raid * 2 > vote.franchise;
         let ambition = tally_vote(&com, &t, AMBITION_FLOOR, |g| {
-            (g.get(Trait::Aggression) + g.get(Trait::Expansionism)) / 2.0
+            (g[genome::AGGRESSION] + g[genome::EXPANSIONISM]) / 2.0
         })?;
         let voted_ambition = ambition.franchise > 0 && ambition.for_raid * 2 > ambition.franchise;
         let already_at_war = handle_of(&com.read_field("InvasionTarget")?).is_some();
@@ -492,7 +492,7 @@ fn extortion_by_vote(camps: &[Camp]) -> Result<(), String> {
         }
         let vote = crate::common::with(c.handle, |com| {
             tally_vote(com, &c.ctype, EXTORTION_MENACE_FLOOR, |g| {
-                (g.get(Trait::Aggression) + g.get(Trait::Guile)) / 2.0
+                (g[genome::AGGRESSION] + g[genome::GUILE]) / 2.0
             })
         })?;
         if vote.franchise == 0 {
@@ -567,7 +567,7 @@ fn sue_for_peace(camps: &[Camp]) -> Result<bool, String> {
         // is exactly a <= 0.5).
         let vote = crate::common::with(loser.handle, |com| {
             tally_vote(com, &loser.ctype, 1.0 - SURRENDER_AGGRESSION_CEILING, |g| {
-                1.0 - g.get(Trait::Aggression)
+                1.0 - g[genome::AGGRESSION]
             })
         })?;
         if vote.franchise == 0 || vote.for_raid * 2 <= vote.franchise {
@@ -633,7 +633,7 @@ fn collapse_response(camps: &[Camp]) -> Result<bool, String> {
         // and merge; proud ones hold on and turtle.
         let vote = crate::common::with(c.handle, |com| {
             tally_vote(com, &c.ctype, FLEE_DEFENSIVENESS_FLOOR, |g| {
-                g.get(Trait::Defensiveness)
+                g[genome::DEFENSIVENESS]
             })
         })?;
         if vote.franchise == 0 || vote.for_raid * 2 <= vote.franchise {
@@ -699,7 +699,7 @@ fn collapse_response(camps: &[Camp]) -> Result<bool, String> {
             // Survival by merging: the meek choice paid off, so the
             // voters trust the careful way more.
             for &v in &vote.voter_ids {
-                genome::reinforce_individual(v, Trait::Defensiveness, true, 1.0);
+                genome::reinforce_individual(v, genome::DEFENSIVENESS, true, 1.0);
             }
             return Ok(true); // one collapse-merge per scan
         }
@@ -902,7 +902,7 @@ fn hunger_raid(camps: &[Camp], now: f32) -> Result<bool, String> {
         return Ok(false);
     };
 
-    ignite(raider, target, vec![Trait::Aggression], &raider.voter_ids, now)?;
+    ignite(raider, target, vec![genome::AGGRESSION], &raider.voter_ids, now)?;
     crate::chronicle::post(&format!(
         "{}, starving, has declared war on {}",
         raider.name, target.name
@@ -985,7 +985,7 @@ fn ambition_war(camps: &[Camp], now: f32) -> Result<bool, String> {
     ignite(
         predator,
         prey,
-        vec![Trait::Aggression, Trait::Expansionism],
+        vec![genome::AGGRESSION, genome::EXPANSIONISM],
         &predator.ambition_voter_ids,
         now,
     )?;
@@ -1018,7 +1018,7 @@ fn ambition_war(camps: &[Camp], now: f32) -> Result<bool, String> {
 fn ignite(
     raider: &Camp,
     target: &Camp,
-    traits: Vec<Trait>,
+    traits: Vec<usize>,
     voter_ids: &[i64],
     now: f32,
 ) -> Result<(), String> {
@@ -1172,7 +1172,7 @@ fn survival_status(_args: &Json) -> Result<Json, String> {
             // raiding, and the effective (voted) aggression. In a
             // Looter camp the franchise excludes conscripts, so
             // silenced-vs-total shows the disenfranchised.
-            let vote = tally_vote(&com, &t, RAID_AGGRESSION_FLOOR, |g| g.get(Trait::Aggression))?;
+            let vote = tally_vote(&com, &t, RAID_AGGRESSION_FLOOR, |g| g[genome::AGGRESSION])?;
             let silenced = sv.members - vote.franchise;
             out.push(json!({
                 "name": display_name(&com),

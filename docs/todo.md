@@ -2,6 +2,7 @@
 
 | Priority | System | Todo | Done when |
 |---:|---|---|---|
+| 1 | `modforge` | [ ] Lift mission runner into `modforge::mission`: Mission struct with source/target/agent ids, Stage enum (Going/Returning), periodic advance tick with arrival-distance and timeout checks, handle cleanup on completion. Game-specific arrival behavior via callback or trait | survivalist vendor/steal/trade/rob/scavenge/courier/murder use modforge::mission for their state machine. |
 | 1 | `cs-shim-common` | [ ] Fix the silently broken Harmony bridge in HarmonyBridge.cs: PatchPrefix + PatchPostfix construct target from instance-method lambda which HarmonyLib rejects; replace with a static dispatcher keyed by patch handle | Rust-side patch_prefix / patch_postfix calls fire in-game. |
 | 1 | `ueforge` | [ ] Add ueforge::features module with Features builder (.once(), .on_each_load(), .on_first_table(), .install()) | Features builder available; one mod uses it. |
 | 1 | `misery-mod` | [ ] Convert misery-mod on_unreal_init to use the features builder | misery-mod uses ueforge::features() instead of manual thread spawns. |

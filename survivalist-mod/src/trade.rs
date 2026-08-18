@@ -33,7 +33,7 @@ use crate::common::{
     GoodsFilter, base_centre, carry_off_stored_goods, ctype, display_name, for_each_community,
     handle_of, list_len, own, with,
 };
-use crate::genome::{self, Trait};
+use crate::genome;
 
 /// Seconds between launch scans. Offset from the steal cadence so
 /// the acts interleave rather than fire in lockstep.
@@ -257,7 +257,7 @@ fn launch_scan(now: f32) -> Result<(), String> {
                     if looter && genome::is_conscript(char_id) {
                         continue;
                     }
-                    let d = genome::individual(char_id, &t).get(Trait::Defensiveness);
+                    let d = genome::individual(char_id, &t)[genome::DEFENSIVENESS];
                     franchise += 1;
                     sum_def += d;
                     if d >= TRADE_DEFENSIVENESS_FLOOR {
@@ -381,7 +381,7 @@ fn launch(camp: &Camp, host: &Camp, now: f32) -> Result<(), String> {
                 if !alive || !human || !conscious || squadded || Some(id) == leader_id {
                     continue;
                 }
-                let d = genome::individual(id, &camp.ctype).get(Trait::Defensiveness);
+                let d = genome::individual(id, &camp.ctype)[genome::DEFENSIVENESS];
                 if trader.as_ref().map(|(_, _, _, bd)| d > *bd).unwrap_or(true) {
                     let name = member
                         .invoke("GetDisplayNameString", &json!([]))
@@ -525,9 +525,9 @@ fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
         // A caravan lost on the road: caution failed to keep them
         // safe, and the goods died with the trader.
         for &v in &m.voter_ids {
-            genome::reinforce_individual(v, Trait::Defensiveness, false, 2.0);
+            genome::reinforce_individual(v, genome::DEFENSIVENESS, false, 2.0);
         }
-        genome::reinforce(m.seller_id, Trait::Defensiveness, false, 2.0);
+        genome::reinforce(m.seller_id, genome::DEFENSIVENESS, false, 2.0);
         mono::log(
             LogLevel::Info,
             &format!(
@@ -624,9 +624,9 @@ fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
             if m.delivered > 0 {
                 // Home with the deal done: the careful way pays.
                 for &v in &m.voter_ids {
-                    genome::reinforce_individual(v, Trait::Defensiveness, true, 1.0);
+                    genome::reinforce_individual(v, genome::DEFENSIVENESS, true, 1.0);
                 }
-                genome::reinforce(m.seller_id, Trait::Defensiveness, true, 1.0);
+                genome::reinforce(m.seller_id, genome::DEFENSIVENESS, true, 1.0);
                 mono::log(
                     LogLevel::Info,
                     &format!(

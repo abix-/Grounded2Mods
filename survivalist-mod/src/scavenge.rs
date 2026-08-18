@@ -33,7 +33,7 @@ use unityforge::mono::{self, LogLevel, MonoObject, MonoType};
 use crate::common::{
     base_centre, ctype, display_name, for_each_community, handle_of, list_len, own, parse_xy, with,
 };
-use crate::genome::{self, Trait};
+use crate::genome;
 
 /// Seconds between scavenge scans.
 const SCAV_SCAN_PERIOD_SECS: f32 = 200.0;
@@ -190,7 +190,7 @@ fn launch_scan(now: f32) -> Result<(), String> {
                     continue;
                 }
                 let g = genome::individual(char_id, &t);
-                let s = g.get(Trait::Expansionism);
+                let s = g[genome::EXPANSIONISM];
                 franchise += 1;
                 sum += s;
                 voter_ids.push(char_id);
@@ -572,9 +572,9 @@ fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
 
 fn reinforce_all(m: &Mission, up: bool, magnitude: f64) {
     for &v in &m.voter_ids {
-        genome::reinforce_individual(v, Trait::Expansionism, up, magnitude);
+        genome::reinforce_individual(v, genome::EXPANSIONISM, up, magnitude);
     }
-    genome::reinforce(m.scav_id, Trait::Expansionism, up, magnitude);
+    genome::reinforce(m.scav_id, genome::EXPANSIONISM, up, magnitude);
 }
 
 /// Move up to the haul budget from the prop's inventory into the

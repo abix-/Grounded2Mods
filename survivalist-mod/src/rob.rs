@@ -26,7 +26,7 @@ use serde_json::{Value as Json, json};
 use unityforge::mono::{self, LogLevel};
 
 use crate::common::{ctype, display_name, for_each_community, handle_of, list_len, own, with};
-use crate::genome::{self, Trait};
+use crate::genome;
 
 /// Seconds between robbery scans.
 const ROB_SCAN_PERIOD_SECS: f32 = 180.0;
@@ -181,7 +181,7 @@ fn launch_scan(now: f32) -> Result<(), String> {
                     continue;
                 }
                 let g = genome::individual(char_id, &t);
-                let s = (g.get(Trait::Aggression) + g.get(Trait::Guile)) / 2.0;
+                let s = (g[genome::AGGRESSION] + g[genome::GUILE]) / 2.0;
                 franchise += 1;
                 sum += s;
                 if s >= ROB_FLOOR {
@@ -418,7 +418,7 @@ fn pick_lead(
                 continue;
             }
             let g = genome::individual(id, camp_ctype);
-            let s = (g.get(Trait::Aggression) + g.get(Trait::Guile)) / 2.0;
+            let s = (g[genome::AGGRESSION] + g[genome::GUILE]) / 2.0;
             if lead.as_ref().map(|(_, _, bs)| s > *bs).unwrap_or(true) {
                 let name = member
                     .invoke("GetDisplayNameString", &json!([]))
@@ -471,11 +471,11 @@ fn judge_missions(now: f32) {
             (false, 0.5, "came home empty; a waste of menace")
         };
         for &v in &m.voter_ids {
-            genome::reinforce_individual(v, Trait::Aggression, up, magnitude);
-            genome::reinforce_individual(v, Trait::Guile, up, magnitude);
+            genome::reinforce_individual(v, genome::AGGRESSION, up, magnitude);
+            genome::reinforce_individual(v, genome::GUILE, up, magnitude);
         }
-        genome::reinforce(m.robber_id, Trait::Aggression, up, magnitude);
-        genome::reinforce(m.robber_id, Trait::Guile, up, magnitude);
+        genome::reinforce(m.robber_id, genome::AGGRESSION, up, magnitude);
+        genome::reinforce(m.robber_id, genome::GUILE, up, magnitude);
         mono::log(
             LogLevel::Info,
             &format!(

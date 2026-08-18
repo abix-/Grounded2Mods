@@ -33,7 +33,7 @@ use crate::common::{
     GoodsFilter, base_centre, carry_off_stored_goods, ctype, display_name, for_each_community,
     handle_of, list_len, own, with,
 };
-use crate::genome::{self, Trait};
+use crate::genome;
 
 /// Seconds between launch scans. Slower than the survival scan:
 /// theft is occasional texture, not a drumbeat.
@@ -203,7 +203,7 @@ fn launch_scan(now: f32) -> Result<(), String> {
                     if looter && genome::is_conscript(char_id) {
                         continue;
                     }
-                    let g = genome::individual(char_id, &t).get(Trait::Guile);
+                    let g = genome::individual(char_id, &t)[genome::GUILE];
                     franchise += 1;
                     sum_guile += g;
                     if g >= STEAL_GUILE_FLOOR {
@@ -323,7 +323,7 @@ fn launch(camp: &Camp, target: &Camp, now: f32) -> Result<(), String> {
                 if !alive || !human || !conscious || squadded || Some(id) == leader_id {
                     continue;
                 }
-                let g = genome::individual(id, &camp.ctype).get(Trait::Guile);
+                let g = genome::individual(id, &camp.ctype)[genome::GUILE];
                 if thief.as_ref().map(|(_, _, bg)| g > *bg).unwrap_or(true) {
                     let name = member
                         .invoke("GetDisplayNameString", &json!([]))
@@ -435,9 +435,9 @@ fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
         // The thief died out there: the strongest lesson against
         // guile the collective can get (and the loot died too).
         for &v in &m.voter_ids {
-            genome::reinforce_individual(v, Trait::Guile, false, 2.0);
+            genome::reinforce_individual(v, genome::GUILE, false, 2.0);
         }
-        genome::reinforce(m.faction_id, Trait::Guile, false, 2.0);
+        genome::reinforce(m.faction_id, genome::GUILE, false, 2.0);
         mono::log(
             LogLevel::Info,
             &format!(
@@ -496,9 +496,9 @@ fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
             m.caught = caught;
             if caught {
                 for &v in &m.voter_ids {
-                    genome::reinforce_individual(v, Trait::Guile, false, 1.5);
+                    genome::reinforce_individual(v, genome::GUILE, false, 1.5);
                 }
-                genome::reinforce(m.faction_id, Trait::Guile, false, 1.5);
+                genome::reinforce(m.faction_id, genome::GUILE, false, 1.5);
                 crate::chronicle::post(&format!(
                     "a thief from {} was caught in {}'s stores",
                     m.faction_name, m.target_name
@@ -550,9 +550,9 @@ fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
             if !m.caught && m.stolen > 0 {
                 // A clean haul carried all the way home: guile paid.
                 for &v in &m.voter_ids {
-                    genome::reinforce_individual(v, Trait::Guile, true, 1.0);
+                    genome::reinforce_individual(v, genome::GUILE, true, 1.0);
                 }
-                genome::reinforce(m.faction_id, Trait::Guile, true, 1.0);
+                genome::reinforce(m.faction_id, genome::GUILE, true, 1.0);
                 mono::log(
                     LogLevel::Info,
                     &format!(

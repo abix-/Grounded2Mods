@@ -11,6 +11,7 @@ pub mod client;
 pub mod counters;
 pub mod debug;
 pub mod envelope;
+pub mod genome;
 pub mod harness;
 pub mod hook;
 pub mod hot_reload;
