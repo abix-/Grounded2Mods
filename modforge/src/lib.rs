@@ -32,6 +32,7 @@ pub mod storyteller;
 pub mod snapshots;
 pub mod testkit;
 pub mod ui;
+pub mod unknown;
 pub mod vanilla;
 pub mod winproc;
 pub mod worker;

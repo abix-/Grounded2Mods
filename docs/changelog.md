@@ -25,6 +25,7 @@ Newest first.
 
 | System | Item | Done when |
 |---|---|---|
+| `modforge` | [x] Add modforge::unknown module (DreadLoop, rng) for the fear-of-the-unknown dread loop; survivalist incursion refactored to use it | modforge::unknown has DreadLoop; incursion.rs uses it instead of manual statics. |
 | `modforge` | [x] Add Contract trait (ContractPhase, advance_contract) to modforge::mission for the offered/owed/paying work-board lifecycle; survivalist bounty and threat refactored to implement it | modforge::mission has Contract trait; bounty.rs and threat.rs use it with should_tick + advance_contract. |
 
 ## 2026-08-17

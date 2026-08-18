@@ -31,11 +31,9 @@
 //! group actually attacking; the horde spawner needs the game
 //! restart).
 
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-
-use parking_lot::Mutex;
 use serde_json::json;
 
+use modforge::unknown::{DreadLoop, rng};
 use unityforge::mono::{self, LogLevel};
 
 use crate::common::{
@@ -73,44 +71,27 @@ enum Payoff {
     MegaHorde,
 }
 
-struct Pending {
-    payoff: Payoff,
-    due: f32,
-}
-
-static PENDING: Mutex<Option<Pending>> = Mutex::new(None);
-static LAST_TICK_BITS: AtomicU32 = AtomicU32::new(0);
-/// Incursions resolved this generation; drives escalation.
-static RESOLVED: AtomicU32 = AtomicU32::new(0);
-/// Set when a refugee wave lands: what they fled FOLLOWS them, so
-/// the next sign's payoff is forced to a real threat.
-static NEXT_IS_REAL: AtomicBool = AtomicBool::new(false);
+static LOOP: DreadLoop<Payoff> = DreadLoop::new();
 
 /// True while a sign is out and its payoff has not landed (for the
 /// storyteller status readout).
 pub fn pending() -> bool {
-    PENDING.lock().is_some()
+    LOOP.pending()
 }
 
 pub fn tick(now: f32) {
-    let last = f32::from_bits(LAST_TICK_BITS.load(Ordering::Relaxed));
-    if now - last < RESOLVE_TICK_SECS {
-        return;
+    if let Some(payoff) = LOOP.resolve(now, RESOLVE_TICK_SECS) {
+        resolve_payoff(payoff, now);
     }
-    LAST_TICK_BITS.store(now.to_bits(), Ordering::Relaxed);
-    resolve(now);
 }
 
 fn run(now: f32) -> Result<Outcome, String> {
-    // One sign out at a time: the dread builds, it does not stack.
-    if PENDING.lock().is_some() {
+    if LOOP.pending() {
         return Ok(Outcome::Passed);
     }
-    let resolved = RESOLVED.load(Ordering::Relaxed);
-    // Escalation: early on most signs are false alarms; as the story
-    // goes on, more of them pay off (60% false down to a 20% floor).
+    let resolved = LOOP.resolved();
     let false_pct = 60u64.saturating_sub(resolved as u64 * 5).max(20);
-    let payoff = if NEXT_IS_REAL.swap(false, Ordering::Relaxed) {
+    let payoff = if LOOP.take_force_real() {
         // A refugee wave landed: what they fled arrives next, never
         // a false alarm and never harmless.
         if resolved >= 6 && rng(now, 6, 100) < 30 {
@@ -155,17 +136,12 @@ fn run(now: f32) -> Result<Outcome, String> {
             Payoff::Arrival
         }
     };
-    let gap = DREAD_MIN_SECS
-        + (rng(now, 1, 1000) as f32 / 1000.0) * (DREAD_MAX_SECS - DREAD_MIN_SECS);
-    *PENDING.lock() = Some(Pending {
-        payoff,
-        due: now + gap,
-    });
+    LOOP.post(payoff, now, DREAD_MIN_SECS, DREAD_MAX_SECS);
     crate::chronicle::post(dread_sign(now, resolved));
     mono::log(
         LogLevel::Info,
         &format!(
-            "survivalist-mod: incursion -- off-map dread sign (payoff {} due in {:.0}s)",
+            "survivalist-mod: incursion -- off-map dread sign (payoff {})",
             match payoff {
                 Payoff::FalseAlarm => "false-alarm",
                 Payoff::Arrival => "arrival",
@@ -177,22 +153,12 @@ fn run(now: f32) -> Result<Outcome, String> {
                 Payoff::Signal => "signal",
                 Payoff::MegaHorde => "mega-horde",
             },
-            gap,
         ),
     );
     Ok(Outcome::Fired)
 }
 
-fn resolve(now: f32) {
-    let ready = {
-        let p = PENDING.lock();
-        p.as_ref().filter(|p| now >= p.due).map(|p| p.payoff)
-    };
-    let Some(payoff) = ready else {
-        return;
-    };
-    *PENDING.lock() = None;
-    RESOLVED.fetch_add(1, Ordering::Relaxed);
+fn resolve_payoff(payoff: Payoff, now: f32) {
     match payoff {
         Payoff::FalseAlarm => {
             crate::chronicle::post(false_alarm_line(now));
@@ -332,7 +298,7 @@ fn resolve(now: f32) {
             // foreshadow so what they fled arrives on the NEXT sign.
             let n = crate::stranger::launch_refugees(now);
             if n > 0 {
-                NEXT_IS_REAL.store(true, Ordering::Relaxed);
+                LOOP.set_force_real();
                 crate::chronicle::post(
                     "refugees are crossing onto the map, fleeing something they will not name",
                 );
@@ -395,14 +361,6 @@ fn resolve(now: f32) {
     }
 }
 
-/// A pseudo-random value in [0, n): a hash of the fire time and a
-/// salt, so successive rolls differ within one pass.
-fn rng(now: f32, salt: u64, n: u64) -> u64 {
-    let mut h = (now.to_bits() as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
-        ^ salt.wrapping_mul(0xD1B5_4A32_D192_ED03);
-    h ^= h >> 29;
-    h % n.max(1)
-}
 
 /// The centroid of all settlements and the spread (max distance
 /// from the centroid to any of them): the populated heart of the

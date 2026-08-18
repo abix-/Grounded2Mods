@@ -3,7 +3,6 @@
 | Priority | System | Todo | Done when |
 |---:|---|---|---|
 | 1 | `cs-shim-common` | [ ] Fix the silently broken Harmony bridge in HarmonyBridge.cs: PatchPrefix + PatchPostfix construct target from instance-method lambda which HarmonyLib rejects; replace with a static dispatcher keyed by patch handle | Rust-side patch_prefix / patch_postfix calls fire in-game. |
-| 3 | `modforge` | [ ] Lift incursion/dread loop into modforge: state machine (idle, sign posted, building tension, payoff/fizzle), configurable sign pool, delay range, payoff dispatch. Survivalist incursion repoints to it | modforge has a dread loop; survivalist incursion uses it; misery can wire its own signs and payoffs. |
 | 3 | `modforge` | [ ] Lift quality/tiered items into modforge: tier definitions (name, stat multipliers, rarity weights), roll function, swap interface. Survivalist quality repoints to it | modforge has a quality tier system; survivalist quality uses it; any game with loot can wire its own item creation. |
 | 1 | `ueforge` | [ ] Add ueforge::features module with Features builder (.once(), .on_each_load(), .on_first_table(), .install()) | Features builder available; one mod uses it. |
 | 1 | `misery-mod` | [ ] Convert misery-mod on_unreal_init to use the features builder | misery-mod uses ueforge::features() instead of manual thread spawns. |
