@@ -1,46 +1,61 @@
-# MISERY mod TODO
+# misery-mod open issues
 
-## Shipped
+## Todo rules
 
-- [x] 10x item stack multiplier (FieldTweak on ItemList, 175 rows)
-- [x] UE4SS external console enabled
-- [x] Shining tab (emission timer control)
-- [x] Speed tab (1x/2x/3x movement speed buttons)
-- [x] Gameplay tab (hunger/thirst/stamina/damage/enemy knobs)
-- [x] Scanner/Classes/Structs browser tabs
-- [x] restart.ps1 (build, deploy with validation, launch, wait for control plane)
+- Keep one table with exactly four columns: `Priority`, `System`, `Todo`, and
+  `Done when`.
+- Put a number from `1` through `100` in the Priority column. Lower numbers
+  come first. Use the full range so the table shows real differences between
+  tasks.
+- Priority measures how quickly completing the row gets the project closer to
+  its next shipped state. It does not measure alarm, age, code size, test
+  status, or how easy the work looks.
+- Priority `1` is any concrete task with the greatest direct effect on
+  shipping. Multiple open rows may have priority `1` when each has that
+  effect. Priority `100` is valid work with the least direct effect.
+- Reassign priorities when the goal or todo changes. Sort rows from lowest
+  number to highest. The first unchecked row is next unless the operator says
+  otherwise.
+- Put the actual system being changed in the System column, using its name
+  from the codebase (crate, module, package, file). Do not use a generic
+  category or a made-up name.
+- Start the Todo column with one checkbox: `[ ] Do the thing`. No preceding
+  hyphen.
+- The table is the ordered work plan. Before changing source code, split the
+  work into the concrete rows required to finish it.
+- Each row is exactly one action that can be started, completed, and proved in
+  one session.
+- Each row must be independently executable as written. Completing it must
+  leave production source compiling without temporarily adding a second path,
+  partially implementing another row, or requiring an unlisted follow-up edit.
+- Write the Todo cell as a direct instruction to change one behavior. Write
+  the Done when cell as the one exact result that proves that instruction is
+  finished.
+- Use plain terms. Do not use vague tasks, invented language, unexplained code
+  names, or design essays.
+- Done when names the exact observable result or proof that closes the row.
+  Partial work stays unchecked.
+- A newly found issue gets a new prioritized row and checkbox. Never enlarge
+  the active row or create a nested or duplicate checklist.
+- `Update the todo` means edit affected table rows only. Do not add status
+  paragraphs, percentages, summaries, diaries, or evidence dumps.
+- When a row is complete, change `[ ]` to `[x]`, record the shipped result in
+  the repo changelog (`docs/changelog.md`), then delete the completed row
+  from the table.
 
-## Blocked
+## Open
 
-- [ ] Suppress nag screen (WD_PlaytestNote01_C). Widget found. Three attempts failed:
-  1. Raw Visibility write at 0xDC: Slate cache not invalidated, widget stays visible
-  2. RemoveFromParent via ProcessEvent from background thread: returns Ok but no effect (must be game thread)
-  3. Spacebar via SendInput: rejected
-  - Needs: game-thread dispatch via pe_queue DrainSite + ProcessEventHook on a class that fires before main menu
-
-## Fixed
-
-- [x] All tabs survive main menu reload: fixed 2026-08-17. Root cause: all three modules (speed, shining, gameplay) cached object pointers that went stale after returning to main menu and loading a save. Blueprint reinstancing changes UClass pointers, so `find_class_fast` + `is_a` never matches. Fix: removed all pointer caches, scan GObjects fresh each call matching by class name string. Shining module also follows BP_ExpeditionDoor_C +0x448 as fallback when the manager disappears after world regeneration (section 20.4)
-- [x] Speed tab and speed 2x default: fixed 2026-08-15. Root cause: `find_class_fast` + `is_a` fails for Blueprint classes after reinstancing. Fix: match objects by class name string instead of UClass pointer comparison, then follow actor +0x740 +0x218 pointer chain to reach the inventory
-
-## DRY into ueforge
-
-- [x] Pointer chain following: ueforge::ue::follow_ptr_chain. Used by speed.rs, shining.rs, vendors.rs
-- [x] TArray stride iteration: ueforge::ue::tarray::iter_stride. Used by vendors.rs
-- [x] DataTable row name map: ueforge::ue::datatable::row_name_map. Used by vendors.rs and debug.rs
-- [x] Debug HTTP boilerplate: modforge::envelope::handle_request. Used by misery, outworld-station, grounded2
-- [x] Engine-generic debug ops: list_row_names, list_row_fnames, inspect_gmalloc, tarray_grow moved to ueforge::ops::register_builtins (+ register_with_resolver for tarray_grow)
-
-## Not started
-
-- [ ] Set up pe_queue DrainSite + ProcessEventHook (needed for nag screen and any future ProcessEvent work)
-- [ ] Research which class to hook for the drain site (must exist before main menu, fire PE often)
-- [ ] RPG system: XP, leveling, stat/skill points (see docs/rpg.md)
-- [ ] Strength stat: find melee damage in memory
-- [ ] Constitution stat: find player max health in memory
-- [ ] Kill detection: hook or poll for XP source
-- [ ] Craft detection: find event for XP source
-- [ ] RPG persistence (JSON save/load for level, XP, allocations)
-- [ ] Vendor list modification: build a mod feature to add items to any vendor's buy or sell list on load. Research complete: sell list expansion (section 24.9), TArray growth for full lists (section 24.12), buy list expansion (section 24.13), bulk sell list expansion (section 24.14) all proven working. Batch addition of 23 food items to Barman confirmed. Needs: item list config, auto-apply on game load, UI tab
-- [ ] Research biome number to area mapping (section 19.4)
-- [ ] Research what depends on shining regeneration before shipping permanent freeze
+| Priority | System | Todo | Done when |
+|---:|---|---|---|
+| 1 | `lib.rs` | [ ] Set up pe_queue DrainSite + ProcessEventHook for game-thread dispatch | ProcessEvent calls from Rust execute on the game thread via the drain site. |
+| 1 | `lib.rs` | [ ] Find a UE class that fires ProcessEvent before main menu to use as drain site | Drain site class identified and documented. |
+| 5 | `lib.rs` | [ ] Suppress nag screen (WD_PlaytestNote01_C) via game-thread ProcessEvent | Nag screen dismissed automatically on load without manual input. |
+| 10 | `skills` | [ ] Find melee damage address for strength stat | Memory offset for player melee damage documented and verified with a write test. |
+| 10 | `skills` | [ ] Find player max health address for constitution stat | Memory offset for player max health documented and verified with a write test. |
+| 10 | `skills` | [ ] Hook or poll for kill events as XP source | Kill event fires reliably and delivers XP to the tracker. |
+| 10 | `skills` | [ ] Find craft completion event as XP source | Craft event fires reliably and delivers XP to the tracker. |
+| 15 | `skills` | [ ] Implement RPG system: XP, leveling, stat/skill point allocation | Skill catalog, tracker, and level-up ops registered. See `docs/rpg.md`. |
+| 15 | `skills` | [ ] Implement RPG persistence (JSON save/load for level, XP, allocations) | RPG state survives save/reload cycle. |
+| 20 | `vendors` | [ ] Build vendor list config and auto-apply on game load with UI tab | Vendor sell/buy list modifications apply automatically from config on each load. Item list editable from ImGui tab. |
+| 50 | `shining` | [ ] Research what depends on shining regeneration before shipping permanent freeze | Dependencies documented; safe to ship or workaround identified. |
+| 50 | `debug` | [ ] Research biome number to area mapping (section 19.4) | Biome numbers mapped to area names in research doc. |
