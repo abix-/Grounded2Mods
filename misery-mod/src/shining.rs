@@ -8,6 +8,9 @@
 //! Two controls, both proven live before this module existed:
 //! freeze the countdown, and set how many seconds are left.
 
+use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
+use std::time::Instant;
+
 use ueforge::ue;
 use ueforge::ue::{follow_ptr_chain, read_at, write_at};
 
@@ -107,4 +110,132 @@ pub fn add_seconds(seconds: f64) -> Result<f64, String> {
     unsafe { write_at(m, offset::TIME_UNTIL_EMMISION, next) };
     ueforge::log::log(format_args!("shining: {now} -> {next}s"));
     Ok(next)
+}
+
+// ---- UI ----
+
+static SET_MINUTES: AtomicI32 = AtomicI32::new(20);
+static EPOCH: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+static LAST_READ_MS: AtomicU64 = AtomicU64::new(0);
+
+fn now_ms() -> u64 {
+    let epoch = EPOCH.get_or_init(Instant::now);
+    epoch.elapsed().as_millis() as u64
+}
+
+struct CachedShining {
+    cached_status: Option<Result<Status, String>>,
+}
+
+static UI_STATE: std::sync::OnceLock<std::sync::Mutex<CachedShining>> =
+    std::sync::OnceLock::new();
+
+fn ui_state() -> &'static std::sync::Mutex<CachedShining> {
+    UI_STATE.get_or_init(|| {
+        std::sync::Mutex::new(CachedShining { cached_status: None })
+    })
+}
+
+pub fn render() {
+    use ueforge::ui;
+
+    ui::text("Shining timer");
+    ui::text_disabled(
+        "The shining is what ends an expedition: the world outside \
+         is regenerated, while your inventory and bunker carry over. \
+         This tab stops that clock or moves it.",
+    );
+    ui::spacing();
+    ui::separator();
+    ui::spacing();
+
+    let Ok(mut s) = ui_state().lock() else { return };
+
+    let now = now_ms();
+    let last = LAST_READ_MS.load(Ordering::Relaxed);
+    if s.cached_status.is_none() || now.saturating_sub(last) >= 1000 {
+        s.cached_status = Some(status());
+        LAST_READ_MS.store(now, Ordering::Relaxed);
+    }
+
+    let st = match s.cached_status.as_ref().unwrap() {
+        Ok(st) => *st,
+        Err(e) => {
+            ui::text_disabled("No expedition running.");
+            ui::text_disabled(&format!("({e})"));
+            if ui::button("Retry") {
+                s.cached_status = None;
+            }
+            return;
+        }
+    };
+
+    ui::text(&format!("Next shining in   {}", st.pretty_remaining()));
+    ui::text(&format!("Shinings so far   {}", st.shinings));
+    ui::text(&format!("Area              {}", st.area_name()));
+    ui::text_disabled(&format!("world seed {}", st.seed));
+    ui::spacing();
+
+    if ui::button("Refresh") {
+        s.cached_status = Some(status());
+    }
+
+    ui::spacing();
+
+    let mut frozen = st.frozen;
+    if ui::checkbox("Pause the timer", &mut frozen) {
+        if let Err(e) = set_frozen(frozen) {
+            ueforge::log::log(format_args!("shining: freeze failed: {e}"));
+        }
+        s.cached_status = Some(status());
+    }
+    if st.frozen {
+        ui::text_colored("Paused. The expedition will not end on its own.", (0.4, 0.9, 0.4, 1.0));
+    }
+
+    ui::spacing();
+    ui::separator();
+    ui::spacing();
+
+    ui::text("Set the countdown");
+    let mut minutes = SET_MINUTES.load(Ordering::Relaxed);
+    ui::set_next_item_width(220.0);
+    if ui::slider_i32("Minutes", &mut minutes, 1, 120) {
+        SET_MINUTES.store(minutes, Ordering::Relaxed);
+    }
+    if ui::button("Set") {
+        if let Err(e) = set_seconds(f64::from(minutes) * 60.0) {
+            ueforge::log::log(format_args!("shining: set failed: {e}"));
+        }
+        s.cached_status = Some(status());
+    }
+
+    ui::same_line();
+    if ui::button("10 sec") {
+        if let Err(e) = set_seconds(10.0) {
+            ueforge::log::log(format_args!("shining: set 10s failed: {e}"));
+        }
+        s.cached_status = Some(status());
+    }
+
+    ui::spacing();
+    ui::text_disabled("Or add time to what is left");
+    for (label, secs) in [("+5 min", 300.0), ("+10 min", 600.0), ("+30 min", 1800.0)] {
+        if ui::button(label) {
+            if let Err(e) = add_seconds(secs) {
+                ueforge::log::log(format_args!("shining: add failed: {e}"));
+            }
+            s.cached_status = Some(status());
+        }
+        ui::same_line();
+    }
+    ui::new_line();
+
+    ui::spacing();
+    ui::separator();
+    ui::text_disabled(
+        "Pausing forever means the world outside never regenerates. \
+         Whether anything you want depends on that (loot, new areas) \
+         is not yet known.",
+    );
 }

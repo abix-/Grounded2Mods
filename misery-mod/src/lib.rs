@@ -11,9 +11,6 @@ pub mod debug;
 pub mod gameplay;
 pub mod shining;
 pub mod speed;
-pub mod ui_gameplay;
-pub mod ui_shining;
-pub mod ui_speed;
 pub mod vendors;
 
 use std::time::Duration;
@@ -58,15 +55,15 @@ static MOD_INFO: ueforge::ModDef = ueforge::ModDef {
     tabs: &[
         ueforge::TabDef {
             name: "Shining",
-            render: ui_shining::render,
+            render: shining::render,
         },
         ueforge::TabDef {
             name: "Speed",
-            render: ui_speed::render,
+            render: speed::render,
         },
         ueforge::TabDef {
             name: "Gameplay",
-            render: ui_gameplay::render,
+            render: gameplay::render,
         },
         ueforge::TabDef {
             name: "Scanner",
