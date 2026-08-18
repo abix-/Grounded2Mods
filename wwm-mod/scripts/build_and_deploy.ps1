@@ -14,7 +14,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$WwmDir = 'C:\Games\Steam\steamapps\common\Wild West Miner Simulator Demo',
+    [string]$WwmDir = 'C:\Games\Steam\steamapps\common\Wild West Miner Simulator',
     [string]$ShimBepInExDir = '',
     [switch]$NoCopy,
     [switch]$Hot
@@ -25,7 +25,12 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $repoRoot
 
-$wwmManaged = Join-Path $WwmDir 'Wild West Miner - Gold Rush_Data\Managed'
+$dataDir = Get-ChildItem -Path $WwmDir -Directory -Filter '*_Data' | Select-Object -First 1
+if (-not $dataDir) {
+    Write-Host "No *_Data directory found in $WwmDir" -ForegroundColor Red
+    exit 1
+}
+$wwmManaged = Join-Path $dataDir.FullName 'Managed'
 $wwmBep     = Join-Path $WwmDir 'BepInEx'
 $pluginDir  = Join-Path $wwmBep 'plugins\wwm-mod'
 

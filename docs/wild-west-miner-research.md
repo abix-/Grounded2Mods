@@ -33,7 +33,8 @@ with what?
 
 | Property | Value |
 |---|---|
-| Install path | `C:\Games\Steam\steamapps\common\Wild West Miner Simulator Demo\` |
+| Install path (old demo) | `C:\Games\Steam\steamapps\common\Wild West Miner Simulator Demo\` |
+| Install path (First Gun demo) | `C:\Games\Steam\steamapps\common\Wild West Miner Simulator First Gun\` |
 | Engine | Unity (Mono scripted, **NOT** IL2CPP) |
 | Build GUID | `d498052cf0224d53bbcb80c6e5e84846` (from `boot.config`) |
 | Publisher | Digital Melody Games |
@@ -1189,3 +1190,474 @@ we already have two consumers: Timberbot (shipped, stable, the
 spec) and Goldbot (about to be built). Extract `unityforge`
 **first**, build Goldbot against it from commit 1, port
 Timberbot onto it after.
+
+## 11. First Gun demo (2026-08-09)
+
+A new demo ("Wild West Miner Simulator First Gun") was released
+before the full launch. Different Steam app, different binary
+name (`Wild West Miner Simulator First Gun.exe`), different
+`_Data` folder. Still Unity Mono, not IL2CPP.
+
+### 11.1 Build and deploy
+
+The `build_and_deploy.ps1` script now auto-detects the `*_Data`
+subfolder so the same script works for any WWM build. Default
+path updated to the First Gun demo. Pass `-WwmDir` to target
+the old demo or the eventual full release.
+
+BepInEx 5.x Mono installs identically (same doorstop bootstrap).
+Mod loads, control plane answers on port 17172.
+
+### 11.2 Field target survival
+
+Verified with `walk_class` + `inspect_object` at main menu:
+
+| Target | Old demo | First Gun |
+|---|---|---|
+| `DigManager._digRange` (Single, 3.0) | working | **still there** |
+| `DigManager.Dig` (Harmony) | working | class exists |
+| `PlayerManager.AddPlayerCurrency` (Harmony) | working | class exists |
+| `SkillsManager` (native skill system) | working | **still there** |
+| `MineDataSO._oreValue` | no instances at menu | class exists, same |
+| `PlayerCarryingController._maxCapacity` | working | **GONE** (field removed, class restructured) |
+| `WorkersManager._hireCostMultiplier` | working | **GONE** (field removed) |
+| `PlayerStaminaController` | working | **GONE** (entire class missing) |
+
+Three skill targets are broken: Strong Back, Charisma, Resilient.
+All three were already flagged for migration to `SkillsManager`
+proxy effects. The game's native `SkillsManager` singleton
+survives and is the correct path forward.
+
+### 11.3 What changed
+
+**Skill enum expanded.** Old demo: `Bag`, `Energy`, `Rope`,
+`Speed`. First Gun: `Bag`, `Energy`, `Health`, `Speed`,
+`Stamina`, `Weapon`. `Rope` removed, three new entries. The
+`SkillsDatabase` still holds exactly 4 active entries (which
+4 of the 6 enum values are active needs in-save verification).
+
+**PlayerStaminaController replaced by HealthStaminaManager.**
+New singleton under `VoxelDiggingMaster` namespace. Also has
+`HealthStaminaSaveData` and `HealthStaminaUI`. The stamina
+system was refactored into a proper manager with save support.
+
+**EnergyManager is its own singleton now.** Fields:
+`doNotTakeEnergy` (bool), `CurrentEnergyValue` (float, 2.0
+at menu). Separate from stamina.
+
+**Carry capacity moved.** `PlayerCarryingController` lost
+`_maxCapacity`. The bag system is now `BagDatabase` (singleton,
+live at menu) with a `BagData` holding `eqItems` (list). The
+`Bag` skill in `SkillsManager` is the right proxy for capacity.
+
+**WorkersManager simplified.** Only has `database:
+WorkersDatabase` now. No `_hireCostMultiplier`. Worker hire
+cost is likely in the store/upgrade system or a ScriptableObject.
+
+**New managers of interest:**
+
+| Manager | Notes |
+|---|---|
+| `WeaponsManager` | new, matches `Weapon` skill enum |
+| `HorsesManager` | new, `PlayerHorseController` exists |
+| `WildAnimalsManager` | new combat/wildlife system |
+| `HealthStaminaManager` | replaces `PlayerStaminaController` |
+| `MissionsManager` | quest/mission system |
+| `PrestigeManager` | prestige/reset system |
+| `VillagersManager` | NPC villagers (separate from workers) |
+| `WagonsManager` | transport |
+| `OrdersManager` | trade orders |
+| `BuildingsManager` | building construction |
+| `StoreManager` | in-game store (live at menu) |
+| `UpgradeManager` | upgrade system (not live at menu) |
+
+**New controllers:** `PlayerWeaponController`,
+`PlayerHorseController`, `PlayerRunningController`,
+`PlayerHandWagonController`, `HumanSoldierController`,
+`WildAnimalController`, `WildAnimalBehaviourController`.
+
+### 11.4 Mod impact and next steps
+
+The three broken skills all have a clear path forward:
+
+| Skill | Old target | New approach |
+|---|---|---|
+| Strong Back | `PlayerCarryingController._maxCapacity` | `SkillsManager` proxy to `Bag` skill |
+| Resilient | `PlayerStaminaController._staminaDrainMultiplier` | `SkillsManager` proxy to `Stamina` or `Energy` skill, or raw field on `HealthStaminaManager`/`EnergyManager` |
+| Charisma | `WorkersManager._hireCostMultiplier` | Needs research: check `StoreDataSO` or `UpgradeManager` for hire pricing |
+
+The two working skills (`Quick Pickaxe` via `DigManager._digRange`,
+`Greedy Miner` via `MineDataSO._oreValue`) and the two Harmony
+hooks (`DigManager.Dig`, `PlayerManager.AddPlayerCurrency`) are
+unchanged.
+
+New mod opportunities from the expanded game: weapon damage
+scaling, horse speed, mission rewards, wild animal behavior.
+All need in-save field verification before targeting.
+
+## 12. 1.0 release (2026-08-13)
+
+The game left early access. New Steam app, installed at
+`C:\Games\Steam\steamapps\common\Wild West Miner Simulator\`,
+data folder `Wild West Miner Simulator_Data`, exe
+`Wild West Miner Simulator.exe`. Still Unity Mono, still
+BepInEx 5.x doorstop. `Assembly-CSharp.dll` is 1,036,800 bytes
+against the First Gun demo's 978,432.
+
+Everything below was measured in a loaded save (slot 2) by
+`wwm-mod/tests/research_release_targets.rs`, which is the
+permanent probe for this question. Re-run it after any game
+patch:
+
+```text
+cargo test -p wwm-mod --test research_release_targets -- --test-threads=1 --nocapture
+```
+
+### 12.1 Two research-harness bugs that faked a dead game
+
+The first two runs reported every class gone or empty. Both
+were the harness, not the game, and the fixes are in
+`wwm-mod/tests/common/mod.rs`:
+
+1. `walk_class` answers `{class, instances: [...]}`, not a bare
+   array. Parsing the response as an array yielded an empty
+   list for every class, which read as "zero live instances".
+2. The release parks its managers on inactive GameObjects.
+   `walk_class` must be called with `include_inactive: true`
+   or `FindObjectsOfType` returns nothing.
+
+A third trap: in a loaded world some walks take longer than the
+client's default timeout, and a timed-out op is not a missing
+type. `try_walk` now separates "type not found" from any other
+failure, and the test asserts that a made-up class name really
+does fail (`type 'NoSuchClassZzz' not found`), so a successful
+walk proves the type exists.
+
+### 12.2 Declared target survival
+
+| Skill | Target | 1.0 status |
+|---|---|---|
+| Quick Pickaxe | `DigManager._digRange` | **works**, reads 3.0 (same vanilla value as both demos) |
+| slot key | `GameSerializationSystem._currentLoadedSaveNumber` | **works**, read 2 in the test save |
+| Strong Back | `PlayerCarryingController._maxCapacity` | class alive, **field gone** |
+| Charisma | `WorkersManager._hireCostMultiplier` | class alive, **field gone** |
+| Resilient | `PlayerStaminaController._staminaDrainMultiplier` | **class gone** |
+| Greedy Miner | `MineDataSO._oreValue` | class alive, **field does not exist** (see 14.1) |
+
+Same three casualties as First Gun, plus Greedy Miner, whose
+field turned out never to have existed on this build.
+
+Of the two Harmony postfix targets only
+`PlayerManager.AddPlayerCurrency` is real. `DigManager.Dig`
+does not exist; the first version of this section said it did,
+on a probe bug corrected in 14.1.
+
+### 12.3 SkillsManager survived intact
+
+The native skill system is unchanged from the demos, which
+keeps the proxy plan alive. Live singleton, `isLoaded` true in
+a save, two fields (`skillsData: SkillsDataSO`,
+`database: SkillsDatabase`), and this declared surface:
+
+| Method | Params | Returns |
+|---|---|---|
+| `LoadSkills` | 0 | Void |
+| `SetSkillLevel` | 2 | Void |
+| `LevelUpSkill` | 1 | Void |
+| `AfterChangeSkillLevel` | 1 | Void |
+| `GetCurrentSkillLevel` | 1 | Int32 |
+| `GetCurrentSkillValue` | 2 | Single |
+| `GetSkillValue` | 3 | Single |
+| `GetSkillPrice` | 2 | Single |
+| `GetSkillLevelsAmount` | 1 | Int32 |
+
+### 12.4 Manager survey in a loaded save
+
+Live: `SkillsManager`, `WeaponsManager`, `HorsesManager`,
+`WildAnimalsManager`, `EnergyManager`, `MissionsManager`,
+`PrestigeManager`, `VillagersManager`, `WagonsManager`,
+`OrdersManager`, `BuildingsManager`, `StoreManager`,
+`BagDatabase`, `PlayerManager`, `DigManager`.
+
+Type exists but no instance in this save: `HealthStaminaManager`,
+`UpgradeManager`.
+
+`list_singletons` disagrees with `walk_class` on a few of
+these (`HealthStaminaManager`, `MissionsManager`,
+`VillagersManager`, `UpgradeManager`, `BagDatabase` report
+`found: false, type_found: true` through the singleton path
+while the scene walk finds most of them). The singleton path
+reads `Singleton<T>.Instance`, so a false there means the
+manager has not run `Awake` yet, not that it is absent.
+
+### 12.5 Where this leaves the mod
+
+Nothing regressed relative to First Gun, so the plan from
+section 11.4 stands: ship `UnitySkillProxyEffect` and repoint
+Strong Back, Resilient and Charisma at `SkillsManager`
+instead of raw fields. Still unknown and needed before that:
+which skill ids the release's `SkillsDataSO` actually defines
+(First Gun's enum was `Bag`, `Energy`, `Health`, `Speed`,
+`Stamina`, `Weapon`, with only 4 active in the database).
+
+## 13. The 1.0 native skill system, in full (2026-08-13)
+
+Measured in slot 2 by `wwm-mod/tests/research_skills.rs`. This
+is the input for the `UnitySkillProxyEffect` that replaces the
+three dead raw-field skills.
+
+### 13.1 Shape
+
+```
+SkillsManager (singleton MonoBehaviour)
+  skillsData : SkillsDataSO      authored catalog, one entry per skill
+    skillDatas : List<SkillDataSO>
+      skillType  : SkillType     enum: Bag | Energy | Rope | Speed
+      skillDatas : List<SkillData>   one entry per level
+        value  : Single
+        value2 : Single
+        price  : Single
+  database : SkillsDatabase      live per-save state
+    skillsData : SkillsData
+      skillsData : Dictionary<SkillType, Int32>
+```
+
+`SkillsDataSO.GetSkillData(1)` maps a skill to its catalog
+entry. `SkillsData` has its own `GetSkillLevel` / `SetSkillLevel`
+/ `LevelUpSkill`, and `SkillsDatabase` adds `SaveData(1)` /
+`LoadData(1)`, so a level written through the manager persists
+with the game's own save, not ours.
+
+### 13.2 The four skills
+
+1.0 ships **Bag, Energy, Rope, Speed**. That is the original
+demo's set: `Rope` is back and the First Gun enum's `Health`,
+`Stamina` and `Weapon` are not in the catalog. Levels are
+1-based; a level's row is at index `level - 1`.
+
+| Skill | Levels | `value` per level | `value2` per level | Price per level |
+|---|---|---|---|---|
+| Bag | 5 | 5, 7, 9, 12, 15 | 2, 3, 4, 5, 6 | 0, 50, 200, 500, 1000 |
+| Energy | 6 | 40, 50, 60, 70, 80, 90 | 0 | 0 (free at every level) |
+| Rope | 5 | 1.0, 1.1, 1.2, 1.35, 1.5 | 0 | 0, 50, 200, 500, 1000 |
+| Speed | 5 | 1.0, 1.05, 1.1, 1.15, 1.2 | 1.0, 1.25, 1.5, 1.75, 2.0 | 0, 50, 200, 500, 1000 |
+
+Bag `value` is the backpack slot count (5 at level 1, matching
+the demo finding that the player starts with 5 slots). Rope and
+Speed `value` read as multipliers against 1.0. Energy `value`
+is a capacity, and every Energy level costs nothing, which
+suggests Energy is not bought in the skills shop but granted by
+something else.
+
+State read in the test save: Bag 1/5, Energy 2/6, Rope 1/5,
+Speed 1/5.
+
+### 13.3 The control plane can drive it by enum name
+
+`invoke_method` accepts the enum as a plain string, so no
+handle juggling is needed for the skill argument:
+
+```json
+{"op":"invoke_method","args":{"handle":<SkillsManager>,
+ "method":"GetCurrentSkillLevel","args":["Bag"]}}
+```
+
+Verified working for `GetCurrentSkillLevel(skill)`,
+`GetSkillLevelsAmount(skill)` and
+`GetCurrentSkillValue(skill, bool)`, where the bool picks
+`value2` over `value`.
+
+### 13.4 What is still unverified
+
+`SetSkillLevel` had not been called on the 1.0 build when this
+section was written. It has been since: see section 15, it
+works.
+
+Mapping the mod's own skills onto these four is also still
+open. Bag is the obvious backing for Strong Back. Resilient
+maps to Energy, though the zero prices there need explaining
+first. Charisma has no counterpart in this catalog at all, so
+it needs either a different vanilla system (worker hire cost
+moved out of `WorkersManager`) or a different design.
+
+## 14. Static decompile of the 1.0 assembly (2026-08-13)
+
+Live probing answers "does this field exist"; it cannot answer
+"where does this value come from". `ilspycmd` decompiles the
+whole game to 802 C# files in seconds, so from here the game's
+own source is the authority and the control plane is for
+confirming behaviour, not for discovery.
+
+```sh
+ilspycmd -p -o <outdir> \
+  "C:\Games\Steam\steamapps\common\Wild West Miner Simulator\Wild West Miner Simulator_Data\Managed\Assembly-CSharp.dll"
+```
+
+802 files, 696 in the global namespace, 83 under
+`VoxelDiggingMaster`, the rest third-party asset packs
+(EpicToonFX, KevinIglesias, StarterAssets, SatProductions).
+
+### 14.1 Two corrections to section 12
+
+**`DigManager.Dig` does not exist and never did on this build.**
+Section 12.2 reported it present. That was a bug in the probe:
+it substring-matched the method list, and `CanDig`, `HandleDig`,
+`DigDynamite`, `OnDigCompleted` and `DigPrologue` all contain
+"Dig". The test now compares names exactly and reports
+`Dig: NOT LISTED`. `PlayerManager.AddPlayerCurrency(float)` is
+real and confirmed by exact match.
+
+**`MineDataSO` has no `_oreValue` field.** Section 12.2 listed
+the field as unverified because the ScriptableObject has no
+scene instance. The source shows the class holds `id`,
+`availableByDefault`, `canDigWithShovel`, `chanceFactor`,
+`itemDropDatas`, the petroleum settings and the dynamite
+settings. Nothing resembling an ore value. Greedy Miner has no
+target on this build (see 14.5).
+
+### 14.2 The skill system, from source
+
+`SkillType` is exactly four values: `Bag`, `Energy`, `Rope`,
+`Speed`. `SkillsData`'s constructor seeds every enum value at
+level **1**, so levels are 1-based and `GetSkillValue` indexes
+`SkillDatas[level - 1]`.
+
+`SkillsData` is `[Serializable]` with a `[JsonProperty]`
+`Dictionary<SkillType, int>`, so levels ride in the game's own
+Newtonsoft save.
+
+Neither `SkillsManager.SetSkillLevel` nor `SkillsData.SetSkillLevel`
+clamps. Passing a level above `GetSkillLevelsAmount` stores fine
+and then throws `ArgumentOutOfRangeException` the next time
+anything reads the value. **A proxy Effect must clamp to
+1..GetSkillLevelsAmount(skill) itself.**
+
+`SetSkillLevel` calls `AfterChangeSkillLevel`, which is what
+makes a level change take effect live:
+
+| Skill | What `AfterChangeSkillLevel` does |
+|---|---|
+| Bag | `InventoryCounterUI.UpdateCounter()`, `HandsPanelUI.RefreshBagLimits()` |
+| Energy | `EnergyManager.RestoreFullEnergy()` and a "max_energy_up" message |
+| Rope | `PlayerController.SetCurrentRopeSpeed()` |
+| Speed | `PlayerController.SetCurrentSpeed()` and `PlayerRunningController.UpdateMaxRunPoints(value2)` |
+
+### 14.3 What each skill value actually drives
+
+Every consumer in the assembly:
+
+| Skill | Field | Consumer | Effect |
+|---|---|---|---|
+| Bag | `value` | `Bag.GetSlotsAmount()` | inventory slot count, read live on every `HasFreeSpace()` |
+| Bag | `value2` | `BeersManager`, `DynamitesManager` | how many beers / dynamites the player can carry |
+| Energy | `value` | `EnergyManager.GetMaxEnergyValue()` | energy ceiling |
+| Rope | `value` | `PlayerController.SetCurrentRopeSpeed()` | `currentRopeSpeed = baseRopeSpeed * value` |
+| Speed | `value` | `PlayerController.SetCurrentSpeed()` | `playerCurrentSpeed = baseSpeed * value` |
+| Speed | `value2` | `PlayerRunningController.UpdateMaxRunPoints()` | sprint points ceiling |
+
+Because `Bag.GetSlotsAmount()` recomputes from the skill on
+every call, raising the Bag level takes effect instantly with
+no field write and no reload. That is exactly the behaviour the
+old demo session observed.
+
+Energy costing 0 at every level is explained: Energy is not
+bought in the skills shop. `BedsManager` sets the Energy skill
+level from the bed the player owns
+(`SetSkillLevel(SkillType.Energy, bedData.EnergySkillLevel)`),
+and `Home` forces Energy to at least 2 on first entry. Buying a
+better bed is the Energy upgrade path. Anything the mod writes
+to Energy will be overwritten the next time a bed is bought or
+the house is entered.
+
+`StatsManager` hardcodes "/5" in the stats window for Speed,
+Bag and Rope, so a mod-driven level above 5 will display wrong
+there even where it works mechanically.
+
+### 14.4 Worker hire cost, for Charisma
+
+Hire cost left `WorkersManager` because it was never a field.
+`HireWorkerPopupUI` hardcodes three offers, `Hire1/2/3` calling
+`Hire(30f, 1)`, `Hire(80f, 3)`, `Hire(150f, 7)`. `Hire` prorates
+against the current day progress, rounds, checks
+`PlayerManager.CanPlayerBuy(price)` and pays with
+`RemovePlayerCurrency(price)`.
+
+So Charisma is a Harmony prefix on
+`HireWorkerPopupUI.Hire(float price, int days)` that scales the
+`price` argument. There is no field to write and no vanilla
+skill to proxy.
+
+### 14.5 Ore value, for Greedy Miner
+
+Ore is an item, not a mine property. `ItemDataSO.GetPrice()` is
+virtual; `ResourceItemDataSO` overrides it as
+`RoundToInt(maxWeight * pricePerKg)` and `MaterialItemDataSO`
+returns a flat `price`. Selling goes through `SellingNpc` /
+`BuySellNpc`, and `PrestigeManager.GetFinalPrice` scales store
+prices on top.
+
+Greedy Miner therefore has two possible shapes, neither
+implemented: a Harmony patch on the sell path, or a write to
+`ResourceItemDataSO.pricePerKg`. The second is dangerous:
+ScriptableObject edits are asset-level and outlive the save.
+
+### 14.6 Dig flow, for the XP hook
+
+`HandleDig()` gates on energy and tool readiness, then plays the
+animation whose callback is `DigShovel()`. `DigShovel` modifies
+the voxel density and fires the static event
+`DigManager.OnDig`. The voxel system calls back into
+`OnDigCompleted(center, radius, voxelsAffected, chunksAffected)`,
+which spawns the resource item, takes 1 energy, plays the dust
+and the sound.
+
+For "+XP per swing" the honest targets are the static `OnDig`
+event or a postfix on `DigShovel`. `OnDigCompleted` also fires
+for dynamite digs (guarded by a `dynamite` flag), so it counts
+more than swings.
+
+### 14.7 Systems present but unexplored
+
+`PrestigeManager` (price scaling, `GetFinalPrice`),
+`MissionsManager` + `MissionsCenter` + `MissionTarget`,
+`WeaponsManager` / `PlayerWeaponController` / `WeaponDataSO`,
+`HorsesManager` / `HorseDataSO`, `WildAnimalsManager` with a
+seven-state behaviour machine
+(`Stand`, `Patrol`, `Travel`, `Chase`, `Attack`, `Hit`, `Dead`),
+`SteamAchievementsManager`, `SpecialEventsManager`
+(`SpecialEvent_GovernorAssassination`), the minigames
+(`BottleShootingMinigame`, `DartsMinigame`), `BarrelsManager`,
+`FurnacesManager`, `TrainDatabase` / `TracksManager`.
+
+`PlayerManager` declares a `e_OnPlayerExpChanged` event that
+nothing else in the assembly subscribes to or raises, so the
+game has no player XP system despite the hook being there.
+
+## 15. SetSkillLevel works on 1.0 (2026-08-13)
+
+The one call the proxy plan depends on, now proven on the
+release build. `wwm-mod/tests/research_skill_write.rs`, run
+against slot 2:
+
+```text
+before: level=1 value=Some(5.0) slots=Some(5)
+SetSkillLevel(Bag, 3): ok=true None
+after:  level=Some(3) value=Some(9.0) slots=Some(9)
+restore to 1: ok=true level=Some(1) slots=Some(5)
+```
+
+Three things are confirmed at once. The write lands
+(`GetCurrentSkillLevel` returns 3). The catalog lookup follows
+it (`GetCurrentSkillValue` returns 9.0, the third Bag row from
+13.2, which also re-confirms the `level - 1` indexing). And the
+game acts on it: `Bag.GetSlotsAmount()` reports 9 immediately,
+with no reload, no field write and no save/load cycle.
+
+The test restores the original level before it asserts, so a
+failure cannot leave the player's save modified, and it asserts
+the restore too.
+
+Still not covered by this test: whether the level survives a
+save and reload (the write goes through `SkillsDatabase`, which
+owns `SaveData`/`LoadData`, so it should, but "should" is not
+evidence), and whether prestige resets it.
