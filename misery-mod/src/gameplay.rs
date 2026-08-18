@@ -6,24 +6,11 @@
 //! UE4SS object dump. See docs/misery-research.md section 8.6.
 
 use ueforge::ue;
-use ueforge::ue::{read_at, write_at};
+pub use ueforge::ue::struct_fields::{FieldDef, FieldType, FieldValue};
+use ueforge::ue::struct_fields;
 
 pub const STRUCT_BASE: usize = 0x218;
 const GI_CLASS: &str = "BP_SGKGameInstance_C";
-
-#[derive(Debug, Clone, Copy)]
-pub enum FieldType {
-    Double,
-    Bool,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct FieldDef {
-    pub name: &'static str,
-    pub desc: &'static str,
-    pub offset: usize,
-    pub ty: FieldType,
-}
 
 pub static FIELDS: &[FieldDef] = &[
     FieldDef { name: "ShiningsTimer",              desc: "Minutes per emission cycle",                          offset: 0x00, ty: FieldType::Double },
@@ -56,21 +43,6 @@ pub static FIELDS: &[FieldDef] = &[
     FieldDef { name: "CollisionBetweenPlayers",    desc: "Players physically collide with each other",         offset: 0xBC, ty: FieldType::Bool },
 ];
 
-#[derive(Debug, Clone)]
-pub enum FieldValue {
-    Double(f64),
-    Bool(bool),
-}
-
-impl std::fmt::Display for FieldValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FieldValue::Double(v) => write!(f, "{v}"),
-            FieldValue::Bool(v) => write!(f, "{v}"),
-        }
-    }
-}
-
 pub fn game_instance_ptr() -> Result<*const u8, String> {
     ue::actor::find_object(GI_CLASS, None, false)
         .ok_or_else(|| "no game instance found".into())
@@ -78,33 +50,17 @@ pub fn game_instance_ptr() -> Result<*const u8, String> {
 
 pub fn read_field(field: &FieldDef) -> Result<FieldValue, String> {
     let ptr = game_instance_ptr()?;
-    let abs = STRUCT_BASE + field.offset;
-    match field.ty {
-        FieldType::Double => {
-            let v: f64 = unsafe { read_at(ptr, abs) };
-            Ok(FieldValue::Double(v))
-        }
-        FieldType::Bool => {
-            let v: u8 = unsafe { read_at(ptr, abs) };
-            Ok(FieldValue::Bool(v != 0))
-        }
-    }
+    struct_fields::read_field(ptr, STRUCT_BASE, field)
 }
 
 pub fn write_double(field: &FieldDef, value: f64) -> Result<(), String> {
     let ptr = game_instance_ptr()?;
-    unsafe { write_at(ptr, STRUCT_BASE + field.offset, value) };
-    ueforge::log::log(format_args!(
-        "gameplay: {} = {value}", field.name
-    ));
+    struct_fields::write_double(ptr, STRUCT_BASE, field, value, "gameplay");
     Ok(())
 }
 
 pub fn write_bool(field: &FieldDef, value: bool) -> Result<(), String> {
     let ptr = game_instance_ptr()?;
-    unsafe { write_at(ptr, STRUCT_BASE + field.offset, value as u8) };
-    ueforge::log::log(format_args!(
-        "gameplay: {} = {value}", field.name
-    ));
+    struct_fields::write_bool(ptr, STRUCT_BASE, field, value, "gameplay");
     Ok(())
 }
