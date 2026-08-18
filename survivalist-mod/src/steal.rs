@@ -31,8 +31,9 @@ use modforge::mission::{self, Stage, Step};
 use unityforge::mono::{self, LogLevel};
 
 use crate::common::{
-    GoodsFilter, base_centre, carry_off_stored_goods, ctype, display_name, for_each_community,
-    handle_of, list_len, own, with,
+    GoodsFilter, base_centre, carry_off_stored_goods, ctype, display_name, dist_sq_to_building,
+    for_each_community, handle_of, is_npc_alive, list_len, own, remove_squad_and_drop,
+    send_squad_home, with,
 };
 use crate::genome;
 
@@ -390,12 +391,10 @@ fn launch(camp: &Camp, target: &Camp, now: f32) -> Result<(), String> {
 // ---- Mission trait ---------------------------------------------------------
 
 impl mission::Mission for Mission {
-    fn stage(&self) -> Stage { self.stage }
-    fn set_stage(&mut self, s: Stage) { self.stage = s; }
-    fn deadline(&self) -> f32 { self.deadline }
+    modforge::mission_accessors!();
 
     fn is_agent_alive(&self) -> Result<bool, String> {
-        let alive = with(self.thief_h, |t| t.invoke("get_AliveAndNotZombie", &json!([])))? == json!(true);
+        let alive = is_npc_alive(self.thief_h)?;
         if !alive {
             for &v in &self.voter_ids {
                 genome::reinforce_individual(v, genome::GUILE, false, 2.0);
@@ -421,13 +420,7 @@ impl mission::Mission for Mission {
         if !target_alive {
             return Ok(Step::Complete);
         }
-        let tile = with(self.thief_h, |t| t.invoke("get_Tile", &json!([])))?;
-        let d = with(self.target_h, |t| {
-            t.invoke("GetDistSqToNearestBuilding", &json!([tile.clone()]))
-        })?
-        .as_f64()
-        .unwrap_or(f64::MAX);
-        if d > ARRIVE_DIST_SQ {
+        if dist_sq_to_building(self.thief_h, self.target_h)? > ARRIVE_DIST_SQ {
             return Ok(Step::Continue);
         }
         self.stolen = with(self.target_h, |t| {
@@ -465,31 +458,12 @@ impl mission::Mission for Mission {
                 ),
             );
         }
-        let home = json!({"x": self.home.0, "y": self.home.1});
-        with(self.faction_h, |com| -> Result<(), String> {
-            if let Ok(sq) = com.invoke("GetSquad", &json!([self.squad_id])) {
-                if let Some(sq_h) = handle_of(&sq) {
-                    let squad = own(sq_h);
-                    squad.write_field("GoalTile", &home)?;
-                    com.invoke(
-                        "SetSquadAction",
-                        &json!([{ "handle": sq_h }, "GoTo", 0, home, null, false]),
-                    )?;
-                }
-            }
-            Ok(())
-        })?;
+        send_squad_home(self.faction_h, self.squad_id, self.home)?;
         Ok(Step::Transition)
     }
 
     fn on_returning(&mut self, _now: f32) -> Result<Step, String> {
-        let tile = with(self.thief_h, |t| t.invoke("get_Tile", &json!([])))?;
-        let d = with(self.faction_h, |com| {
-            com.invoke("GetDistSqToNearestBuilding", &json!([tile]))
-        })?
-        .as_f64()
-        .unwrap_or(f64::MAX);
-        if d > ARRIVE_DIST_SQ {
+        if dist_sq_to_building(self.thief_h, self.faction_h)? > ARRIVE_DIST_SQ {
             return Ok(Step::Continue);
         }
         if !self.caught && self.stolen > 0 {
@@ -509,16 +483,7 @@ impl mission::Mission for Mission {
     }
 
     fn cleanup(self) {
-        with(self.faction_h, |com| {
-            if let Ok(sq) = com.invoke("GetSquad", &json!([self.squad_id])) {
-                if let Some(sq_h) = handle_of(&sq) {
-                    let _ = com.invoke("RemoveSquad", &json!([{ "handle": sq_h }]));
-                }
-            }
-        });
-        drop(own(self.faction_h));
-        drop(own(self.target_h));
-        drop(own(self.thief_h));
+        remove_squad_and_drop(self.faction_h, self.squad_id, &[self.faction_h, self.target_h, self.thief_h]);
     }
 
     fn label(&self) -> String {

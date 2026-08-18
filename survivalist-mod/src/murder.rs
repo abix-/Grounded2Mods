@@ -25,7 +25,10 @@ use serde_json::{Value as Json, json};
 use modforge::mission::{self, Mission as _, Stage, Step};
 use unityforge::mono::{self, LogLevel};
 
-use crate::common::{ctype, display_name, for_each_community, handle_of, own, with};
+use crate::common::{
+    ctype, display_name, for_each_community, handle_of, is_npc_alive, own, remove_squad_and_drop,
+    send_squad_home, with,
+};
 use crate::genome;
 
 /// Seconds between murder scans; the knife is rare.
@@ -354,12 +357,10 @@ fn advance_mission(now: f32) {
 // ---- Mission trait ---------------------------------------------------------
 
 impl mission::Mission for Mission {
-    fn stage(&self) -> Stage { self.stage }
-    fn set_stage(&mut self, s: Stage) { self.stage = s; }
-    fn deadline(&self) -> f32 { self.deadline }
+    modforge::mission_accessors!();
 
     fn is_agent_alive(&self) -> Result<bool, String> {
-        let alive = with(self.operative_h, |o| o.invoke("get_AliveAndNotZombie", &json!([])))? == json!(true);
+        let alive = is_npc_alive(self.operative_h)?;
         if !alive {
             for &v in &self.voter_ids {
                 genome::reinforce_individual(v, genome::GUILE, false, 2.0);
@@ -382,10 +383,7 @@ impl mission::Mission for Mission {
     }
 
     fn on_going(&mut self, now: f32) -> Result<Step, String> {
-        let victim_alive =
-            with(self.victim_h, |v| v.invoke("get_AliveAndNotZombie", &json!([])))
-                .map(|v| v == json!(true))
-                .unwrap_or(false);
+        let victim_alive = is_npc_alive(self.victim_h).unwrap_or(false);
 
         if self.strike_phase {
             if !victim_alive {
@@ -426,26 +424,16 @@ impl mission::Mission for Mission {
         }
 
         if !victim_alive {
-            send_home(self)?;
+            send_squad_home(self.camp_h, self.squad_id, self.home)?;
             return Ok(Step::Transition);
         }
         let otile = with(self.operative_h, |o| o.invoke("get_Tile", &json!([])))?;
         let vtile = with(self.victim_h, |v| v.invoke("get_Tile", &json!([])))?;
         let d = tile_dist_sq(&otile, &vtile);
         if d > STRIKE_DIST_SQ {
-            with(self.camp_h, |com| -> Result<(), String> {
-                if let Ok(sq) = com.invoke("GetSquad", &json!([self.squad_id])) {
-                    if let Some(sq_h) = handle_of(&sq) {
-                        let squad = own(sq_h);
-                        squad.write_field("GoalTile", &vtile)?;
-                        com.invoke(
-                            "SetSquadAction",
-                            &json!([{ "handle": sq_h }, "GoTo", 0, vtile.clone(), null, false]),
-                        )?;
-                    }
-                }
-                Ok(())
-            })?;
+            let vx = vtile.get("x").and_then(Json::as_i64).unwrap_or(0);
+            let vy = vtile.get("y").and_then(Json::as_i64).unwrap_or(0);
+            send_squad_home(self.camp_h, self.squad_id, (vx, vy))?;
             return Ok(Step::Continue);
         }
         with(self.camp_h, |com| {
@@ -484,39 +472,12 @@ impl mission::Mission for Mission {
     }
 
     fn cleanup(self) {
-        with(self.camp_h, |com| {
-            if let Ok(sq) = com.invoke("GetSquad", &json!([self.squad_id])) {
-                if let Some(sq_h) = handle_of(&sq) {
-                    let _ = com.invoke("RemoveSquad", &json!([{ "handle": sq_h }]));
-                }
-            }
-        });
-        drop(own(self.camp_h));
-        drop(own(self.victim_h));
-        drop(own(self.operative_h));
+        remove_squad_and_drop(self.camp_h, self.squad_id, &[self.camp_h, self.victim_h, self.operative_h]);
     }
 
     fn label(&self) -> String {
         format!("{} assassinating {}", self.camp_name, self.victim_name)
     }
-}
-
-/// Retarget the existing squad home (used while it still exists).
-fn send_home(m: &Mission) -> Result<(), String> {
-    let home = json!({"x": m.home.0, "y": m.home.1});
-    with(m.camp_h, |com| -> Result<(), String> {
-        if let Ok(sq) = com.invoke("GetSquad", &json!([m.squad_id])) {
-            if let Some(sq_h) = handle_of(&sq) {
-                let squad = own(sq_h);
-                squad.write_field("GoalTile", &home)?;
-                com.invoke(
-                    "SetSquadAction",
-                    &json!([{ "handle": sq_h }, "GoTo", 0, home.clone(), null, false]),
-                )?;
-            }
-        }
-        Ok(())
-    })
 }
 
 /// After the strike the squad is gone; walk the operative home in

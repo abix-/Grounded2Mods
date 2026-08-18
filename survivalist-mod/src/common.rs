@@ -452,6 +452,57 @@ pub fn sweep_orphan_trade_squads() {
     }
 }
 
+// ---- mission helpers --------------------------------------------------------
+
+/// True when the character at `h` is alive and not a zombie.
+pub fn is_npc_alive(h: i32) -> Result<bool, String> {
+    Ok(with(h, |t| t.invoke("get_AliveAndNotZombie", &json!([])))? == json!(true))
+}
+
+/// Squared tile distance from the character at `agent_h` to the
+/// nearest building of the community at `com_h`.
+pub fn dist_sq_to_building(agent_h: i32, com_h: i32) -> Result<f64, String> {
+    let tile = with(agent_h, |t| t.invoke("get_Tile", &json!([])))?;
+    Ok(with(com_h, |c| {
+        c.invoke("GetDistSqToNearestBuilding", &json!([tile]))
+    })?
+    .as_f64()
+    .unwrap_or(f64::MAX))
+}
+
+/// Retarget an existing squad toward `home`.
+pub fn send_squad_home(com_h: i32, squad_id: i64, home: (i64, i64)) -> Result<(), String> {
+    let dest = json!({"x": home.0, "y": home.1});
+    with(com_h, |com| -> Result<(), String> {
+        if let Ok(sq) = com.invoke("GetSquad", &json!([squad_id])) {
+            if let Some(sq_h) = handle_of(&sq) {
+                let squad = own(sq_h);
+                squad.write_field("GoalTile", &dest)?;
+                com.invoke(
+                    "SetSquadAction",
+                    &json!([{ "handle": sq_h }, "GoTo", 0, dest, null, false]),
+                )?;
+            }
+        }
+        Ok(())
+    })
+}
+
+/// Remove a squad from the community and release a list of owned
+/// handles.
+pub fn remove_squad_and_drop(com_h: i32, squad_id: i64, handles: &[i32]) {
+    with(com_h, |com| {
+        if let Ok(sq) = com.invoke("GetSquad", &json!([squad_id])) {
+            if let Some(sq_h) = handle_of(&sq) {
+                let _ = com.invoke("RemoveSquad", &json!([{ "handle": sq_h }]));
+            }
+        }
+    });
+    for &h in handles {
+        drop(own(h));
+    }
+}
+
 /// Run `f` on the Unity main thread and wait for its result
 /// (same oneshot shape as unityforge's write_field op).
 pub fn on_main_thread<F>(f: F) -> Result<Json, String>

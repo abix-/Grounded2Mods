@@ -32,7 +32,8 @@ use modforge::mission::{self, Stage, Step};
 use unityforge::mono::{self, LogLevel, MonoObject, MonoType};
 
 use crate::common::{
-    base_centre, ctype, display_name, for_each_community, handle_of, list_len, own, parse_xy, with,
+    base_centre, ctype, display_name, dist_sq_to_building, for_each_community, handle_of,
+    is_npc_alive, list_len, own, parse_xy, remove_squad_and_drop, send_squad_home, with,
 };
 use crate::genome;
 
@@ -430,18 +431,10 @@ fn gather_members(com: &MonoObject, ids: &[i64]) -> Result<Vec<i32>, String> {
 // ---- Mission trait ---------------------------------------------------------
 
 impl mission::Mission for Mission {
-    fn stage(&self) -> Stage { self.stage }
-    fn set_stage(&mut self, s: Stage) { self.stage = s; }
-    fn deadline(&self) -> f32 { self.deadline }
+    modforge::mission_accessors!();
 
     fn is_agent_alive(&self) -> Result<bool, String> {
-        let any_alive = self.carriers.iter().any(|&c| {
-            with(c, |ch| {
-                ch.invoke("get_AliveAndNotZombie", &json!([]))
-                    .map(|v| v == json!(true))
-                    .unwrap_or(false)
-            })
-        });
+        let any_alive = self.carriers.iter().any(|&c| is_npc_alive(c).unwrap_or(false));
         if !any_alive {
             reinforce_all(self, false, 2.0);
             mono::log(
@@ -456,13 +449,9 @@ impl mission::Mission for Mission {
     }
 
     fn on_going(&mut self, _now: f32) -> Result<Step, String> {
-        let lead = self.carriers.iter().copied().find(|&c| {
-            with(c, |ch| {
-                ch.invoke("get_AliveAndNotZombie", &json!([]))
-                    .map(|v| v == json!(true))
-                    .unwrap_or(false)
-            })
-        }).ok_or_else(|| "no living carrier".to_string())?;
+        let lead = self.carriers.iter().copied()
+            .find(|&c| is_npc_alive(c).unwrap_or(false))
+            .ok_or_else(|| "no living carrier".to_string())?;
         let tile = with(lead, |c| c.invoke("get_Tile", &json!([])))?;
         let (lx, ly) = parse_xy(&tile).ok_or("carrier tile unreadable")?;
         let d2 = (lx as f64 - self.prop_tile.0).powi(2) + (ly as f64 - self.prop_tile.1).powi(2);
@@ -470,20 +459,7 @@ impl mission::Mission for Mission {
             return Ok(Step::Continue);
         }
         self.hauled = take_loot(self)?;
-        let home = json!({"x": self.home.0, "y": self.home.1});
-        with(self.scav_h, |com| -> Result<(), String> {
-            if let Ok(sq) = com.invoke("GetSquad", &json!([self.squad_id])) {
-                if let Some(sq_h) = handle_of(&sq) {
-                    let squad = own(sq_h);
-                    squad.write_field("GoalTile", &home)?;
-                    com.invoke(
-                        "SetSquadAction",
-                        &json!([{ "handle": sq_h }, "GoTo", 0, home, null, false]),
-                    )?;
-                }
-            }
-            Ok(())
-        })?;
+        send_squad_home(self.scav_h, self.squad_id, self.home)?;
         mono::log(
             LogLevel::Info,
             &format!(
@@ -495,20 +471,10 @@ impl mission::Mission for Mission {
     }
 
     fn on_returning(&mut self, _now: f32) -> Result<Step, String> {
-        let lead = self.carriers.iter().copied().find(|&c| {
-            with(c, |ch| {
-                ch.invoke("get_AliveAndNotZombie", &json!([]))
-                    .map(|v| v == json!(true))
-                    .unwrap_or(false)
-            })
-        }).ok_or_else(|| "no living carrier".to_string())?;
-        let tile = with(lead, |c| c.invoke("get_Tile", &json!([])))?;
-        let d = with(self.scav_h, |com| {
-            com.invoke("GetDistSqToNearestBuilding", &json!([tile]))
-        })?
-        .as_f64()
-        .unwrap_or(f64::MAX);
-        if d > HOME_ARRIVE_SQ {
+        let lead = self.carriers.iter().copied()
+            .find(|&c| is_npc_alive(c).unwrap_or(false))
+            .ok_or_else(|| "no living carrier".to_string())?;
+        if dist_sq_to_building(lead, self.scav_h)? > HOME_ARRIVE_SQ {
             return Ok(Step::Continue);
         }
         if self.hauled > 0 {
@@ -538,18 +504,9 @@ impl mission::Mission for Mission {
     }
 
     fn cleanup(self) {
-        with(self.scav_h, |com| {
-            if let Ok(sq) = com.invoke("GetSquad", &json!([self.squad_id])) {
-                if let Some(sq_h) = handle_of(&sq) {
-                    let _ = com.invoke("RemoveSquad", &json!([{ "handle": sq_h }]));
-                }
-            }
-        });
-        drop(own(self.scav_h));
-        drop(own(self.prop_h));
-        for c in self.carriers {
-            drop(own(c));
-        }
+        let mut handles = vec![self.scav_h, self.prop_h];
+        handles.extend(&self.carriers);
+        remove_squad_and_drop(self.scav_h, self.squad_id, &handles);
     }
 
     fn label(&self) -> String {

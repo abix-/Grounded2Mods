@@ -26,6 +26,17 @@ pub enum Step {
     Complete,
 }
 
+/// Generate the three field-accessor methods every Mission impl
+/// repeats identically. Call inside `impl Mission for MyStruct`.
+#[macro_export]
+macro_rules! mission_accessors {
+    () => {
+        fn stage(&self) -> $crate::mission::Stage { self.stage }
+        fn set_stage(&mut self, s: $crate::mission::Stage) { self.stage = s; }
+        fn deadline(&self) -> f32 { self.deadline }
+    };
+}
+
 /// A go-and-return mission. Games implement this on their mission
 /// struct; the framework handles stage transitions, timeout, and
 /// the batch advance loop.

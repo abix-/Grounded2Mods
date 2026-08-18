@@ -2,7 +2,7 @@
 
 | Priority | System | Todo | Done when |
 |---:|---|---|---|
-| 1 | `modforge` | [x] Lift mission runner into `modforge::mission`: Mission trait with Stage enum (Going/Returning), advance/advance_all batch loop, should_tick cadence helper. Game-specific arrival behavior via on_going/on_returning trait methods | survivalist vendor/steal/trade/scavenge/murder use modforge::mission for their state machine (rob/courier use different patterns). |
+| 1 | `survivalist-mod` | [ ] Add mission_accessors! macro in modforge::mission and extract Unity helpers (is_npc_alive, dist_sq_to_building, send_squad_home, remove_squad_and_drop) into survivalist common.rs; repoint all 5 mission impls | Each mission trait impl contains only game-specific logic; shared patterns use macro + helpers. |
 | 1 | `cs-shim-common` | [ ] Fix the silently broken Harmony bridge in HarmonyBridge.cs: PatchPrefix + PatchPostfix construct target from instance-method lambda which HarmonyLib rejects; replace with a static dispatcher keyed by patch handle | Rust-side patch_prefix / patch_postfix calls fire in-game. |
 | 1 | `ueforge` | [ ] Add ueforge::features module with Features builder (.once(), .on_each_load(), .on_first_table(), .install()) | Features builder available; one mod uses it. |
 | 1 | `misery-mod` | [ ] Convert misery-mod on_unreal_init to use the features builder | misery-mod uses ueforge::features() instead of manual thread spawns. |

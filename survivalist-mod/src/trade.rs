@@ -31,8 +31,9 @@ use modforge::mission::{self, Stage, Step};
 use unityforge::mono::{self, LogLevel};
 
 use crate::common::{
-    GoodsFilter, base_centre, carry_off_stored_goods, ctype, display_name, for_each_community,
-    handle_of, list_len, own, with,
+    GoodsFilter, base_centre, carry_off_stored_goods, ctype, display_name, dist_sq_to_building,
+    for_each_community, handle_of, is_npc_alive, list_len, own, remove_squad_and_drop,
+    send_squad_home, with,
 };
 use crate::genome;
 
@@ -481,12 +482,10 @@ fn launch(camp: &Camp, host: &Camp, now: f32) -> Result<(), String> {
 // ---- Mission trait ---------------------------------------------------------
 
 impl mission::Mission for Mission {
-    fn stage(&self) -> Stage { self.stage }
-    fn set_stage(&mut self, s: Stage) { self.stage = s; }
-    fn deadline(&self) -> f32 { self.deadline }
+    modforge::mission_accessors!();
 
     fn is_agent_alive(&self) -> Result<bool, String> {
-        let alive = with(self.trader_h, |t| t.invoke("get_AliveAndNotZombie", &json!([])))? == json!(true);
+        let alive = is_npc_alive(self.trader_h)?;
         if !alive {
             for &v in &self.voter_ids {
                 genome::reinforce_individual(v, genome::DEFENSIVENESS, false, 2.0);
@@ -512,13 +511,7 @@ impl mission::Mission for Mission {
         if !host_alive {
             return Ok(Step::Complete);
         }
-        let tile = with(self.trader_h, |t| t.invoke("get_Tile", &json!([])))?;
-        let d = with(self.host_h, |h| {
-            h.invoke("GetDistSqToNearestBuilding", &json!([tile.clone()]))
-        })?
-        .as_f64()
-        .unwrap_or(f64::MAX);
-        if d > ARRIVE_DIST_SQ {
+        if dist_sq_to_building(self.trader_h, self.host_h)? > ARRIVE_DIST_SQ {
             return Ok(Step::Continue);
         }
         self.delivered = deliver_carried_food(self.trader_h, self.host_h, self.loaded)?;
@@ -544,31 +537,12 @@ impl mission::Mission for Mission {
                 self.trader_name, self.delivered, self.host_name, self.paid,
             ),
         );
-        let home = json!({"x": self.home.0, "y": self.home.1});
-        with(self.seller_h, |com| -> Result<(), String> {
-            if let Ok(sq) = com.invoke("GetSquad", &json!([self.squad_id])) {
-                if let Some(sq_h) = handle_of(&sq) {
-                    let squad = own(sq_h);
-                    squad.write_field("GoalTile", &home)?;
-                    com.invoke(
-                        "SetSquadAction",
-                        &json!([{ "handle": sq_h }, "GoTo", 0, home, null, false]),
-                    )?;
-                }
-            }
-            Ok(())
-        })?;
+        send_squad_home(self.seller_h, self.squad_id, self.home)?;
         Ok(Step::Transition)
     }
 
     fn on_returning(&mut self, _now: f32) -> Result<Step, String> {
-        let tile = with(self.trader_h, |t| t.invoke("get_Tile", &json!([])))?;
-        let d = with(self.seller_h, |com| {
-            com.invoke("GetDistSqToNearestBuilding", &json!([tile]))
-        })?
-        .as_f64()
-        .unwrap_or(f64::MAX);
-        if d > ARRIVE_DIST_SQ {
+        if dist_sq_to_building(self.trader_h, self.seller_h)? > ARRIVE_DIST_SQ {
             return Ok(Step::Continue);
         }
         if self.delivered > 0 {
@@ -588,16 +562,7 @@ impl mission::Mission for Mission {
     }
 
     fn cleanup(self) {
-        with(self.seller_h, |com| {
-            if let Ok(sq) = com.invoke("GetSquad", &json!([self.squad_id])) {
-                if let Some(sq_h) = handle_of(&sq) {
-                    let _ = com.invoke("RemoveSquad", &json!([{ "handle": sq_h }]));
-                }
-            }
-        });
-        drop(own(self.seller_h));
-        drop(own(self.host_h));
-        drop(own(self.trader_h));
+        remove_squad_and_drop(self.seller_h, self.squad_id, &[self.seller_h, self.host_h, self.trader_h]);
     }
 
     fn label(&self) -> String {
