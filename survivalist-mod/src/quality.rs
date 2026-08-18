@@ -36,7 +36,7 @@ use parking_lot::Mutex;
 use serde_json::{Value as Json, json};
 
 use modforge::ops::{OP_REGISTRY, OpDef};
-use modforge::unknown::rng;
+use modforge::quality::{roll_sibling, roll_tier};
 use unityforge::hook::{self, HOOK_REGISTRY, HookCtx};
 use unityforge::mono::{self, LogLevel, MonoObject, MonoType};
 
@@ -415,20 +415,6 @@ pub fn tick(now: f32) {
     ROLLED_TRADERS.lock().retain(|id| seen.contains(id));
 }
 
-/// Pick a tier index from cumulative per-mille odds, or None for
-/// the common item the game already spawned.
-fn roll_tier(odds: &[u64; 4], now: f32, salt: u64) -> Option<usize> {
-    let r = rng(now, salt, 1000);
-    let mut cum = 0u64;
-    for (i, &o) in odds.iter().enumerate() {
-        cum += o;
-        if r < cum {
-            return Some(i);
-        }
-    }
-    None
-}
-
 fn roll_band(band_h: i32, odds: &[u64; 4], now: f32, origin: &str) -> Result<(), String> {
     let Some(m_h) = with(band_h, |b| b.read_field("Members").ok().as_ref().and_then(handle_of))
     else {
@@ -509,7 +495,7 @@ fn swap_to_variant(
     who: &str,
     origin: &str,
 ) -> Result<bool, String> {
-    let sibling = rng(now, salt.wrapping_mul(97), SIBLINGS) + 1;
+    let sibling = roll_sibling(SIBLINGS, now, salt);
     let candidate = format!("{base_name}_{}{sibling}", TIER_NAMES[tier_ix]);
     // Only weapons and armor have variants; anything else misses
     // the lookup and stays as it was.

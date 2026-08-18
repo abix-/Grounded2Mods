@@ -20,6 +20,7 @@ pub mod log;
 pub mod mission;
 pub mod ops;
 pub mod patterns;
+pub mod quality;
 pub mod research;
 pub mod ring;
 pub mod rpg;
