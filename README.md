@@ -26,10 +26,11 @@ crates that consume modforge directly or through a forge.
     └────┬────┘         └─────┬─────┘
          │                    │
    ┌─────┴─────────┐    ┌─────┴─────────┐    ┌──────────────┐
-   │ grounded2-mod │    │   wwm-mod     │    │  horsey-mod  │
-   │ outworld-     │    │ il2cpp-smoke  │    │ (Horsey Game,│
-   │ station-mod   │    │               │    │  PE inject)  │
-   │               │    │               │    │              │
+   │ grounded2-mod │    │ schedule1-mod │    │  horsey-mod  │
+   │ misery-mod    │    │ survivalist-  │    │ (Horsey Game,│
+   │ outworld-     │    │   mod         │    │  PE inject)  │
+   │ station-mod   │    │ wwm-mod       │    │              │
+   │               │    │ il2cpp-smoke  │    │              │
    └───────────────┘    └───────────────┘    └──────────────┘
 ```
 
@@ -96,36 +97,18 @@ See [`unityforge/`](unityforge/) and [`docs/unityforge-plan.md`](docs/unityforge
 
 ## Game-side mods
 
-| Crate                     | Game              | Bound via    | What it does                                                                 |
-|---------------------------|-------------------|--------------|------------------------------------------------------------------------------|
-| `grounded2-mod`           | Grounded 2        | ueforge      | Factorio-style RPG / level-up. 13 skills, target ~25.                        |
-| `outworld-station-mod`    | Outworld Station  | ueforge      | Stack-size tweak (DT_Materials.MaxCanStack multiplier). Validates ueforge on a second UE5 game. |
-| `wwm-mod`                 | Wild West Miner   | unityforge   | RPG / level-up + demo-end block (TutorialManager.CompleteDemo prefix). Mono. |
-| `il2cpp-smoke`            | (smoke target)    | unityforge   | End-to-end test of the IL2CPP path before shipping a real IL2CPP game mod.   |
-| `horsey-mod`             | Horsey Game       | modforge (PE inject) | Cheats + research surface. Sleep-safe fatigue suppressor, money/year/horse ops, debug-mode unlock. Carries its own injector EXE. |
-
-`horsey-mod` is the odd one out: Horsey Game has no
-third-party plugin loader, so the crate consumes modforge
-directly and ships a small injector EXE that
-`CreateRemoteThread`s a `LoadLibraryW` into the running
-process. It also owns the binary-patch infrastructure
-(VirtualProtect / write / FlushInstructionCache /
-revert-on-detach) and hot reload via timestamped staged DLLs
-(cargo's output is never the file the game has loaded, so
-it's never locked). All Horsey-specific. See
-[`horsey-mod/README.md`](horsey-mod/README.md) and
-[`horsey-mod/research/`](horsey-mod/research/) for the Horsey Game research.
-
-Per-game research notes:
-
-- [`grounded2-mod/docs/`](grounded2-mod/docs/). Damage
-  internals (combat / fall / environmental), inventory,
-  catalog, persistence.
-- [`wwm-mod/docs/research.md`](wwm-mod/docs/research.md).
-  Wild West Miner managed-side research log.
-- [`horsey-mod/research/`](horsey-mod/research/). Horsey Game decompilation
-  + function annotations + RE notes (subtree-merged from the
-  former `horsey-mods` repo).
+| Crate | Game | Engine / loader | What it does | Deploy | Docs | Status |
+|---|---|---|---|---|---|---|
+| `grounded2-mod` | Grounded 2 | ueforge (UE5 / UE4SS) | RPG / level-up. 13 skills, target ~25. | `cargo deploy install -p grounded2-mod` | [docs/](grounded2-mod/docs/) | shipped |
+| `misery-mod` | MISERY | ueforge (UE5 / UE4SS) | Emission (shining) timer extension. | `cargo deploy install -p misery-mod` | [docs/](misery-mod/docs/) | research complete, building |
+| `outworld-station-mod` | Outworld Station | ueforge (UE5 / UE4SS) | Stack-size tweak (MaxCanStack multiplier). | `cargo deploy install -p outworld-station-mod` | n/a | shipped |
+| `schedule1-mod` | Schedule 1 | unityforge (IL2CPP / MelonLoader) | Combat-XP levelling, loot drops, farming, kill credit. | `schedule1-mod/scripts/build_and_deploy.ps1` | [docs/](schedule1-mod/docs/) | active dev |
+| `survivalist-mod` | Survivalist: Invisible Strain | unityforge (native mod loader) | Storyteller, bounty, trade, war, settler systems. | `survivalist-mod/scripts/build_and_deploy.ps1` | n/a | scaffolded |
+| `wwm-mod` | Wild West Miner | unityforge (Mono / BepInEx) | RPG / level-up + demo-end block. | `wwm-mod/scripts/build_and_deploy.ps1` | [docs/](wwm-mod/docs/) | demo block shipped, RPG parked |
+| `horsey-mod` | Horsey Game | modforge (PE inject) | Cheats + research. Fatigue suppressor, money/year/horse ops. | `horsey-inject.exe --dll horsey.dll` | [README](horsey-mod/README.md), [research/](horsey-mod/research/) | shipped |
+| `il2cpp-smoke` | (smoke target) | unityforge (IL2CPP) | End-to-end test of the IL2CPP path. | n/a | n/a | test fixture |
+| `scrapmechanic-mod` | Scrap Mechanic | Lua (native) | Better Survival overhaul. Not a Rust crate. | copy to game | n/a | shipped |
+| `quasimorph-mod` | Quasimorph | C# (BepInEx) | Initial scaffold. Not a Rust crate. | n/a | n/a | scaffold |
 
 ## Research tooling
 
@@ -188,109 +171,19 @@ migration plan, ecosystem survey, middle-end passes
 walkthrough, architecture). The Cargo.toml + src/ are
 deleted; git history is the archive.
 
-## Repository layout
+## Install and hot reload
 
-```
-.
-+- modforge/                  -- the foundation crate
-+- ueforge/                   -- UE5 / UE4SS forge (60+ submodules, 5 modules)
-+- unityforge/                -- Unity Mono + IL2CPP forge (with C# shim)
-+- grounded2-mod/             -- Grounded 2 RPG / level-up mod (ueforge)
-+- outworld-station-mod/      -- Outworld Station mod (ueforge)
-+- wwm-mod/                   -- Wild West Miner mod (unityforge / Mono)
-+- il2cpp-smoke/              -- IL2CPP smoke target (unityforge / IL2CPP)
-+- horsey-mod/                -- Horsey Game mod (PE inject; modforge directly)
-+- horsey-mod/research/                -- Horsey Game research (decomp, RE notes, plans)
-+- decomp/                    -- Binary-to-Rust decompiler (r2sleigh-based; WSL-only)
-+- falcon-printer/            -- prototype that decomp replaces; archive (docs only)
-+- docs/                      -- workspace-level (todo, changelog, research)
-+- Cargo.toml                 -- workspace manifest
-+- README.md                  -- this file
-```
+`cargo deploy install -p <mod>` (ueforge mods) auto-detects
+the Steam install, copies the DLL into UE4SS's `Mods/`
+directory, and registers it in `mods.txt`. For Vortex:
+`cargo deploy package -p <mod>` produces a zip in `dist/`.
 
-Per-crate docs live in each crate's `docs/` folder.
+Hot reload: ueforge uses Ctrl+R inside UE4SS. Unityforge
+uses generation-versioned DLLs (`build_and_deploy.ps1 -Hot`).
+Horsey uses `horsey-inject.exe --reload`.
 
-## Install (per game)
-
-Each game-side mod has its own deploy command:
-
-```sh
-# Grounded 2 (UE5 / UE4SS)
-cargo deploy install -p grounded2-mod
-
-# Outworld Station (UE5 / UE4SS)
-cargo deploy install -p outworld-station-mod
-
-# Wild West Miner (Unity Mono / BepInEx)
-wwm-mod/scripts/build_and_deploy.ps1
-
-# Horsey Game (native PE / inject)
-cargo build -p horsey-mod --release
-target/x86_64-pc-windows-msvc/release/horsey-inject.exe \
-  --dll target/x86_64-pc-windows-msvc/release/horsey.dll
-```
-
-`cargo deploy install -p <mod>` (for the ueforge mods)
-auto-detects the Steam install via the
-`[package.metadata.ueforge]` config in the crate's
-`Cargo.toml`, copies the DLL + a default `settings.json` into
-UE4SS's `Mods/` directory, and registers the mod in
-`mods.txt`.
-
-For Vortex packaging: `cargo deploy package -p <mod>` produces
-a Vortex-installable zip in `dist/`.
-
-### Hot reload
-
-Each forge has its own hot-reload story:
-
-- **ueforge**: Ctrl+R inside UE4SS. The framework swaps a
-  side-file (`main-new.dll`) into place during `on_shutdown`;
-  UE4SS reloads the new image. Hook teardown + thread joins +
-  vtable restoration are framework-side. State on disk
-  survives.
-- **unityforge**: Generation-versioned. Run
-  `wwm-mod/scripts/build_and_deploy.ps1 -Hot` to stage a new
-  `*.unityforge.gen<N>.dll`. The C# shim's per-second watcher
-  picks it up and `HotSwap`s. Old generation is quiesced (its
-  code stays mapped); never `FreeLibrary`.
-- **horsey-mod**: `horsey-inject.exe --reload`. POSTs
-  `_shutdown` to release the listener, `CreateRemoteThread`s
-  `FreeLibrary` on the old HMODULE, deletes the old staged
-  file, stages the new build to a fresh timestamped path,
-  loads it.
-
-## Status (2026-05-14)
-
-- **modforge**: foundation crate stable. Server with
-  `SO_REUSEADDR` (hot-reload swaps bind cleanly), op registry,
-  selector grammar, RPG primitives, scanner, shutdown
-  registry, settings.
-- **ueforge**: five framework modules shipped (rpg / stacks /
-  difficulty / inventory / damage), hot-reload (Phase A + B)
-  complete, Pester-style test DSL complete.
-- **unityforge**: generation-versioned hot reload built and
-  deployed (Phase 4). Mono + IL2CPP shims.
-  `HarmonyBridge.PatchPrefix/Postfix` known-broken (queued for
-  fix); Mono `MonoBridge.ListMethods` shipped (+ ABI v4).
-- **horsey-mod** (Horsey Game mod, PE inject): injector +
-  HTTP control plane shipped, hot reload works,
-  `no_tire`-by-default replaced by split-flag fatigue
-  suppressor (race-eligible without breaking sleep).
-  Binary-patch infra landed; first patch
-  (`sleep_safe_no_tire`) wip (pattern-scan disambiguator
-  unsolved).
-- **grounded2-mod**: 13 skills live including Lifesteal in the
-  damage hook. Tested against Grounded 2 Steam build
-  `++Augusta+release-0.4.0.2-CL-2673661`.
-- **outworld-station-mod**: stacks tweak shipped.
-- **wwm-mod**: demo-end block shipped (Harmony prefix on
-  `TutorialManager.CompleteDemo`); RPG side parked while the
-  Harmony bridge is repaired.
-
-Open work tracked in [`docs/todo.md`](docs/todo.md), ordered
-by leverage. Chronology of milestones in
-[`docs/changelog.md`](docs/changelog.md).
+Open work tracked in [`docs/todo.md`](docs/todo.md).
+Milestones in [`docs/changelog.md`](docs/changelog.md).
 
 ## Build prerequisites
 
@@ -298,31 +191,22 @@ by leverage. Chronology of milestones in
 - Rust toolchain (rustup; stable pinned via `rust-toolchain.toml`)
 - Visual Studio Build Tools 2022+ with the C++ workload
 - For ueforge mods: the target game's UE4SS install
-- For unityforge mods: the target game's BepInEx install
+- For unityforge mods: BepInEx (Mono games) or MelonLoader (IL2CPP games)
 - For framework dev: clone with `--recurse-submodules`. Dear
   ImGui v1.92.1 lives in a submodule.
 
 ## Docs
 
-Workspace-level (open work + chronology) lives at the root:
-
-- [`docs/README.md`](docs/README.md). Workspace docs index
-- [`docs/todo.md`](docs/todo.md). Open work across all crates
-- [`docs/changelog.md`](docs/changelog.md). Milestones, newest first
-- [`docs/unityforge-plan.md`](docs/unityforge-plan.md). The
-  unityforge architecture plan (phases 1-4)
-- [`wwm-mod/docs/research.md`](wwm-mod/docs/research.md).
-  Wild West Miner managed-side research log
-
-Per-crate docs:
-
-- [`ueforge/README.md`](ueforge/README.md) + [`ueforge/docs/`](ueforge/docs/).
-- [`unityforge/`](unityforge/).
-- [`horsey-mod/README.md`](horsey-mod/README.md).
-- [`grounded2-mod/docs/`](grounded2-mod/docs/).
-- [`decomp/README.md`](decomp/README.md) + [`decomp/docs/`](decomp/docs/). Active binary-to-Rust RE tool (r2sleigh-based).
-- [`falcon-printer/`](falcon-printer/). Retired prototype that decomp replaces; docs preserved as historical archive.
-- [`horsey-mod/research/`](horsey-mod/research/). Horsey Game research notes.
+Workspace-level docs live in [`docs/`](docs/):
+[`todo.md`](docs/todo.md),
+[`changelog.md`](docs/changelog.md),
+[`unityforge-plan.md`](docs/unityforge-plan.md).
+Per-mod docs are linked in the table above. Framework docs:
+[`ueforge/`](ueforge/README.md),
+[`unityforge/`](unityforge/).
+Research tooling:
+[`decomp/`](decomp/README.md) (r2sleigh-based, WSL-only),
+[`falcon-printer/`](falcon-printer/) (retired prototype, docs only).
 
 ## Credits
 
@@ -357,9 +241,12 @@ Per-crate docs:
 - The authors of the [War3CS / War3FT](https://war3cs2.wiki.gg/)
   Counter-Strike Warcraft mod line, whose flat-skill-catalog
   pattern shapes the RPG catalog layout.
+- **MelonLoader** for the Unity IL2CPP mod loader Schedule 1
+  targets.
 - The game studios whose titles we mod (Obsidian Entertainment
-  for [Grounded 2](https://grounded2.obsidian.net/), the
-  Outworld Station team, the Wild West Miner team, and the
-  Horsey Game team). We modify only what the official games
-  ship under fair-use modding norms; no game assets are
-  redistributed.
+  for Grounded 2, the MISERY team, the Outworld Station team,
+  TVGS for Schedule 1, the Survivalist: Invisible Strain team,
+  the Wild West Miner team, Axolot Games for Scrap Mechanic,
+  the Quasimorph team, and the Horsey Game team). We modify
+  only what the official games ship under fair-use modding
+  norms; no game assets are redistributed.

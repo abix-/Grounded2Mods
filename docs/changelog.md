@@ -57,6 +57,7 @@ Newest first.
 | `misery` | [x] Restart script | `misery-mod/scripts/restart.ps1`: kill game, build, deploy, launch, wait for control plane. |
 | `misery` | [x] Test common module | `misery-mod/tests/common/mod.rs`: shared API setup and skip helpers. |
 | `misery` | [x] Research test suite: 9 tests | `freeze_timer.rs`, `research_difficulty.rs`, `research_gameplay_scan.rs`, `research_gameplay_settings.rs`, `research_item_stacks.rs`, `research_movement.rs`, `research_movement_map.rs`, `set_countdown.rs`, `set_movement_map.rs`, `set_movement_speed.rs` added. |
+| `workspace` | [x] Update README for all new mods and current state | README reflects schedule1, misery, survivalist, scrapmechanic, quasimorph. Diagram, table, layout, status, docs, credits all updated. |
 | `unityforge` | [x] S1ApiNpcs: fix IL2CPP type checks, add SetAggression and InspectCombatConfig | `GetIl2CppType()` replaces `GetType()` for correct IL2CPP runtime type resolution. `SetAggression` writes aggression via IL2CPP field reflection. `InspectCombatConfig` dumps response types and combat config for research. |
 | `unityforge` | [x] Add Assembly-CSharp and FishNet.Runtime references to csproj | Enables direct use of Schedule 1 game types (behaviours, NPCs, patrol routes) and FishNet (NetworkBehaviour base). |
 | `scrapmechanic` | [x] Better Survival mod: initial commit | Lua mod with 1000 inventory slots, half fuel consumption, no inventory loss on death, no building restrictions. 40 files (scripts, configs, game databases). |
