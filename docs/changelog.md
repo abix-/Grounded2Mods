@@ -48,6 +48,10 @@ Newest first.
 | `wwm` | [x] Research docs update, build script auto-detect, test suite | 6 test files added, `build_and_deploy.ps1` auto-detects `*_Data` folder, `wwm-mod/docs/research.md` updated. |
 | `ueforge` | [x] Add `begin_child`/`end_child` ImGui wrappers | C++ and Rust bindings for scrollable child regions. |
 | `workspace` | [x] Add misery-mod to workspace members | `Cargo.toml` members list updated. |
+| `workspace` | [x] Move mod docs into their mod folders | 6 files moved: misery research/rpg/itemlist, wwm research, schedule1 plan/todo. All references updated across 26 files. |
+| `schedule1` | [x] Certainty tracking: NPCResponses_Civilian correction and fix path | Retraction reversed: NPCResponses_Civilian IS the difference on custom goons. Base NPCResponses + Aggression 1.0 hypothesized as fix path. |
+| `schedule1` | [x] Restart script: wait for save load after control plane ready | `restart.ps1` waits for save load after control plane answers, not just ping. |
+| `schedule1` | [x] Research test suite: 8 behaviour/combat/patrol tests | `research_behaviours.rs`, `research_behaviours_deep.rs`, `research_behaviours_hold.rs`, `research_behaviours_phase1.rs`, `research_combat_config.rs`, `research_patrol.rs`, `research_priority.rs`, `research_retaliation_isolation.rs` added. |
 
 ## 2026-05-14 (relocated from todo.md: unityforge / wwm-mod / naming completions)
 

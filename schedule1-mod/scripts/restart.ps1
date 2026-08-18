@@ -71,18 +71,54 @@ Get-ChildItem $Mods -Filter "schedule1_mod.unityforge.gen*.dll" | Remove-Item -F
 Write-Host "[launch] steam://rungameid/$AppId" -ForegroundColor Cyan
 Start-Process "steam://rungameid/$AppId"
 
-Write-Host "[wait] control plane on port $Port (up to 180s; load a save to finish init)" -ForegroundColor Cyan
+Write-Host "[wait] control plane on port $Port (up to 180s)" -ForegroundColor Cyan
 $deadline = (Get-Date).AddSeconds(180)
+$cpReady = $false
 while ((Get-Date) -lt $deadline) {
     try {
         $r = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/op" -Method Post `
             -Body '{"op":"ping","args":{}}' -ContentType "application/json" -TimeoutSec 2
-        Write-Host "[ready] control plane answering: $($r | ConvertTo-Json -Compress)" -ForegroundColor Green
-        exit 0
+        Write-Host "[ready] control plane answering" -ForegroundColor Green
+        $cpReady = $true
+        break
     }
     catch {
         Start-Sleep -Seconds 3
     }
 }
-Write-Warning "control plane not answering after 180s; check the MelonLoader console"
+if (-not $cpReady) {
+    Write-Warning "control plane not answering after 180s; check the MelonLoader console"
+    exit 1
+}
+
+# Auto-load save slot 0 via the shim
+Write-Host "[load] requesting save slot 0..." -ForegroundColor Cyan
+try {
+    $loadBody = '{"op":"invoke_static","args":{"class":"Unityforge.Shim.Schedule1.NpcFactory","method":"LoadSave","args":[0]}}'
+    $lr = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/op" -Method Post `
+        -Body $loadBody -ContentType "application/json" -TimeoutSec 10
+    $result = $lr | ConvertTo-Json -Compress
+    Write-Host "[load] response: $result" -ForegroundColor Yellow
+}
+catch {
+    Write-Warning "[load] LoadSave call failed: $_"
+}
+
+# Poll until GoonPool exists (only present after a save loads)
+Write-Host "[wait] waiting for save to finish loading (up to 120s)..." -ForegroundColor Cyan
+$settleDeadline = (Get-Date).AddSeconds(120)
+while ((Get-Date) -lt $settleDeadline) {
+    Start-Sleep -Seconds 5
+    try {
+        $body = '{"op":"walk_class","args":{"class":"Il2CppScheduleOne.Cartel.GoonPool"}}'
+        $sr = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/op" -Method Post `
+            -Body $body -ContentType "application/json" -TimeoutSec 5
+        if ($sr.ok -eq $true -and $sr.result.Count -gt 0) {
+            Write-Host "[ready] save loaded (GoonPool found)" -ForegroundColor Green
+            exit 0
+        }
+    }
+    catch { }
+}
+Write-Warning "save did not finish loading after 120s"
 exit 1
