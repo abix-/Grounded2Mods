@@ -25,6 +25,12 @@ Newest first.
 
 | System | Item | Done when |
 |---|---|---|
+| `modforge` | [x] Add generic research helpers to `modforge::client`: `ping_or_skip`, `handle_of`, `count_of`, `dump_sequence`, `print_declared_methods`, `fields`, `parse_vec3` | Helpers available to all mods via `modforge::client`. |
+| `unityforge` | [x] Add `unityforge::client` module with `find_instances` (renamed from walk), `first_handle`, `first_handle_inactive`, `field_exists` | Unity-specific research helpers in `unityforge::client`; re-exports `modforge::client::*`. |
+| `schedule1-mod` | [x] DRY tests/common: remove duplicated walk, first_handle, handle_of, count_of, dump_sequence, print_declared_methods, parse_vec3, ping_or_skip | `tests/common/mod.rs` imports from `unityforge::client`. |
+| `wwm-mod` | [x] DRY tests/common: remove duplicated walk, first_handle, handle_of, print_declared_methods, fields, field_exists, ping_or_skip | `tests/common/mod.rs` imports from `unityforge::client`. |
+| `workspace` | [x] Add README.md to all 8 mod/framework directories with consistent structure: Game, Features (table with ratings), Build, Deploy | All mods have a README with feature table and x/10 ratings. |
+| `modforge` | [x] Move `modforge::client::research` contents into `modforge::client` directly; update 17 consumer files across 4 crates | All consumers use `modforge::client::` prefix; `research` submodule deleted. |
 | `misery` | [x] Fix all tabs breaking after main menu reload | Tabs re-render after reload without crashing. |
 | `misery` | [x] Document stale OWS tweaks DLL removal | `misery-mod/docs/research.md` updated. |
 | `misery` | [x] Vendor system research, section 24 | `misery-mod/docs/research.md` section 24 written with offset map and sell list structure. |
