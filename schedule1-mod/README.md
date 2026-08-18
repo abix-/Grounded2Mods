@@ -32,9 +32,11 @@ Copy both DLLs into the MelonLoader mods directory:
 
 ## Features
 
-- HTTP control plane for live research
-- NPC behavior research (combat, retaliation, patrol)
-- Combat system investigation
+| Feature | Rating |
+|---|---:|
+| [NPC behavior](docs/research.md) (combat, retaliation, patrol) | 3/10 |
+| [Combat system](docs/research.md) (damage hooks, attack triggers) | 2/10 |
+| HTTP control plane | 9/10 |
 
 ## Research
 

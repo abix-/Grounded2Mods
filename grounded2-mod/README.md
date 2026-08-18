@@ -10,6 +10,18 @@ XP from kills and crafting, persistent across saves.
 - **Mod loader:** UE4SS
 - **Framework:** ueforge (re-exports modforge)
 
+## Features
+
+| Feature | Rating |
+|---|---:|
+| [RPG skill system](docs/rpg.md) (13 skills, XP from kills and crafting, sqrt leveling curve) | 7/10 |
+| [Damage pipeline](docs/damage.md) (attack damage, armor, lifesteal, critical chance, evasion, thorns) | 6/10 |
+| [Backpack expansion](docs/inventory.md) (slot count, mouse-wheel scroll) | 8/10 |
+| [Gameplay settings](docs/features.md) (hunger, thirst, survival multipliers) | 8/10 |
+| Per-slot save/load (JSON sidecar) | 7/10 |
+| HTTP control plane on port 17171 | 9/10 |
+| ImGui overlay tab | 6/10 |
+
 ## Build
 
 ```sh
@@ -25,16 +37,6 @@ cargo deploy install -p grounded2-mod
 ```
 
 Installs to `Grounded2\Binaries\Win64\ue4ss\Mods\Grounded2Mod\dlls\main.dll`.
-
-## Features
-
-- RPG skill system (13 skills: attack damage, armor, health regen,
-  max health, lifesteal, fall resistance, impact resistance, movement
-  speed, sprint speed, backpack size, critical chance, evasion, thorns)
-- XP from kills and crafting, sqrt leveling curve
-- Per-slot save/load (JSON sidecar)
-- HTTP control plane on port 17171
-- ImGui overlay tab
 
 ## Documentation
 

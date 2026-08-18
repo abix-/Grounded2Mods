@@ -5,6 +5,18 @@ Depends on `modforge` for the engine-agnostic core (envelope, ops
 registry, server, settings, counters, log). Adds Unity-specific
 surfaces.
 
+## Features
+
+| Feature | Rating |
+|---|---:|
+| Mono reflection wrappers (call C# from Rust) | 7/10 |
+| HarmonyLib hook registry | 7/10 |
+| Game-thread dispatch queue | 7/10 |
+| Unity op handlers | 6/10 |
+| Unity selector resolvers | 6/10 |
+| RPG effect implementations | 5/10 |
+| C# shim loaders (BepInEx, MelonLoader, built-in) | 8/10 |
+
 ## Modules
 
 | Module | Purpose |

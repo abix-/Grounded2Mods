@@ -10,6 +10,13 @@ size adjustments via DataTable mutation at runtime.
 - **Mod loader:** UE4SS
 - **Framework:** ueforge (re-exports modforge)
 
+## Features
+
+| Feature | Rating |
+|---|---:|
+| [Stack size adjustments](docs/research.md) (DataTable mutation at runtime) | 4/10 |
+| HTTP control plane | 9/10 |
+
 ## Build
 
 ```sh
@@ -25,11 +32,6 @@ cargo deploy install -p outworld-station-mod
 ```
 
 Installs to `OutworldStation\Binaries\Win64\ue4ss\Mods\OutworldStationMod\dlls\main.dll`.
-
-## Features
-
-- Item stack size adjustments (DataTable `DT_Materials` field `MaxCanStack`)
-- HTTP control plane for live research and runtime tweaks
 
 ## File layout
 

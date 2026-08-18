@@ -10,6 +10,16 @@ by UE4SS as `main.dll`.
 - **Mod loader:** UE4SS
 - **Framework:** ueforge (re-exports modforge)
 
+## Features
+
+| Feature | Rating |
+|---|---:|
+| [Shining timer control](docs/research.md) (freeze and countdown) | 5/10 |
+| [Vendor modification](docs/research.md) (add items to any vendor's buy/sell list) | 4/10 |
+| [Gameplay settings](docs/research.md) (hunger, thirst, damage, spawn rate) | 4/10 |
+| Movement speed modification | 3/10 |
+| HTTP control plane on port 17176 | 9/10 |
+
 ## Build
 
 ```sh
@@ -25,14 +35,6 @@ cargo deploy install -p misery-mod
 ```
 
 Installs to `MISERY\Binaries\Win64\ue4ss\Mods\MiseryMod\dlls\main.dll`.
-
-## Features
-
-- Shining (emission) timer freeze and countdown control
-- Vendor buy/sell list modification (add items to any vendor)
-- Gameplay settings read/write (hunger, thirst, damage, spawn rate)
-- Movement speed research and modification
-- HTTP control plane on port 17176
 
 ## Research
 

@@ -8,6 +8,12 @@ Quasimorph (.NET Framework 4.8) mod. C# project, not Rust.
 - **Engine:** Unity (Mono, .NET 4.8)
 - **Language:** C#
 
+## Features
+
+| Feature | Rating |
+|---|---:|
+| [Mod framework](docs/research.md) (C# hooks into first-party mod API) | 1/10 |
+
 ## Build
 
 ```powershell

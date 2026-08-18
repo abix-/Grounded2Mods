@@ -10,6 +10,12 @@ game's built-in mod system.
 - **Mod system:** built-in (workshop or local `Survival/` override)
 - **Language:** Lua, JSON
 
+## Features
+
+| Feature | Rating |
+|---|---:|
+| [Survival overhaul](docs/research.md) (Lua + JSON data mod) | 1/10 |
+
 ## Structure
 
 The `BetterSurvival/` directory is the mod content root. It
