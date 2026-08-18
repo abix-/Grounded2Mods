@@ -110,6 +110,50 @@ Newest first.
 | `scrapmechanic` | [x] Better Survival mod: initial commit | Lua mod with 1000 inventory slots, half fuel consumption, no inventory loss on death, no building restrictions. 40 files (scripts, configs, game databases). |
 | `quasimorph` | [x] Initial scaffold: csproj, build script, stub ModMain, research doc | Unity Mono mod using first-party mod API (no BepInEx/MelonLoader). Research doc covers hook types, mod structure, console commands. |
 
+## 2026-07-04
+
+| System | Item | Done when |
+|---|---|---|
+| `unityforge` | [x] SV1: extract generation loader out of BepInEx plugin into cs-shim-common/GenerationLoader.cs (Generation class, LoadGeneration, CheckHotReload/HotSwap, LocateRustDll, NativeLibrary P/Invoke, ShutdownForUnload/ReinitAfterUnload) | GenerationLoader shared between BepInEx and survivalist hosts. |
+| `unityforge` | [x] SV2: logger sink seam via ShimLogger.Sink delegate; BepInEx hosts wire ManualLogSource, survivalist host wires UnityEngine.Debug.Log with [Unityforge] prefix | Logger sink abstracted for all hosts. |
+| `survivalist-mod` | [x] SV3: new host project cs-shim-survivalist/ (global-namespace Main, Load()/Unload(), re-entrant guard, driver GameObject, DontDestroyOnLoad, GenerationLoader, net472 target) | Survivalist shim builds green. |
+| `unityforge` | [x] SV4: Harmony bridge actually works + Harmony 2.0.4 compat (static PrefixDispatcher + PostfixDispatcher, delegate list per patched method, UnpatchAll per-dispatcher) | Both shims build green with working Harmony. |
+| `survivalist-mod` | [x] SV5: survivalist-mod Rust crate (cdylib on unityforge + modforge, http_port 17173, ops::register_builtins + selector::register_builtins) | Crate builds green. |
+| `survivalist-mod` | [x] SV6: deploy script (shim to DLLs/, cdylib to mod root as survivalist_mod.unityforge.dll, -Hot generation staging) | Build and deploy pipeline works. |
+| `survivalist-mod` | [x] SV7: live smoke verified (shim loads, ping answers on 17173, walk_class + inspect_object work, hot reload gen 0->1, Harmony patch fires live for faction-war revenge trigger) | Full live smoke passed. |
+| `survivalist-mod` | [x] SV8: gameplay research doc (research.md with live-access recipe, difficulty knobs, class maps; faction-war.md with mechanics and phase 1 live-verified; status.md tracker) | Research and design docs written. |
+
+## 2026-05-16
+
+| System | Item | Done when |
+|---|---|---|
+| `modforge` | [x] testkit::fn_entry: is_msvc_x64_prologue (with unit tests), find_fn_bounds_via_int3, verify_fn_entry config+runner | Deduped across dump_apply_gene + find_retire_horse_handler. |
+| `modforge` | [x] testkit::msvc: MsvcStdString parser (with unit tests) + is_vtable_at_image_rva plausibility check | MSVC helpers available in testkit. |
+| `modforge` | [x] testkit::op: generic op invoker + response contract + dot-path field assertion | Op invocation and assertion available in testkit. |
+| `modforge` | [x] testkit::build_info + testkit::xrefs + testkit::assets | Build info, xref, and asset helpers available. |
+| `modforge` | [x] testkit::watch: region + single-value watchers, env-parseable, three-mode (assertion / discovery-trigger / manual) | Watch primitives available in testkit. |
+| `modforge` | [x] testkit::snapshot: take + diff_against for bytes-at-addr snapshots | Snapshot helpers available in testkit. |
+| `modforge` | [x] testkit::recipes: find_fn_by_rdata_string + find_struct_by_field_value | Recipe helpers available in testkit. |
+| `modforge` | [x] B1: Extend sleuth with TargetDef, TargetRegistry, Resolver, ResolvedTarget, 4 Recipe variants, 6 built-in validators (8 new unit tests) | Registry types available in modforge::patterns::sleuth. |
+| `horsey-mod` | [x] B2: targets_registry.rs declares 41 targets (7 data globals + 4 invocable + 30 hint-only); parity integration test | Registry matches legacy resolver byte-for-byte. |
+| `modforge` | [x] B3: shared R-tier tests in modforge (4 shared assertion functions parameterized over RunningGame + TargetRegistry + Resolver) | Shared R-tier tests available to all consumers. |
+| `horsey-mod` | [x] B4a: 37 of 42 entries have real candidate sigs (88%) via prologue_fn! macro | 37 targets have real sigs. |
+| `horsey-mod` | [x] B4b: all 24 call sites migrated to targets_registry::resolve wrapper | All call sites use registry. |
+| `horsey-mod` | [x] B5: delete legacy targets::resolve::* (2507 LOC to 1286 LOC, -1221 LOC) | Legacy resolvers deleted. |
+| `grounded2-mod` | [x] B6: cross-game adoption proof (GROUNDED2_TARGETS with 5 UE5-Augusta globals; layout.rs E0432 blocker cleared) | Second consumer uses TargetRegistry. |
+| `modforge` | [x] PR-1 through PR-10: input prior-art research (game-mod input libs, UI automation, game-bot ecosystems, per-engine input pokes, raw-input, accessibility, crate audit, injection precedents, replay formats, anti-cheat notes) | input-prior-art.md written with recommendation. |
+| `modforge` | [x] I-1: modforge::input primitives (L1 SendInput over windows-sys, L2 PostMessage, Backend enum, Button, Key::parse, InputSurface trait, SYNTHETIC_EXTRA_INFO tag) | Input primitives available, zero new deps. |
+| `modforge` | [x] I-2: 7 HTTP input cmdlets (input.mouse.move/click, input.key.down/up/press, input.cursor.get, input.foreground.hwnd) | Input ops available via HTTP. |
+| `horsey-mod` | [x] I-5: test harness first slice (L1 cursor round-trip within 1px, L1 keyboard F24 press, L2 PostMessage; sleuth resolver bug fixed) | Input smoke tests pass against live Horsey. |
+| `modforge` | [x] I-2a: input.find_hwnd_by_pid + input.self.hwnd ops (EnumWindows-by-PID with visibility filter) | HWND lookup ops available. |
+| `modforge` | [x] I-2c: drag/scroll/combo cmdlets (input.mouse.drag L1+L2 interpolated, input.mouse.scroll L1+L2, input.combo modifier hold + dispatch) | Drag, scroll, and combo ops pass live smoke. |
+| `horsey-mod` | [x] I-4 L3 routing + HorseyInputSurface v1 (writes LOC+0x174/+0x178 cursor floats directly; buttons + keys delegate to L1; graceful degrade without save) | L3 cursor move tracks target within 1px. |
+| `horsey-mod` | [x] I-2d-recon: input_hk1_calibration.rs captures OS-to-game-coord mapping (5-point plus pattern) | Calibration test runs clean (needs in-save run for actual transform). |
+| `modforge` | [x] V1: modforge::vanilla primitives (Signature, ArgKind, RetKind, ArgValue, RetValue, Win64 ABI dispatcher; 13 unit tests) | Vanilla invocation primitives available. |
+| `modforge` | [x] V2: sleuth TargetDef extended with optional Signature (TargetKind::FunctionEntry) | Signature field on TargetDef. |
+| `modforge` | [x] V3: Invoker controller + vanilla.invoke / vanilla.list HTTP cmdlets (SEH-wrapped by default; 5 unit tests) | Vanilla invoke available via HTTP. |
+| `horsey-mod` | [x] V4 data: signatures attached to 4 horsey functions (APPLY_GENE_TO_HORSE, HORSE_REBUILD, RNG_NEXT_MODULO, HORSE_COPY_GENE_LANE_PAIRS) | 4 vanilla functions registered with signatures. |
+
 ## 2026-05-14 (relocated from todo.md: unityforge / wwm-mod / naming completions)
 
 Material below was tracked as `[x]` checkboxes in [`todo.md`](todo.md) until
