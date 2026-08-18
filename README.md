@@ -97,18 +97,20 @@ See [`unityforge/`](unityforge/) and [`docs/unityforge-plan.md`](docs/unityforge
 
 ## Game-side mods
 
-| Crate | Game | Engine / loader | What it does | Deploy | Docs | Status |
+| Crate | Game | Engine / loader | What it does | Deploy | Docs | Rating |
 |---|---|---|---|---|---|---|
-| `grounded2-mod` | Grounded 2 | ueforge (UE5 / UE4SS) | RPG / level-up. 13 skills, target ~25. | `cargo deploy install -p grounded2-mod` | [docs/](grounded2-mod/docs/) | shipped |
-| `misery-mod` | MISERY | ueforge (UE5 / UE4SS) | Emission (shining) timer extension. | `cargo deploy install -p misery-mod` | [docs/](misery-mod/docs/) | research complete, building |
-| `outworld-station-mod` | Outworld Station | ueforge (UE5 / UE4SS) | Stack-size tweak (MaxCanStack multiplier). | `cargo deploy install -p outworld-station-mod` | n/a | shipped |
-| `schedule1-mod` | Schedule 1 | unityforge (IL2CPP / MelonLoader) | Combat-XP levelling, loot drops, farming, kill credit. | `schedule1-mod/scripts/build_and_deploy.ps1` | [docs/](schedule1-mod/docs/) | active dev |
-| `survivalist-mod` | Survivalist: Invisible Strain | unityforge (native mod loader) | Storyteller, bounty, trade, war, settler systems. | `survivalist-mod/scripts/build_and_deploy.ps1` | n/a | scaffolded |
-| `wwm-mod` | Wild West Miner | unityforge (Mono / BepInEx) | RPG / level-up + demo-end block. | `wwm-mod/scripts/build_and_deploy.ps1` | [docs/](wwm-mod/docs/) | demo block shipped, RPG parked |
-| `horsey-mod` | Horsey Game | modforge (PE inject) | Cheats + research. Fatigue suppressor, money/year/horse ops. | `horsey-inject.exe --dll horsey.dll` | [README](horsey-mod/README.md), [research/](horsey-mod/research/) | shipped |
-| `il2cpp-smoke` | (smoke target) | unityforge (IL2CPP) | End-to-end test of the IL2CPP path. | n/a | n/a | test fixture |
-| `scrapmechanic-mod` | Scrap Mechanic | Lua (native) | Better Survival overhaul. Not a Rust crate. | copy to game | n/a | shipped |
-| `quasimorph-mod` | Quasimorph | C# (BepInEx) | Initial scaffold. Not a Rust crate. | n/a | n/a | scaffold |
+| `grounded2-mod` | Grounded 2 | ueforge (UE5 / UE4SS) | RPG / level-up. 13 skills, target ~25. | `cargo deploy install -p grounded2-mod` | [docs/](grounded2-mod/docs/) | 4/10 |
+| `misery-mod` | MISERY | ueforge (UE5 / UE4SS) | Emission (shining) timer extension. | `cargo deploy install -p misery-mod` | [docs/](misery-mod/docs/) | 2/10 |
+| `outworld-station-mod` | Outworld Station | ueforge (UE5 / UE4SS) | Stack-size tweak (MaxCanStack multiplier). | `cargo deploy install -p outworld-station-mod` | n/a | 3/10 |
+| `schedule1-mod` | Schedule 1 | unityforge (IL2CPP / MelonLoader) | Combat-XP levelling, loot drops, farming, kill credit. | `schedule1-mod/scripts/build_and_deploy.ps1` | [docs/](schedule1-mod/docs/) | 3/10 |
+| `survivalist-mod` | Survivalist: Invisible Strain | unityforge (native mod loader) | Storyteller, bounty, trade, war, settler systems. | `survivalist-mod/scripts/build_and_deploy.ps1` | n/a | 1/10 |
+| `wwm-mod` | Wild West Miner | unityforge (Mono / BepInEx) | RPG / level-up + demo-end block. | `wwm-mod/scripts/build_and_deploy.ps1` | [docs/](wwm-mod/docs/) | 2/10 |
+| `horsey-mod` | Horsey Game | modforge (PE inject) | Cheats + research. Fatigue suppressor, money/year/horse ops. | `horsey-inject.exe --dll horsey.dll` | [README](horsey-mod/README.md), [research/](horsey-mod/research/) | 3/10 |
+| `il2cpp-smoke` | (smoke target) | unityforge (IL2CPP) | End-to-end test of the IL2CPP path. | n/a | n/a | n/a |
+| `scrapmechanic-mod` | Scrap Mechanic | Lua (native) | Better Survival overhaul. Not a Rust crate. | copy to game | n/a | 3/10 |
+| `quasimorph-mod` | Quasimorph | C# (BepInEx) | Initial scaffold. Not a Rust crate. | n/a | n/a | 1/10 |
+
+> **Rating scale:** 10/10 = ready for 1000 players, fun, zero bugs. Most mods here are personal-use developer tools, not polished releases.
 
 ## Research tooling
 
