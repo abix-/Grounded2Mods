@@ -23,7 +23,9 @@ use modforge::ops::{OP_REGISTRY, OpDef};
 use unityforge::mono::{self, LogLevel};
 
 use crate::common::{for_each_community, handle_of, on_main_thread, own, session_seed, with};
-use crate::quality::{find_prototype, rng};
+use modforge::unknown::rng;
+
+use crate::quality::find_prototype;
 
 /// The prototype shipped in story/Equipment/ColonelsRifle.xml.
 const COLONELS_RIFLE: &str = "ColonelsRifle";

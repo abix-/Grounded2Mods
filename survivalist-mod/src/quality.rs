@@ -36,6 +36,7 @@ use parking_lot::Mutex;
 use serde_json::{Value as Json, json};
 
 use modforge::ops::{OP_REGISTRY, OpDef};
+use modforge::unknown::rng;
 use unityforge::hook::{self, HOOK_REGISTRY, HookCtx};
 use unityforge::mono::{self, LogLevel, MonoObject, MonoType};
 
@@ -588,15 +589,6 @@ pub(crate) fn find_prototype(name: &str) -> Result<Option<i32>, String> {
         }
     }
     Ok(None)
-}
-
-/// A pseudo-random value in [0, n): the incursion rng shape (a
-/// hash of the fire time and a salt). Shared with unique.rs.
-pub(crate) fn rng(now: f32, salt: u64, n: u64) -> u64 {
-    let mut h = (now.to_bits() as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
-        ^ salt.wrapping_mul(0xD1B5_4A32_D192_ED03);
-    h ^= h >> 29;
-    h % n.max(1)
 }
 
 // ---- ops ---------------------------------------------------------------------

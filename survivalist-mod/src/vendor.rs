@@ -26,6 +26,7 @@ use parking_lot::Mutex;
 use serde_json::{Value as Json, json};
 
 use modforge::mission::{self, Stage, Step};
+use modforge::unknown::rng;
 use unityforge::mono::{self, LogLevel, MonoObject};
 
 use crate::common::{
@@ -183,7 +184,7 @@ fn try_launch(camps: &[Camp], now: f32) -> Result<Outcome, String> {
     if sources.is_empty() {
         return Ok(Outcome::Passed);
     }
-    let source = sources[hash_pick(now, 0, sources.len())];
+    let source = sources[rng(now, 0, sources.len() as u64) as usize];
 
     // Valid targets: not the source, not hostile to it.
     let mut targets: Vec<&Camp> = Vec::new();
@@ -206,8 +207,8 @@ fn try_launch(camps: &[Camp], now: f32) -> Result<Outcome, String> {
     // Favor the player's gate when it is a valid target.
     let player = targets.iter().copied().find(|c| c.is_player);
     let target = match player {
-        Some(p) if hash_pick(now, 1, 2) == 0 => p,
-        _ => targets[hash_pick(now, 2, targets.len())],
+        Some(p) if rng(now, 1, 2) as usize == 0 => p,
+        _ => targets[rng(now, 2, targets.len() as u64) as usize],
     };
 
     launch(source, target, now)
@@ -323,18 +324,6 @@ fn pick_free_member(com: &MonoObject) -> Result<Option<(i32, String)>, String> {
 
 fn mission_active_source(id: i64) -> bool {
     MISSIONS.lock().iter().any(|m| m.source_id == id)
-}
-
-/// A per-call pseudo-random index in [0, n): a hash of the fire
-/// time and a salt, so successive vendors pick different camps.
-fn hash_pick(now: f32, salt: u64, n: usize) -> usize {
-    if n == 0 {
-        return 0;
-    }
-    let mut h = (now.to_bits() as u64).wrapping_mul(0x9E3779B97F4A7C15)
-        ^ salt.wrapping_mul(0xD1B54A32D192ED03);
-    h ^= h >> 29;
-    (h % n as u64) as usize
 }
 
 // ---- Mission trait ---------------------------------------------------------
