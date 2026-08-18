@@ -18,7 +18,7 @@
 
 mod common;
 use common::{api_or_skip, offsets_live};
-use modforge::client::research::{self, ClassInstance};
+use modforge::client::{self, ClassInstance};
 use serde_json::json;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -33,11 +33,11 @@ const SELL_STRIDE: u64 = 0x38;
 const BUY_STRIDE: u64 = 0x40;
 
 fn find_all_vendors(api: &Api) -> Vec<ClassInstance> {
-    research::walk_class_instances(api, VENDOR_ACTOR_CLASS, 100)
+    client::walk_class_instances(api, VENDOR_ACTOR_CLASS, 100)
 }
 
 fn get_component_addr(api: &Api, actor_addr: u64) -> Option<u64> {
-    research::read_component_ptr(api, actor_addr, VENDOR_COMP_OFFSET)
+    client::read_component_ptr(api, actor_addr, VENDOR_COMP_OFFSET)
 }
 
 struct SellEntry {
@@ -60,41 +60,41 @@ struct BuyEntry {
 }
 
 fn read_sell_entries(api: &Api, comp_addr: u64) -> Option<Vec<SellEntry>> {
-    let hdr = research::read_tarray_header(api, comp_addr, SELL_LIST_OFFSET)?;
+    let hdr = client::read_tarray_header(api, comp_addr, SELL_LIST_OFFSET)?;
     if hdr.num <= 0 || hdr.num > 500 { return None; }
-    let data = research::read_bytes(api, hdr.ptr, 0, (hdr.num as u64) * SELL_STRIDE);
+    let data = client::read_bytes(api, hdr.ptr, 0, (hdr.num as u64) * SELL_STRIDE);
     if data.is_empty() { return None; }
     let mut entries = Vec::new();
     for i in 0..hdr.num as usize {
         let base = i * SELL_STRIDE as usize;
-        let item_ptr = research::from_le_u64(&data, base);
-        let fname_idx = research::from_le_u32(&data, base + 0x08);
-        let fname_num = research::from_le_u32(&data, base + 0x0C);
-        let item_name = research::fname_from_parts(api, fname_idx, fname_num)
+        let item_ptr = client::from_le_u64(&data, base);
+        let fname_idx = client::from_le_u32(&data, base + 0x08);
+        let fname_num = client::from_le_u32(&data, base + 0x0C);
+        let item_name = client::fname_from_parts(api, fname_idx, fname_num)
             .unwrap_or_else(|| format!("(?idx={fname_idx:#x} num={fname_num})"));
-        let price_num = research::from_le_i32(&data, base + 0x20);
-        let cat_num = research::from_le_i32(&data, base + 0x30);
+        let price_num = client::from_le_i32(&data, base + 0x20);
+        let cat_num = client::from_le_i32(&data, base + 0x30);
         entries.push(SellEntry { item_ptr, fname_idx, fname_num, item_name, price_num, cat_num });
     }
     Some(entries)
 }
 
 fn read_buy_entries(api: &Api, comp_addr: u64) -> Option<Vec<BuyEntry>> {
-    let hdr = research::read_tarray_header(api, comp_addr, BUY_LIST_OFFSET)?;
+    let hdr = client::read_tarray_header(api, comp_addr, BUY_LIST_OFFSET)?;
     if hdr.num <= 0 || hdr.num > 500 { return None; }
-    let data = research::read_bytes(api, hdr.ptr, 0, (hdr.num as u64) * BUY_STRIDE);
+    let data = client::read_bytes(api, hdr.ptr, 0, (hdr.num as u64) * BUY_STRIDE);
     if data.is_empty() { return None; }
     let mut entries = Vec::new();
     for i in 0..hdr.num as usize {
         let base = i * BUY_STRIDE as usize;
-        let item_ptr = research::from_le_u64(&data, base);
-        let fname_idx = research::from_le_u32(&data, base + 0x08);
-        let fname_num = research::from_le_u32(&data, base + 0x0C);
-        let item_name = research::fname_from_parts(api, fname_idx, fname_num)
+        let item_ptr = client::from_le_u64(&data, base);
+        let fname_idx = client::from_le_u32(&data, base + 0x08);
+        let fname_num = client::from_le_u32(&data, base + 0x0C);
+        let item_name = client::fname_from_parts(api, fname_idx, fname_num)
             .unwrap_or_else(|| format!("(?idx={fname_idx:#x} num={fname_num})"));
-        let price_num = research::from_le_i32(&data, base + 0x20);
-        let stock = research::from_le_i32(&data, base + 0x28);
-        let cat_num = research::from_le_i32(&data, base + 0x38);
+        let price_num = client::from_le_i32(&data, base + 0x20);
+        let stock = client::from_le_i32(&data, base + 0x28);
+        let cat_num = client::from_le_i32(&data, base + 0x38);
         entries.push(BuyEntry { item_ptr, fname_idx, fname_num, item_name, price_num, stock, cat_num });
     }
     Some(entries)
@@ -187,12 +187,12 @@ fn check_item_is_datatable_handle() {
         println!("no component");
         return;
     };
-    let hdr = research::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET);
+    let hdr = client::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET);
     let Some(hdr) = hdr else { return; };
     if hdr.num <= 0 { return; }
-    let first_entry = research::read_bytes(&api, hdr.ptr, 0, 0x18);
+    let first_entry = client::read_bytes(&api, hdr.ptr, 0, 0x18);
     if first_entry.len() < 0x18 { return; }
-    let item_ptr = research::from_le_u64(&first_entry, 0);
+    let item_ptr = client::from_le_u64(&first_entry, 0);
     println!("first sell entry item_ptr = {item_ptr:#x}");
 
     let r2 = api.op("inspect_address", json!({"addr": format!("{item_ptr:#x}")}));
@@ -251,18 +251,18 @@ fn probe_price_arrays() {
     let Some(v) = vendors.first() else { return; };
     let Some(comp_addr) = get_component_addr(&api, v.addr) else { return; };
 
-    let sell_hdr = research::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET);
+    let sell_hdr = client::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET);
     let Some(sell_hdr) = sell_hdr else { return; };
     if sell_hdr.num <= 0 { return; }
-    let entry0 = research::read_bytes(&api, sell_hdr.ptr, 0, SELL_STRIDE);
+    let entry0 = client::read_bytes(&api, sell_hdr.ptr, 0, SELL_STRIDE);
     if entry0.len() < SELL_STRIDE as usize { return; }
 
-    let price_ptr = research::from_le_u64(&entry0, 0x18);
-    let price_num = research::from_le_i32(&entry0, 0x20);
+    let price_ptr = client::from_le_u64(&entry0, 0x18);
+    let price_num = client::from_le_i32(&entry0, 0x20);
     println!("sell entry 0 price: ptr={price_ptr:#x} num={price_num}");
 
     if price_num > 0 && price_num < 20 {
-        let price_data = research::read_bytes(&api, price_ptr, 0, 128);
+        let price_data = client::read_bytes(&api, price_ptr, 0, 128);
         if price_data.is_empty() {
             println!("could not read price data");
             return;
@@ -275,25 +275,25 @@ fn probe_price_arrays() {
         }
         for off in (0..32).step_by(4) {
             if off + 4 > price_data.len() { break; }
-            let val = research::from_le_u32(&price_data, off);
-            let name = research::fname_from_parts(&api, val, 0)
+            let val = client::from_le_u32(&price_data, off);
+            let name = client::fname_from_parts(&api, val, 0)
                 .unwrap_or_else(|| format!("(?idx={val:#x})"));
             println!("  price[{off:#x}] u32={val:#x} fname={name}");
         }
     }
 
-    let buy_hdr = research::read_tarray_header(&api, comp_addr, BUY_LIST_OFFSET);
+    let buy_hdr = client::read_tarray_header(&api, comp_addr, BUY_LIST_OFFSET);
     let Some(buy_hdr) = buy_hdr else { return; };
     if buy_hdr.num <= 0 { return; }
-    let buy_entry0 = research::read_bytes(&api, buy_hdr.ptr, 0, BUY_STRIDE);
+    let buy_entry0 = client::read_bytes(&api, buy_hdr.ptr, 0, BUY_STRIDE);
     if buy_entry0.len() < BUY_STRIDE as usize { return; }
 
-    let buy_price_ptr = research::from_le_u64(&buy_entry0, 0x18);
-    let buy_price_num = research::from_le_i32(&buy_entry0, 0x20);
+    let buy_price_ptr = client::from_le_u64(&buy_entry0, 0x18);
+    let buy_price_num = client::from_le_i32(&buy_entry0, 0x20);
     println!("\nbuy entry 0 price: ptr={buy_price_ptr:#x} num={buy_price_num}");
 
     if buy_price_num > 0 && buy_price_num < 20 {
-        let price_data = research::read_bytes(&api, buy_price_ptr, 0, 256);
+        let price_data = client::read_bytes(&api, buy_price_ptr, 0, 256);
         if price_data.is_empty() { return; }
         println!("buy price array raw hex ({} bytes):", price_data.len());
         for (i, chunk) in price_data.chunks(16).enumerate() {
@@ -303,8 +303,8 @@ fn probe_price_arrays() {
         }
         for off in (0..64).step_by(4) {
             if off + 4 > price_data.len() { break; }
-            let val = research::from_le_u32(&price_data, off);
-            let name = research::fname_from_parts(&api, val, 0)
+            let val = client::from_le_u32(&price_data, off);
+            let name = client::fname_from_parts(&api, val, 0)
                 .unwrap_or_else(|| format!("(?idx={val:#x})"));
             println!("  buy_price[{off:#x}] u32={val:#x} fname={name}");
         }
@@ -368,16 +368,16 @@ fn add_plastic_to_resourcesaler_sell_list() {
     let comp_sel = format!("addr:0x{comp_addr:X}");
     println!("ResourseSaler component: {comp_sel}");
 
-    let buy_hdr = research::read_tarray_header(&api, comp_addr, BUY_LIST_OFFSET).unwrap();
-    let buy_entry1 = research::read_bytes(&api, buy_hdr.ptr, BUY_STRIDE, BUY_STRIDE);
-    let plastic_fname_idx = research::from_le_u32(&buy_entry1, 0x08);
-    let plastic_fname_num = research::from_le_u32(&buy_entry1, 0x0C);
-    let plastic_name = research::fname_from_parts(&api, plastic_fname_idx, plastic_fname_num)
+    let buy_hdr = client::read_tarray_header(&api, comp_addr, BUY_LIST_OFFSET).unwrap();
+    let buy_entry1 = client::read_bytes(&api, buy_hdr.ptr, BUY_STRIDE, BUY_STRIDE);
+    let plastic_fname_idx = client::from_le_u32(&buy_entry1, 0x08);
+    let plastic_fname_num = client::from_le_u32(&buy_entry1, 0x0C);
+    let plastic_name = client::fname_from_parts(&api, plastic_fname_idx, plastic_fname_num)
         .unwrap_or_default();
     println!("Resource_Plastic FName: idx={plastic_fname_idx:#x} num={plastic_fname_num} => {plastic_name}");
     assert!(plastic_name.contains("Plastic"), "expected Plastic, got {plastic_name}");
 
-    let sell_hdr = research::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET).unwrap();
+    let sell_hdr = client::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET).unwrap();
     println!("SellList: ptr={:#x} num={} max={}", sell_hdr.ptr, sell_hdr.num, sell_hdr.max);
 
     if let Some(sells) = read_sell_entries(&api, comp_addr) {
@@ -389,7 +389,7 @@ fn add_plastic_to_resourcesaler_sell_list() {
         }
     }
 
-    let template = research::read_bytes(&api, sell_hdr.ptr, 0, SELL_STRIDE);
+    let template = client::read_bytes(&api, sell_hdr.ptr, 0, SELL_STRIDE);
     println!("template entry (Resource_Glass): {} bytes", template.len());
 
     let mut new_entry = template.clone();
@@ -422,13 +422,13 @@ fn add_plastic_to_resourcesaler_sell_list() {
     }
     println!("bumped num to {new_count}");
 
-    let verify_hdr = research::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET).unwrap();
+    let verify_hdr = client::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET).unwrap();
     println!("verify: num={} max={}", verify_hdr.num, verify_hdr.max);
 
-    let last = research::read_bytes(&api, sell_hdr.ptr, new_offset, SELL_STRIDE);
-    let verify_idx = research::from_le_u32(&last, 0x08);
-    let verify_num = research::from_le_u32(&last, 0x0C);
-    let verify_name = research::fname_from_parts(&api, verify_idx, verify_num).unwrap_or_default();
+    let last = client::read_bytes(&api, sell_hdr.ptr, new_offset, SELL_STRIDE);
+    let verify_idx = client::from_le_u32(&last, 0x08);
+    let verify_num = client::from_le_u32(&last, 0x0C);
+    let verify_name = client::fname_from_parts(&api, verify_idx, verify_num).unwrap_or_default();
     println!("last entry: {verify_name}");
     assert!(verify_name.contains("Plastic"), "verify failed: got {verify_name}");
     println!("SUCCESS: Resource_Plastic added to ResourseSaler sell list");
@@ -482,7 +482,7 @@ fn find_sewing_kit_fname() {
         return;
     };
 
-    let buy_hdr = research::read_tarray_header(&api, comp_addr, BUY_LIST_OFFSET);
+    let buy_hdr = client::read_tarray_header(&api, comp_addr, BUY_LIST_OFFSET);
     let Some(buy_hdr) = buy_hdr else {
         println!("could not read buy list header");
         return;
@@ -491,18 +491,18 @@ fn find_sewing_kit_fname() {
 
     for i in 0..buy_hdr.num {
         let offset = (i as u64) * BUY_STRIDE;
-        let entry = research::read_bytes(&api, buy_hdr.ptr, offset, 0x18);
+        let entry = client::read_bytes(&api, buy_hdr.ptr, offset, 0x18);
         if entry.len() < 0x18 { continue; }
-        let dt_ptr = research::from_le_u64(&entry, 0);
-        let fname_idx = research::from_le_u32(&entry, 0x08);
-        let fname_num = research::from_le_u32(&entry, 0x0C);
-        let field_10 = research::from_le_u64(&entry, 0x10);
-        let name = research::fname_from_parts(&api, fname_idx, fname_num)
+        let dt_ptr = client::from_le_u64(&entry, 0);
+        let fname_idx = client::from_le_u32(&entry, 0x08);
+        let fname_num = client::from_le_u32(&entry, 0x0C);
+        let field_10 = client::from_le_u64(&entry, 0x10);
+        let name = client::fname_from_parts(&api, fname_idx, fname_num)
             .unwrap_or_else(|| format!("(?idx={fname_idx:#x})"));
         println!("  buy[{i:>2}] dt={dt_ptr:#x} fname_idx={fname_idx:#x} fname_num={fname_num} field_10={field_10:#x} => {name}");
     }
 
-    let sell_hdr = research::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET);
+    let sell_hdr = client::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET);
     if let Some(sh) = sell_hdr {
         println!("\nResourseSaler sell list: num={} max={}", sh.num, sh.max);
     }
@@ -589,7 +589,7 @@ fn add_sewingkit_to_resourcesaler_buy_list() {
     let comp_sel = format!("addr:0x{comp_addr:X}");
     println!("ResourseSaler component: {comp_sel}");
 
-    let buy_hdr = research::read_tarray_header(&api, comp_addr, BUY_LIST_OFFSET).unwrap();
+    let buy_hdr = client::read_tarray_header(&api, comp_addr, BUY_LIST_OFFSET).unwrap();
     println!("buy list before: ptr={:#x} num={} max={}", buy_hdr.ptr, buy_hdr.num, buy_hdr.max);
 
     if let Some(buys) = read_buy_entries(&api, comp_addr) {
@@ -642,7 +642,7 @@ fn add_sewingkit_to_resourcesaler_buy_list() {
         }
     }
 
-    let buy_hdr = research::read_tarray_header(&api, comp_addr, BUY_LIST_OFFSET).unwrap();
+    let buy_hdr = client::read_tarray_header(&api, comp_addr, BUY_LIST_OFFSET).unwrap();
     println!("buy list after grow: ptr={:#x} num={} max={}", buy_hdr.ptr, buy_hdr.num, buy_hdr.max);
     assert!(buy_hdr.num < buy_hdr.max, "still no room after grow");
 
@@ -661,7 +661,7 @@ fn add_sewingkit_to_resourcesaler_buy_list() {
     let sewing_fname_num = sewing["fname_num"].as_u64().unwrap() as u32;
     println!("Resource_SewingKit FName: idx={sewing_fname_idx:#x} num={sewing_fname_num}");
 
-    let template = research::read_bytes(&api, buy_hdr.ptr, 0, BUY_STRIDE);
+    let template = client::read_bytes(&api, buy_hdr.ptr, 0, BUY_STRIDE);
     println!("template entry: {} bytes from buy[0]", template.len());
 
     let mut new_entry = template.clone();
@@ -695,13 +695,13 @@ fn add_sewingkit_to_resourcesaler_buy_list() {
     }
     println!("bumped num to {new_count}");
 
-    let verify_hdr = research::read_tarray_header(&api, comp_addr, BUY_LIST_OFFSET).unwrap();
+    let verify_hdr = client::read_tarray_header(&api, comp_addr, BUY_LIST_OFFSET).unwrap();
     println!("verify: num={} max={}", verify_hdr.num, verify_hdr.max);
 
-    let last = research::read_bytes(&api, verify_hdr.ptr, new_offset, BUY_STRIDE);
-    let verify_idx = research::from_le_u32(&last, 0x08);
-    let verify_num = research::from_le_u32(&last, 0x0C);
-    let verify_name = research::fname_from_parts(&api, verify_idx, verify_num).unwrap_or_default();
+    let last = client::read_bytes(&api, verify_hdr.ptr, new_offset, BUY_STRIDE);
+    let verify_idx = client::from_le_u32(&last, 0x08);
+    let verify_num = client::from_le_u32(&last, 0x0C);
+    let verify_name = client::fname_from_parts(&api, verify_idx, verify_num).unwrap_or_default();
     println!("last entry: {verify_name}");
     assert!(verify_name.contains("SewingKit"), "verify failed: got {verify_name}");
     println!("SUCCESS: Resource_SewingKit added to ResourseSaler buy list");

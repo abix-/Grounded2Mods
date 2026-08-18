@@ -11,7 +11,7 @@
 
 mod common;
 use common::{api_or_skip, offsets_live};
-use modforge::client::research;
+use modforge::client;
 
 #[test]
 fn read_gameplay_settings_live() {
@@ -20,7 +20,7 @@ fn read_gameplay_settings_live() {
         println!("SKIP: offsets not live");
         return;
     }
-    let Some(inst) = research::find_live_instance(&api, "BP_GlobalManager_C") else {
+    let Some(inst) = client::find_live_instance(&api, "BP_GlobalManager_C") else {
         println!("no live BP_GlobalManager_C");
         return;
     };
@@ -43,11 +43,11 @@ fn read_gameplay_settings_live() {
     for (name, offset, ty) in fields {
         match *ty {
             "f64" => {
-                let val = research::read_f64(&api, addr, *offset);
+                let val = client::read_f64(&api, addr, *offset);
                 println!("{name} @ +0x{offset:x}: {val}");
             }
             "bool" => {
-                let val = research::read_u8(&api, addr, *offset) != 0;
+                let val = client::read_u8(&api, addr, *offset) != 0;
                 println!("{name} @ +0x{offset:x}: {val}");
             }
             _ => {}

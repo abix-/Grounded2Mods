@@ -66,7 +66,7 @@ impl Api {
     }
 
     /// Borrow the underlying `ueforge::client::Api`. Used by
-    /// generic helpers in `ueforge::client::research` that need
+    /// generic helpers in `ueforge::client` that need
     /// the raw API.
     pub fn inner(&self) -> &ueforge::client::Api<Snapshot> {
         &self.0

@@ -7,7 +7,7 @@
 
 mod common;
 use common::{api_or_skip, offsets_live};
-use modforge::client::research;
+use modforge::client;
 use serde_json::json;
 
 const CHAR_COMP: &str = "BP_CharacterComponent_C";
@@ -27,7 +27,7 @@ fn set_movement_speed() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(800.0);
 
-    let instances = research::walk_class_instances(&api, CHAR_COMP, 100);
+    let instances = client::walk_class_instances(&api, CHAR_COMP, 100);
     let inst = instances.iter().find(|i| i.full_name.contains("PersistentLevel"));
     let Some(inst) = inst else {
         println!("no live player {CHAR_COMP} found");
@@ -37,7 +37,7 @@ fn set_movement_speed() {
     let sel = &inst.addr_selector;
     println!("target: {}", inst.full_name);
 
-    let before = research::read_f64(&api, addr, MOVEMENT_SPEED);
+    let before = client::read_f64(&api, addr, MOVEMENT_SPEED);
     println!("before: MovementSpeed = {before}");
 
     let w = api.op(
@@ -48,12 +48,12 @@ fn set_movement_speed() {
     assert!(w.ok, "write_bytes failed: {:?}", w.error);
     println!("wrote MovementSpeed = {speed}");
 
-    let after = research::read_f64(&api, addr, MOVEMENT_SPEED);
+    let after = client::read_f64(&api, addr, MOVEMENT_SPEED);
     println!("after: MovementSpeed = {after}");
 
     for i in 0..4 {
         std::thread::sleep(std::time::Duration::from_secs(2));
-        let v = research::read_f64(&api, addr, MOVEMENT_SPEED);
+        let v = client::read_f64(&api, addr, MOVEMENT_SPEED);
         println!("  t={}s  MovementSpeed = {v}", (i + 1) * 2);
     }
 }

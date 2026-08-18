@@ -10,7 +10,7 @@
 
 mod common;
 use common::{api_or_skip, offsets_live};
-use modforge::client::research::{self, ClassInstance};
+use modforge::client::{self, ClassInstance};
 use serde_json::json;
 use std::collections::HashSet;
 use std::time::Duration;
@@ -23,11 +23,11 @@ const SELL_LIST_OFFSET: u64 = 0x2E8;
 const SELL_STRIDE: u64 = 0x38;
 
 fn find_all_vendors(api: &Api) -> Vec<ClassInstance> {
-    research::walk_class_instances(api, VENDOR_ACTOR_CLASS, 100)
+    client::walk_class_instances(api, VENDOR_ACTOR_CLASS, 100)
 }
 
 fn get_component_addr(api: &Api, actor_addr: u64) -> Option<u64> {
-    research::read_component_ptr(api, actor_addr, VENDOR_COMP_OFFSET)
+    client::read_component_ptr(api, actor_addr, VENDOR_COMP_OFFSET)
 }
 
 struct SellEntry {
@@ -35,16 +35,16 @@ struct SellEntry {
 }
 
 fn read_sell_entries(api: &Api, comp_addr: u64) -> Option<Vec<SellEntry>> {
-    let hdr = research::read_tarray_header(api, comp_addr, SELL_LIST_OFFSET)?;
+    let hdr = client::read_tarray_header(api, comp_addr, SELL_LIST_OFFSET)?;
     if hdr.num <= 0 || hdr.num > 500 { return None; }
-    let data = research::read_bytes(api, hdr.ptr, 0, (hdr.num as u64) * SELL_STRIDE);
+    let data = client::read_bytes(api, hdr.ptr, 0, (hdr.num as u64) * SELL_STRIDE);
     if data.is_empty() { return None; }
     let mut entries = Vec::new();
     for i in 0..hdr.num as usize {
         let base = i * SELL_STRIDE as usize;
-        let idx = research::from_le_u32(&data, base + 0x08);
-        let num = research::from_le_u32(&data, base + 0x0C);
-        let item_name = research::fname_from_parts(api, idx, num)
+        let idx = client::from_le_u32(&data, base + 0x08);
+        let num = client::from_le_u32(&data, base + 0x0C);
+        let item_name = client::fname_from_parts(api, idx, num)
             .unwrap_or_else(|| format!("(?idx={idx:#x} num={num})"));
         entries.push(SellEntry { item_name });
     }
@@ -109,7 +109,7 @@ fn find_barman_food_gap() {
     };
 
     let sells = read_sell_entries(&api, comp_addr).unwrap_or_default();
-    let hdr = research::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET).unwrap();
+    let hdr = client::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET).unwrap();
     println!("Barman sell list: {} entries (num={} max={})", sells.len(), hdr.num, hdr.max);
 
     let existing: HashSet<String> = sells.iter().map(|e| e.item_name.clone()).collect();
@@ -160,7 +160,7 @@ fn add_all_food_to_barman_sell_list() {
     println!("Barman component: {comp_sel}");
 
     let sells = read_sell_entries(&api, comp_addr).unwrap_or_default();
-    let hdr = research::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET).unwrap();
+    let hdr = client::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET).unwrap();
     println!("sell list before: num={} max={}", hdr.num, hdr.max);
 
     let existing: HashSet<String> = sells.iter().map(|e| e.item_name.clone()).collect();
@@ -231,11 +231,11 @@ fn add_all_food_to_barman_sell_list() {
         }
     }
 
-    let hdr = research::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET).unwrap();
+    let hdr = client::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET).unwrap();
     println!("sell list after grow: ptr={:#x} num={} max={}", hdr.ptr, hdr.num, hdr.max);
     assert!(hdr.num + resolved.len() as i32 <= hdr.max, "still not enough room");
 
-    let template = research::read_bytes(&api, hdr.ptr, 0, SELL_STRIDE);
+    let template = client::read_bytes(&api, hdr.ptr, 0, SELL_STRIDE);
     println!("template from sell[0]: {} bytes", template.len());
 
     let mut current_num = hdr.num;
@@ -271,7 +271,7 @@ fn add_all_food_to_barman_sell_list() {
     }
     println!("bumped num to {current_num}");
 
-    let verify_hdr = research::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET).unwrap();
+    let verify_hdr = client::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET).unwrap();
     println!("\nverify: num={} max={}", verify_hdr.num, verify_hdr.max);
 
     let verify_sells = read_sell_entries(&api, comp_addr).unwrap_or_default();

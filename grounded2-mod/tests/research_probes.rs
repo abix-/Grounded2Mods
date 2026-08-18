@@ -3,7 +3,7 @@
 //
 // The mod stays generic. All shared "find live player +
 // follow component pointer + read field" plumbing lives in
-// `ueforge::client::research`. This file owns only the
+// `ueforge::client`. This file owns only the
 // G2-specific class names + offsets + interpretation.
 //
 // Original mod-side functions removed in 2026-05-09 evening's
@@ -21,7 +21,7 @@
 
 mod common;
 
-use ueforge::client::research;
+use ueforge::client;
 
 // ---------------------------------------------------------------
 // Field offsets and class names. Captured from the mod-side
@@ -102,9 +102,9 @@ struct GetValueForStatParms {
 #[ignore]
 fn probe_status_effect_values() {
     let api = common::Api::require();
-    let player = research::find_live_instance(api.inner(), PLAYER_CLASS)
+    let player = client::find_live_instance(api.inner(), PLAYER_CLASS)
         .expect("no live player; load a save and spawn");
-    let sec_addr = research::read_component_ptr(
+    let sec_addr = client::read_component_ptr(
         api.inner(),
         player.addr,
         ASC_STATUS_EFFECT_COMPONENT,
@@ -163,15 +163,15 @@ fn probe_player_current_damage() {
 #[ignore]
 fn probe_player_velocity_z() {
     let api = common::Api::require();
-    let player = research::find_live_instance(api.inner(), PLAYER_CLASS)
+    let player = client::find_live_instance(api.inner(), PLAYER_CLASS)
         .expect("no live player");
-    let cmc_addr = research::read_component_ptr(
+    let cmc_addr = client::read_component_ptr(
         api.inner(),
         player.addr,
         ASC_CHAR_MOVEMENT_COMPONENT,
     )
     .expect("CMC ptr is null");
-    let vz = research::read_f32(api.inner(), cmc_addr, CMC_VELOCITY_Z);
+    let vz = client::read_f32(api.inner(), cmc_addr, CMC_VELOCITY_Z);
     eprintln!("player Velocity.Z = {:.2}", vz);
 }
 

@@ -71,40 +71,40 @@ inspect failures.
 
 ## research
 
-`ueforge::client::research`. Find UObjects, walk DataTables,
+`ueforge::client`. Find UObjects, walk DataTables,
 read fields by offset.
 
 ```rust
-use ueforge::client::research;
+use ueforge::client;
 
 // Find a DataTable by short name; returns (selector, raw_addr).
-let (dt_sel, _addr) = research::find_data_table_by_name(api, "DT_Materials")?;
+let (dt_sel, _addr) = client::find_data_table_by_name(api, "DT_Materials")?;
 // ...or by path substring (when multiple tables share a short name):
-let (dt_sel, _) = research::find_data_table_by_path(api, "Table_StatusEffects.Table_StatusEffects")?;
+let (dt_sel, _) = client::find_data_table_by_path(api, "Table_StatusEffects.Table_StatusEffects")?;
 
 // Walk every row.
-let rows = research::read_data_table_rows(api, &dt_sel)?;
+let rows = client::read_data_table_rows(api, &dt_sel)?;
 for row in &rows {
-    let name = research::fname_to_string(api, row.fname)?;
-    let stack = research::read_i32(api, row.addr, 0x48);
+    let name = client::fname_to_string(api, row.fname)?;
+    let stack = client::read_i32(api, row.addr, 0x48);
     println!("{name}: {stack}");
 }
 
 // Find class instances.
-let cdo = research::find_class_cdo(api, "BP_EnvironmentalDamage_C")?;
-let player = research::find_live_instance(api, "BP_SurvivalPlayerCharacter_Female02_C")?;
-let all = research::walk_class_instances(api, "SurvivalCharacter", 100);
+let cdo = client::find_class_cdo(api, "BP_EnvironmentalDamage_C")?;
+let player = client::find_live_instance(api, "BP_SurvivalPlayerCharacter_Female02_C")?;
+let all = client::walk_class_instances(api, "SurvivalCharacter", 100);
 
 // Read fields at offsets.
-let bytes = research::read_bytes(api, addr, offset, 16);
-let i = research::read_i32(api, addr, 0x48);
-let f = research::read_f32(api, addr, 0x32C);
-let u = research::read_u32(api, addr, 0xFC);
-let b = research::read_u8(api, addr, 0x67);
-let p = research::read_u64(api, addr, 0x1340);
+let bytes = client::read_bytes(api, addr, offset, 16);
+let i = client::read_i32(api, addr, 0x48);
+let f = client::read_f32(api, addr, 0x32C);
+let u = client::read_u32(api, addr, 0xFC);
+let b = client::read_u8(api, addr, 0x67);
+let p = client::read_u64(api, addr, 0x1340);
 
 // Follow a component pointer (8-byte read with null check).
-let hc_addr = research::read_component_ptr(api, player.addr, 0x1340)?;
+let hc_addr = client::read_component_ptr(api, player.addr, 0x1340)?;
 
 // Typed UFunction call:
 unsafe {

@@ -18,7 +18,7 @@
 
 mod common;
 use common::{api_or_skip, offsets_live};
-use modforge::client::research;
+use modforge::client;
 
 const EMISSIONS_COUNT: u64 = 0x2A8;
 const TIME_UNTIL_EMMISION: u64 = 0x2B0;
@@ -39,7 +39,7 @@ fn watch_cycle() {
         println!("SKIP: offsets not live");
         return;
     }
-    let Some(inst) = research::find_live_instance(&api, GLOBAL_MANAGER) else {
+    let Some(inst) = client::find_live_instance(&api, GLOBAL_MANAGER) else {
         println!("no live {GLOBAL_MANAGER}");
         return;
     };
@@ -57,11 +57,11 @@ fn watch_cycle() {
     let mut siren_logged = false;
 
     while start.elapsed().as_secs() < budget {
-        let tb = research::read_bytes(&api, addr, TIME_UNTIL_EMMISION, 8);
-        let t = if tb.len() >= 8 { Some(research::from_le_f64(&tb, 0)) } else { None };
-        let cb = research::read_bytes(&api, addr, EMISSIONS_COUNT, 4);
-        let c = if cb.len() >= 4 { Some(research::from_le_i32(&cb, 0)) } else { None };
-        let fb = research::read_bytes(&api, addr, FREEZE_TIMER, 1);
+        let tb = client::read_bytes(&api, addr, TIME_UNTIL_EMMISION, 8);
+        let t = if tb.len() >= 8 { Some(client::from_le_f64(&tb, 0)) } else { None };
+        let cb = client::read_bytes(&api, addr, EMISSIONS_COUNT, 4);
+        let c = if cb.len() >= 4 { Some(client::from_le_i32(&cb, 0)) } else { None };
+        let fb = client::read_bytes(&api, addr, FREEZE_TIMER, 1);
         let f = fb.first().copied();
         let secs = start.elapsed().as_secs_f64();
 

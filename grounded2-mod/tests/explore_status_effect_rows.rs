@@ -2,7 +2,7 @@
 // EStatusEffectType values we want to migrate skills to.
 //
 // All TMap walking + FName + per-row reads now go through
-// `ueforge::client::research`. The test owns only the per-row
+// `ueforge::client`. The test owns only the per-row
 // field offsets (Type at +0x30, Value at +0x34) and the target
 // type-id set.
 //
@@ -15,7 +15,7 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use ueforge::client::research;
+use ueforge::client;
 
 const TARGET_TYPES: &[(u8, &str)] = &[
     (5, "MaxHealth"),
@@ -46,7 +46,7 @@ fn discover_rows_by_type() {
 
     // 1. Find Table_StatusEffects (path-disambiguate. There's
     // both a CDO and the live instance).
-    let Some((dt_sel, dt_addr)) = research::find_data_table_by_path(
+    let Some((dt_sel, dt_addr)) = client::find_data_table_by_path(
         api.inner(),
         "Table_StatusEffects.Table_StatusEffects",
     ) else {
@@ -55,7 +55,7 @@ fn discover_rows_by_type() {
     eprintln!("Table_StatusEffects @ 0x{dt_addr:016x} (selector={dt_sel})");
 
     // 2. Read all rows in one batched walk.
-    let rows = research::read_data_table_rows(api.inner(), &dt_sel)
+    let rows = client::read_data_table_rows(api.inner(), &dt_sel)
         .expect("read_data_table_rows");
     eprintln!("=== {} live rows ===", rows.len());
 
@@ -67,8 +67,8 @@ fn discover_rows_by_type() {
 
     for row in &rows {
         rows_scanned += 1;
-        let stat_type = research::read_u8(api.inner(), row.addr, ROW_TYPE_OFFSET);
-        let value = research::read_f32(api.inner(), row.addr, ROW_VALUE_OFFSET);
+        let stat_type = client::read_u8(api.inner(), row.addr, ROW_TYPE_OFFSET);
+        let value = client::read_f32(api.inner(), row.addr, ROW_VALUE_OFFSET);
 
         if target_set.contains(&stat_type) && !found.contains_key(&stat_type) {
             found.insert(

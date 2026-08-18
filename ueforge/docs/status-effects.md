@@ -175,7 +175,7 @@ To wire this against a game ueforge hasn't been tested on:
    etc. are the integers your mod will pass to
    `GetValueForStat`-style queries.
 5. **Validate via a probe.** Use ueforge's debug HTTP +
-   `client::research` to walk the table, dump a few rows,
+   `client` to walk the table, dump a few rows,
    confirm row-struct offsets match. The probe pattern lives
    in `grounded2-mod/tests/explore_status_effect_rows.rs` as
    a reference.
@@ -184,7 +184,7 @@ To wire this against a game ueforge hasn't been tested on:
 
 - [`rpg.md`](rpg.md) "StatusEffectApply". The
   ueforge catalog variant that binds to this pattern.
-- [`testing.md`](testing.md) -- `client::research` helpers
+- [`testing.md`](testing.md) -- `client` helpers
   for probing tables + rows.
 - [`../../grounded2-mod/docs/damage.md`](../../grounded2-mod/docs/damage.md)
   "Status Effect system". The Grounded 2 / Maine

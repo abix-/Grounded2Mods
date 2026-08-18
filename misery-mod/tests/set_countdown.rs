@@ -16,7 +16,7 @@
 
 mod common;
 use common::{api_or_skip, offsets_live};
-use modforge::client::research;
+use modforge::client;
 use serde_json::json;
 
 const EMISSIONS_COUNT: u64 = 0x2A8;
@@ -37,16 +37,16 @@ fn set_countdown() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(10.0);
 
-    let Some(inst) = research::find_live_instance(&api, GLOBAL_MANAGER) else {
+    let Some(inst) = client::find_live_instance(&api, GLOBAL_MANAGER) else {
         println!("no live {GLOBAL_MANAGER}");
         return;
     };
     let addr = inst.addr;
     let sel = &inst.addr_selector;
 
-    let count_before = research::read_i32(&api, addr, EMISSIONS_COUNT);
-    let freeze = research::read_u8(&api, addr, FREEZE_TIMER);
-    let before = research::read_f64(&api, addr, TIME_UNTIL_EMMISION);
+    let count_before = client::read_i32(&api, addr, EMISSIONS_COUNT);
+    let freeze = client::read_u8(&api, addr, FREEZE_TIMER);
+    let before = client::read_f64(&api, addr, TIME_UNTIL_EMMISION);
     println!("before: TimeUntilEmmision={before} EmissionsCount={count_before} freeze={freeze}");
     if freeze == 1 {
         println!("NOTE: FreezeTimer? is set; the countdown will not run. Unfreeze first.");
@@ -63,8 +63,8 @@ fn set_countdown() {
     let start = std::time::Instant::now();
     let mut fired = false;
     while start.elapsed().as_secs() < 45 {
-        let t = research::read_f64(&api, addr, TIME_UNTIL_EMMISION);
-        let c = research::read_i32(&api, addr, EMISSIONS_COUNT);
+        let t = client::read_f64(&api, addr, TIME_UNTIL_EMMISION);
+        let c = client::read_i32(&api, addr, EMISSIONS_COUNT);
         println!("  t={:5.1}s  TimeUntilEmmision={t}  EmissionsCount={c}",
             start.elapsed().as_secs_f64());
         if !fired && c != count_before {

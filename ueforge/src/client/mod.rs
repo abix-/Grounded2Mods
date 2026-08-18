@@ -4,4 +4,4 @@
 //! Re-exported here so existing ueforge call sites compile unchanged.
 
 pub use modforge::client::*;
-pub use modforge::client::{diff, perf, research, scenario};
+pub use modforge::client::{diff, perf, scenario};

@@ -16,7 +16,7 @@
 
 mod common;
 use common::{api_or_skip, offsets_live};
-use modforge::client::research;
+use modforge::client;
 use serde_json::json;
 
 const TIME_UNTIL_EMMISION: u64 = 0x2B0;
@@ -41,15 +41,15 @@ fn set_freeze(on: bool) {
         println!("SKIP: offsets not live");
         return;
     }
-    let Some(inst) = research::find_live_instance(&api, GLOBAL_MANAGER) else {
+    let Some(inst) = client::find_live_instance(&api, GLOBAL_MANAGER) else {
         println!("no live {GLOBAL_MANAGER}");
         return;
     };
     let addr = inst.addr;
     let sel = &inst.addr_selector;
 
-    let before = research::read_f64(&api, addr, TIME_UNTIL_EMMISION);
-    let freeze_flag = research::read_u8(&api, addr, FREEZE_TIMER);
+    let before = client::read_f64(&api, addr, TIME_UNTIL_EMMISION);
+    let freeze_flag = client::read_u8(&api, addr, FREEZE_TIMER);
     println!("before: TimeUntilEmmision={before} freeze={freeze_flag}");
 
     let w = api.op(
@@ -60,10 +60,10 @@ fn set_freeze(on: bool) {
     assert!(w.ok, "write_bytes failed: {:?}", w.error);
     println!("wrote FreezeTimer? = {}", on as u8);
 
-    let t0 = research::read_f64(&api, addr, TIME_UNTIL_EMMISION);
+    let t0 = client::read_f64(&api, addr, TIME_UNTIL_EMMISION);
     std::thread::sleep(std::time::Duration::from_secs(6));
-    let t1 = research::read_f64(&api, addr, TIME_UNTIL_EMMISION);
-    let flag = research::read_u8(&api, addr, FREEZE_TIMER);
+    let t1 = client::read_f64(&api, addr, TIME_UNTIL_EMMISION);
+    let flag = client::read_u8(&api, addr, FREEZE_TIMER);
 
     println!("after 6s: {t0} -> {t1}  freeze flag={flag}");
     if on {

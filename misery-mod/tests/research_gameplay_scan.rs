@@ -11,7 +11,7 @@
 
 mod common;
 use common::{api_or_skip, offsets_live};
-use modforge::client::research;
+use modforge::client;
 
 #[test]
 fn scan_for_settings() {
@@ -25,7 +25,7 @@ fn scan_for_settings() {
         "BP_SGKGameInstance_C",
     ] {
         println!("=== {class} ===");
-        let Some(inst) = research::find_live_instance(&api, class) else {
+        let Some(inst) = client::find_live_instance(&api, class) else {
             println!("  no live instance");
             continue;
         };
@@ -35,9 +35,9 @@ fn scan_for_settings() {
 
 fn scan(api: &common::Api, addr: u64) {
     for off in (0x28..0x1000).step_by(8) {
-        let bytes = research::read_bytes(api, addr, off, 8);
+        let bytes = client::read_bytes(api, addr, off, 8);
         if bytes.len() < 8 { continue; }
-        let val = research::from_le_f64(&bytes, 0);
+        let val = client::from_le_f64(&bytes, 0);
         if val > 0.001 && val < 10000.0 && val.is_finite() {
             let marker = if (val - 22.0).abs() < 0.01 { " <-- 22!" } else { "" };
             println!("+0x{off:03x}: {val}{marker}");

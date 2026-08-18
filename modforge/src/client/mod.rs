@@ -28,7 +28,6 @@ use crate::envelope::OpResponse;
 
 pub mod diff;
 pub mod perf;
-pub mod research;
 pub mod scenario;
 
 /// Default request timeout. A test driving a slow PE-drain op
@@ -293,4 +292,471 @@ impl<S: DeserializeOwned> Api<S> {
     pub fn endpoint(&self) -> &str {
         &self.endpoint
     }
+}
+
+// UDataTable.RowMap (TMap<FName, uint8*>) at +0x30 on UE 5.x.
+const ROW_MAP_OFFSET: u64 = 0x30;
+// TMap layout (UE 5.x): { void* Data; i32 Num; i32 Max }.
+const TMAP_HEADER_BYTES: u64 = 16;
+// TSparseArray<TSetElement<TPair<K, V>>> stride = 24 bytes
+const TMAP_ELEMENT_SIZE: usize = 24;
+
+#[derive(Debug, Clone, Copy)]
+pub struct DtRow {
+    pub fname: u64,
+    pub addr: u64,
+}
+
+impl DtRow {
+    pub fn addr_selector(&self) -> String {
+        format!("addr:0x{:X}", self.addr)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ClassInstance {
+    pub addr_selector: String,
+    pub addr: u64,
+    pub name: String,
+    pub full_name: String,
+}
+
+pub fn find_data_table_by_name<S: DeserializeOwned>(
+    api: &Api<S>,
+    short_name: &str,
+) -> Option<(String, u64)> {
+    let r = api.op(
+        "walk_class",
+        json!({"class": "DataTable", "max": 10000, "include_cdo": false}),
+    );
+    if !r.ok {
+        return None;
+    }
+    let inst = r.result.get("instances")?.as_array()?.iter().find(|i| {
+        i.get("name").and_then(|v| v.as_str()) == Some(short_name)
+    })?;
+    let sel = inst.get("addr_selector")?.as_str()?.to_string();
+    let addr = inst
+        .get("addr")
+        .and_then(|v| v.as_str())
+        .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())?;
+    Some((sel, addr))
+}
+
+pub fn find_data_table_by_path<S: DeserializeOwned>(
+    api: &Api<S>,
+    path_substring: &str,
+) -> Option<(String, u64)> {
+    let r = api.op(
+        "walk_class",
+        json!({"class": "DataTable", "max": 10000, "include_cdo": false}),
+    );
+    if !r.ok {
+        return None;
+    }
+    let inst = r.result.get("instances")?.as_array()?.iter().find(|i| {
+        i.get("full_name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.contains(path_substring))
+            .unwrap_or(false)
+    })?;
+    let sel = inst.get("addr_selector")?.as_str()?.to_string();
+    let addr = inst
+        .get("addr")
+        .and_then(|v| v.as_str())
+        .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())?;
+    Some((sel, addr))
+}
+
+pub fn read_data_table_rows<S: DeserializeOwned>(
+    api: &Api<S>,
+    table_addr_selector: &str,
+) -> Result<Vec<DtRow>, String> {
+    let header_resp = api.op(
+        "read_bytes",
+        json!({
+            "instance_selector": table_addr_selector,
+            "offset": ROW_MAP_OFFSET,
+            "length": TMAP_HEADER_BYTES,
+        }),
+    );
+    if !header_resp.ok {
+        return Err(format!(
+            "read_bytes header on {table_addr_selector} failed: {:?}",
+            header_resp.error
+        ));
+    }
+    let bytes = hex::decode(
+        header_resp
+            .result
+            .get("bytes_hex")
+            .and_then(|v| v.as_str())
+            .ok_or("header response missing bytes_hex")?,
+    )
+    .map_err(|e| format!("hex decode: {e}"))?;
+    if bytes.len() < 16 {
+        return Err(format!("header too short: {} bytes", bytes.len()));
+    }
+    let data_ptr = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
+    let data_num = i32::from_le_bytes(bytes[8..12].try_into().unwrap());
+    if data_num <= 0 || data_ptr == 0 {
+        return Ok(Vec::new());
+    }
+
+    let total_bytes = (data_num as u64) * (TMAP_ELEMENT_SIZE as u64);
+    let elem_resp = api.op(
+        "read_bytes",
+        json!({
+            "instance_selector": format!("addr:0x{data_ptr:X}"),
+            "offset": 0,
+            "length": total_bytes,
+        }),
+    );
+    if !elem_resp.ok {
+        return Err(format!(
+            "read_bytes element-array failed: {:?}",
+            elem_resp.error
+        ));
+    }
+    let slot_bytes = hex::decode(
+        elem_resp
+            .result
+            .get("bytes_hex")
+            .and_then(|v| v.as_str())
+            .ok_or("element response missing bytes_hex")?,
+    )
+    .map_err(|e| format!("hex decode: {e}"))?;
+
+    let mut rows = Vec::with_capacity(data_num as usize);
+    for i in 0..(data_num as usize) {
+        let off = i * TMAP_ELEMENT_SIZE;
+        if off + 16 > slot_bytes.len() {
+            break;
+        }
+        let fname = u64::from_le_bytes(slot_bytes[off..off + 8].try_into().unwrap());
+        let addr = u64::from_le_bytes(slot_bytes[off + 8..off + 16].try_into().unwrap());
+        if addr == 0 {
+            continue;
+        }
+        rows.push(DtRow { fname, addr });
+    }
+    Ok(rows)
+}
+
+pub fn fname_to_string<S: DeserializeOwned>(api: &Api<S>, fname: u64) -> Option<String> {
+    let r = api.op("fname_to_string", json!({"fname": fname}));
+    if !r.ok {
+        return None;
+    }
+    r.result.get("string").and_then(|v| v.as_str()).map(String::from)
+}
+
+pub fn walk_class_instances<S: DeserializeOwned>(
+    api: &Api<S>,
+    class: &str,
+    max: usize,
+) -> Vec<ClassInstance> {
+    walk_class_inner(api, class, max, false)
+}
+
+pub fn walk_class_instances_with_cdo<S: DeserializeOwned>(
+    api: &Api<S>,
+    class: &str,
+    max: usize,
+) -> Vec<ClassInstance> {
+    walk_class_inner(api, class, max, true)
+}
+
+pub fn find_class_cdo<S: DeserializeOwned>(
+    api: &Api<S>,
+    class: &str,
+) -> Option<ClassInstance> {
+    let r = api.op(
+        "walk_class",
+        json!({"class": class, "max": 32, "include_cdo": true}),
+    );
+    if !r.ok {
+        return None;
+    }
+    let arr = r.result.get("instances")?.as_array()?;
+    let cdo = arr.iter().find(|i| {
+        i.get("is_cdo")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    })?;
+    parse_class_instance(cdo)
+}
+
+pub fn find_live_instance<S: DeserializeOwned>(
+    api: &Api<S>,
+    class: &str,
+) -> Option<ClassInstance> {
+    let r = api.op(
+        "walk_class",
+        json!({"class": class, "max": 32, "include_cdo": false}),
+    );
+    if !r.ok {
+        return None;
+    }
+    let arr = r.result.get("instances")?.as_array()?;
+    let live = arr.iter().find(|i| {
+        !i.get("is_cdo")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    })?;
+    parse_class_instance(live)
+}
+
+pub fn read_component_ptr<S: DeserializeOwned>(
+    api: &Api<S>,
+    parent_addr: u64,
+    offset: u64,
+) -> Option<u64> {
+    let v = read_u64(api, parent_addr, offset);
+    if v == 0 { None } else { Some(v) }
+}
+
+fn walk_class_inner<S: DeserializeOwned>(
+    api: &Api<S>,
+    class: &str,
+    max: usize,
+    include_cdo: bool,
+) -> Vec<ClassInstance> {
+    let r = api.op(
+        "walk_class",
+        json!({"class": class, "max": max, "include_cdo": include_cdo}),
+    );
+    if !r.ok {
+        return Vec::new();
+    }
+    let Some(arr) = r.result.get("instances").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    arr.iter().filter_map(parse_class_instance).collect()
+}
+
+fn parse_class_instance(inst: &serde_json::Value) -> Option<ClassInstance> {
+    let sel = inst.get("addr_selector")?.as_str()?.to_string();
+    let addr_str = inst.get("addr")?.as_str()?;
+    let addr = u64::from_str_radix(addr_str.trim_start_matches("0x"), 16).ok()?;
+    let name = inst.get("name")?.as_str()?.to_string();
+    let full_name = inst
+        .get("full_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&name)
+        .to_string();
+    Some(ClassInstance {
+        addr_selector: sel,
+        addr,
+        name,
+        full_name,
+    })
+}
+
+pub fn read_bytes<S: DeserializeOwned>(
+    api: &Api<S>,
+    addr: u64,
+    offset: u64,
+    length: u64,
+) -> Vec<u8> {
+    let r = api.op(
+        "read_bytes",
+        json!({
+            "instance_selector": format!("addr:0x{addr:X}"),
+            "offset": offset,
+            "length": length,
+        }),
+    );
+    if !r.ok {
+        return Vec::new();
+    }
+    r.result
+        .get("bytes_hex")
+        .and_then(|v| v.as_str())
+        .and_then(|s| hex::decode(s).ok())
+        .unwrap_or_default()
+}
+
+pub fn read_i32<S: DeserializeOwned>(api: &Api<S>, addr: u64, offset: u64) -> i32 {
+    let b = read_bytes(api, addr, offset, 4);
+    if b.len() < 4 { return 0; }
+    i32::from_le_bytes([b[0], b[1], b[2], b[3]])
+}
+
+pub fn read_u32<S: DeserializeOwned>(api: &Api<S>, addr: u64, offset: u64) -> u32 {
+    let b = read_bytes(api, addr, offset, 4);
+    if b.len() < 4 { return 0; }
+    u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+}
+
+pub fn read_f32<S: DeserializeOwned>(api: &Api<S>, addr: u64, offset: u64) -> f32 {
+    let b = read_bytes(api, addr, offset, 4);
+    if b.len() < 4 { return 0.0; }
+    f32::from_le_bytes([b[0], b[1], b[2], b[3]])
+}
+
+pub fn read_f64<S: DeserializeOwned>(api: &Api<S>, addr: u64, offset: u64) -> f64 {
+    let b = read_bytes(api, addr, offset, 8);
+    if b.len() < 8 { return 0.0; }
+    f64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]])
+}
+
+pub fn read_u8<S: DeserializeOwned>(api: &Api<S>, addr: u64, offset: u64) -> u8 {
+    let b = read_bytes(api, addr, offset, 1);
+    b.first().copied().unwrap_or(0)
+}
+
+pub fn read_u64<S: DeserializeOwned>(api: &Api<S>, addr: u64, offset: u64) -> u64 {
+    let b = read_bytes(api, addr, offset, 8);
+    if b.len() < 8 { return 0; }
+    u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]])
+}
+
+pub fn from_le_i32(buf: &[u8], off: usize) -> i32 {
+    i32::from_le_bytes(buf[off..off + 4].try_into().unwrap())
+}
+
+pub fn from_le_u32(buf: &[u8], off: usize) -> u32 {
+    u32::from_le_bytes(buf[off..off + 4].try_into().unwrap())
+}
+
+pub fn from_le_u64(buf: &[u8], off: usize) -> u64 {
+    u64::from_le_bytes(buf[off..off + 8].try_into().unwrap())
+}
+
+pub fn from_le_f32(buf: &[u8], off: usize) -> f32 {
+    f32::from_le_bytes(buf[off..off + 4].try_into().unwrap())
+}
+
+pub fn from_le_f64(buf: &[u8], off: usize) -> f64 {
+    f64::from_le_bytes(buf[off..off + 8].try_into().unwrap())
+}
+
+pub struct TArrayHeader {
+    pub ptr: u64,
+    pub num: i32,
+    pub max: i32,
+}
+
+pub fn read_tarray_header<S: DeserializeOwned>(
+    api: &Api<S>,
+    addr: u64,
+    offset: u64,
+) -> Option<TArrayHeader> {
+    let b = read_bytes(api, addr, offset, 16);
+    if b.len() < 16 { return None; }
+    Some(TArrayHeader {
+        ptr: from_le_u64(&b, 0),
+        num: from_le_i32(&b, 8),
+        max: from_le_i32(&b, 12),
+    })
+}
+
+pub fn fname_from_parts<S: DeserializeOwned>(
+    api: &Api<S>,
+    comparison_index: u32,
+    number: u32,
+) -> Option<String> {
+    let packed: u64 = (comparison_index as u64) | ((number as u64) << 32);
+    fname_to_string(api, packed)
+}
+
+#[derive(Debug, Clone)]
+pub struct ModuleSamples {
+    pub module: String,
+    pub samples: u64,
+    pub pct: f64,
+}
+
+#[derive(Debug, Clone)]
+pub struct ThreadSampleRow {
+    pub name: String,
+    pub tid: u64,
+    pub samples: u64,
+    pub by_module: Vec<ModuleSamples>,
+}
+
+pub struct ThreadModulesReport {
+    pub total_samples: u64,
+    pub by_module_grand_total: Vec<ModuleSamples>,
+    pub by_thread: Vec<ThreadSampleRow>,
+}
+
+impl ThreadModulesReport {
+    pub fn from_value(v: &serde_json::Value) -> Self {
+        let total_samples = v.get("total_samples").and_then(|x| x.as_u64()).unwrap_or(0);
+        let by_module_grand_total = v
+            .get("by_module_grand_total")
+            .and_then(|x| x.as_array())
+            .map(|arr| arr.iter().filter_map(parse_module).collect())
+            .unwrap_or_default();
+        let by_thread = v
+            .get("by_thread")
+            .and_then(|x| x.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|t| {
+                        Some(ThreadSampleRow {
+                            name: t.get("name").and_then(|v| v.as_str())?.to_string(),
+                            tid: t.get("tid").and_then(|v| v.as_u64()).unwrap_or(0),
+                            samples: t.get("samples").and_then(|v| v.as_u64()).unwrap_or(0),
+                            by_module: t
+                                .get("by_module")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| arr.iter().filter_map(parse_module).collect())
+                                .unwrap_or_default(),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Self {
+            total_samples,
+            by_module_grand_total,
+            by_thread,
+        }
+    }
+}
+
+fn parse_module(v: &serde_json::Value) -> Option<ModuleSamples> {
+    Some(ModuleSamples {
+        module: v.get("module").and_then(|x| x.as_str())?.to_string(),
+        samples: v.get("samples").and_then(|x| x.as_u64()).unwrap_or(0),
+        pct: v.get("pct").and_then(|x| x.as_f64()).unwrap_or(0.0),
+    })
+}
+
+impl std::fmt::Display for ThreadModulesReport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "\ntotal samples: {}", self.total_samples)?;
+        writeln!(f, "\n=== Grand total: which module is the process IN ===")?;
+        writeln!(f, "{:>40} {:>10} {:>8}", "module", "samples", "%")?;
+        writeln!(f, "{}", "-".repeat(62))?;
+        for m in &self.by_module_grand_total {
+            writeln!(f, "{:>40} {:>10} {:>7.2}%", m.module, m.samples, m.pct)?;
+        }
+        writeln!(f, "\n=== Per-thread breakdown ===")?;
+        for t in self.by_thread.iter().take(20) {
+            writeln!(f, "\n[{}] tid={} samples={}", t.name, t.tid, t.samples)?;
+            for m in &t.by_module {
+                writeln!(f, "  {:>40} {:>8} {:>6.2}%", m.module, m.samples, m.pct)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+pub fn sample_thread_modules<S: DeserializeOwned>(
+    api: &Api<S>,
+    duration_ms: u64,
+    interval_ms: u64,
+) -> ThreadModulesReport {
+    let r = api.op(
+        "sample_thread_modules",
+        json!({"duration_ms": duration_ms, "interval_ms": interval_ms}),
+    );
+    if !r.ok {
+        panic!("sample_thread_modules failed: {:?}", r.error);
+    }
+    ThreadModulesReport::from_value(&r.result)
 }

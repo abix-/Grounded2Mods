@@ -20,13 +20,13 @@
 
 mod common;
 
-use ueforge::client::research;
+use ueforge::client;
 
 #[test]
 fn read_environmental_damage_cdo() {
     let api = common::Api::require();
 
-    let cdo = research::find_class_cdo(api.inner(), "BP_EnvironmentalDamage_C")
+    let cdo = client::find_class_cdo(api.inner(), "BP_EnvironmentalDamage_C")
         .expect("no CDO found for BP_EnvironmentalDamage_C");
     eprintln!("CDO @ {} ({})", cdo.addr_selector, cdo.full_name);
 
@@ -42,7 +42,7 @@ fn read_environmental_damage_cdo() {
     //   +0x6B bool   bCanRepair
     //   +0x6C bool   bAppliesEffectsOnDamageOverTime
     //   +0x6D bool   bCanIncapacitate
-    let bytes = research::read_bytes(api.inner(), cdo.addr, 0x60, 0x10);
+    let bytes = client::read_bytes(api.inner(), cdo.addr, 0x60, 0x10);
     assert!(bytes.len() >= 0x10, "short read: {} bytes", bytes.len());
 
     let damage_type_flags = u32::from_le_bytes(bytes[0..4].try_into().unwrap());

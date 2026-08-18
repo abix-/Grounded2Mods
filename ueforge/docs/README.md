@@ -61,7 +61,7 @@ defined ONCE in ueforge.**
 | Counters & rings | [counters.md](counters.md) | `counter!`, `peak!`, `time_scope`, `EventRing<T>`, `counter_json!` |
 | RPG framework | [rpg.md](rpg.md) | `SkillDef`, `Tracker`, `Effect` trait + 8 framework Effect types, `TriggerDef`, `CreatureRegistry`, `tab::render`, `SlotKeyResolver`, `VanillaCache`, `HealthBinding` |
 | HTTP control plane | [http.md](http.md) | `server::spawn` + `SpawnHandle::stop` + `Config::auth_token` + builtin ops + selectors |
-| Test client | [testing.md](testing.md) | `Api<S>` + `client::research` (DT walks / class lookups / typed reads) + `client::diff` (snapshot deltas) + `client::scenario` (Pester-style skill DSL) |
+| Test client | [testing.md](testing.md) | `Api<S>` + `client` (DT walks / class lookups / typed reads) + `client::diff` (snapshot deltas) + `client::scenario` (Pester-style skill DSL) |
 | ImGui | [imgui.md](imgui.md) | `ui` module, `Tab` registration, scanner tab |
 | Settings | [settings.md](settings.md) | `Settings<T>` atomic JSON store + `Settings::watch` (mtime hot-reload) + `WatchHandle` |
 | Workers | [worker.md](worker.md) | `worker::spawn` named thread + panic catch |

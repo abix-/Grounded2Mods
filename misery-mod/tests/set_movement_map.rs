@@ -10,7 +10,7 @@
 
 mod common;
 use common::{api_or_skip, offsets_live};
-use modforge::client::research;
+use modforge::client;
 use serde_json::json;
 
 const CHAR_COMP: &str = "BP_CharacterComponent_C";
@@ -48,7 +48,7 @@ fn set_movement_map_speeds() {
         return;
     }
 
-    let instances = research::walk_class_instances(&api, CHAR_COMP, 100);
+    let instances = client::walk_class_instances(&api, CHAR_COMP, 100);
     let cc = instances.iter().find(|i| i.full_name.contains("PersistentLevel"));
     let Some(cc) = cc else {
         println!("no live BP_CharacterComponent_C");
@@ -56,19 +56,19 @@ fn set_movement_map_speeds() {
     };
     let cc_addr = cc.addr;
 
-    let Some(inv_ptr) = research::read_component_ptr(&api, cc_addr, INV_PTR_OFFSET) else {
+    let Some(inv_ptr) = client::read_component_ptr(&api, cc_addr, INV_PTR_OFFSET) else {
         println!("PlayerInventory pointer is null or read failed");
         return;
     };
     println!("PlayerInventory at addr:0x{inv_ptr:x}");
 
-    let hdr = research::read_bytes(&api, inv_ptr, MOVEMENT_SPEEDS_MAP, 16);
+    let hdr = client::read_bytes(&api, inv_ptr, MOVEMENT_SPEEDS_MAP, 16);
     if hdr.len() < 16 {
         println!("failed to read TMap header");
         return;
     }
-    let elem_ptr = research::from_le_u64(&hdr, 0);
-    let num = research::from_le_i32(&hdr, 8);
+    let elem_ptr = client::from_le_u64(&hdr, 0);
+    let num = client::from_le_i32(&hdr, 8);
     println!("TMap: {num} entries, elements at 0x{elem_ptr:x}");
 
     if elem_ptr == 0 || num <= 0 {
@@ -77,7 +77,7 @@ fn set_movement_map_speeds() {
     }
 
     let total_bytes = num as u64 * TMAP_STRIDE;
-    let data = research::read_bytes(&api, elem_ptr, 0, total_bytes);
+    let data = client::read_bytes(&api, elem_ptr, 0, total_bytes);
     if data.is_empty() {
         println!("failed to read element data");
         return;
@@ -93,7 +93,7 @@ fn set_movement_map_speeds() {
             continue;
         };
         let base = slot as u64 * TMAP_STRIDE;
-        let old = research::from_le_f64(&data, slot * 24 + 8);
+        let old = client::from_le_f64(&data, slot * 24 + 8);
         let value_offset = base + 8;
         let ok = write_bytes_op(&api, &format!("addr:0x{elem_ptr:x}"), value_offset, &ov.value.to_le_bytes());
         if ok {
@@ -104,7 +104,7 @@ fn set_movement_map_speeds() {
     }
 
     println!("\nverifying...");
-    let vdata = research::read_bytes(&api, elem_ptr, 0, total_bytes);
+    let vdata = client::read_bytes(&api, elem_ptr, 0, total_bytes);
     if vdata.is_empty() {
         println!("verify read failed");
         return;
@@ -113,7 +113,7 @@ fn set_movement_map_speeds() {
         let base = slot * TMAP_STRIDE as usize;
         if base + 16 > vdata.len() { break; }
         let key = vdata[base];
-        let value = research::from_le_f64(&vdata, base + 8);
+        let value = client::from_le_f64(&vdata, base + 8);
         println!("  key {key}: {value:.1}");
     }
 }
