@@ -17,6 +17,7 @@ pub mod hook;
 pub mod hot_reload;
 pub mod input;
 pub mod log;
+pub mod mission;
 pub mod ops;
 pub mod patterns;
 pub mod research;

@@ -22,11 +22,12 @@
 //! gain a live learning loop, after aggression (raids) and guile
 //! (theft).
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::AtomicU32;
 
 use parking_lot::Mutex;
 use serde_json::{Value as Json, json};
 
+use modforge::mission::{self, Stage, Step};
 use unityforge::mono::{self, LogLevel};
 
 use crate::common::{
@@ -64,12 +65,6 @@ const MISSION_TIMEOUT_SECS: f32 = 1800.0;
 
 /// At most this many caravans on the road map-wide.
 const MAX_ACTIVE_MISSIONS: usize = 3;
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Stage {
-    Going,
-    Returning,
-}
 
 /// An in-flight trade. The mission keeps its seller, host, and
 /// trader handles alive (the launch scan's release pass skips
@@ -128,14 +123,15 @@ pub fn active_target(faction_id: i64) -> Option<Json> {
 }
 
 pub fn tick(now: f32) {
-    let last_tick = f32::from_bits(LAST_TICK_BITS.load(Ordering::Relaxed));
-    if now - last_tick >= MISSION_TICK_SECS {
-        LAST_TICK_BITS.store(now.to_bits(), Ordering::Relaxed);
-        advance_missions(now);
+    if mission::should_tick(now, MISSION_TICK_SECS, &LAST_TICK_BITS) {
+        mission::advance_all(&MISSIONS, now, |m, e| {
+            mono::log(
+                LogLevel::Warn,
+                &format!("survivalist-mod: trade: mission for {} aborted: {e}", m.seller_name),
+            );
+        });
     }
-    let last_scan = f32::from_bits(LAST_SCAN_BITS.load(Ordering::Relaxed));
-    if now - last_scan >= TRADE_SCAN_PERIOD_SECS {
-        LAST_SCAN_BITS.store(now.to_bits(), Ordering::Relaxed);
+    if mission::should_tick(now, TRADE_SCAN_PERIOD_SECS, &LAST_SCAN_BITS) {
         if let Err(e) = launch_scan(now) {
             if !e.contains("not found") {
                 mono::log(LogLevel::Warn, &format!("survivalist-mod: trade scan failed: {e}"));
@@ -482,161 +478,130 @@ fn launch(camp: &Camp, host: &Camp, now: f32) -> Result<(), String> {
 
 // ---- advancing ---------------------------------------------------------------
 
-fn advance_missions(now: f32) {
-    let mut missions = MISSIONS.lock();
-    let mut i = 0;
-    while i < missions.len() {
-        let done = match advance(&mut missions[i], now) {
-            Ok(d) => d,
-            Err(e) => {
-                let m = &missions[i];
-                mono::log(
-                    LogLevel::Warn,
-                    &format!(
-                        "survivalist-mod: trade -- mission for {} ABORTED on error: {e}",
-                        m.seller_name
-                    ),
-                );
-                true
-            }
-        };
-        if done {
-            let m = missions.remove(i);
-            with(m.seller_h, |com| {
-                if let Ok(sq) = com.invoke("GetSquad", &json!([m.squad_id])) {
-                    if let Some(sq_h) = handle_of(&sq) {
-                        let _ = com.invoke("RemoveSquad", &json!([{ "handle": sq_h }]));
-                    }
-                }
-            });
-            drop(own(m.seller_h));
-            drop(own(m.host_h));
-            drop(own(m.trader_h));
-        } else {
-            i += 1;
-        }
-    }
-}
+// ---- Mission trait ---------------------------------------------------------
 
-/// One mission step. Ok(true) = mission over, clean up.
-fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
-    let alive = with(m.trader_h, |t| t.invoke("get_AliveAndNotZombie", &json!([])))? == json!(true);
-    if !alive {
-        // A caravan lost on the road: caution failed to keep them
-        // safe, and the goods died with the trader.
-        for &v in &m.voter_ids {
-            genome::reinforce_individual(v, genome::DEFENSIVENESS, false, 2.0);
-        }
-        genome::reinforce(m.seller_id, genome::DEFENSIVENESS, false, 2.0);
-        mono::log(
-            LogLevel::Info,
-            &format!(
-                "survivalist-mod: trade -- {}'s trader {} DIED on the road to {}; the camp loses faith in the careful way",
-                m.seller_name, m.trader_name, m.host_name,
-            ),
-        );
-        return Ok(true);
-    }
-    if now >= m.deadline {
-        mono::log(
-            LogLevel::Info,
-            &format!(
-                "survivalist-mod: trade -- {}'s caravan to {} fizzled (timeout); {} recalled",
-                m.seller_name, m.host_name, m.trader_name,
-            ),
-        );
-        return Ok(true);
-    }
+impl mission::Mission for Mission {
+    fn stage(&self) -> Stage { self.stage }
+    fn set_stage(&mut self, s: Stage) { self.stage = s; }
+    fn deadline(&self) -> f32 { self.deadline }
 
-    let tile = with(m.trader_h, |t| t.invoke("get_Tile", &json!([])))?;
-    match m.stage {
-        Stage::Going => {
-            let host_alive = with(m.host_h, |h| {
-                h.invoke("HasAnyLivingNonZombieMembers", &json!([]))
-            })
-            .map(|v| v == json!(true))
-            .unwrap_or(false);
-            if !host_alive {
-                return Ok(true); // the market died; go home
+    fn is_agent_alive(&self) -> Result<bool, String> {
+        let alive = with(self.trader_h, |t| t.invoke("get_AliveAndNotZombie", &json!([])))? == json!(true);
+        if !alive {
+            for &v in &self.voter_ids {
+                genome::reinforce_individual(v, genome::DEFENSIVENESS, false, 2.0);
             }
-            let d = with(m.host_h, |h| {
-                h.invoke("GetDistSqToNearestBuilding", &json!([tile.clone()]))
-            })?
-            .as_f64()
-            .unwrap_or(f64::MAX);
-            if d > ARRIVE_DIST_SQ {
-                return Ok(false);
-            }
-            // The exchange, all real hands and real containers:
-            // carried food into the host's stores, a non-food
-            // stack back as payment.
-            m.delivered = deliver_carried_food(m.trader_h, m.host_h, m.loaded)?;
-            // Full symmetry (operator-locked): the player pays
-            // like any host, one non-food stack.
-            m.paid = with(m.host_h, |h| {
-                carry_off_stored_goods(
-                    h,
-                    &[m.trader_h],
-                    TRADE_PAY_STACKS,
-                    GoodsFilter::NonFood,
-                    false,
-                )
-            })?;
-            if m.host_is_player && m.delivered > 0 {
-                crate::chronicle::post(&format!(
-                    "{} has sent {} to your gate with food",
-                    m.seller_name, m.trader_name
-                ));
-            }
+            genome::reinforce(self.seller_id, genome::DEFENSIVENESS, false, 2.0);
             mono::log(
                 LogLevel::Info,
                 &format!(
-                    "survivalist-mod: trade -- {} delivers {} food stack(s) to {} and takes {} stack(s) home as payment",
-                    m.trader_name, m.delivered, m.host_name, m.paid,
+                    "survivalist-mod: trade: {}'s trader {} died on the road to {}; the camp loses faith in the careful way",
+                    self.seller_name, self.trader_name, self.host_name,
                 ),
             );
-            let home = json!({"x": m.home.0, "y": m.home.1});
-            with(m.seller_h, |com| -> Result<(), String> {
-                if let Ok(sq) = com.invoke("GetSquad", &json!([m.squad_id])) {
-                    if let Some(sq_h) = handle_of(&sq) {
-                        let squad = own(sq_h);
-                        squad.write_field("GoalTile", &home)?;
-                        com.invoke(
-                            "SetSquadAction",
-                            &json!([{ "handle": sq_h }, "GoTo", 0, home, null, false]),
-                        )?;
-                    }
-                }
-                Ok(())
-            })?;
-            m.stage = Stage::Returning;
-            Ok(false)
         }
-        Stage::Returning => {
-            let d = with(m.seller_h, |com| {
-                com.invoke("GetDistSqToNearestBuilding", &json!([tile]))
-            })?
-            .as_f64()
-            .unwrap_or(f64::MAX);
-            if d > ARRIVE_DIST_SQ {
-                return Ok(false);
-            }
-            if m.delivered > 0 {
-                // Home with the deal done: the careful way pays.
-                for &v in &m.voter_ids {
-                    genome::reinforce_individual(v, genome::DEFENSIVENESS, true, 1.0);
-                }
-                genome::reinforce(m.seller_id, genome::DEFENSIVENESS, true, 1.0);
-                mono::log(
-                    LogLevel::Info,
-                    &format!(
-                        "survivalist-mod: trade -- {} comes home to {}; the trade with {} paid, and the camp trusts the careful way more",
-                        m.trader_name, m.seller_name, m.host_name,
-                    ),
-                );
-            }
-            Ok(true)
+        Ok(alive)
+    }
+
+    fn on_going(&mut self, _now: f32) -> Result<Step, String> {
+        let host_alive = with(self.host_h, |h| {
+            h.invoke("HasAnyLivingNonZombieMembers", &json!([]))
+        })
+        .map(|v| v == json!(true))
+        .unwrap_or(false);
+        if !host_alive {
+            return Ok(Step::Complete);
         }
+        let tile = with(self.trader_h, |t| t.invoke("get_Tile", &json!([])))?;
+        let d = with(self.host_h, |h| {
+            h.invoke("GetDistSqToNearestBuilding", &json!([tile.clone()]))
+        })?
+        .as_f64()
+        .unwrap_or(f64::MAX);
+        if d > ARRIVE_DIST_SQ {
+            return Ok(Step::Continue);
+        }
+        self.delivered = deliver_carried_food(self.trader_h, self.host_h, self.loaded)?;
+        self.paid = with(self.host_h, |h| {
+            carry_off_stored_goods(
+                h,
+                &[self.trader_h],
+                TRADE_PAY_STACKS,
+                GoodsFilter::NonFood,
+                false,
+            )
+        })?;
+        if self.host_is_player && self.delivered > 0 {
+            crate::chronicle::post(&format!(
+                "{} has sent {} to your gate with food",
+                self.seller_name, self.trader_name
+            ));
+        }
+        mono::log(
+            LogLevel::Info,
+            &format!(
+                "survivalist-mod: trade: {} delivers {} food stack(s) to {} and takes {} stack(s) home as payment",
+                self.trader_name, self.delivered, self.host_name, self.paid,
+            ),
+        );
+        let home = json!({"x": self.home.0, "y": self.home.1});
+        with(self.seller_h, |com| -> Result<(), String> {
+            if let Ok(sq) = com.invoke("GetSquad", &json!([self.squad_id])) {
+                if let Some(sq_h) = handle_of(&sq) {
+                    let squad = own(sq_h);
+                    squad.write_field("GoalTile", &home)?;
+                    com.invoke(
+                        "SetSquadAction",
+                        &json!([{ "handle": sq_h }, "GoTo", 0, home, null, false]),
+                    )?;
+                }
+            }
+            Ok(())
+        })?;
+        Ok(Step::Transition)
+    }
+
+    fn on_returning(&mut self, _now: f32) -> Result<Step, String> {
+        let tile = with(self.trader_h, |t| t.invoke("get_Tile", &json!([])))?;
+        let d = with(self.seller_h, |com| {
+            com.invoke("GetDistSqToNearestBuilding", &json!([tile]))
+        })?
+        .as_f64()
+        .unwrap_or(f64::MAX);
+        if d > ARRIVE_DIST_SQ {
+            return Ok(Step::Continue);
+        }
+        if self.delivered > 0 {
+            for &v in &self.voter_ids {
+                genome::reinforce_individual(v, genome::DEFENSIVENESS, true, 1.0);
+            }
+            genome::reinforce(self.seller_id, genome::DEFENSIVENESS, true, 1.0);
+            mono::log(
+                LogLevel::Info,
+                &format!(
+                    "survivalist-mod: trade: {} comes home to {}; the trade with {} paid, and the camp trusts the careful way more",
+                    self.trader_name, self.seller_name, self.host_name,
+                ),
+            );
+        }
+        Ok(Step::Complete)
+    }
+
+    fn cleanup(self) {
+        with(self.seller_h, |com| {
+            if let Ok(sq) = com.invoke("GetSquad", &json!([self.squad_id])) {
+                if let Some(sq_h) = handle_of(&sq) {
+                    let _ = com.invoke("RemoveSquad", &json!([{ "handle": sq_h }]));
+                }
+            }
+        });
+        drop(own(self.seller_h));
+        drop(own(self.host_h));
+        drop(own(self.trader_h));
+    }
+
+    fn label(&self) -> String {
+        format!("{} trading with {}", self.seller_name, self.host_name)
     }
 }
 

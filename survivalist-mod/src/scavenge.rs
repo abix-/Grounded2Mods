@@ -23,11 +23,12 @@
 //! EXPANSIONISM from the outcome (goods home raise it; a party lost
 //! on the road or come home empty lower it).
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::AtomicU32;
 
 use parking_lot::Mutex;
 use serde_json::{Value as Json, json};
 
+use modforge::mission::{self, Stage, Step};
 use unityforge::mono::{self, LogLevel, MonoObject, MonoType};
 
 use crate::common::{
@@ -66,12 +67,6 @@ const HOME_ARRIVE_SQ: f64 = 25.0;
 /// A party that has not come home by then is recalled.
 const MISSION_TIMEOUT_SECS: f32 = 900.0;
 
-#[derive(Clone, Copy, PartialEq)]
-enum Stage {
-    Going,
-    Returning,
-}
-
 struct Mission {
     scav_h: i32,
     scav_id: i64,
@@ -99,10 +94,13 @@ pub fn active_target(faction_id: i64) -> Option<Json> {
 }
 
 pub fn tick(now: f32) {
-    advance_missions(now);
-    let last = f32::from_bits(LAST_SCAN_BITS.load(Ordering::Relaxed));
-    if now - last >= SCAV_SCAN_PERIOD_SECS {
-        LAST_SCAN_BITS.store(now.to_bits(), Ordering::Relaxed);
+    mission::advance_all(&MISSIONS, now, |m, e| {
+        mono::log(
+            LogLevel::Warn,
+            &format!("survivalist-mod: scavenge: mission for {} aborted: {e}", m.scav_name),
+        );
+    });
+    if mission::should_tick(now, SCAV_SCAN_PERIOD_SECS, &LAST_SCAN_BITS) {
         if let Err(e) = launch_scan(now) {
             if !e.contains("not found") {
                 mono::log(LogLevel::Warn, &format!("survivalist-mod: scavenge scan failed: {e}"));
@@ -429,144 +427,133 @@ fn gather_members(com: &MonoObject, ids: &[i64]) -> Result<Vec<i32>, String> {
 
 // ---- advancing ---------------------------------------------------------------
 
-fn advance_missions(now: f32) {
-    let mut missions = MISSIONS.lock();
-    let mut i = 0;
-    while i < missions.len() {
-        let done = match advance(&mut missions[i], now) {
-            Ok(d) => d,
-            Err(e) => {
-                mono::log(
-                    LogLevel::Warn,
-                    &format!(
-                        "survivalist-mod: scavenge -- mission for {} ABORTED on error: {e}",
-                        missions[i].scav_name
-                    ),
-                );
-                true
-            }
-        };
-        if done {
-            let m = missions.remove(i);
-            with(m.scav_h, |com| {
-                if let Ok(sq) = com.invoke("GetSquad", &json!([m.squad_id])) {
-                    if let Some(sq_h) = handle_of(&sq) {
-                        let _ = com.invoke("RemoveSquad", &json!([{ "handle": sq_h }]));
-                    }
-                }
-            });
-            drop(own(m.scav_h));
-            drop(own(m.prop_h));
-            for c in m.carriers {
-                drop(own(c));
-            }
-        } else {
-            i += 1;
-        }
-    }
-}
+// ---- Mission trait ---------------------------------------------------------
 
-/// One mission step. Ok(true) = mission over, clean up.
-fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
-    // The party's position is the first still-living carrier.
-    let lead = m.carriers.iter().copied().find(|&c| {
-        with(c, |ch| {
-            ch.invoke("get_AliveAndNotZombie", &json!([]))
-                .map(|v| v == json!(true))
-                .unwrap_or(false)
-        })
-    });
-    let Some(lead) = lead else {
-        // The whole party died: reaching out cost blood.
-        reinforce_all(m, false, 2.0);
-        mono::log(
-            LogLevel::Info,
-            &format!(
-                "survivalist-mod: scavenge -- {}'s party was lost on the road; the camp sours on reaching out",
-                m.scav_name
-            ),
-        );
-        return Ok(true);
-    };
-    if now >= m.deadline {
-        reinforce_all(m, false, 0.5);
-        mono::log(
-            LogLevel::Info,
-            &format!(
-                "survivalist-mod: scavenge -- {}'s scavengers never came home (timeout)",
-                m.scav_name
-            ),
-        );
-        return Ok(true);
-    }
+impl mission::Mission for Mission {
+    fn stage(&self) -> Stage { self.stage }
+    fn set_stage(&mut self, s: Stage) { self.stage = s; }
+    fn deadline(&self) -> f32 { self.deadline }
 
-    let tile = with(lead, |c| c.invoke("get_Tile", &json!([])))?;
-    let (lx, ly) = parse_xy(&tile).ok_or("carrier tile unreadable")?;
-    match m.stage {
-        Stage::Going => {
-            let d2 = (lx as f64 - m.prop_tile.0).powi(2) + (ly as f64 - m.prop_tile.1).powi(2);
-            if d2 > PROP_ARRIVE_SQ {
-                return Ok(false);
-            }
-            m.hauled = take_loot(m)?;
-            let home = json!({"x": m.home.0, "y": m.home.1});
-            with(m.scav_h, |com| -> Result<(), String> {
-                if let Ok(sq) = com.invoke("GetSquad", &json!([m.squad_id])) {
-                    if let Some(sq_h) = handle_of(&sq) {
-                        let squad = own(sq_h);
-                        squad.write_field("GoalTile", &home)?;
-                        com.invoke(
-                            "SetSquadAction",
-                            &json!([{ "handle": sq_h }, "GoTo", 0, home, null, false]),
-                        )?;
-                    }
-                }
-                Ok(())
-            })?;
+    fn is_agent_alive(&self) -> Result<bool, String> {
+        let any_alive = self.carriers.iter().any(|&c| {
+            with(c, |ch| {
+                ch.invoke("get_AliveAndNotZombie", &json!([]))
+                    .map(|v| v == json!(true))
+                    .unwrap_or(false)
+            })
+        });
+        if !any_alive {
+            reinforce_all(self, false, 2.0);
             mono::log(
                 LogLevel::Info,
                 &format!(
-                    "survivalist-mod: scavenge -- {}'s scavengers reached {} and took {} stack(s); heading home",
-                    m.scav_name, m.prop_name, m.hauled,
+                    "survivalist-mod: scavenge: {}'s party was lost on the road; the camp sours on reaching out",
+                    self.scav_name
                 ),
             );
-            m.stage = Stage::Returning;
-            Ok(false)
         }
-        Stage::Returning => {
-            let d = with(m.scav_h, |com| {
-                com.invoke("GetDistSqToNearestBuilding", &json!([tile]))
-            })?
-            .as_f64()
-            .unwrap_or(f64::MAX);
-            if d > HOME_ARRIVE_SQ {
-                return Ok(false);
-            }
-            if m.hauled > 0 {
-                reinforce_all(m, true, 1.0);
-                crate::chronicle::post(&format!(
-                    "{}'s scavengers came home from {} with a haul",
-                    m.scav_name, m.prop_name
-                ));
-                mono::log(
-                    LogLevel::Info,
-                    &format!(
-                        "survivalist-mod: scavenge -- {} comes home with {} stack(s) from {}; the camp trusts reaching out more",
-                        m.scav_name, m.hauled, m.prop_name,
-                    ),
-                );
-            } else {
-                reinforce_all(m, false, 0.5);
-                mono::log(
-                    LogLevel::Info,
-                    &format!(
-                        "survivalist-mod: scavenge -- {}'s scavengers came home empty from {}",
-                        m.scav_name, m.prop_name
-                    ),
-                );
-            }
-            Ok(true)
+        Ok(any_alive)
+    }
+
+    fn on_going(&mut self, _now: f32) -> Result<Step, String> {
+        let lead = self.carriers.iter().copied().find(|&c| {
+            with(c, |ch| {
+                ch.invoke("get_AliveAndNotZombie", &json!([]))
+                    .map(|v| v == json!(true))
+                    .unwrap_or(false)
+            })
+        }).ok_or_else(|| "no living carrier".to_string())?;
+        let tile = with(lead, |c| c.invoke("get_Tile", &json!([])))?;
+        let (lx, ly) = parse_xy(&tile).ok_or("carrier tile unreadable")?;
+        let d2 = (lx as f64 - self.prop_tile.0).powi(2) + (ly as f64 - self.prop_tile.1).powi(2);
+        if d2 > PROP_ARRIVE_SQ {
+            return Ok(Step::Continue);
         }
+        self.hauled = take_loot(self)?;
+        let home = json!({"x": self.home.0, "y": self.home.1});
+        with(self.scav_h, |com| -> Result<(), String> {
+            if let Ok(sq) = com.invoke("GetSquad", &json!([self.squad_id])) {
+                if let Some(sq_h) = handle_of(&sq) {
+                    let squad = own(sq_h);
+                    squad.write_field("GoalTile", &home)?;
+                    com.invoke(
+                        "SetSquadAction",
+                        &json!([{ "handle": sq_h }, "GoTo", 0, home, null, false]),
+                    )?;
+                }
+            }
+            Ok(())
+        })?;
+        mono::log(
+            LogLevel::Info,
+            &format!(
+                "survivalist-mod: scavenge: {}'s scavengers reached {} and took {} stack(s); heading home",
+                self.scav_name, self.prop_name, self.hauled,
+            ),
+        );
+        Ok(Step::Transition)
+    }
+
+    fn on_returning(&mut self, _now: f32) -> Result<Step, String> {
+        let lead = self.carriers.iter().copied().find(|&c| {
+            with(c, |ch| {
+                ch.invoke("get_AliveAndNotZombie", &json!([]))
+                    .map(|v| v == json!(true))
+                    .unwrap_or(false)
+            })
+        }).ok_or_else(|| "no living carrier".to_string())?;
+        let tile = with(lead, |c| c.invoke("get_Tile", &json!([])))?;
+        let d = with(self.scav_h, |com| {
+            com.invoke("GetDistSqToNearestBuilding", &json!([tile]))
+        })?
+        .as_f64()
+        .unwrap_or(f64::MAX);
+        if d > HOME_ARRIVE_SQ {
+            return Ok(Step::Continue);
+        }
+        if self.hauled > 0 {
+            reinforce_all(self, true, 1.0);
+            crate::chronicle::post(&format!(
+                "{}'s scavengers came home from {} with a haul",
+                self.scav_name, self.prop_name
+            ));
+            mono::log(
+                LogLevel::Info,
+                &format!(
+                    "survivalist-mod: scavenge: {} comes home with {} stack(s) from {}; the camp trusts reaching out more",
+                    self.scav_name, self.hauled, self.prop_name,
+                ),
+            );
+        } else {
+            reinforce_all(self, false, 0.5);
+            mono::log(
+                LogLevel::Info,
+                &format!(
+                    "survivalist-mod: scavenge: {}'s scavengers came home empty from {}",
+                    self.scav_name, self.prop_name
+                ),
+            );
+        }
+        Ok(Step::Complete)
+    }
+
+    fn cleanup(self) {
+        with(self.scav_h, |com| {
+            if let Ok(sq) = com.invoke("GetSquad", &json!([self.squad_id])) {
+                if let Some(sq_h) = handle_of(&sq) {
+                    let _ = com.invoke("RemoveSquad", &json!([{ "handle": sq_h }]));
+                }
+            }
+        });
+        drop(own(self.scav_h));
+        drop(own(self.prop_h));
+        for c in self.carriers {
+            drop(own(c));
+        }
+    }
+
+    fn label(&self) -> String {
+        format!("{} scavenging {}", self.scav_name, self.prop_name)
     }
 }
 

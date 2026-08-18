@@ -22,11 +22,12 @@
 //! the thief lowers it), the same per-voter plasticity the raid
 //! loop uses for aggression.
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::AtomicU32;
 
 use parking_lot::Mutex;
 use serde_json::{Value as Json, json};
 
+use modforge::mission::{self, Stage, Step};
 use unityforge::mono::{self, LogLevel};
 
 use crate::common::{
@@ -61,12 +62,6 @@ const MISSION_TIMEOUT_SECS: f32 = 1800.0;
 
 /// At most this many thefts in flight map-wide.
 const MAX_ACTIVE_MISSIONS: usize = 4;
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Stage {
-    Going,
-    Returning,
-}
 
 /// An in-flight theft. The mission keeps its faction, target, and
 /// thief handles alive (the launch scan's release pass skips them)
@@ -104,14 +99,15 @@ pub fn active_target(faction_id: i64) -> Option<Json> {
 }
 
 pub fn tick(now: f32) {
-    let last_tick = f32::from_bits(LAST_TICK_BITS.load(Ordering::Relaxed));
-    if now - last_tick >= MISSION_TICK_SECS {
-        LAST_TICK_BITS.store(now.to_bits(), Ordering::Relaxed);
-        advance_missions(now);
+    if mission::should_tick(now, MISSION_TICK_SECS, &LAST_TICK_BITS) {
+        mission::advance_all(&MISSIONS, now, |m, e| {
+            mono::log(
+                LogLevel::Warn,
+                &format!("survivalist-mod: steal: mission for {} aborted: {e}", m.faction_name),
+            );
+        });
     }
-    let last_scan = f32::from_bits(LAST_SCAN_BITS.load(Ordering::Relaxed));
-    if now - last_scan >= STEAL_SCAN_PERIOD_SECS {
-        LAST_SCAN_BITS.store(now.to_bits(), Ordering::Relaxed);
+    if mission::should_tick(now, STEAL_SCAN_PERIOD_SECS, &LAST_SCAN_BITS) {
         if let Err(e) = launch_scan(now) {
             if !e.contains("not found") {
                 mono::log(LogLevel::Warn, &format!("survivalist-mod: steal scan failed: {e}"));
@@ -391,177 +387,141 @@ fn launch(camp: &Camp, target: &Camp, now: f32) -> Result<(), String> {
 
 // ---- advancing ---------------------------------------------------------------
 
-fn advance_missions(now: f32) {
-    let mut missions = MISSIONS.lock();
-    let mut i = 0;
-    while i < missions.len() {
-        let done = match advance(&mut missions[i], now) {
-            Ok(d) => d,
-            Err(e) => {
-                let m = &missions[i];
-                mono::log(
-                    LogLevel::Warn,
-                    &format!(
-                        "survivalist-mod: steal -- mission for {} ABORTED on error: {e}",
-                        m.faction_name
-                    ),
-                );
-                true
+// ---- Mission trait ---------------------------------------------------------
+
+impl mission::Mission for Mission {
+    fn stage(&self) -> Stage { self.stage }
+    fn set_stage(&mut self, s: Stage) { self.stage = s; }
+    fn deadline(&self) -> f32 { self.deadline }
+
+    fn is_agent_alive(&self) -> Result<bool, String> {
+        let alive = with(self.thief_h, |t| t.invoke("get_AliveAndNotZombie", &json!([])))? == json!(true);
+        if !alive {
+            for &v in &self.voter_ids {
+                genome::reinforce_individual(v, genome::GUILE, false, 2.0);
             }
-        };
-        if done {
-            let m = missions.remove(i);
-            with(m.faction_h, |com| {
-                if let Ok(sq) = com.invoke("GetSquad", &json!([m.squad_id])) {
-                    if let Some(sq_h) = handle_of(&sq) {
-                        let _ = com.invoke("RemoveSquad", &json!([{ "handle": sq_h }]));
-                    }
-                }
-            });
-            // The mission's three handles go back to the table.
-            drop(own(m.faction_h));
-            drop(own(m.target_h));
-            drop(own(m.thief_h));
+            genome::reinforce(self.faction_id, genome::GUILE, false, 2.0);
+            mono::log(
+                LogLevel::Info,
+                &format!(
+                    "survivalist-mod: steal: {}'s thief {} died on the job against {}; the camp grows warier",
+                    self.faction_name, self.thief_name, self.target_name,
+                ),
+            );
+        }
+        Ok(alive)
+    }
+
+    fn on_going(&mut self, _now: f32) -> Result<Step, String> {
+        let target_alive = with(self.target_h, |t| {
+            t.invoke("HasAnyLivingNonZombieMembers", &json!([]))
+        })
+        .map(|v| v == json!(true))
+        .unwrap_or(false);
+        if !target_alive {
+            return Ok(Step::Complete);
+        }
+        let tile = with(self.thief_h, |t| t.invoke("get_Tile", &json!([])))?;
+        let d = with(self.target_h, |t| {
+            t.invoke("GetDistSqToNearestBuilding", &json!([tile.clone()]))
+        })?
+        .as_f64()
+        .unwrap_or(f64::MAX);
+        if d > ARRIVE_DIST_SQ {
+            return Ok(Step::Continue);
+        }
+        self.stolen = with(self.target_h, |t| {
+            carry_off_stored_goods(t, &[self.thief_h], STEAL_MAX_STACKS, GoodsFilter::Any, true)
+        })?;
+        let caught = with(self.thief_h, |t| {
+            t.invoke(
+                "OnStoleSomething",
+                &json!([{ "handle": self.target_h }, null, 25.0 * self.stolen as f64, false]),
+            )
+        })? == json!(true);
+        self.caught = caught;
+        if caught {
+            for &v in &self.voter_ids {
+                genome::reinforce_individual(v, genome::GUILE, false, 1.5);
+            }
+            genome::reinforce(self.faction_id, genome::GUILE, false, 1.5);
+            crate::chronicle::post(&format!(
+                "a thief from {} was caught in {}'s stores",
+                self.faction_name, self.target_name
+            ));
+            mono::log(
+                LogLevel::Info,
+                &format!(
+                    "survivalist-mod: steal: {} was caught stealing from {} ({} stack(s) in hand); {} answers it the vanilla way",
+                    self.thief_name, self.target_name, self.stolen, self.target_name,
+                ),
+            );
         } else {
-            i += 1;
+            mono::log(
+                LogLevel::Info,
+                &format!(
+                    "survivalist-mod: steal: {} slips out of {}'s stores unseen with {} stack(s)",
+                    self.thief_name, self.target_name, self.stolen,
+                ),
+            );
         }
-    }
-}
-
-/// One mission step. Ok(true) = mission over, clean up.
-fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
-    let alive = with(m.thief_h, |t| t.invoke("get_AliveAndNotZombie", &json!([])))? == json!(true);
-    if !alive {
-        // The thief died out there: the strongest lesson against
-        // guile the collective can get (and the loot died too).
-        for &v in &m.voter_ids {
-            genome::reinforce_individual(v, genome::GUILE, false, 2.0);
-        }
-        genome::reinforce(m.faction_id, genome::GUILE, false, 2.0);
-        mono::log(
-            LogLevel::Info,
-            &format!(
-                "survivalist-mod: steal -- {}'s thief {} DIED on the job against {}; the camp grows warier",
-                m.faction_name, m.thief_name, m.target_name,
-            ),
-        );
-        return Ok(true);
-    }
-    if now >= m.deadline {
-        mono::log(
-            LogLevel::Info,
-            &format!(
-                "survivalist-mod: steal -- {}'s theft of {} fizzled (timeout); {} recalled",
-                m.faction_name, m.target_name, m.thief_name,
-            ),
-        );
-        return Ok(true);
+        let home = json!({"x": self.home.0, "y": self.home.1});
+        with(self.faction_h, |com| -> Result<(), String> {
+            if let Ok(sq) = com.invoke("GetSquad", &json!([self.squad_id])) {
+                if let Some(sq_h) = handle_of(&sq) {
+                    let squad = own(sq_h);
+                    squad.write_field("GoalTile", &home)?;
+                    com.invoke(
+                        "SetSquadAction",
+                        &json!([{ "handle": sq_h }, "GoTo", 0, home, null, false]),
+                    )?;
+                }
+            }
+            Ok(())
+        })?;
+        Ok(Step::Transition)
     }
 
-    // Tile is a property (expression-bodied), not a field.
-    let tile = with(m.thief_h, |t| t.invoke("get_Tile", &json!([])))?;
-    match m.stage {
-        Stage::Going => {
-            let target_alive = with(m.target_h, |t| {
-                t.invoke("HasAnyLivingNonZombieMembers", &json!([]))
-            })
-            .map(|v| v == json!(true))
-            .unwrap_or(false);
-            if !target_alive {
-                // The mark died before the thief arrived; robbing a
-                // husk is scavenging, a different act. Recall.
-                return Ok(true);
-            }
-            let d = with(m.target_h, |t| {
-                t.invoke("GetDistSqToNearestBuilding", &json!([tile.clone()]))
-            })?
-            .as_f64()
-            .unwrap_or(f64::MAX);
-            if d > ARRIVE_DIST_SQ {
-                return Ok(false);
-            }
-            // In the stores: take what one thief can carry, then
-            // let the GAME decide seen-or-clean (real line of
-            // sight; a witness shouts StopThief and the game sets
-            // the pair Hostile itself).
-            m.stolen = with(m.target_h, |t| {
-                carry_off_stored_goods(t, &[m.thief_h], STEAL_MAX_STACKS, GoodsFilter::Any, true)
-            })?;
-            let caught = with(m.thief_h, |t| {
-                t.invoke(
-                    "OnStoleSomething",
-                    &json!([{ "handle": m.target_h }, null, 25.0 * m.stolen as f64, false]),
-                )
-            })? == json!(true);
-            m.caught = caught;
-            if caught {
-                for &v in &m.voter_ids {
-                    genome::reinforce_individual(v, genome::GUILE, false, 1.5);
-                }
-                genome::reinforce(m.faction_id, genome::GUILE, false, 1.5);
-                crate::chronicle::post(&format!(
-                    "a thief from {} was caught in {}'s stores",
-                    m.faction_name, m.target_name
-                ));
-                mono::log(
-                    LogLevel::Info,
-                    &format!(
-                        "survivalist-mod: steal -- {} was CAUGHT stealing from {} ({} stack(s) in hand); {} answers it the vanilla way",
-                        m.thief_name, m.target_name, m.stolen, m.target_name,
-                    ),
-                );
-            } else {
-                mono::log(
-                    LogLevel::Info,
-                    &format!(
-                        "survivalist-mod: steal -- {} slips out of {}'s stores unseen with {} stack(s)",
-                        m.thief_name, m.target_name, m.stolen,
-                    ),
-                );
-            }
-            // Home, either way: a caught thief flees, a clean one
-            // strolls.
-            let home = json!({"x": m.home.0, "y": m.home.1});
-            with(m.faction_h, |com| -> Result<(), String> {
-                if let Ok(sq) = com.invoke("GetSquad", &json!([m.squad_id])) {
-                    if let Some(sq_h) = handle_of(&sq) {
-                        let squad = own(sq_h);
-                        squad.write_field("GoalTile", &home)?;
-                        com.invoke(
-                            "SetSquadAction",
-                            &json!([{ "handle": sq_h }, "GoTo", 0, home, null, false]),
-                        )?;
-                    }
-                }
-                Ok(())
-            })?;
-            m.stage = Stage::Returning;
-            Ok(false)
+    fn on_returning(&mut self, _now: f32) -> Result<Step, String> {
+        let tile = with(self.thief_h, |t| t.invoke("get_Tile", &json!([])))?;
+        let d = with(self.faction_h, |com| {
+            com.invoke("GetDistSqToNearestBuilding", &json!([tile]))
+        })?
+        .as_f64()
+        .unwrap_or(f64::MAX);
+        if d > ARRIVE_DIST_SQ {
+            return Ok(Step::Continue);
         }
-        Stage::Returning => {
-            let d = with(m.faction_h, |com| {
-                com.invoke("GetDistSqToNearestBuilding", &json!([tile]))
-            })?
-            .as_f64()
-            .unwrap_or(f64::MAX);
-            if d > ARRIVE_DIST_SQ {
-                return Ok(false);
+        if !self.caught && self.stolen > 0 {
+            for &v in &self.voter_ids {
+                genome::reinforce_individual(v, genome::GUILE, true, 1.0);
             }
-            if !m.caught && m.stolen > 0 {
-                // A clean haul carried all the way home: guile paid.
-                for &v in &m.voter_ids {
-                    genome::reinforce_individual(v, genome::GUILE, true, 1.0);
-                }
-                genome::reinforce(m.faction_id, genome::GUILE, true, 1.0);
-                mono::log(
-                    LogLevel::Info,
-                    &format!(
-                        "survivalist-mod: steal -- {} makes it home to {} with {}'s goods; the camp grows bolder in its guile",
-                        m.thief_name, m.faction_name, m.target_name,
-                    ),
-                );
-            }
-            Ok(true)
+            genome::reinforce(self.faction_id, genome::GUILE, true, 1.0);
+            mono::log(
+                LogLevel::Info,
+                &format!(
+                    "survivalist-mod: steal: {} makes it home to {} with {}'s goods; the camp grows bolder in its guile",
+                    self.thief_name, self.faction_name, self.target_name,
+                ),
+            );
         }
+        Ok(Step::Complete)
+    }
+
+    fn cleanup(self) {
+        with(self.faction_h, |com| {
+            if let Ok(sq) = com.invoke("GetSquad", &json!([self.squad_id])) {
+                if let Some(sq_h) = handle_of(&sq) {
+                    let _ = com.invoke("RemoveSquad", &json!([{ "handle": sq_h }]));
+                }
+            }
+        });
+        drop(own(self.faction_h));
+        drop(own(self.target_h));
+        drop(own(self.thief_h));
+    }
+
+    fn label(&self) -> String {
+        format!("{} stealing from {}", self.faction_name, self.target_name)
     }
 }

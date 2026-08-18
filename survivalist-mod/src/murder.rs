@@ -17,11 +17,12 @@
 //! operative teaches guile and aggression down hard; a blown
 //! attempt stings.
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::AtomicU32;
 
 use parking_lot::Mutex;
 use serde_json::{Value as Json, json};
 
+use modforge::mission::{self, Mission as _, Stage, Step};
 use unityforge::mono::{self, LogLevel};
 
 use crate::common::{ctype, display_name, for_each_community, handle_of, own, with};
@@ -47,13 +48,6 @@ const STRIKE_WINDOW_SECS: f32 = 180.0;
 /// A mission that has not resolved by then is abandoned.
 const MISSION_TIMEOUT_SECS: f32 = 1800.0;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Stage {
-    Going,
-    Strike,
-    Returning,
-}
-
 /// One murder in flight map-wide keeps it dramatic. The mission
 /// keeps its four handles alive until cleanup.
 struct Mission {
@@ -68,6 +62,7 @@ struct Mission {
     squad_id: i64,
     home: (i64, i64),
     stage: Stage,
+    strike_phase: bool,
     strike_deadline: f32,
     voter_ids: Vec<i64>,
     deadline: f32,
@@ -84,24 +79,18 @@ pub fn active_target(faction_id: i64) -> Option<Json> {
             "victim": m.victim_name,
             "of": m.victim_camp_name,
             "operative": m.operative_name,
-            "stage": match m.stage {
-                Stage::Going => "going",
-                Stage::Strike => "striking",
-                Stage::Returning => "returning",
+            "stage": if m.strike_phase { "striking" } else {
+                match m.stage { Stage::Going => "going", Stage::Returning => "returning" }
             },
         })
     })
 }
 
 pub fn tick(now: f32) {
-    let last_tick = f32::from_bits(LAST_TICK_BITS.load(Ordering::Relaxed));
-    if now - last_tick >= MISSION_TICK_SECS {
-        LAST_TICK_BITS.store(now.to_bits(), Ordering::Relaxed);
+    if mission::should_tick(now, MISSION_TICK_SECS, &LAST_TICK_BITS) {
         advance_mission(now);
     }
-    let last_scan = f32::from_bits(LAST_SCAN_BITS.load(Ordering::Relaxed));
-    if now - last_scan >= MURDER_SCAN_PERIOD_SECS {
-        LAST_SCAN_BITS.store(now.to_bits(), Ordering::Relaxed);
+    if mission::should_tick(now, MURDER_SCAN_PERIOD_SECS, &LAST_SCAN_BITS) {
         if MISSION.lock().is_some() {
             return;
         }
@@ -273,6 +262,7 @@ fn launch_scan(now: f32) -> Result<(), String> {
         squad_id,
         home,
         stage: Stage::Going,
+        strike_phase: false,
         strike_deadline: 0.0,
         voter_ids,
         deadline: now + MISSION_TIMEOUT_SECS,
@@ -343,13 +333,13 @@ fn pick_operative(
 fn advance_mission(now: f32) {
     let mut slot = MISSION.lock();
     let Some(m) = slot.as_mut() else { return };
-    let done = match advance(m, now) {
+    let done = match mission::advance(m, now) {
         Ok(d) => d,
         Err(e) => {
             mono::log(
                 LogLevel::Warn,
                 &format!(
-                    "survivalist-mod: murder -- {}'s plot against {} ABORTED on error: {e}",
+                    "survivalist-mod: murder: {}'s plot against {} aborted: {e}",
                     m.camp_name, m.victim_name
                 ),
             );
@@ -357,163 +347,157 @@ fn advance_mission(now: f32) {
         }
     };
     if done {
-        let m = slot.take().unwrap();
-        with(m.camp_h, |com| {
-            if let Ok(sq) = com.invoke("GetSquad", &json!([m.squad_id])) {
+        slot.take().unwrap().cleanup();
+    }
+}
+
+// ---- Mission trait ---------------------------------------------------------
+
+impl mission::Mission for Mission {
+    fn stage(&self) -> Stage { self.stage }
+    fn set_stage(&mut self, s: Stage) { self.stage = s; }
+    fn deadline(&self) -> f32 { self.deadline }
+
+    fn is_agent_alive(&self) -> Result<bool, String> {
+        let alive = with(self.operative_h, |o| o.invoke("get_AliveAndNotZombie", &json!([])))? == json!(true);
+        if !alive {
+            for &v in &self.voter_ids {
+                genome::reinforce_individual(v, genome::GUILE, false, 2.0);
+                genome::reinforce_individual(v, genome::AGGRESSION, false, 1.0);
+            }
+            genome::reinforce(self.camp_id, genome::GUILE, false, 2.0);
+            crate::chronicle::post(&format!(
+                "an assassin from {} was cut down in {}",
+                self.camp_name, self.victim_camp_name
+            ));
+            mono::log(
+                LogLevel::Info,
+                &format!(
+                    "survivalist-mod: murder: {}'s operative {} died going after {}; the knife loses its appeal",
+                    self.camp_name, self.operative_name, self.victim_name,
+                ),
+            );
+        }
+        Ok(alive)
+    }
+
+    fn on_going(&mut self, now: f32) -> Result<Step, String> {
+        let victim_alive =
+            with(self.victim_h, |v| v.invoke("get_AliveAndNotZombie", &json!([])))
+                .map(|v| v == json!(true))
+                .unwrap_or(false);
+
+        if self.strike_phase {
+            if !victim_alive {
+                for &v in &self.voter_ids {
+                    genome::reinforce_individual(v, genome::GUILE, true, 1.5);
+                }
+                genome::reinforce(self.camp_id, genome::GUILE, true, 1.5);
+                crate::chronicle::post(&format!(
+                    "{}, leader of {}, has been assassinated",
+                    self.victim_name, self.victim_camp_name
+                ));
+                mono::log(
+                    LogLevel::Info,
+                    &format!(
+                        "survivalist-mod: murder: {} of {} is dead by {}'s hand; {} is leaderless",
+                        self.victim_name, self.victim_camp_name, self.operative_name, self.victim_camp_name,
+                    ),
+                );
+                send_home_squadless(self)?;
+                return Ok(Step::Transition);
+            }
+            if now >= self.strike_deadline {
+                for &v in &self.voter_ids {
+                    genome::reinforce_individual(v, genome::GUILE, false, 1.0);
+                }
+                genome::reinforce(self.camp_id, genome::GUILE, false, 1.0);
+                mono::log(
+                    LogLevel::Info,
+                    &format!(
+                        "survivalist-mod: murder: {}'s attempt on {} is blown; {} runs for home",
+                        self.camp_name, self.victim_name, self.operative_name,
+                    ),
+                );
+                send_home_squadless(self)?;
+                return Ok(Step::Transition);
+            }
+            return Ok(Step::Continue);
+        }
+
+        if !victim_alive {
+            send_home(self)?;
+            return Ok(Step::Transition);
+        }
+        let otile = with(self.operative_h, |o| o.invoke("get_Tile", &json!([])))?;
+        let vtile = with(self.victim_h, |v| v.invoke("get_Tile", &json!([])))?;
+        let d = tile_dist_sq(&otile, &vtile);
+        if d > STRIKE_DIST_SQ {
+            with(self.camp_h, |com| -> Result<(), String> {
+                if let Ok(sq) = com.invoke("GetSquad", &json!([self.squad_id])) {
+                    if let Some(sq_h) = handle_of(&sq) {
+                        let squad = own(sq_h);
+                        squad.write_field("GoalTile", &vtile)?;
+                        com.invoke(
+                            "SetSquadAction",
+                            &json!([{ "handle": sq_h }, "GoTo", 0, vtile.clone(), null, false]),
+                        )?;
+                    }
+                }
+                Ok(())
+            })?;
+            return Ok(Step::Continue);
+        }
+        with(self.camp_h, |com| {
+            if let Ok(sq) = com.invoke("GetSquad", &json!([self.squad_id])) {
                 if let Some(sq_h) = handle_of(&sq) {
                     let _ = com.invoke("RemoveSquad", &json!([{ "handle": sq_h }]));
                 }
             }
         });
-        drop(own(m.camp_h));
-        drop(own(m.victim_h));
-        drop(own(m.operative_h));
-    }
-}
-
-/// One mission step. Ok(true) = mission over, clean up.
-fn advance(m: &mut Mission, now: f32) -> Result<bool, String> {
-    let operative_alive =
-        with(m.operative_h, |o| o.invoke("get_AliveAndNotZombie", &json!([])))? == json!(true);
-    if !operative_alive {
-        for &v in &m.voter_ids {
-            genome::reinforce_individual(v, genome::GUILE, false, 2.0);
-            genome::reinforce_individual(v, genome::AGGRESSION, false, 1.0);
-        }
-        genome::reinforce(m.camp_id, genome::GUILE, false, 2.0);
-        crate::chronicle::post(&format!(
-            "an assassin from {} was cut down in {}",
-            m.camp_name, m.victim_camp_name
-        ));
+        with(self.operative_h, |o| {
+            o.invoke(
+                "CommandChokeHold",
+                &json!([null, { "handle": self.victim_h }, false, "SlitThroat"]),
+            )
+        })?;
+        self.strike_phase = true;
+        self.strike_deadline = now + STRIKE_WINDOW_SECS;
         mono::log(
             LogLevel::Info,
             &format!(
-                "survivalist-mod: murder -- {}'s operative {} DIED going after {}; the knife loses its appeal",
-                m.camp_name, m.operative_name, m.victim_name,
+                "survivalist-mod: murder: {} moves on {} with the knife",
+                self.operative_name, self.victim_name,
             ),
         );
-        return Ok(true);
-    }
-    if now >= m.deadline {
-        mono::log(
-            LogLevel::Info,
-            &format!(
-                "survivalist-mod: murder -- {}'s plot against {} fizzled (timeout); {} recalled",
-                m.camp_name, m.victim_name, m.operative_name,
-            ),
-        );
-        return Ok(true);
+        Ok(Step::Continue)
     }
 
-    let victim_alive =
-        with(m.victim_h, |v| v.invoke("get_AliveAndNotZombie", &json!([])))
-            .map(|v| v == json!(true))
-            .unwrap_or(false);
+    fn on_returning(&mut self, _now: f32) -> Result<Step, String> {
+        let otile = with(self.operative_h, |o| o.invoke("get_Tile", &json!([])))?;
+        let home = json!({"x": self.home.0, "y": self.home.1});
+        let d = tile_dist_sq(&otile, &home);
+        if d > 64.0 {
+            return Ok(Step::Continue);
+        }
+        Ok(Step::Complete)
+    }
 
-    match m.stage {
-        Stage::Going => {
-            if !victim_alive {
-                // Someone else got them first; go home quietly.
-                send_home(m)?;
-                m.stage = Stage::Returning;
-                return Ok(false);
-            }
-            let otile = with(m.operative_h, |o| o.invoke("get_Tile", &json!([])))?;
-            let vtile = with(m.victim_h, |v| v.invoke("get_Tile", &json!([])))?;
-            let d = tile_dist_sq(&otile, &vtile);
-            if d > STRIKE_DIST_SQ {
-                // The victim moves; keep the squad tracking them.
-                with(m.camp_h, |com| -> Result<(), String> {
-                    if let Ok(sq) = com.invoke("GetSquad", &json!([m.squad_id])) {
-                        if let Some(sq_h) = handle_of(&sq) {
-                            let squad = own(sq_h);
-                            squad.write_field("GoalTile", &vtile)?;
-                            com.invoke(
-                                "SetSquadAction",
-                                &json!([{ "handle": sq_h }, "GoTo", 0, vtile.clone(), null, false]),
-                            )?;
-                        }
-                    }
-                    Ok(())
-                })?;
-                return Ok(false);
-            }
-            // Close enough: shed the squad so the kill goal owns
-            // the operative, then issue the game's own
-            // assassination command.
-            with(m.camp_h, |com| {
-                if let Ok(sq) = com.invoke("GetSquad", &json!([m.squad_id])) {
-                    if let Some(sq_h) = handle_of(&sq) {
-                        let _ = com.invoke("RemoveSquad", &json!([{ "handle": sq_h }]));
-                    }
+    fn cleanup(self) {
+        with(self.camp_h, |com| {
+            if let Ok(sq) = com.invoke("GetSquad", &json!([self.squad_id])) {
+                if let Some(sq_h) = handle_of(&sq) {
+                    let _ = com.invoke("RemoveSquad", &json!([{ "handle": sq_h }]));
                 }
-            });
-            with(m.operative_h, |o| {
-                o.invoke(
-                    "CommandChokeHold",
-                    &json!([null, { "handle": m.victim_h }, false, "SlitThroat"]),
-                )
-            })?;
-            m.stage = Stage::Strike;
-            m.strike_deadline = now + STRIKE_WINDOW_SECS;
-            mono::log(
-                LogLevel::Info,
-                &format!(
-                    "survivalist-mod: murder -- {} moves on {} with the knife",
-                    m.operative_name, m.victim_name,
-                ),
-            );
-            Ok(false)
-        }
-        Stage::Strike => {
-            if !victim_alive {
-                // The kill. The dark art paid; the franchise
-                // learns it works.
-                for &v in &m.voter_ids {
-                    genome::reinforce_individual(v, genome::GUILE, true, 1.5);
-                }
-                genome::reinforce(m.camp_id, genome::GUILE, true, 1.5);
-                crate::chronicle::post(&format!(
-                    "{}, leader of {}, has been assassinated",
-                    m.victim_name, m.victim_camp_name
-                ));
-                mono::log(
-                    LogLevel::Info,
-                    &format!(
-                        "survivalist-mod: murder -- {} of {} is DEAD by {}'s hand; {} is leaderless",
-                        m.victim_name, m.victim_camp_name, m.operative_name, m.victim_camp_name,
-                    ),
-                );
-                send_home_squadless(m)?;
-                m.stage = Stage::Returning;
-                return Ok(false);
             }
-            if now >= m.strike_deadline {
-                // Blown: the mark lives and the camp knows the
-                // cost of a bungled knife.
-                for &v in &m.voter_ids {
-                    genome::reinforce_individual(v, genome::GUILE, false, 1.0);
-                }
-                genome::reinforce(m.camp_id, genome::GUILE, false, 1.0);
-                mono::log(
-                    LogLevel::Info,
-                    &format!(
-                        "survivalist-mod: murder -- {}'s attempt on {} is BLOWN; {} runs for home",
-                        m.camp_name, m.victim_name, m.operative_name,
-                    ),
-                );
-                send_home_squadless(m)?;
-                m.stage = Stage::Returning;
-                return Ok(false);
-            }
-            Ok(false)
-        }
-        Stage::Returning => {
-            let otile = with(m.operative_h, |o| o.invoke("get_Tile", &json!([])))?;
-            let home = json!({"x": m.home.0, "y": m.home.1});
-            let d = tile_dist_sq(&otile, &home);
-            Ok(d <= 64.0)
-        }
+        });
+        drop(own(self.camp_h));
+        drop(own(self.victim_h));
+        drop(own(self.operative_h));
+    }
+
+    fn label(&self) -> String {
+        format!("{} assassinating {}", self.camp_name, self.victim_name)
     }
 }
 

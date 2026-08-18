@@ -25,6 +25,7 @@ Newest first.
 
 | System | Item | Done when |
 |---|---|---|
+| `modforge` | [x] Lift mission runner into `modforge::mission`: Mission trait with Stage (Going/Returning), Step (Continue/Transition/Complete), advance/advance_all batch loop, should_tick cadence helper | Engine-agnostic mission runner available; survivalist vendor/steal/trade/scavenge/murder repointed at framework trait. |
 | `unityforge` | [x] Add `UnityStaticPropAdditiveEffect` and `UnityInstancePropMultiplyEffect` to `unityforge::rpg::std_effect` | Two new framework effect types for static properties and instance properties. |
 | `schedule1-mod` | [x] Repoint catalog at framework effect types; local Effect impls replaced by thin `Il2CppGuardedEffect` wrapper for MAIN_QUEUE + bisection guard | schedule1 skills.rs has no local read/write logic; uses framework effect types. |
 | `modforge` | [x] Enrich `skill_state` op to include `max_level` and `effect` text per skill | Framework `skill_state` now returns the same rich format schedule1 had locally. |
