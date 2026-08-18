@@ -119,3 +119,25 @@ pub use envelope::{OpResponse, parse_request};
 pub use mod_main::{ModDef, TabDef};
 pub use pe_queue::{DrainStats, Queue};
 pub use server::{Config, spawn};
+
+pub fn register_standard_ops() {
+    selector::register_builtins();
+    ops::register_builtins();
+    ops::register_with_resolver(selector::resolve);
+}
+
+pub fn start_debug_server(cfg: Config) {
+    register_standard_ops();
+    spawn(
+        cfg,
+        |body| {
+            let resp = envelope::handle_request(
+                body,
+                &ops::OP_REGISTRY,
+                || ue::try_runtime().is_some(),
+            );
+            serde_json::to_vec(&resp).unwrap_or_else(|_| b"{}".to_vec())
+        },
+        |msg| log::log(format_args!("{msg}")),
+    );
+}
