@@ -52,6 +52,47 @@ Newest first.
 | `schedule1` | [x] Certainty tracking: NPCResponses_Civilian correction and fix path | Retraction reversed: NPCResponses_Civilian IS the difference on custom goons. Base NPCResponses + Aggression 1.0 hypothesized as fix path. |
 | `schedule1` | [x] Restart script: wait for save load after control plane ready | `restart.ps1` waits for save load after control plane answers, not just ping. |
 | `schedule1` | [x] Research test suite: 8 behaviour/combat/patrol tests | `research_behaviours.rs`, `research_behaviours_deep.rs`, `research_behaviours_hold.rs`, `research_behaviours_phase1.rs`, `research_combat_config.rs`, `research_patrol.rs`, `research_priority.rs`, `research_retaliation_isolation.rs` added. |
+| `schedule1` | [x] New crate schedule1-mod added to workspace (cdylib, unityforge + modforge, port 17175) | Built and deployed to Mods/, replaces smoke dll. |
+| `schedule1` | [x] Research docs + certainty-tracking started, harmony_probe op added to unityforge | research.md + certainty-tracking.md created; harmony_probe op proves per-target patchability. |
+| `schedule1` | [x] Map regions research: ScheduleOne.Map.Map singleton, 6 regions, CartelInfluence | research.md documents region structure, EMapRegion 0-5, influence per region. |
+| `schedule1` | [x] NPC research: GoonPool.SpawnGoon + CartelGoon.AttackEntity proven in-game | Spawn and combat paths documented in research.md. |
+| `schedule1` | [x] Combat research: NotifyAttackedByPlayer fires per hit, KnockOut (not Die) at 0 health | Kill/knockout hooks fire clean; XP credits both paths. |
+| `schedule1` | [x] Harmony prefixes on Die/KnockOut/NotifyAttackedByPlayer/TakeDamage all fire simultaneously | All four hooks installed and firing clean in combat. |
+| `schedule1` | [x] Kill-observation hook point proven for combat XP | Die + KnockOut prefixes fire during real fights (combat_trace). |
+| `schedule1` | [x] Loot path: cash template clone + FishNet spawn, operator picked up cash in-game | Recipe proven and documented in research.md 4b. |
+| `schedule1` | [x] XP on player kills: killcredit.rs with per-NPC attribution and dedupe | Kill credit tracks player hits, awards XP on Die/KnockOut. |
+| `schedule1` | [x] Heavy Hands skill (punch damage, instance props, exact math proven) | SkillDef registered, auto-spend applied, punches confirmed stronger. |
+| `schedule1` | [x] Vitality + regeneration ON ICE (static field setters crash 0.4.6f12) | Skills defined but disabled until interop generator fix. |
+| `schedule1` | [x] Persistence per save slot (LoadManager save folder name) | RPG state survives 4+ relaunches. Endless curve + auto-spend. |
+| `schedule1` | [x] Combat RPG exit gate passed | Operator kill logged XP + level up, auto-spend applied, persistence proven. |
+| `schedule1` | [x] Loot table v1: cash drop on NPC kill, amount scaled by mob toughness | Loot drops confirmed in-game. |
+| `schedule1` | [x] Loot drop regression on custom NPCs: NOT REPRODUCING | Player killed Tough Armed goon, loot dropped, XP awarded. Earlier regression was transient. |
+| `schedule1` | [x] S1ApiNpcs.cs: GoonNpc/PoliceNpc/PlayerNpc + NpcFactory statics in MelonLoader shim | Five custom NPCs spawned and visible in-game. 5-goon supply cap eliminated. |
+| `schedule1` | [x] Custom NPC combat proven: two armed goons fought each other with no player involvement | Knife + baton combat via SetAndAttackTarget, index-tracked mints. |
+| `schedule1` | [x] Custom NPC despawn: Object.Destroy works, ServerManager.Despawn NREs | Object.Destroy is the working cleanup path. |
+| `schedule1` | [x] Custom NPCs do NOT survive save/reload (all S1NPC refs become unresolved) | Mod must respawn from persisted state on every load. |
+| `schedule1` | [x] Custom NPC death cleanup: KillNpc transitions to DeadBehaviour, Die hook fires | DespawnNpc after death is the safe cleanup path. |
+| `schedule1` | [x] EnableIdleBehaviour makes idle the active behaviour | IdleBehaviour with no IdlePoint holds position (0.00m drift over 30s). |
+| `schedule1` | [x] IdleBehaviour WITH IdlePoint causes wandering (36m away), not holding | Do NOT use SetIdlePoint for garrison posts. |
+| `schedule1` | [x] Freshly spawned goons have 18 behaviours, all disabled, none active | This is why they drift after spawn. |
+| `schedule1` | [x] Custom goons on idle do NOT auto-fight when attacked (CombatBehaviour never activates) | Guard goes Idle to Dead without Combat. Retaliation needs a separate trigger. |
+| `schedule1` | [x] EnableCombatBehaviour does not make custom goons fight back | CombatBehaviour enabled but goon goes FaceTarget then CallPolice then Unconscious when punched. |
+| `schedule1` | [x] Vanilla goon behaviour stack compared: 17 behaviours all disabled, same as custom | Behaviour stack is not the difference; something else triggers vanilla retaliation. |
+| `schedule1` | [x] Read influence per region via CartelInfluence singleton | GetInfluence returns 0-1 float per region. |
+| `schedule1` | [x] ChangeInfluence works via 2-param server RPC (tested 4 deltas in a row) | RpcLogic___ChangeInfluence_2792544924 moves influence reliably. |
+| `schedule1` | [x] Region ownership research: vanilla has NO faction ownership system | RegionInfluenceData has only Region + Influence. Mod must track ownership itself. |
+| `schedule1` | [x] SetToughness (MaxHealth write + Heal) on custom NPCs | Instance property writes proven safe. |
+| `schedule1` | [x] Movement speed writes via S1API NPCMovement.SpeedMultiplier | Read/write proven (default 1.0, set to 2.0 reads back 2.0). |
+| `schedule1` | [x] Damage output via CombatBehaviour.VirtualPunchWeapon Damage property | Path identical to SetToughness and SetSpeedMultiplier (both work). |
+| `schedule1` | [x] MelonLoader shim: HarmonyBridge verified, Il2CppInterop surface confirmed, shim built | MelonLoader 0.7.2 ships HarmonyX 2.10.2 + Il2CppInterop.Runtime 1.5.1; shim compiles clean. |
+| `schedule1` | [x] Generation-loader hot reload mirrored into MelonLoader entry | MelonLoader entry drives GenerationLoader same as Mono entry. |
+| `schedule1` | [x] Smoke passed on Schedule 1: ping, smoke_state, walk_class, read/write, postfix, hot reload | All smoke checks passed via il2cpp-smoke tests against live game. |
+| `schedule1` | [x] Il2CppInterop 0.4.6 crash fix: 4 sites patched (null type refs in Pass11, RewriteTypeRef, JudgeSpecifics, Pass16ScanMethodRefs) | Patched generator emits all 148 interop assemblies; MelonLoader loads all 9 mods on 0.4.6. |
+| `schedule1` | [x] Research proven live: region owner, mob classes, death path, kill hook, loot path | All five proven by 2026-08-08 in research.md + certainty-tracking.md. |
+| `schedule1` | [x] Kill NPC, gain XP, level combat stat, stat visibly changes, survives save/reload | Operator knocked out NPC, +25 XP, LEVEL UP -> 9, auto-spend raised Heavy Hands, survived 4+ relaunches. |
+| `schedule1` | [x] Kill NPC, loot drops (cash), pick it up in-game | Kill dropped rolled cash stack at body (toughness-scaled), operator picked it up. |
+| `schedule1` | [x] Spawn custom goon at exact position via S1API | NpcFactory.SpawnGoon, five NPCs spawned and visible. |
+| `schedule1` | [x] Spawn custom police and player NPCs | NpcFactory.SpawnPolice + SpawnPlayerNpc proven. |
 | `misery` | [x] Add build.rs for ueforge cdylib shim | `misery-mod/build.rs` compiles the UE4SS C++ shim. |
 | `misery` | [x] RPG design doc | `misery-mod/docs/rpg.md`: skill tree design for MISERY (stats, XP curve, effect mappings). |
 | `misery` | [x] Restart script | `misery-mod/scripts/restart.ps1`: kill game, build, deploy, launch, wait for control plane. |
