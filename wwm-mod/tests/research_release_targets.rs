@@ -4,7 +4,7 @@
 //! The game shipped on 2026-08-13 with a new Assembly-CSharp
 //! (1,036,800 bytes vs the First Gun demo's 978,432). The demo
 //! to First Gun jump already deleted three of the six skill
-//! targets (docs/wild-west-miner-research.md section 11), so
+//! targets (docs/research.md section 11), so
 //! every target is re-checked from scratch here.
 //!
 //! Probes:

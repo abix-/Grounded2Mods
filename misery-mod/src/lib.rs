@@ -1,7 +1,7 @@
 //! MISERY mod.
 //!
 //! Target: the emission ("shining") timer, so a mission gives
-//! more time. See `docs/misery-research.md`.
+//! more time. See `docs/research.md`.
 //!
 //! Game-specific code here is deliberately thin: `ModDef`, the
 //! init / shutdown hooks, the game's `PlatformOffsets`, and the
@@ -18,7 +18,7 @@ use ueforge::ue::GObjectsLayout;
 use ueforge::ue::datatable::FieldTweak;
 
 // MaxStack is Int (i32) at offset 0x44 within S_ItemDetails rows.
-// See docs/misery-research.md section 23.
+// See docs/research.md section 23.
 static STACK_TWEAK: FieldTweak<i32> = FieldTweak::new("ItemList", 0x44);
 
 // ---- Platform detection ----

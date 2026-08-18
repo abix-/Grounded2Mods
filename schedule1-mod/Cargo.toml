@@ -8,7 +8,7 @@ publish.workspace = true
 
 # Schedule 1 mod. Rust cdylib loaded into the IL2CPP game by
 # Unityforge.Shim.Melon (MelonLoader entry). v1 scope is the HTTP
-# control plane for live research (docs/schedule1-plan.md); the
+# control plane for live research (docs/plan.md); the
 # gameplay goals on top are combat-XP RPG levelling and the
 # faction war.
 

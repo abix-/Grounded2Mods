@@ -14,7 +14,7 @@
 //!    hot reload swaps generations via `*.gen<N>.dll` drops.
 //!
 //! v1 is the control plane only. Gameplay (combat-XP levelling,
-//! faction war) lands on top per docs/schedule1-plan.md, gated
+//! faction war) lands on top per docs/plan.md, gated
 //! by the research questions in docs/research.md.
 
 use unityforge::ModDef;

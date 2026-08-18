@@ -38,7 +38,7 @@ restart (proven live on this game 2026-08-07).
 
 The game runs IL2CPP (default branch) on MelonLoader 0.7.3 with
 the operator's patched Il2CppInterop generator; see
-`docs/schedule1-todo.md` in the repo root for that story.
+`docs/todo.md` in the repo root for that story.
 
 ## Environment facts (verified 2026-08-07)
 
@@ -52,7 +52,7 @@ the operator's patched Il2CppInterop generator; see
 
 ## Open research questions
 
-Answers gate the gameplay work (docs/schedule1-plan.md). Each
+Answers gate the gameplay work (docs/plan.md). Each
 answer lands here with its evidence and a row in
 certainty-tracking.md.
 
@@ -936,28 +936,47 @@ certainty-tracking.md.
    Il2Cpp bindings. Needs further research on how the
    game creates these.
 
-7. **NPCResponses: RETRACTED as root cause**
+7. **NPCResponses: CORRECTED, IS the root cause**
 
-   RETRACTED (2026-08-09): the NPCResponses hypothesis was
-   wrong. Both vanilla cartel goons and custom goons have the
-   same base NPCResponses class at runtime. SetResponsesBase
-   confirmed was=NPCResponses, changed=false on a fresh
-   custom goon. The NPCResponses_Civilian code in S1API
-   (NPC.cs line 3416) either silently fails or gets replaced
-   back by later initialization.
+   CORRECTED (2026-08-09): the earlier retraction was wrong.
+   The SetResponsesBase diagnostic read the type on a stale
+   goon that had already been through prior tests. A fresh
+   InspectCombatConfig on a newly spawned custom goon shows:
 
-   The real difference is the NPC type itself: vanilla cartel
-   goons are Il2CppScheduleOne.Cartel.CartelGoon (a subclass
-   with 48 declared methods including ConfigureGoonSettings,
-   AttackEntity, goonMates, Spawn/Despawn RPCs). Custom goons
-   are base Il2CppScheduleOne.NPCs.NPC. All other components
-   (Responses, Actions, Awareness, Behaviour, Health) are
-   identical types on both.
+   - Custom goon Responses type: NPCResponses_Civilian
+   - Custom goon Awareness.Responses: NPCResponses_Civilian
+   - Vanilla CartelGoon Responses type: NPCResponses (base)
+   - Custom goon Aggression: 0.1
+   - Vanilla CartelGoon Aggression: 1.0
 
-   ConfigureGoonSettings(3 params) is called during vanilla
-   goon spawn and likely sets up the aggressive behavior. Its
-   body is stripped from IL2CPP metadata, so the exact setup
-   is unknown.
+   NPCResponses base class has virtual response methods:
+   RespondToFirstNonLethalAttack(2),
+   RespondToRepeatedNonLethalAttack(2),
+   RespondToLethalAttack(2), RespondToAnnoyingImpact(2),
+   RespondToAimedAt(1), ImpactReceived(1). These are what
+   the game calls when an NPC is attacked.
+
+   NPCResponses_Civilian overrides ALL of these with civilian
+   behavior (flee, cower, call police) via
+   ExecuteThreatResponse(4) and GetThreatResponse(2). This is
+   why custom goons flee instead of fighting back.
+
+   S1API forces NPCResponses_Civilian on all custom NPCs
+   (NPC.cs lines 3421-3432). It also sets Aggression to 0.1
+   (default for civilians).
+
+   The NPC type difference (CartelGoon vs base NPC) still
+   matters for other CartelGoon features (48 declared methods
+   including ConfigureGoonSettings, AttackEntity, goonMates),
+   but for retaliation the Responses class and Aggression are
+   the key fields.
+
+   FIX (hypothesis, not yet tested): at spawn time, replace
+   NPCResponses_Civilian with base NPCResponses on both
+   npc.Responses and npc.Awareness.Responses, and set
+   Aggression to 1.0. The vanilla NotifyAttackedByPlayer
+   chain should then call base RespondToLethalAttack (which
+   triggers CombatBehaviour) instead of civilian flee/cower.
 
 8. **Working retaliation path: SetTargetAndEnable_Server**
 
@@ -971,19 +990,25 @@ certainty-tracking.md.
    gets the NPC's CombatBehaviour, gets Player.Local's
    NetworkObject, calls SetTargetAndEnable_Server.
 
-   AUTOMATIC RETALIATION PATH (not yet wired):
-   1. Player punches custom goon
-   2. Game fires NPCHealth.NotifyAttackedByPlayer
-   3. Rust killcredit prefix hook already detects this call
-   4. Hook checks if the NPC pointer matches a custom goon
-   5. If yes, calls RetaliateAgainstPlayer(index) via
-      invoke_static
-   6. Goon enters CombatBehaviour, attacks the player
+   AUTOMATIC RETALIATION: two paths identified.
+
+   PATH A (preferred, not yet tested): configure at spawn
+   time. Replace NPCResponses_Civilian with base
+   NPCResponses, set Aggression to 1.0. The vanilla game
+   pipeline should handle retaliation automatically through
+   the base class RespondToLethalAttack method. No per-hit
+   hook needed.
+
+   PATH B (proven working, but per-hit): use the Rust
+   killcredit prefix hook on NotifyAttackedByPlayer to call
+   RetaliateAgainstPlayer(index) via invoke_static on every
+   hit. This works but requires the mod to intercept every
+   punch rather than letting vanilla behavior handle it.
 
    BLOCKED: C# Harmony postfix on NotifyAttackedByPlayer
    fails with "IL Compile Error" on this game version. The
    Rust prefix hook (already working for kill attribution)
-   is the path for automatic triggering.
+   is the fallback if Path A does not work.
 
    ALSO PROVEN: CombatBehaviour deactivates on its own when
    the target is out of range or after GiveUpTime (30s

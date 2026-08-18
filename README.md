@@ -121,7 +121,7 @@ Per-game research notes:
 - [`grounded2-mod/docs/`](grounded2-mod/docs/). Damage
   internals (combat / fall / environmental), inventory,
   catalog, persistence.
-- [`docs/wild-west-miner-research.md`](docs/wild-west-miner-research.md).
+- [`wwm-mod/docs/research.md`](wwm-mod/docs/research.md).
   Wild West Miner managed-side research log.
 - [`horsey-mod/research/`](horsey-mod/research/). Horsey Game decompilation
   + function annotations + RE notes (subtree-merged from the
@@ -311,7 +311,7 @@ Workspace-level (open work + chronology) lives at the root:
 - [`docs/changelog.md`](docs/changelog.md). Milestones, newest first
 - [`docs/unityforge-plan.md`](docs/unityforge-plan.md). The
   unityforge architecture plan (phases 1-4)
-- [`docs/wild-west-miner-research.md`](docs/wild-west-miner-research.md).
+- [`wwm-mod/docs/research.md`](wwm-mod/docs/research.md).
   Wild West Miner managed-side research log
 
 Per-crate docs:

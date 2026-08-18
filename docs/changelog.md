@@ -26,8 +26,8 @@ Newest first.
 | System | Item | Done when |
 |---|---|---|
 | `misery` | [x] Fix all tabs breaking after main menu reload | Tabs re-render after reload without crashing. |
-| `misery` | [x] Document stale OWS tweaks DLL removal | `docs/misery-research.md` updated. |
-| `misery` | [x] Vendor system research, section 24 | `docs/misery-research.md` section 24 written with offset map and sell list structure. |
+| `misery` | [x] Document stale OWS tweaks DLL removal | `misery-mod/docs/research.md` updated. |
+| `misery` | [x] Vendor system research, section 24 | `misery-mod/docs/research.md` section 24 written with offset map and sell list structure. |
 | `misery` | [x] Vendor food sell list expansion | `vendors.rs` adds all food items to Barman's sell list via TArray grow + template clone. |
 | `ueforge` | [x] Add `follow_ptr_chain` and `row_name_map` to DRY misery callers | Both functions in `ueforge::ue`, misery callers collapsed. |
 | `ueforge` | [x] Add `struct_fields` module | `ueforge::ue::struct_fields` provides field offset resolution. |
@@ -45,7 +45,7 @@ Newest first.
 | `ueforge` | [x] Add features builder for mod init | `ueforge::features()` with `.once()`, `.on_each_load()`, `.on_first_table()`, `.install()`. |
 | `misery` | [x] Convert to features builder | `on_unreal_init` uses `ueforge::features()` instead of manual thread spawns. |
 | `ows` | [x] Convert to features builder | `on_unreal_init` uses `ueforge::features()` for stacks and dynamic tweaks. |
-| `wwm` | [x] Research docs update, build script auto-detect, test suite | 6 test files added, `build_and_deploy.ps1` auto-detects `*_Data` folder, `wild-west-miner-research.md` updated. |
+| `wwm` | [x] Research docs update, build script auto-detect, test suite | 6 test files added, `build_and_deploy.ps1` auto-detects `*_Data` folder, `wwm-mod/docs/research.md` updated. |
 | `ueforge` | [x] Add `begin_child`/`end_child` ImGui wrappers | C++ and Rust bindings for scrollable child regions. |
 | `workspace` | [x] Add misery-mod to workspace members | `Cargo.toml` members list updated. |
 
@@ -60,7 +60,7 @@ provenance changed.
   `CompleteDemoCoroutine`. Implemented in
   `unityforge/cs-shim-mono/Plugin.cs` `InstallDemoCompleteBlock`.
   Full incident write-up in
-  [`wild-west-miner-research.md` §7.7](wild-west-miner-research.md#77-demo-end-block-2026-05-14-solved-on-attempt-7).
+  [`wwm-mod/docs/research.md` §7.7](wwm-mod/docs/research.md#77-demo-end-block-2026-05-14-solved-on-attempt-7).
   Methodology lesson: `list_methods` against the most-obvious
   manager class as the FIRST move, not the last.
 - **Plot Enlargement / Land Surveyor "buy" feature investigated,
@@ -71,7 +71,7 @@ provenance changed.
   in `Managed/`, not wired into the game's `BuyPopup` /
   `BuySection` system. Implementation would be content
   development, not modding. Evidence in
-  [`wild-west-miner-research.md` §7.8](wild-west-miner-research.md#78-plot-enlargement--land-surveyor-search-2026-05-14-partial).
+  [`wwm-mod/docs/research.md` §7.8](wwm-mod/docs/research.md#78-plot-enlargement--land-surveyor-search-2026-05-14-partial).
 - **Naming standardization landed**: per-game mod crates now use
   the `<game>-mod` form. `grounded2-rpg` -> `grounded2-mod`,
   `wwm-rpg` -> `wwm-mod`, `outworld-station-tweaks` ->

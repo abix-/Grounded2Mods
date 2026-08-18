@@ -7,7 +7,7 @@
 //!
 //! Amount scales with mob toughness (the downed NPC's
 //! MaxHealth), per the operator. Exact numbers live here behind
-//! the spoiler firewall (docs/schedule1-plan.md): the operator
+//! the spoiler firewall (docs/plan.md): the operator
 //! reads the shape, not the rolls.
 //!
 //! Runs queued on the main thread, one frame after the kill, so

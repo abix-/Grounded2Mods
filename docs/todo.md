@@ -716,7 +716,7 @@ Phase 3a milestones shipped 2026-05-13 (see
   reload). The right framework shape is a proxy Effect that
   maps our level to a game-skill level and lets the game
   handle the live mutation. See
-  [`docs/wild-west-miner-research.md` §7.5](wild-west-miner-research.md#75-in-game-findings-2026-05-13-session).
+  [`wwm-mod/docs/research.md` §7.5](../wwm-mod/docs/research.md#75-in-game-findings-2026-05-13-session).
 - [ ] **Research Charisma + Resilient mappings**. Neither has
   an obvious built-in game-skill match. Either find a custom
   proxy through the existing four (Energy regen for

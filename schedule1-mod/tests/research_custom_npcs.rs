@@ -1,4 +1,4 @@
-//! Custom NPC minting verification (docs/schedule1-todo.md,
+//! Custom NPC minting verification (docs/todo.md,
 //! "Custom NPCs"): the shim's S1API-backed NpcFactory, driven
 //! through invoke_static. Spawns three goons, one police, one
 //! player NPC in a line next to the player.

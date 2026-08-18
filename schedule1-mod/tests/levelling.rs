@@ -1,5 +1,5 @@
 //! Combat-XP levelling verification (the exit gate in
-//! docs/schedule1-todo.md): skill_state answers, XP awards
+//! docs/todo.md): skill_state answers, XP awards
 //! level up, spending a point on vitality visibly raises
 //! PlayerHealth.MaxHealth in the live game.
 //!

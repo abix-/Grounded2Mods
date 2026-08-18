@@ -3,7 +3,7 @@
 //! MISERY ends an expedition by regenerating the world when the
 //! emission countdown reaches zero. Everything about that clock
 //! lives on one Blueprint actor, `BP_GlobalManager_C`. See
-//! `docs/misery-research.md` sections 8, 14, 15, 17, 19.
+//! `docs/research.md` sections 8, 14, 15, 17, 19.
 //!
 //! Two controls, both proven live before this module existed:
 //! freeze the countdown, and set how many seconds are left.

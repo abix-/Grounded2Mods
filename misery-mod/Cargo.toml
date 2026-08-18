@@ -1,0 +1,51 @@
+[package]
+name = "misery-mod"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# MISERY (UE 5.4) mod. First target: the emission ("shining")
+# timer, so a mission gives more time. Research runs through this
+# crate's control plane as Rust tests, so research converts into
+# the shipped feature instead of being thrown away. Findings live
+# in docs/research.md.
+
+[lib]
+# Output is `main.dll`, dropped at
+# MISERY\MISERY\Binaries\Win64\ue4ss\Mods\MiseryMod\dlls\main.dll.
+name = "main"
+crate-type = ["cdylib", "rlib"]
+
+# Consumed by ueforge's ueforge-deploy bin.
+[package.metadata.ueforge]
+mod_folder_name = "MiseryMod"
+game_name_regex = "MISERY"
+game_sub_path   = "MISERY/Binaries/Win64"
+zip_prefix      = "misery-mod"
+target_dir      = "target/misery-mod"
+
+[features]
+# Spawn a console window inside the game process for live log
+# output. The file log at <DLL_dir>/misery_mod.log is the durable
+# record.
+console = []
+default = ["console"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+ueforge = { path = "../ueforge" }
+
+[build-dependencies]
+ueforge = { path = "../ueforge" }
+
+[dev-dependencies]
+modforge = { path = "../modforge" }
+ueforge = { path = "../ueforge" }
+# read_bytes answers in hex; the research tests decode it.
+hex = { workspace = true }
+
+[lints]
+workspace = true

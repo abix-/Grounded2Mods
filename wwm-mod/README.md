@@ -50,7 +50,7 @@ Calling `SkillsManager.SetSkillLevel("Bag", 4)` via
 for wwm-mod is a `UnitySkillProxyEffect` that maps our levels
 to game-skill levels and calls `SetSkillLevel`; the game does
 the actual mutation + save persistence + UI refresh. See
-[`docs/wild-west-miner-research.md` §7.5](../docs/wild-west-miner-research.md#75-in-game-findings-2026-05-13-session)
+[`docs/research.md` §7.5](docs/research.md#75-in-game-findings-2026-05-13-session)
 for the full state graph + method surface.
 
 **Field-name verification status.** Both surviving raw-field

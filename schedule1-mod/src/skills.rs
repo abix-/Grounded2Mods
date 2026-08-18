@@ -1,5 +1,5 @@
 //! Combat-XP levelling: skill catalog + tracker + ops + slot
-//! poller (docs/schedule1-plan.md section 5; shape mirrors
+//! poller (docs/plan.md section 5; shape mirrors
 //! wwm-mod/src/skills.rs).
 //!
 //! Skills anchor on live-proven fields (tests/
@@ -184,7 +184,7 @@ static HEAVY_HANDS_EFFECT: InstancePropMultiplyEffect = InstancePropMultiplyEffe
 // (generated setter AND direct il2cpp_field_static_set_value)
 // crash or corrupt the 0.4.6f12 game; fallout of the patched
 // interop generator skipping metadata init on scan failure.
-// They return when the generator fix lands (docs/schedule1-todo.md).
+// They return when the generator fix lands (docs/todo.md).
 // Instance-property writes are proven safe (probe 2026-08-08:
 // MinPunchDamage 20 -> 12 -> 20 round trip, game healthy).
 pub static CATALOG: SkillRegistry = SkillRegistry::new(&[SkillDef {

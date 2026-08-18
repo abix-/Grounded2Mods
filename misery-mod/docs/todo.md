@@ -35,7 +35,7 @@
 
 - [ ] Set up pe_queue DrainSite + ProcessEventHook (needed for nag screen and any future ProcessEvent work)
 - [ ] Research which class to hook for the drain site (must exist before main menu, fire PE often)
-- [ ] RPG system: XP, leveling, stat/skill points (see docs/misery-rpg.md)
+- [ ] RPG system: XP, leveling, stat/skill points (see docs/rpg.md)
 - [ ] Strength stat: find melee damage in memory
 - [ ] Constitution stat: find player max health in memory
 - [ ] Kill detection: hook or poll for XP source

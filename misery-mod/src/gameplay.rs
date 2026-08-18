@@ -3,7 +3,7 @@
 //! The struct is inline at offset 0x218 on the GameInstance,
 //! NOT on BP_GlobalManager_C (which was the original wrong
 //! assumption). Field offsets within the struct are from the
-//! UE4SS object dump. See docs/misery-research.md section 8.6.
+//! UE4SS object dump. See docs/research.md section 8.6.
 
 use ueforge::ue;
 pub use ueforge::ue::struct_fields::{FieldAccessor, FieldDef, FieldType, FieldValue};
