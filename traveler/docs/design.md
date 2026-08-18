@@ -76,6 +76,68 @@ provides the base stats that skills build on top of.
 each encounter, and a tactics array (initially empty, grows as the
 nemesis adapts to the player's patterns across games).
 
+**Inventory**: unlimited storage. Items exist in two forms:
+
+- **In-game**: the real item inside a specific game, with all
+  game-specific properties (durability, enchantments, stack size,
+  exact item ID). Each game owns its own item representation.
+- **Abstract**: the cross-game form, stored in the traveler profile.
+  A generic schema that any game can read.
+
+Abstract item schema:
+
+```json
+{
+  "name": "iron sword",
+  "type": "weapon",
+  "subtype": "melee",
+  "quality_tier": 3,
+  "value": 500,
+  "weight": 4.2,
+  "properties": {},
+  "origin_game": "misery",
+  "origin_data": {}
+}
+```
+
+`type` and `subtype` are from a fixed vocabulary (weapon/armor/food/
+material/tool/consumable, with subtypes per type). `properties` holds
+generic key-value pairs any game can read (damage, defense, healing,
+etc.). `origin_data` is an opaque blob the originating game wrote,
+carrying everything needed to reconstruct the exact in-game item.
+
+**Conversion flow**:
+
+1. Player leaves game A. Game A converts each carried item into an
+   abstract item: fills the generic fields AND writes its own
+   game-specific reconstruction data into `origin_data`.
+2. Abstract items are stored in the traveler profile.
+3. Player enters game B. Game B reads the abstract items and converts
+   each into its own in-game equivalent using the generic fields
+   (type, quality tier, value). It finds the closest match in its
+   own item system. `origin_data` from game A is ignored but
+   preserved in the profile.
+4. Player returns to game A with the same items. Game A sees
+   `origin_game: "misery"` matches itself, reads `origin_data`, and
+   reconstructs the exact original item. No loss on round-trip.
+5. Player returns to game A with items from game B. Game A sees
+   `origin_game: "grounded2"`, ignores the foreign `origin_data`,
+   and maps from generic properties to the closest match in its own
+   items.
+
+Each game mod implements two functions: `to_abstract(game_item) ->
+AbstractItem` and `from_abstract(abstract_item) -> game_item`. The
+round-trip through the same game is lossless because `origin_data`
+preserves everything. Cross-game conversion is lossy by nature (a
+misery sword is not a grounded weapon) but best-effort via the
+generic properties.
+
+**The transition space**: the moment between games, when the traveler
+exists only as a profile with abstract items, could be its own
+experience. A hub, an inventory screen, a meta-game where you sort
+and prepare what you are carrying into the next world. Not required
+for the system to work, but a natural place to put it.
+
 **Game history**: a ledger of past sessions. Each entry records the
 game, hours played, and a short outcome. Games can read history from
 other games to react ("you played 200 hours of the survivalist game
