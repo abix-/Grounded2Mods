@@ -25,6 +25,7 @@ Newest first.
 
 | System | Item | Done when |
 |---|---|---|
+| `modforge` | [x] Add `skill_state` and `skill_add_xp` to `modforge::rpg::ops::register`; all RPG mods get 7 standard ops for free | Framework registers 7 ops; wwm-mod removed 5 duplicate custom ops (net -65 lines). |
 | `modforge` | [x] Add generic research helpers to `modforge::client`: `ping_or_skip`, `handle_of`, `count_of`, `dump_sequence`, `print_declared_methods`, `fields`, `parse_vec3` | Helpers available to all mods via `modforge::client`. |
 | `unityforge` | [x] Add `unityforge::client` module with `find_instances` (renamed from walk), `first_handle`, `first_handle_inactive`, `field_exists` | Unity-specific research helpers in `unityforge::client`; re-exports `modforge::client::*`. |
 | `schedule1-mod` | [x] DRY tests/common: remove duplicated walk, first_handle, handle_of, count_of, dump_sequence, print_declared_methods, parse_vec3, ping_or_skip | `tests/common/mod.rs` imports from `unityforge::client`. |
