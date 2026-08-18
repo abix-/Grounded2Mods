@@ -10,7 +10,7 @@
 //!           +0xFE8 -> MovementSpeeds TMap
 
 use ueforge::ue;
-use ueforge::ue::{read_at, write_at};
+use ueforge::ue::{follow_ptr_chain, read_at, write_at};
 
 const ACTOR_CLASS: &str = "BP_SGKMasterCharacter_C";
 const CHAR_COMP_OFFSET: usize = 0x740;
@@ -32,15 +32,7 @@ const BASE_SPEEDS: &[(u8, f64)] = &[
 fn inventory_ptr() -> Result<*const u8, String> {
     let actor = ue::actor::find_actor(ACTOR_CLASS, None)
         .ok_or("no live player character found")?;
-    let comp: u64 = unsafe { read_at(actor, CHAR_COMP_OFFSET) };
-    if comp == 0 {
-        return Err("character component is null".into());
-    }
-    let inv: u64 = unsafe { read_at(comp as *const u8, INV_PTR_OFFSET) };
-    if inv == 0 {
-        return Err("inventory pointer is null".into());
-    }
-    Ok(inv as *const u8)
+    unsafe { follow_ptr_chain(actor, &[CHAR_COMP_OFFSET, INV_PTR_OFFSET]) }
 }
 
 fn tmap_element_ptr(inv: *const u8) -> Result<(*const u8, i32), String> {

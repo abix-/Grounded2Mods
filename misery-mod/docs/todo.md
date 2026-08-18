@@ -23,6 +23,13 @@
 - [x] All tabs survive main menu reload: fixed 2026-08-17. Root cause: all three modules (speed, shining, gameplay) cached object pointers that went stale after returning to main menu and loading a save. Blueprint reinstancing changes UClass pointers, so `find_class_fast` + `is_a` never matches. Fix: removed all pointer caches, scan GObjects fresh each call matching by class name string. Shining module also follows BP_ExpeditionDoor_C +0x448 as fallback when the manager disappears after world regeneration (section 20.4)
 - [x] Speed tab and speed 2x default: fixed 2026-08-15. Root cause: `find_class_fast` + `is_a` fails for Blueprint classes after reinstancing. Fix: match objects by class name string instead of UClass pointer comparison, then follow actor +0x740 +0x218 pointer chain to reach the inventory
 
+## DRY into ueforge
+
+- [x] Pointer chain following: ueforge::ue::follow_ptr_chain. Used by speed.rs, shining.rs, vendors.rs
+- [ ] TArray stride iteration: generic "iterate a TArray of fixed-stride structs, extract typed fields at known offsets". Used by vendors.rs for reading sell list FNames
+- [x] DataTable row name map: ueforge::ue::datatable::row_name_map. Used by vendors.rs and debug.rs
+- [ ] Debug HTTP boilerplate: snapshot + handle + error_response + spawn pattern repeats across mods (misery, outworld-station, grounded2)
+
 ## Not started
 
 - [ ] Set up pe_queue DrainSite + ProcessEventHook (needed for nag screen and any future ProcessEvent work)

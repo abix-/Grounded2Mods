@@ -78,6 +78,28 @@ pub unsafe fn iter_rows(table: &UObject) -> impl Iterator<Item = (u64, *const u8
     })
 }
 
+/// Build a map of row name (String) to raw FName key (u64) for
+/// every row in the table. Useful for resolving item names to
+/// FNames for TArray entry construction.
+///
+/// # Safety
+/// `table` must be a live `UDataTable`.
+pub unsafe fn row_name_map(table: &UObject) -> HashMap<String, u64> {
+    let rt = match ue::try_runtime() {
+        Some(r) => r,
+        None => return HashMap::new(),
+    };
+    let mut map = HashMap::new();
+    unsafe {
+        for (fname_key, _row_ptr) in iter_rows(table) {
+            let fname = FName::from_u64(fname_key);
+            let name = rt.name_resolver.to_string(fname);
+            map.insert(name, fname_key);
+        }
+    }
+    map
+}
+
 /// Spawn a worker that polls for a `UDataTable` by short name
 /// and runs `on_ready` once on the first sighting. Mod feature
 /// code typically calls this from `ModInfo::on_unreal_init` so

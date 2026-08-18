@@ -58,6 +58,33 @@ pub unsafe fn write_at<T: Copy>(ptr: *const u8, offset: usize, value: T) {
     unsafe { (ptr.add(offset) as *mut T).write_unaligned(value) }
 }
 
+/// Follow a chain of pointer offsets from a base address.
+/// At each hop, reads a `u64` pointer and null-checks it.
+/// Returns the final pointer, or an error naming which hop
+/// failed.
+///
+/// Example: `follow_ptr_chain(actor, &[0x740, 0x218])` reads
+/// the pointer at actor+0x740, then reads the pointer at
+/// that result+0x218, returning the final address.
+///
+/// # Safety
+/// Each intermediate pointer must be valid for a u64 read at
+/// the given offset.
+pub unsafe fn follow_ptr_chain(
+    base: *const u8,
+    offsets: &[usize],
+) -> Result<*const u8, String> {
+    let mut ptr = base;
+    for (i, &off) in offsets.iter().enumerate() {
+        let next: u64 = unsafe { read_at(ptr, off) };
+        if next == 0 {
+            return Err(format!("null pointer at hop {} (offset {off:#x})", i + 1));
+        }
+        ptr = next as *const u8;
+    }
+    Ok(ptr)
+}
+
 /// Look up a class by name and pass its first non-CDO instance to
 /// `f`. Returns `None` if the class isn't loaded or no live
 /// instance exists yet.

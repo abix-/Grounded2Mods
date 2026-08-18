@@ -51,15 +51,9 @@ fn list_row_names(args: &Json) -> Result<Json, String> {
         .ok_or("missing arg 'table_name'")?;
     let table = ueforge::ue::datatable::find_by_short_name(table_name)
         .ok_or_else(|| format!("table '{table_name}' not found"))?;
-    let rt = ueforge::ue::try_runtime()
-        .ok_or("ue runtime not initialized")?;
-    let mut names: Vec<String> = Vec::new();
-    unsafe {
-        for (fname_key, _row_ptr) in ueforge::ue::datatable::iter_rows(table) {
-            let fname = ueforge::ue::FName::from_u64(fname_key);
-            names.push(rt.name_resolver.to_string(fname));
-        }
-    }
+    let name_map = unsafe { ueforge::ue::datatable::row_name_map(table) };
+    let mut names: Vec<String> = name_map.into_keys().collect();
+    names.sort();
     Ok(serde_json::json!({
         "table_name": table_name,
         "count": names.len(),
@@ -73,22 +67,15 @@ fn list_row_fnames(args: &Json) -> Result<Json, String> {
         .ok_or("missing arg 'table_name'")?;
     let table = ueforge::ue::datatable::find_by_short_name(table_name)
         .ok_or_else(|| format!("table '{table_name}' not found"))?;
-    let rt = ueforge::ue::try_runtime()
-        .ok_or("ue runtime not initialized")?;
-    let mut rows: Vec<Json> = Vec::new();
-    unsafe {
-        for (fname_key, _row_ptr) in ueforge::ue::datatable::iter_rows(table) {
-            let fname = ueforge::ue::FName::from_u64(fname_key);
-            let name = rt.name_resolver.to_string(fname);
-            let idx = (fname_key & 0xFFFF_FFFF) as u32;
-            let num = (fname_key >> 32) as u32;
-            rows.push(serde_json::json!({
-                "name": name,
-                "fname_idx": idx,
-                "fname_num": num,
-            }));
-        }
-    }
+    let name_map = unsafe { ueforge::ue::datatable::row_name_map(table) };
+    let mut rows: Vec<Json> = name_map.into_iter()
+        .map(|(name, key)| serde_json::json!({
+            "name": name,
+            "fname_idx": (key & 0xFFFF_FFFF) as u32,
+            "fname_num": (key >> 32) as u32,
+        }))
+        .collect();
+    rows.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
     Ok(serde_json::json!({
         "table_name": table_name,
         "count": rows.len(),

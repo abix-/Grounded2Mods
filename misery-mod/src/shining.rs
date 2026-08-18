@@ -9,7 +9,7 @@
 //! freeze the countdown, and set how many seconds are left.
 
 use ueforge::ue;
-use ueforge::ue::{read_at, write_at};
+use ueforge::ue::{follow_ptr_chain, read_at, write_at};
 
 /// Property offsets on `BP_GlobalManager_C`, from the UE4SS
 /// object dump and confirmed by live reads (research doc 8.1).
@@ -65,11 +65,7 @@ fn manager_ptr() -> Result<*const u8, String> {
     // at +0x448 to the manager (research doc 20.4).
     let door = ue::actor::find_actor(DOOR_CLASS, None)
         .ok_or("no global manager or expedition door found")?;
-    let mgr: u64 = unsafe { read_at(door, DOOR_MGR_OFFSET) };
-    if mgr == 0 {
-        return Err("expedition door's manager pointer is null".into());
-    }
-    Ok(mgr as *const u8)
+    unsafe { follow_ptr_chain(door, &[DOOR_MGR_OFFSET]) }
 }
 
 pub fn status() -> Result<Status, String> {

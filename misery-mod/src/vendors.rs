@@ -48,9 +48,9 @@ const ALL_FOOD_SELLABLE: &[&str] = &[
 ];
 
 fn sell_list_ptr(actor: *const u8) -> Option<*mut u8> {
-    let comp_addr: u64 = unsafe { read_at(actor, VENDOR_COMP_OFFSET) };
-    if comp_addr == 0 { return None; }
-    Some(comp_addr as *mut u8)
+    unsafe { ue::follow_ptr_chain(actor, &[VENDOR_COMP_OFFSET]) }
+        .ok()
+        .map(|p| p as *mut u8)
 }
 
 fn sell_tarray(comp: *const u8) -> &'static mut TArray<u8> {
@@ -78,21 +78,14 @@ fn current_sell_names(comp: *const u8) -> HashSet<String> {
 }
 
 fn resolve_food_fnames() -> HashMap<String, u32> {
-    let mut map = HashMap::new();
     let Some(table) = ue::datatable::find_by_short_name("MasterItemList") else {
-        return map;
+        return HashMap::new();
     };
-    let Some(rt) = ue::try_runtime() else { return map };
-    unsafe {
-        for (fname_key, _row_ptr) in ue::datatable::iter_rows(table) {
-            let fname = ue::FName::from_u64(fname_key);
-            let name = rt.name_resolver.to_string(fname);
-            if name.starts_with("Food_") {
-                map.insert(name, (fname_key & 0xFFFF_FFFF) as u32);
-            }
-        }
-    }
-    map
+    let full_map = unsafe { ue::datatable::row_name_map(table) };
+    full_map.into_iter()
+        .filter(|(name, _)| name.starts_with("Food_"))
+        .map(|(name, key)| (name, (key & 0xFFFF_FFFF) as u32))
+        .collect()
 }
 
 fn expand_barman_sell_list(actor: *const u8) {
