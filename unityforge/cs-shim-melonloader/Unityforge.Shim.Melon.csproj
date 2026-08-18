@@ -91,6 +91,16 @@
       <Private>false</Private>
       <HintPath>$(MelonLoaderDir)\..\Mods\S1API.Il2Cpp.MelonLoader.dll</HintPath>
     </Reference>
+    <!-- Schedule 1 game types (behaviours, NPCs, patrol routes)
+         and FishNet (Behaviour extends NetworkBehaviour) -->
+    <Reference Include="Assembly-CSharp" Condition="'$(InteropDir)' != ''">
+      <Private>false</Private>
+      <HintPath>$(InteropDir)\Assembly-CSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="Il2CppFishNet.Runtime" Condition="'$(InteropDir)' != ''">
+      <Private>false</Private>
+      <HintPath>$(InteropDir)\Il2CppFishNet.Runtime.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>

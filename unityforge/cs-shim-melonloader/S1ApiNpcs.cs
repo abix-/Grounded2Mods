@@ -465,12 +465,12 @@ namespace Unityforge.Shim.Schedule1
                     return "{\"ok\":false,\"error\":\"S1NPC not resolved\"}";
 
                 var oldResp = s1npc.Responses;
-                string oldType = oldResp != null ? oldResp.GetType().FullName : "null";
-                bool isCivilian = oldResp is Il2CppScheduleOne.NPCs.Responses.NPCResponses_Civilian;
-                bool isBase = oldResp is Il2CppScheduleOne.NPCs.Responses.NPCResponses;
+                string oldType = oldResp != null ? oldResp.GetIl2CppType().FullName : "null";
+                bool isCivilian = oldResp != null &&
+                    oldResp.GetIl2CppType().FullName.Contains("NPCResponses_Civilian");
 
-                if (isBase && !isCivilian)
-                    return "{\"ok\":true,\"was\":\"" + oldType + "\",\"is_civilian\":" + isCivilian.ToString().ToLower() + ",\"is_base\":" + isBase.ToString().ToLower() + ",\"changed\":false}";
+                if (!isCivilian && oldResp != null)
+                    return "{\"ok\":true,\"was\":\"" + oldType + "\",\"is_civilian\":false,\"changed\":false}";
 
                 var go = oldResp != null ? oldResp.gameObject : s1npc.gameObject;
                 if (oldResp != null)
@@ -484,8 +484,70 @@ namespace Unityforge.Shim.Schedule1
                 if (s1npc.Awareness != null)
                     s1npc.Awareness.Responses = baseResp;
 
-                string newType = baseResp.GetType().FullName;
-                return "{\"ok\":true,\"was\":\"" + oldType + "\",\"is_civilian\":" + isCivilian.ToString().ToLower() + ",\"is_base\":" + isBase.ToString().ToLower() + ",\"now\":\"" + newType + "\",\"changed\":true}";
+                string newType = baseResp.GetIl2CppType().FullName;
+                string verifyType = s1npc.Responses != null ? s1npc.Responses.GetIl2CppType().FullName : "null";
+                return "{\"ok\":true,\"was\":\"" + oldType + "\",\"now\":\"" + newType + "\",\"verify\":\"" + verifyType + "\",\"changed\":true}";
+            }
+            catch (Exception e)
+            {
+                return Fail(e);
+            }
+        }
+
+        public static string SetAggression(int index, float value)
+        {
+            try
+            {
+                var npc = Minted[index];
+                var s1npc = GetS1NPC(npc);
+                if (s1npc == null)
+                    return "{\"ok\":false,\"error\":\"S1NPC not resolved\"}";
+
+                float old = s1npc.Aggression;
+
+                // S1API's Aggressiveness setter uses SetNpcMember which
+                // does reflection. Try direct IL2CPP field write instead.
+                var npcType = Il2CppInterop.Runtime.Il2CppType.From(
+                    typeof(Il2CppScheduleOne.NPCs.NPC));
+                bool wrote = false;
+
+                // Try every field name pattern
+                foreach (var fname in new[] {
+                    "Aggression",
+                    "<Aggression>k__BackingField",
+                    "_Aggression_k__BackingField",
+                    "aggression" })
+                {
+                    try
+                    {
+                        var field = npcType.GetField(fname,
+                            Il2CppSystem.Reflection.BindingFlags.Instance |
+                            Il2CppSystem.Reflection.BindingFlags.Public |
+                            Il2CppSystem.Reflection.BindingFlags.NonPublic);
+                        if (field != null)
+                        {
+                            // Box the float for IL2CPP reflection
+                            Il2CppSystem.Object boxed;
+                            unsafe
+                            {
+                                float v = value;
+                                var ptr = Il2CppInterop.Runtime.IL2CPP.il2cpp_value_box(
+                                    Il2CppInterop.Runtime.Il2CppType.Of<System.Single>().Pointer,
+                                    (IntPtr)(&v));
+                                boxed = new Il2CppSystem.Object(ptr);
+                            }
+                            field.SetValue(s1npc, boxed);
+                            wrote = true;
+                            break;
+                        }
+                    }
+                    catch { }
+                }
+
+                float now = s1npc.Aggression;
+                return "{\"ok\":true,\"old\":" + old.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                    ",\"now\":" + now.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                    ",\"wrote\":" + (wrote ? "true" : "false") + "}";
             }
             catch (Exception e)
             {
@@ -712,6 +774,131 @@ namespace Unityforge.Shim.Schedule1
 
                 combat.SetTargetAndEnable_Server(nob);
                 return "{\"ok\":true}";
+            }
+            catch (Exception e)
+            {
+                return Fail(e);
+            }
+        }
+
+        public static string LoadSave(int saveIndex)
+        {
+            try
+            {
+                var lm = Il2CppScheduleOne.Persistence.LoadManager.Instance;
+                if (lm == null)
+                    return "{\"ok\":false,\"error\":\"LoadManager.Instance is null\"}";
+
+                var saves = Il2CppScheduleOne.Persistence.LoadManager.SaveGames;
+                if (saves == null || saves.Count == 0)
+                    return "{\"ok\":false,\"error\":\"no saves found\"}";
+
+                if (saveIndex < 0 || saveIndex >= saves.Count)
+                    return "{\"ok\":false,\"error\":\"index out of range\",\"count\":" + saves.Count + "}";
+
+                var target = saves[saveIndex];
+                if (target == null)
+                    return "{\"ok\":false,\"error\":\"save at index " + saveIndex + " is null\"}";
+
+                lm.StartGame(target, false, false);
+                return "{\"ok\":true,\"index\":" + saveIndex + "}";
+            }
+            catch (Exception e)
+            {
+                return Fail(e);
+            }
+        }
+
+        public static string InspectCombatConfig(int index)
+        {
+            try
+            {
+                var npc = Minted[index];
+                var s1npc = GetS1NPC(npc);
+                if (s1npc == null)
+                    return "{\"ok\":false,\"error\":\"S1NPC not resolved\"}";
+
+                var sb = new System.Text.StringBuilder("{\"ok\":true");
+
+                sb.Append(",\"npc_type\":\"" + s1npc.GetIl2CppType().FullName + "\"");
+                sb.Append(",\"aggression\":" + s1npc.Aggression.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+                var resp = s1npc.Responses;
+                if (resp != null)
+                {
+                    sb.Append(",\"responses_type\":\"" + resp.GetIl2CppType().FullName + "\"");
+                    sb.Append(",\"responses_npc_null\":" + (resp.npc == null ? "true" : "false"));
+                }
+                else
+                {
+                    sb.Append(",\"responses_type\":\"null\"");
+                }
+
+                var awareness = s1npc.Awareness;
+                if (awareness != null)
+                {
+                    sb.Append(",\"awareness_type\":\"" + awareness.GetIl2CppType().FullName + "\"");
+                    var aResp = awareness.Responses;
+                    sb.Append(",\"awareness_responses_type\":\"" +
+                        (aResp != null ? aResp.GetIl2CppType().FullName : "null") + "\"");
+                    sb.Append(",\"awareness_responses_null\":" + (aResp == null ? "true" : "false"));
+                }
+
+                var beh = s1npc.Behaviour;
+                if (beh != null)
+                {
+                    var combat = beh.CombatBehaviour;
+                    if (combat != null)
+                    {
+                        sb.Append(",\"combat_enabled\":" + (combat.Enabled ? "true" : "false"));
+                        sb.Append(",\"combat_active\":" + (combat.Active ? "true" : "false"));
+                        sb.Append(",\"combat_priority\":" + combat.Priority);
+                        sb.Append(",\"combat_weapon_null\":" +
+                            (combat.VirtualPunchWeapon == null ? "true" : "false"));
+                        sb.Append(",\"combat_velocity_null\":" +
+                            (combat.TargetVelocityTracker == null ? "true" : "false"));
+                    }
+                    else
+                    {
+                        sb.Append(",\"combat_behaviour\":\"null\"");
+                    }
+                }
+
+                // Read private booleans via reflection
+                try
+                {
+                    var flags = s1npc.GetType().GetFields(
+                        System.Reflection.BindingFlags.Instance |
+                        System.Reflection.BindingFlags.NonPublic |
+                        System.Reflection.BindingFlags.Public);
+                    var boolFields = new System.Text.StringBuilder("[");
+                    bool first = true;
+                    foreach (var f in flags)
+                    {
+                        if (f.FieldType == Il2CppSystem.Type.GetType("System.Boolean")?.GetType() ||
+                            f.Name.Contains("Boolean") || f.Name.Contains("bool"))
+                        {
+                            if (!first) boolFields.Append(",");
+                            first = false;
+                            try
+                            {
+                                var val = f.GetValue(s1npc);
+                                boolFields.Append("{\"name\":\"" + f.Name +
+                                    "\",\"value\":" + (val?.ToString()?.ToLower() ?? "null") + "}");
+                            }
+                            catch
+                            {
+                                boolFields.Append("{\"name\":\"" + f.Name + "\",\"value\":\"error\"}");
+                            }
+                        }
+                    }
+                    boolFields.Append("]");
+                    sb.Append(",\"bool_fields\":" + boolFields);
+                }
+                catch { }
+
+                sb.Append("}");
+                return sb.ToString();
             }
             catch (Exception e)
             {

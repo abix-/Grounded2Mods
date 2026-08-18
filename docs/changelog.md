@@ -57,6 +57,8 @@ Newest first.
 | `misery` | [x] Restart script | `misery-mod/scripts/restart.ps1`: kill game, build, deploy, launch, wait for control plane. |
 | `misery` | [x] Test common module | `misery-mod/tests/common/mod.rs`: shared API setup and skip helpers. |
 | `misery` | [x] Research test suite: 9 tests | `freeze_timer.rs`, `research_difficulty.rs`, `research_gameplay_scan.rs`, `research_gameplay_settings.rs`, `research_item_stacks.rs`, `research_movement.rs`, `research_movement_map.rs`, `set_countdown.rs`, `set_movement_map.rs`, `set_movement_speed.rs` added. |
+| `unityforge` | [x] S1ApiNpcs: fix IL2CPP type checks, add SetAggression and InspectCombatConfig | `GetIl2CppType()` replaces `GetType()` for correct IL2CPP runtime type resolution. `SetAggression` writes aggression via IL2CPP field reflection. `InspectCombatConfig` dumps response types and combat config for research. |
+| `unityforge` | [x] Add Assembly-CSharp and FishNet.Runtime references to csproj | Enables direct use of Schedule 1 game types (behaviours, NPCs, patrol routes) and FishNet (NetworkBehaviour base). |
 
 ## 2026-05-14 (relocated from todo.md: unityforge / wwm-mod / naming completions)
 
