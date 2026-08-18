@@ -110,3 +110,49 @@ pub fn detect_and_init(
     );
     unsafe { crate::ue::init_runtime(image_base, offsets) }
 }
+
+/// Try patternsleuth to auto-resolve offsets, falling back to
+/// `fallback` for fields patternsleuth cannot resolve (process_event,
+/// process_event_idx, g_world, g_objects_layout) and for when the
+/// scan fails entirely. Inits the runtime and runs discovery.
+pub fn resolve_and_init(
+    fallback: &'static PlatformOffsets,
+) -> &'static crate::ue::Runtime {
+    let image_base = host_image_base();
+    let exe = host_exe_name().unwrap_or_default();
+    crate::log!("image_base = 0x{image_base:x}, host = {exe}");
+
+    let offsets: &'static PlatformOffsets =
+        match crate::ue::resolvers::resolve_image_offsets() {
+            Ok(resolved) => {
+                crate::log!(
+                    "patternsleuth resolved: g_objects=0x{:x} g_names=0x{:x} append_string=0x{:x}",
+                    resolved.g_objects,
+                    resolved.g_names,
+                    resolved.append_string
+                );
+                let dynamic = PlatformOffsets {
+                    g_objects: resolved.g_objects,
+                    append_string: resolved.append_string,
+                    g_names: resolved.g_names,
+                    g_world: fallback.g_world,
+                    process_event: fallback.process_event,
+                    process_event_idx: fallback.process_event_idx,
+                    g_objects_layout: fallback.g_objects_layout,
+                };
+                Box::leak(Box::new(dynamic))
+            }
+            Err(e) => {
+                crate::log!("WARN: patternsleuth failed ({e}), using hardcoded fallback");
+                fallback
+            }
+        };
+
+    let rt = unsafe { crate::ue::init_runtime(image_base, offsets) };
+    crate::log!(
+        "ue runtime ready, GObjects = 0x{:x}",
+        image_base + offsets.g_objects
+    );
+    let _ = crate::discovery::run_at_load();
+    rt
+}

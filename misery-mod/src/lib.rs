@@ -83,47 +83,8 @@ static MOD_INFO: ueforge::ModDef = ueforge::ModDef {
 ueforge::ue4ss_mod!(MOD_INFO);
 
 fn on_unreal_init() {
-    ueforge::log::log(format_args!("on_unreal_init"));
+    let _rt = ueforge::ue::platform::resolve_and_init(&STEAM_FALLBACK);
 
-    let image_base = ueforge::ue::platform::host_image_base();
-    let exe = ueforge::ue::platform::host_exe_name().unwrap_or_default();
-    ueforge::log::log(format_args!("image_base = 0x{image_base:x}, host = {exe}"));
-
-    let offsets: &'static PlatformOffsets = match ueforge::ue::resolvers::resolve_image_offsets() {
-        Ok(resolved) => {
-            ueforge::log::log(format_args!(
-                "patternsleuth resolved: g_objects=0x{:x} g_names=0x{:x} append_string=0x{:x}",
-                resolved.g_objects, resolved.g_names, resolved.append_string
-            ));
-            let dynamic = PlatformOffsets {
-                g_objects: resolved.g_objects,
-                append_string: resolved.append_string,
-                g_names: resolved.g_names,
-                g_world: 0x0,
-                process_event: STEAM_FALLBACK.process_event,
-                process_event_idx: STEAM_FALLBACK.process_event_idx,
-                g_objects_layout: GObjectsLayout::WrappedChunked,
-            };
-            Box::leak(Box::new(dynamic))
-        }
-        Err(e) => {
-            ueforge::log::log(format_args!(
-                "WARN: patternsleuth failed ({e}), using hardcoded fallback"
-            ));
-            &STEAM_FALLBACK
-        }
-    };
-
-    let _rt = unsafe { ueforge::ue::init_runtime(image_base, offsets) };
-    ueforge::log::log(format_args!(
-        "ue runtime ready, GObjects = 0x{:x}",
-        image_base + offsets.g_objects
-    ));
-
-    let _ = ueforge::discovery::run_at_load();
-
-    // Always bring the control plane up; it is offset-independent
-    // and is how the research tests talk to the game.
     debug::spawn(DEBUG_PORT);
 
     STACK_TWEAK.apply_when_ready(
