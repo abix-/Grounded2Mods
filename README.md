@@ -103,11 +103,11 @@ See [`unityforge/`](unityforge/) and [`docs/unityforge-plan.md`](docs/unityforge
 | [MISERY](misery-mod/) | ueforge (UE5 / UE4SS) | Emission timer control, 10x stack sizes, playtest nag suppression, 2x movement speed, vendor food expansion, ImGui overlay | 2/10 |
 | [Outworld Station](outworld-station-mod/) | ueforge (UE5 / UE4SS) | Stack size multiplier, dynamic data table tweaks, ImGui overlay | 3/10 |
 | [Schedule 1](schedule1-mod/) | unityforge (IL2CPP / MelonLoader) | Combat-XP levelling, heavy hands skill, cash loot drops, farming, kill credit, combat trace | 3/10 |
-| [Survivalist](survivalist-mod/) | unityforge (native mod loader) | Storyteller, bounty, trade, war, settler, horde, infection, predation, scavenge, murder, stranger, courier, genome, growth, quality, upgrade, vendor, chronicle | 1/10 |
-| [Wild West Miner](wwm-mod/) | unityforge (Mono / BepInEx) | Demo-end block, RPG levelling (parked) | 2/10 |
-| [Horsey Game](horsey-mod/) | modforge (PE inject) | Fatigue suppressor, money/year/horse ops, debug mode unlock, gene research surface, chromosome viewer, scene inspector, PE injector, hot reload | 3/10 |
-| [Scrap Mechanic](scrapmechanic-mod/) | Lua (native) | Better Survival overhaul (not Rust) | 3/10 |
-| [Quasimorph](quasimorph-mod/) | C# (BepInEx) | Scaffold only (not Rust) | 1/10 |
+| [Survivalist](survivalist-mod/) | unityforge (native mod loader) | No infections, crafted item quality tiers, faction war (AI vs AI revenge), bounties on enemy leaders, camp threat clearing, named unique items, settlement upgrades, refugee recruitment, structure growth, survival desperation ladder, storyteller drama pacing, genome persistence, trade/steal/rob/scavenge/murder missions, horde raids, incursions, stranger events, courier deliveries | 1/10 |
+| [Wild West Miner](wwm-mod/) | unityforge (Mono / BepInEx) | Demo-end block, spacebar jump (Translate +3m), RPG skill catalog (parked) | 2/10 |
+| [Horsey Game](horsey-mod/) | modforge (PE inject) | Fatigue suppressor (sleep-safe, race-eligible), money get/set/add, year get/set, no-tire toggle, debug mode toggle, horse roster/read/age/tiredness, vanilla allele get/set, genome get/set, chromosome dump, gene name lookup, heap string scanner, xref finder, memory peek/poke, data/rdata scan, target resolver (field offsets, data globals, cheat globals, gamestate ptr, chromosome table), hot reload, proxy DLL injection | 3/10 |
+| [Scrap Mechanic](scrapmechanic-mod/) | Lua (native) | 1000 inventory slots, no inventory loss on death, half fuel consumption, no building restrictions, 3x enemy/loot respawn rates | 3/10 |
+| [Quasimorph](quasimorph-mod/) | C# (native mod API) | Empty scaffold (AfterConfigsLoaded + DungeonStarted hooks, no logic) | 1/10 |
 | (il2cpp-smoke) | unityforge (IL2CPP) | IL2CPP path end-to-end test | n/a |
 
 > **Rating scale:** 10/10 = ready for 1000 players, fun, zero bugs.
