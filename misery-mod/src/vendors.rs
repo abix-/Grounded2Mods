@@ -4,11 +4,8 @@
 //! returning to main menu and loading a new save.
 
 use std::collections::{HashMap, HashSet};
-use std::time::Duration;
 use ueforge::ue;
 use ueforge::ue::{read_at, TArray, tarray};
-
-const VENDOR_ACTOR_CLASS: &str = "BP_MasterVendorBuildPart_C";
 const VENDOR_COMP_OFFSET: usize = 0x3B8;
 const SELL_LIST_OFFSET: usize = 0x2E8;
 const SELL_STRIDE: usize = 0x38;
@@ -85,7 +82,7 @@ fn resolve_food_fnames() -> HashMap<String, u32> {
         .collect()
 }
 
-fn expand_barman_sell_list(actor: *const u8) {
+pub fn expand_barman_sell_list(actor: *const u8) {
     let Some(comp) = sell_list_ptr(actor) else {
         ueforge::log::log(format_args!("vendor_food: no vendor component"));
         return;
@@ -158,11 +155,3 @@ fn expand_barman_sell_list(actor: *const u8) {
     ));
 }
 
-pub fn apply_on_load() {
-    ue::actor::on_each_load(
-        "vendor_food",
-        Duration::from_secs(3),
-        || ue::actor::find_actor(VENDOR_ACTOR_CLASS, Some("Barman")),
-        expand_barman_sell_list,
-    );
-}

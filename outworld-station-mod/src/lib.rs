@@ -87,8 +87,6 @@ fn on_unreal_init() {
         "image_base = 0x{image_base:x}, host = {exe}"
     ));
 
-    // Once OWS offsets are dumped: detect platform, init runtime,
-    // spawn debug server, install drain trampoline.
     let offsets = ueforge::ue::platform::detect(PLATFORMS);
     if offsets.is_none() || offsets.is_some_and(|o| o.g_objects == 0) {
         ueforge::log::log(format_args!(
@@ -102,32 +100,20 @@ fn on_unreal_init() {
             "ue runtime ready, GObjects = 0x{:x}",
             image_base + off.g_objects
         ));
-
-        // Walk GObjects once and cache every UDataTable / UClass /
-        // UScriptStruct for the discover_* ops + future TweakDef
-        // offset resolution.
         let _ = ueforge::discovery::run_at_load();
 
-        // Spawn the stack-bump worker. Polls for DT_Materials,
-        // mutates MaxCanStack 4x on first sight, exits. Running
-        // this BEFORE any save loads is what makes the mutation
-        // propagate to all downstream caches (UI widget copies,
-        // inventory slot init, etc.).
-        stacks::spawn_apply_worker();
-
-        // Apply every settings.json dynamic tweak when its target
-        // table loads. At init time data tables haven't streamed
-        // in yet, so we mirror the stacks worker pattern: one
-        // on_first_sight worker per unique table.
-        let s = settings::get().get();
-        ueforge::dynamic_tweaks::apply_all_when_ready(
-            &s.dynamic_tweaks,
-            std::time::Duration::from_secs(60),
-        );
+        ueforge::features()
+            .once("stacks_4x", stacks::spawn_apply_worker)
+            .once("dynamic_tweaks", || {
+                let s = settings::get().get();
+                ueforge::dynamic_tweaks::apply_all_when_ready(
+                    &s.dynamic_tweaks,
+                    std::time::Duration::from_secs(60),
+                );
+            })
+            .install();
     }
 
-    // Always bring the debug server up (offset-independent). Use
-    // a fixed port for now; later, read from settings.json.
     debug::spawn(17172);
 }
 

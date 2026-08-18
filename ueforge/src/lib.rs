@@ -79,6 +79,7 @@ pub mod debug;
 pub mod discovery;
 pub mod dynamic_tweaks;
 pub mod envelope;
+pub mod features;
 pub mod fall;
 pub mod hook;
 pub mod hot_reload;
@@ -120,6 +121,7 @@ pub use envelope::{OpResponse, parse_request};
 pub use mod_main::{ModDef, TabDef};
 pub use pe_queue::{DrainStats, Queue};
 pub use server::{Config, spawn};
+pub use features::features;
 
 pub fn register_standard_ops() {
     selector::register_builtins();

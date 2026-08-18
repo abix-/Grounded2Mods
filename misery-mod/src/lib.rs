@@ -75,40 +75,31 @@ fn on_unreal_init() {
 
     debug::spawn(DEBUG_PORT);
 
-    STACK_TWEAK.apply_when_ready(
-        Duration::from_secs(30),
-        |v: i32| v.saturating_mul(10),
-        |v: i32| v <= 1,
-    );
-
-    suppress_nag_screen();
-    apply_speed_default();
-    vendors::apply_on_load();
-}
-
-fn suppress_nag_screen() {
-    ueforge::ue::actor::on_each_load(
-        "suppress_nag",
-        Duration::from_millis(500),
-        || ueforge::ue::actor::find_object("WD_PlaytestNote01_C", None, false),
-        |_widget| {
-            std::thread::sleep(Duration::from_secs(2));
-            ueforge::input::send_key(0x20); // VK_SPACE
-        },
-    );
-}
-
-fn apply_speed_default() {
-    ueforge::ue::actor::on_each_load(
-        "speed_default",
-        Duration::from_secs(2),
-        || ueforge::ue::actor::find_actor("BP_SGKMasterCharacter_C", None),
-        |_actor| {
-            if let Err(e) = speed::set_multiplier(2.0) {
-                ueforge::log::log(format_args!("speed_default: {e}"));
-            }
-        },
-    );
+    ueforge::features()
+        .once("stack_10x", || {
+            STACK_TWEAK.apply_when_ready(
+                Duration::from_secs(30),
+                |v: i32| v.saturating_mul(10),
+                |v: i32| v <= 1,
+            );
+        })
+        .on_each_load("suppress_nag", Duration::from_millis(500),
+            || ueforge::ue::actor::find_object("WD_PlaytestNote01_C", None, false),
+            |_| {
+                std::thread::sleep(Duration::from_secs(2));
+                ueforge::input::send_key(0x20);
+            })
+        .on_each_load("speed_default", Duration::from_secs(2),
+            || ueforge::ue::actor::find_actor("BP_SGKMasterCharacter_C", None),
+            |_| {
+                if let Err(e) = speed::set_multiplier(2.0) {
+                    ueforge::log::log(format_args!("speed_default: {e}"));
+                }
+            })
+        .on_each_load("vendor_food", Duration::from_secs(3),
+            || ueforge::ue::actor::find_actor("BP_MasterVendorBuildPart_C", Some("Barman")),
+            vendors::expand_barman_sell_list)
+        .install();
 }
 
 fn on_shutdown() {

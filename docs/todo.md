@@ -83,6 +83,48 @@ those listed above are the immediate path forward.
 
 ---
 
+## P0. Feature builder: DRY mod feature application (2026-08-17)
+
+Every UE mod has a list of features that apply at different times:
+once at init, on each game load (actor appears), when a DataTable
+first streams in. Today each mod hand-wires these calls in its
+`on_unreal_init`. The primitives exist (`on_each_load`,
+`on_first_sight`, `apply_when_ready`) but the wiring repeats.
+
+Add a `ueforge::Features` builder that collects all of a mod's
+features in one place, with consistent logging ("feature X:
+installing / applied / waiting for reload") and a single
+`.install()` call.
+
+```rust
+// in the game mod's on_unreal_init:
+ueforge::features()
+    .on_each_load("suppress_nag", Duration::from_millis(500),
+        || find_object("WD_PlaytestNote01_C", None, false),
+        |_| { sleep(Duration::from_secs(2)); send_key(0x20); })
+    .on_each_load("speed_default", Duration::from_secs(2),
+        || find_actor("BP_SGKMasterCharacter_C", None),
+        |_| { speed::set_multiplier(2.0).ok(); })
+    .on_each_load("vendor_food", Duration::from_secs(3),
+        || find_actor(VENDOR_CLASS, Some("Barman")),
+        expand_barman_sell_list)
+    .install();
+```
+
+Three trigger types:
+- `on_each_load(label, poll, finder, apply)`: re-applies after
+  main menu reload (wraps `actor::on_each_load`)
+- `on_first_table(label, table, timeout, apply)`: once when a
+  DataTable streams in (wraps `datatable::on_first_sight`)
+- `once(label, apply)`: runs immediately at install time
+
+### Tasks
+- [ ] Add `ueforge::features` module with `Features` builder
+- [ ] Convert misery-mod to use the builder
+- [ ] Convert outworld-station-mod to use the builder
+
+---
+
 ## P0. Survivalist: Invisible Strain: official-loader host + survivalist-mod (2026-07-04)
 
 > **Driver:** operator directive 2026-07-04. Personal-use mod to
