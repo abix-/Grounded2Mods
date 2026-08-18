@@ -6,10 +6,9 @@
 //! UE4SS object dump. See docs/misery-research.md section 8.6.
 
 use ueforge::ue;
-pub use ueforge::ue::struct_fields::{FieldDef, FieldType, FieldValue};
-use ueforge::ue::struct_fields;
+pub use ueforge::ue::struct_fields::{FieldAccessor, FieldDef, FieldType, FieldValue};
 
-pub const STRUCT_BASE: usize = 0x218;
+const STRUCT_BASE: usize = 0x218;
 const GI_CLASS: &str = "BP_SGKGameInstance_C";
 
 pub static FIELDS: &[FieldDef] = &[
@@ -43,24 +42,8 @@ pub static FIELDS: &[FieldDef] = &[
     FieldDef { name: "CollisionBetweenPlayers",    desc: "Players physically collide with each other",         offset: 0xBC, ty: FieldType::Bool },
 ];
 
-pub fn game_instance_ptr() -> Result<*const u8, String> {
-    ue::actor::find_object(GI_CLASS, None, false)
-        .ok_or_else(|| "no game instance found".into())
-}
-
-pub fn read_field(field: &FieldDef) -> Result<FieldValue, String> {
-    let ptr = game_instance_ptr()?;
-    struct_fields::read_field(ptr, STRUCT_BASE, field)
-}
-
-pub fn write_double(field: &FieldDef, value: f64) -> Result<(), String> {
-    let ptr = game_instance_ptr()?;
-    struct_fields::write_double(ptr, STRUCT_BASE, field, value, "gameplay");
-    Ok(())
-}
-
-pub fn write_bool(field: &FieldDef, value: bool) -> Result<(), String> {
-    let ptr = game_instance_ptr()?;
-    struct_fields::write_bool(ptr, STRUCT_BASE, field, value, "gameplay");
-    Ok(())
+pub fn accessor() -> Result<FieldAccessor, String> {
+    let ptr = ue::actor::find_object(GI_CLASS, None, false)
+        .ok_or_else(|| "no game instance found".to_string())?;
+    Ok(FieldAccessor::new(ptr, STRUCT_BASE, "gameplay"))
 }

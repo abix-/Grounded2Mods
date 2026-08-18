@@ -4,7 +4,7 @@
 
 use ueforge::ui;
 
-use crate::gameplay::{self, FieldType, FIELDS, STRUCT_BASE};
+use crate::gameplay::{self, FieldType, FIELDS};
 
 struct CachedState {
     loaded: bool,
@@ -27,16 +27,16 @@ fn state() -> &'static std::sync::Mutex<CachedState> {
 }
 
 fn load_all(s: &mut CachedState) -> Result<(), String> {
-    let ptr = gameplay::game_instance_ptr()?;
+    let acc = gameplay::accessor()?;
     for (i, field) in FIELDS.iter().enumerate() {
-        let abs = STRUCT_BASE + field.offset;
+        let abs = acc.base_offset() + field.offset;
         match field.ty {
             FieldType::Double => {
-                let v: f64 = unsafe { (ptr.add(abs) as *const f64).read_unaligned() };
+                let v: f64 = unsafe { (acc.ptr().add(abs) as *const f64).read_unaligned() };
                 s.doubles[i] = v as f32;
             }
             FieldType::Bool => {
-                let v: u8 = unsafe { *ptr.add(abs) };
+                let v: u8 = unsafe { *acc.ptr().add(abs) };
                 s.bools[i] = v != 0;
             }
         }
@@ -88,13 +88,13 @@ pub fn render() {
                 ui::set_next_item_width(250.0);
                 let label = format!("##gp_{}", field.name);
                 if ui::slider_f32(&label, &mut s.doubles[i], lo, hi) {
-                    let _ = gameplay::write_double(field, s.doubles[i] as f64);
+                    if let Ok(acc) = gameplay::accessor() { acc.write_double(field, s.doubles[i] as f64); }
                 }
             }
             FieldType::Bool => {
                 let label = format!("{}##gp_b", field.name);
                 if ui::checkbox(&label, &mut s.bools[i]) {
-                    let _ = gameplay::write_bool(field, s.bools[i]);
+                    if let Ok(acc) = gameplay::accessor() { acc.write_bool(field, s.bools[i]); }
                 }
                 ui::same_line();
                 ui::text_disabled(field.desc);

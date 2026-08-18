@@ -59,3 +59,35 @@ pub fn write_bool(base_ptr: *const u8, struct_base: usize, field: &FieldDef, val
     unsafe { write_at(base_ptr, struct_base + field.offset, value as u8) };
     crate::log::log(format_args!("{label}: {} = {value}", field.name));
 }
+
+pub struct FieldAccessor {
+    ptr: *const u8,
+    base_offset: usize,
+    label: &'static str,
+}
+
+impl FieldAccessor {
+    pub fn new(ptr: *const u8, base_offset: usize, label: &'static str) -> Self {
+        Self { ptr, base_offset, label }
+    }
+
+    pub fn ptr(&self) -> *const u8 {
+        self.ptr
+    }
+
+    pub fn base_offset(&self) -> usize {
+        self.base_offset
+    }
+
+    pub fn read(&self, field: &FieldDef) -> Result<FieldValue, String> {
+        read_field(self.ptr, self.base_offset, field)
+    }
+
+    pub fn write_double(&self, field: &FieldDef, value: f64) {
+        write_double(self.ptr, self.base_offset, field, value, self.label);
+    }
+
+    pub fn write_bool(&self, field: &FieldDef, value: bool) {
+        write_bool(self.ptr, self.base_offset, field, value, self.label);
+    }
+}
