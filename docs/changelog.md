@@ -12,6 +12,43 @@
 
 Newest first.
 
+## Changelog rules
+
+- Each day has exactly one `## YYYY-MM-DD` heading and exactly one table below it.
+- Every daily table has exactly three columns: `System`, `Item`, and `Done when`.
+- Start every Item with `[x]`.
+- Never combine completed items into one changelog row.
+- Put new days above older days. Add rows to the existing table when that date already exists.
+- Entries before 2026-08-17 keep their existing historical format.
+
+## 2026-08-17
+
+| System | Item | Done when |
+|---|---|---|
+| `misery` | [x] Fix all tabs breaking after main menu reload | Tabs re-render after reload without crashing. |
+| `misery` | [x] Document stale OWS tweaks DLL removal | `docs/misery-research.md` updated. |
+| `misery` | [x] Vendor system research, section 24 | `docs/misery-research.md` section 24 written with offset map and sell list structure. |
+| `misery` | [x] Vendor food sell list expansion | `vendors.rs` adds all food items to Barman's sell list via TArray grow + template clone. |
+| `ueforge` | [x] Add `follow_ptr_chain` and `row_name_map` to DRY misery callers | Both functions in `ueforge::ue`, misery callers collapsed. |
+| `ueforge` | [x] Add `struct_fields` module | `ueforge::ue::struct_fields` provides field offset resolution. |
+| `misery` | [x] DRY `gameplay.rs` using `find_object` and `read_at`/`write_at` from ueforge | Removed duplicate UE object access wrappers. |
+| `misery` | [x] DRY `shining.rs` using `find_actor` and `read_at`/`write_at` from ueforge | Removed duplicate actor lookup and byte access. |
+| `ueforge` | [x] DRY `iter_stride`, `handle_request` across misery/outworld/grounded2 | Shared iteration and request handling lifted to ueforge. |
+| `ueforge` | [x] Move 4 engine-generic debug ops from misery into `register_builtins` | Ops available to all mods without per-mod registration. |
+| `ueforge` | [x] Add `FieldAccessor`, replace misery gameplay wrappers | Generic field read/write accessor replaces per-mod boilerplate. |
+| `ueforge` | [x] Add `start_debug_server`, collapse misery and OWS debug boilerplate | One-call debug server setup replaces duplicated init code. |
+| `misery` | [x] Merge UI files into their feature modules | Separate UI files folded into `shining.rs`, `speed.rs`, `gameplay.rs`. |
+| `ueforge` | [x] Add `resolve_and_init`, collapse misery `on_unreal_init` boilerplate | Single call replaces manual patternsleuth + runtime init sequence. |
+| `ueforge` | [x] Add `input::send_key`, replace misery `synthesize_space` | Framework keystroke helper replaces game-specific wrapper. |
+| `misery` | [x] Remove scanner, classes, structs tabs | Unused debug tabs deleted from mod metadata. |
+| `ueforge` | [x] Remove hardcoded address fallbacks from `PlatformOffsets` | `g_world` and `process_event` fields deleted; patternsleuth is the only source. `resolve_and_init` takes two structural params instead of `&PlatformOffsets`. |
+| `ueforge` | [x] Add features builder for mod init | `ueforge::features()` with `.once()`, `.on_each_load()`, `.on_first_table()`, `.install()`. |
+| `misery` | [x] Convert to features builder | `on_unreal_init` uses `ueforge::features()` instead of manual thread spawns. |
+| `ows` | [x] Convert to features builder | `on_unreal_init` uses `ueforge::features()` for stacks and dynamic tweaks. |
+| `wwm` | [x] Research docs update, build script auto-detect, test suite | 6 test files added, `build_and_deploy.ps1` auto-detects `*_Data` folder, `wild-west-miner-research.md` updated. |
+| `ueforge` | [x] Add `begin_child`/`end_child` ImGui wrappers | C++ and Rust bindings for scrollable child regions. |
+| `workspace` | [x] Add misery-mod to workspace members | `Cargo.toml` members list updated. |
+
 ## 2026-05-14 (relocated from todo.md: unityforge / wwm-mod / naming completions)
 
 Material below was tracked as `[x]` checkboxes in [`todo.md`](todo.md) until
