@@ -65,18 +65,6 @@ static MOD_INFO: ueforge::ModDef = ueforge::ModDef {
             name: "Gameplay",
             render: gameplay::render,
         },
-        ueforge::TabDef {
-            name: "Scanner",
-            render: ueforge::ui_scanner::render,
-        },
-        ueforge::TabDef {
-            name: "Classes",
-            render: ueforge::ui_class_browser::render,
-        },
-        ueforge::TabDef {
-            name: "Structs",
-            render: ueforge::ui_struct_browser::render,
-        },
     ],
 };
 
