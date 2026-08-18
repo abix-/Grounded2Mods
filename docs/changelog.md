@@ -52,6 +52,11 @@ Newest first.
 | `schedule1` | [x] Certainty tracking: NPCResponses_Civilian correction and fix path | Retraction reversed: NPCResponses_Civilian IS the difference on custom goons. Base NPCResponses + Aggression 1.0 hypothesized as fix path. |
 | `schedule1` | [x] Restart script: wait for save load after control plane ready | `restart.ps1` waits for save load after control plane answers, not just ping. |
 | `schedule1` | [x] Research test suite: 8 behaviour/combat/patrol tests | `research_behaviours.rs`, `research_behaviours_deep.rs`, `research_behaviours_hold.rs`, `research_behaviours_phase1.rs`, `research_combat_config.rs`, `research_patrol.rs`, `research_priority.rs`, `research_retaliation_isolation.rs` added. |
+| `misery` | [x] Add build.rs for ueforge cdylib shim | `misery-mod/build.rs` compiles the UE4SS C++ shim. |
+| `misery` | [x] RPG design doc | `misery-mod/docs/rpg.md`: skill tree design for MISERY (stats, XP curve, effect mappings). |
+| `misery` | [x] Restart script | `misery-mod/scripts/restart.ps1`: kill game, build, deploy, launch, wait for control plane. |
+| `misery` | [x] Test common module | `misery-mod/tests/common/mod.rs`: shared API setup and skip helpers. |
+| `misery` | [x] Research test suite: 9 tests | `freeze_timer.rs`, `research_difficulty.rs`, `research_gameplay_scan.rs`, `research_gameplay_settings.rs`, `research_item_stacks.rs`, `research_movement.rs`, `research_movement_map.rs`, `set_countdown.rs`, `set_movement_map.rs`, `set_movement_speed.rs` added. |
 
 ## 2026-05-14 (relocated from todo.md: unityforge / wwm-mod / naming completions)
 
