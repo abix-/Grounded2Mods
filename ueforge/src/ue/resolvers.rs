@@ -1,6 +1,5 @@
 //! UE engine address resolution via [`patternsleuth`].
 //!
-//! The 10-year-bar lift, finally on the right foundation:
 //! `trumank/patternsleuth` is the Rust sig-scan crate UE4SS
 //! itself uses to locate engine functions at runtime. Its
 //! `resolvers::unreal` module ships battle-tested patterns for
@@ -8,40 +7,15 @@
 //! `FNameToString`, `GMalloc`, ...). We pin a specific upstream
 //! SHA in the workspace and consume the resolvers we need.
 //!
-//! ## What this module provides
-//!
-//! - [`ResolvedOffsets`]: image-relative resolutions of the
-//!   three base UE primitives we care about today.
-//!   (`ProcessEvent` stays hardcoded; it's a vtable slot index
-//!   per UE major version, not an image offset, and
-//!   patternsleuth doesn't ship a resolver for it.)
-//! - [`resolve_image_offsets`]: the entry point.
-//!   `patternsleuth::process::internal::read_image()` walks the
-//!   host exe's PE image; `Resolution::resolver()` scans for
-//!   every pattern across every section. The async runtime is
-//!   built into patternsleuth (futures); we await synchronously
-//!   because we run at mod init, off-game-thread.
-//! - [`resolve_offsets_op`]: debug op `{}` -> JSON snapshot.
-//!   Lets you compare the resolved values against the
-//!   hardcoded STEAM/XBOX offsets from inside the running
-//!   game without rebuilding.
-//!
-//! ## Migration path
-//!
-//! Today: hardcoded `STEAM` / `XBOX` blocks in
-//! [`crate::ue::offsets`] are authoritative.
-//!
-//! Step 1 (this module): expose resolver-based offsets behind a
-//! debug op for verification.
-//!
-//! Step 2 (future): once verified equivalent on every supported
-//! build, flip `PlatformOffsets::detect` to call
-//! [`resolve_image_offsets`] first and only fall back to
-//! hardcoded blocks on a sig-scan miss. UE patches that shift
-//! offsets become a non-event.
+//! All address offsets (g_objects, g_names, append_string) are
+//! resolved dynamically at init. No hardcoded address fallbacks;
+//! they break on every game patch. The only constants callers
+//! supply are structural: `process_event_idx` (vtable slot,
+//! stable across UE 5.x) and `g_objects_layout` (array shape).
 
 use patternsleuth::resolvers::impl_try_collector;
 use patternsleuth::resolvers::unreal::fname::{FNamePool, FNameToString};
+use patternsleuth::resolvers::unreal::gmalloc::GMalloc;
 use patternsleuth::resolvers::unreal::guobject_array::GUObjectArray;
 
 impl_try_collector! {
@@ -54,6 +28,7 @@ impl_try_collector! {
         guobject_array: GUObjectArray,
         fname_pool: FNamePool,
         fname_to_string: FNameToString,
+        gmalloc: GMalloc,
     }
 }
 
@@ -68,6 +43,8 @@ pub struct ResolvedOffsets {
     pub g_names: usize,
     /// `FName::ToString` / `AppendString`-shaped fn entry.
     pub append_string: usize,
+    /// `GMalloc` global pointer (points to the FMalloc vtable object).
+    pub gmalloc: usize,
 }
 
 /// Resolve the three base UE offsets via patternsleuth, returning
@@ -104,55 +81,34 @@ pub fn resolve_image_offsets() -> Result<ResolvedOffsets, String> {
         g_objects: to_rel(resolution.guobject_array.0)?,
         g_names: to_rel(resolution.fname_pool.0)?,
         append_string: to_rel(resolution.fname_to_string.0)?,
+        gmalloc: to_rel(resolution.gmalloc.0)?,
     })
 }
 
-/// Debug op entry. Returns the resolved offsets + a side-by-side
-/// comparison against the configured `PlatformOffsets`, so a
-/// curl from outside the game tells you whether the hardcoded
-/// table is still correct for this build.
-///
-/// Args: `{}` (no input).
-///
-/// Result shape:
-/// ```text
-/// {
-///   "resolved": {
-///     "g_objects": "0x09f6_7028",
-///     "g_names":   "0x09e4_a7b8",
-///     "append_string": "0x0125_2060"
-///   },
-///   "hardcoded": {
-///     "g_objects": "0x09f6_7028",
-///     "g_names":   "0x09e4_a7b8",
-///     "append_string": "0x0125_2060",
-///     "process_event": "0x0146_e7b0"
-///   },
-///   "matches": { "g_objects": true, "g_names": true, "append_string": true }
-/// }
-/// ```
+/// Debug op entry. Re-runs patternsleuth and compares against the
+/// offsets the runtime was initialized with.
 pub fn resolve_offsets_op(_args: &serde_json::Value) -> Result<serde_json::Value, String> {
     use serde_json::json;
     let resolved = resolve_image_offsets()?;
     let rt = crate::ue::try_runtime()
         .ok_or_else(|| "ueforge runtime not initialized".to_string())?;
-    let hc = rt.platform_offsets;
+    let rt_off = rt.platform_offsets;
     Ok(json!({
         "resolved": {
             "g_objects": format!("0x{:x}", resolved.g_objects),
             "g_names": format!("0x{:x}", resolved.g_names),
             "append_string": format!("0x{:x}", resolved.append_string),
+            "gmalloc": format!("0x{:x}", resolved.gmalloc),
         },
-        "hardcoded": {
-            "g_objects": format!("0x{:x}", hc.g_objects),
-            "g_names": format!("0x{:x}", hc.g_names),
-            "append_string": format!("0x{:x}", hc.append_string),
-            "process_event": format!("0x{:x}", hc.process_event),
+        "runtime": {
+            "g_objects": format!("0x{:x}", rt_off.g_objects),
+            "g_names": format!("0x{:x}", rt_off.g_names),
+            "append_string": format!("0x{:x}", rt_off.append_string),
         },
         "matches": {
-            "g_objects": resolved.g_objects == hc.g_objects,
-            "g_names": resolved.g_names == hc.g_names,
-            "append_string": resolved.append_string == hc.append_string,
+            "g_objects": resolved.g_objects == rt_off.g_objects,
+            "g_names": resolved.g_names == rt_off.g_names,
+            "append_string": resolved.append_string == rt_off.append_string,
         },
     }))
 }

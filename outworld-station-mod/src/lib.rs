@@ -23,10 +23,8 @@ use ueforge::ue::{GObjectsLayout, PlatformOffsets};
 // base 0x7ff6da6f0000 from our own log). Image-relative offsets
 // computed by subtracting the base.
 //
-// g_names / g_world: UE4SS didn't log explicit addresses for
-// these on this exe. Neither is required by the ops we're using
-// today (walk_class, read_bytes, write_bytes, call). Fill in
-// later if a feature needs them.
+// g_names: UE4SS didn't log an explicit address for this on
+// this exe. Fill in if needed, or let patternsleuth resolve it.
 //
 // process_event_idx 0x4C: vtable slot for UObject::ProcessEvent,
 // stable across UE 5.x.
@@ -34,8 +32,6 @@ const STEAM: PlatformOffsets = PlatformOffsets {
     g_objects: 0x07A9_38D0,    // GUObjectArray
     append_string: 0x010D_F9D0, // FName::ToString
     g_names: 0x0,               // not logged by UE4SS scanner; fill in if needed
-    g_world: 0x0,               // not logged by UE4SS scanner; fill in if needed
-    process_event: 0x012A_F540, // UObject::ProcessEvent
     process_event_idx: 0x4C,
     // UE 5.4 stock. FUObjectArray wraps FChunkedFixedUObjectArray
     // at +0x10. Verified live: NumElements=142650, NumChunks=3.

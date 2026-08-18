@@ -7,13 +7,11 @@
 //   2. Open the generated `SDK/Basic.hpp` and read off
 //      `UObject` / `UField` / `UClass` / `UFunction` / `FName` /
 //      `FProperty` offsets.
-//   3. Update the constants in this file; bump
-//      `PlatformOffsets::g_objects` / `g_names` / `process_event`
-//      via the latest UE4SS upstream `Signatures.cpp` (or the
-//      sig-scan work tracked in docs/todo.md).
 //
-// Two builds: Steam and Xbox Game Pass. We pick at runtime by
-// matching the host process exe name. See `detect_platform`.
+// Address offsets (g_objects, g_names, append_string) are resolved
+// by patternsleuth at init. The STEAM/XBOX constants here are used
+// by grounded2-mod's detect_and_init path which predates the
+// patternsleuth migration. Two builds: Steam and Xbox Game Pass.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Platform {
@@ -26,8 +24,6 @@ pub struct PlatformOffsets {
     pub g_objects: usize,
     pub append_string: usize,
     pub g_names: usize,
-    pub g_world: usize,
-    pub process_event: usize,
     pub process_event_idx: usize,
     /// Layout of the GObjects array.
     pub g_objects_layout: GObjectsLayout,
@@ -56,8 +52,6 @@ pub const STEAM: PlatformOffsets = PlatformOffsets {
     g_objects: 0x09F6_7028,
     append_string: 0x0125_2060,
     g_names: 0x09E4_A7B8,
-    g_world: 0x09C7_A2E0,
-    process_event: 0x0146_E7B0,
     process_event_idx: 0x4C,
     g_objects_layout: GObjectsLayout::FlatFixed,
 };
@@ -66,8 +60,6 @@ pub const XBOX: PlatformOffsets = PlatformOffsets {
     g_objects: 0x09F3_6F28,
     append_string: 0x0125_0F80,
     g_names: 0x09E1_A6B8,
-    g_world: 0x09C4_A2C0,
-    process_event: 0x0146_D530,
     process_event_idx: 0x4C,
     g_objects_layout: GObjectsLayout::FlatFixed,
 };

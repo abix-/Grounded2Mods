@@ -121,16 +121,8 @@ mod tests {
             Some(STEAM.g_names as u64),
         );
         assert_eq!(
-            GROUNDED2_TARGETS.def("G_WORLD").unwrap().hint_rva,
-            Some(STEAM.g_world as u64),
-        );
-        assert_eq!(
             GROUNDED2_TARGETS.def("APPEND_STRING").unwrap().hint_rva,
             Some(STEAM.append_string as u64),
-        );
-        assert_eq!(
-            GROUNDED2_TARGETS.def("PROCESS_EVENT").unwrap().hint_rva,
-            Some(STEAM.process_event as u64),
         );
     }
 }

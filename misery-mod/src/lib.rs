@@ -14,7 +14,7 @@ pub mod speed;
 pub mod vendors;
 
 use std::time::Duration;
-use ueforge::ue::{GObjectsLayout, PlatformOffsets};
+use ueforge::ue::GObjectsLayout;
 use ueforge::ue::datatable::FieldTweak;
 
 // MaxStack is Int (i32) at offset 0x44 within S_ItemDetails rows.
@@ -23,19 +23,19 @@ static STACK_TWEAK: FieldTweak<i32> = FieldTweak::new("ItemList", 0x44);
 
 // ---- Platform detection ----
 //
-// Offsets are resolved dynamically via patternsleuth at init.
-// The hardcoded STEAM block is a fallback if the resolver fails.
+// All address offsets (g_objects, g_names, append_string) are
+// resolved dynamically via patternsleuth at init. No hardcoded
+// addresses; they break on every game patch.
+//
+// Historical reference (Stalker 2 Steam build 2026-07):
+//   g_objects:     0x07A7_8ED0
+//   append_string: 0x010D_C5E0
+//   g_names:       0x079C_2180
+//
 // process_event_idx 0x4C is the vtable slot for
 // UObject::ProcessEvent, stable across UE 5.x.
-const STEAM_FALLBACK: PlatformOffsets = PlatformOffsets {
-    g_objects: 0x07A7_8ED0,
-    append_string: 0x010D_C5E0,
-    g_names: 0x079C_2180,
-    g_world: 0x0,
-    process_event: 0x012B_C1F0,
-    process_event_idx: 0x4C,
-    g_objects_layout: GObjectsLayout::WrappedChunked,
-};
+const PROCESS_EVENT_IDX: usize = 0x4C;
+const G_OBJECTS_LAYOUT: GObjectsLayout = GObjectsLayout::WrappedChunked;
 
 /// Control plane port. Distinct from the other mods in this
 /// workspace so two games can run side by side: wwm-mod and
@@ -71,7 +71,7 @@ static MOD_INFO: ueforge::ModDef = ueforge::ModDef {
 ueforge::ue4ss_mod!(MOD_INFO);
 
 fn on_unreal_init() {
-    let _rt = ueforge::ue::platform::resolve_and_init(&STEAM_FALLBACK);
+    let _rt = ueforge::ue::platform::resolve_and_init(PROCESS_EVENT_IDX, G_OBJECTS_LAYOUT);
 
     debug::spawn(DEBUG_PORT);
 
