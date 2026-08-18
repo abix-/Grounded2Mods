@@ -9,6 +9,7 @@
 //! freeze the countdown, and set how many seconds are left.
 
 use ueforge::ue;
+use ueforge::ue::{read_at, write_at};
 
 /// Property offsets on `BP_GlobalManager_C`, from the UE4SS
 /// object dump and confirmed by live reads (research doc 8.1).
@@ -57,63 +58,28 @@ impl Status {
 }
 
 fn manager_ptr() -> Result<*const u8, String> {
-    let rt = ue::try_runtime().ok_or("ue runtime not initialized")?;
-    let view = unsafe { ue::GObjectsView::from_image(rt.image_base, rt.platform_offsets) };
-    if !view.is_valid() {
-        return Err("gobjects view invalid".into());
-    }
-    // Try direct class name match first.
-    for obj in view.iter() {
-        if obj.is_default_object() {
-            continue;
-        }
-        let class = match obj.class() {
-            Some(c) => c,
-            None => continue,
-        };
-        if class.as_object().name() == MGR_CLASS
-            && obj.full_name().contains("PersistentLevel")
-        {
-            return Ok(obj.as_ptr());
-        }
+    if let Some(mgr) = ue::actor::find_actor(MGR_CLASS, None) {
+        return Ok(mgr);
     }
     // Fallback: find the expedition door and follow its pointer
     // at +0x448 to the manager (research doc 20.4).
-    for obj in view.iter() {
-        if obj.is_default_object() {
-            continue;
-        }
-        let class = match obj.class() {
-            Some(c) => c,
-            None => continue,
-        };
-        if class.as_object().name() == DOOR_CLASS {
-            let door = obj.as_ptr();
-            let mgr: u64 = unsafe { (door.add(DOOR_MGR_OFFSET) as *const u64).read_unaligned() };
-            if mgr != 0 {
-                return Ok(mgr as *const u8);
-            }
-        }
+    let door = ue::actor::find_actor(DOOR_CLASS, None)
+        .ok_or("no global manager or expedition door found")?;
+    let mgr: u64 = unsafe { read_at(door, DOOR_MGR_OFFSET) };
+    if mgr == 0 {
+        return Err("expedition door's manager pointer is null".into());
     }
-    Err("no global manager found".into())
-}
-
-fn read<T: Copy>(ptr: *const u8, offset: usize) -> T {
-    unsafe { (ptr.add(offset) as *const T).read_unaligned() }
-}
-
-fn write<T: Copy>(ptr: *const u8, offset: usize, value: T) {
-    unsafe { (ptr.add(offset) as *mut T).write_unaligned(value) }
+    Ok(mgr as *const u8)
 }
 
 pub fn status() -> Result<Status, String> {
     let m = manager_ptr()?;
     Ok(Status {
-        seconds_left: read::<f64>(m, offset::TIME_UNTIL_EMMISION),
-        shinings: read::<i32>(m, offset::EMISSIONS_COUNT),
-        frozen: read::<u8>(m, offset::FREEZE_TIMER) != 0,
-        area: read::<u8>(m, offset::CURRENT_GENERATED_LEVEL),
-        seed: read::<i32>(m, offset::CURRENT_WORLD_SEED),
+        seconds_left: unsafe { read_at(m, offset::TIME_UNTIL_EMMISION) },
+        shinings: unsafe { read_at(m, offset::EMISSIONS_COUNT) },
+        frozen: unsafe { read_at::<u8>(m, offset::FREEZE_TIMER) } != 0,
+        area: unsafe { read_at(m, offset::CURRENT_GENERATED_LEVEL) },
+        seed: unsafe { read_at(m, offset::CURRENT_WORLD_SEED) },
     })
 }
 
@@ -122,7 +88,7 @@ pub fn status() -> Result<Status, String> {
 /// `UnfreezeTime` functions that drive the same bool.
 pub fn set_frozen(frozen: bool) -> Result<(), String> {
     let m = manager_ptr()?;
-    write::<u8>(m, offset::FREEZE_TIMER, frozen as u8);
+    unsafe { write_at(m, offset::FREEZE_TIMER, frozen as u8) };
     ueforge::log::log(format_args!("shining: frozen = {frozen}"));
     Ok(())
 }
@@ -131,7 +97,7 @@ pub fn set_frozen(frozen: bool) -> Result<(), String> {
 pub fn set_seconds(seconds: f64) -> Result<(), String> {
     let m = manager_ptr()?;
     let clamped = seconds.max(0.0);
-    write::<f64>(m, offset::TIME_UNTIL_EMMISION, clamped);
+    unsafe { write_at(m, offset::TIME_UNTIL_EMMISION, clamped) };
     ueforge::log::log(format_args!("shining: {clamped}s until the next one"));
     Ok(())
 }
@@ -140,9 +106,9 @@ pub fn set_seconds(seconds: f64) -> Result<(), String> {
 /// mid-expedition: "give me ten more minutes".
 pub fn add_seconds(seconds: f64) -> Result<f64, String> {
     let m = manager_ptr()?;
-    let now: f64 = read(m, offset::TIME_UNTIL_EMMISION);
+    let now: f64 = unsafe { read_at(m, offset::TIME_UNTIL_EMMISION) };
     let next = (now + seconds).max(0.0);
-    write::<f64>(m, offset::TIME_UNTIL_EMMISION, next);
+    unsafe { write_at(m, offset::TIME_UNTIL_EMMISION, next) };
     ueforge::log::log(format_args!("shining: {now} -> {next}s"));
     Ok(next)
 }
