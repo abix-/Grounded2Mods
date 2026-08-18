@@ -1,6 +1,6 @@
 //! Standard Unity Effect implementations.
 //!
-//! Three shapes cover the bulk of Unity RPG skills:
+//! Five shapes cover the bulk of Unity RPG skills:
 //!
 //! - [`UnityFieldAdditiveEffect`]. Capture vanilla on first
 //!   apply; write `vanilla + max_bonus * progress`. Use for
@@ -11,6 +11,13 @@
 //! - [`UnityMethodInvokeEffect`]. Fire a method on slot
 //!   change. Use when the effect is "tell the game to recompute
 //!   X" (e.g. UI refresh, recalculate stats).
+//! - [`UnityStaticPropAdditiveEffect`]. Like FieldAdditive but
+//!   reads/writes via static `get_X`/`set_X` method pairs
+//!   instead of fields on a singleton instance.
+//! - [`UnityInstancePropMultiplyEffect`]. Walk instances of a
+//!   class, take the first, read/write via instance `get_X`/
+//!   `set_X` method pairs. Multiplicative across multiple
+//!   properties.
 //!
 //! Each calls through the runtime-tagged bridge so the same
 //! struct works on Mono and IL2CPP without recompilation; the
@@ -27,7 +34,8 @@ use modforge::rpg::progress::sqrt_progress;
 use modforge::rpg::format;
 use serde_json::json;
 
-use crate::mono::MonoType;
+use crate::bridge::MonoHandle;
+use crate::mono::{self, MonoObject, MonoType};
 use crate::rpg::engine::UnityEngine;
 
 /// `vanilla + max_bonus * progress` on a singleton field.
@@ -209,5 +217,129 @@ impl Effect<UnityEngine> for UnityMethodInvokeEffect {
 
     fn format(&self, _level: u32, _max_level: u32) -> String {
         self.format_text.to_string()
+    }
+}
+
+/// `vanilla + max_bonus * progress` on a static property via
+/// `get_X`/`set_X` static method pairs. Use when the game
+/// exposes a value as a static property (IL2CPP codegen pattern)
+/// rather than a field on a singleton instance.
+pub struct UnityStaticPropAdditiveEffect {
+    pub class_name: &'static str,
+    pub prop_name: &'static str,
+    pub max_bonus: f32,
+    pub format_word: &'static str,
+    pub vanilla: &'static VanillaCache<&'static str, f32>,
+}
+
+impl UnityStaticPropAdditiveEffect {
+    pub const fn new(
+        class_name: &'static str,
+        prop_name: &'static str,
+        max_bonus: f32,
+        format_word: &'static str,
+        vanilla: &'static VanillaCache<&'static str, f32>,
+    ) -> Self {
+        Self { class_name, prop_name, max_bonus, format_word, vanilla }
+    }
+}
+
+impl Effect<UnityEngine> for UnityStaticPropAdditiveEffect {
+    fn apply(&self, level: u32, max_level: u32, _ctx: &TriggerCtx<'_, UnityEngine>) {
+        let progress = sqrt_progress(level, max_level);
+        let getter = format!("get_{}", self.prop_name);
+        let setter = format!("set_{}", self.prop_name);
+        let cur = mono::invoke_static(self.class_name, &getter, &json!([]))
+            .ok()
+            .and_then(|v| v.as_f64())
+            .map(|v| v as f32);
+        let Some(cur) = cur else { return };
+        let baseline = if cur.is_finite() && cur != 0.0 {
+            self.vanilla.get_or_init(self.prop_name, cur)
+        } else {
+            self.vanilla.get(self.prop_name).unwrap_or(cur)
+        };
+        let target = baseline + self.max_bonus * progress;
+        let _ = mono::invoke_static(self.class_name, &setter, &json!([target]));
+    }
+
+    fn format(&self, level: u32, max_level: u32) -> String {
+        format::format_additive_f32_as_int(self.max_bonus, level, max_level, self.format_word)
+    }
+}
+
+/// `vanilla * (1 + max_bonus * progress)` on instance properties
+/// of the first live instance of a class, via `get_X`/`set_X`
+/// instance method pairs. Use when the target is a component
+/// instance (e.g. a player controller) rather than a singleton.
+pub struct UnityInstancePropMultiplyEffect {
+    pub class_name: &'static str,
+    pub prop_names: &'static [&'static str],
+    pub max_bonus: f32,
+    pub format_word: &'static str,
+    pub vanilla: &'static VanillaCache<&'static str, f32>,
+    pub type_cache: OnceLock<MonoType>,
+}
+
+impl UnityInstancePropMultiplyEffect {
+    pub const fn new(
+        class_name: &'static str,
+        prop_names: &'static [&'static str],
+        max_bonus: f32,
+        format_word: &'static str,
+        vanilla: &'static VanillaCache<&'static str, f32>,
+    ) -> Self {
+        Self {
+            class_name,
+            prop_names,
+            max_bonus,
+            format_word,
+            vanilla,
+            type_cache: OnceLock::new(),
+        }
+    }
+}
+
+impl Effect<UnityEngine> for UnityInstancePropMultiplyEffect {
+    fn apply(&self, level: u32, max_level: u32, _ctx: &TriggerCtx<'_, UnityEngine>) {
+        let mult = 1.0 + self.max_bonus * sqrt_progress(level, max_level);
+        let ty = match self.type_cache.get() {
+            Some(t) => t,
+            None => {
+                let Some(t) = MonoType::find(self.class_name) else {
+                    return;
+                };
+                self.type_cache.get_or_init(|| t)
+            }
+        };
+        let Ok(walked) = ty.walk(false) else { return };
+        let Some(h) = walked
+            .as_array()
+            .and_then(|a| a.first())
+            .and_then(|i| i["handle"].as_i64())
+        else {
+            return;
+        };
+        let obj = unsafe { MonoObject::from_handle(MonoHandle(h as i32)) };
+        for prop in self.prop_names {
+            let getter = format!("get_{prop}");
+            let setter = format!("set_{prop}");
+            let cur = obj
+                .invoke(&getter, &json!([]))
+                .ok()
+                .and_then(|v| v.as_f64())
+                .map(|v| v as f32);
+            let Some(cur) = cur else { continue };
+            let baseline = if cur.is_finite() && cur != 0.0 {
+                self.vanilla.get_or_init(prop, cur)
+            } else {
+                self.vanilla.get(prop).unwrap_or(cur)
+            };
+            let _ = obj.invoke(&setter, &json!([baseline * mult]));
+        }
+    }
+
+    fn format(&self, level: u32, max_level: u32) -> String {
+        format::format_multiplier(self.max_bonus, level, max_level, self.format_word)
     }
 }

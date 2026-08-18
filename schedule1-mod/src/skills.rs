@@ -25,15 +25,17 @@ use serde_json::{Value as Json, json};
 
 use modforge::ops::{OP_REGISTRY, OpDef};
 use modforge::rpg::poller::{PollerHandle, SlotPoller};
-use modforge::rpg::progress::sqrt_progress;
 use modforge::rpg::vanilla::VanillaCache;
 use modforge::rpg::xp::Curve;
-use modforge::rpg::{Effect, EffectDef, TriggerCtx, format};
+use modforge::rpg::{Effect, EffectDef, TriggerCtx};
 
 use unityforge::main_thread_queue::MAIN_QUEUE;
-use unityforge::mono::{self, MonoType};
+use unityforge::mono::MonoType;
 use unityforge::rpg::engine::UnityEngine;
-use unityforge::rpg::{SkillDef, SkillRegistry, Tracker};
+use unityforge::rpg::{
+    SkillDef, SkillRegistry, Tracker, UnityInstancePropMultiplyEffect,
+    UnityStaticPropAdditiveEffect,
+};
 
 // ---- Effects --------------------------------------------------------
 
@@ -46,135 +48,77 @@ fn effects_enabled() -> bool {
     EFFECTS_ENABLED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// `vanilla + max_bonus * progress` on a STATIC property
-/// (get_X/set_X static pair), main-thread queued. On ice with
-/// vitality/regeneration until the generator fix (see the
-/// CATALOG note); kept so they slot straight back in.
-#[allow(dead_code)]
-struct StaticPropAdditiveEffect {
-    class_name: &'static str,
-    prop_name: &'static str,
-    max_bonus: f32,
-    format_word: &'static str,
-    vanilla: &'static VanillaCache<&'static str, f32>,
+/// IL2CPP wrapper: hops through MAIN_QUEUE and checks the
+/// effects_enabled bisection guard before delegating to the
+/// inner framework effect.
+struct Il2CppGuardedEffect<E: Effect<UnityEngine> + Sync> {
+    label: &'static str,
+    inner: &'static E,
 }
 
-impl Effect<UnityEngine> for StaticPropAdditiveEffect {
+impl<E: Effect<UnityEngine> + Sync> Effect<UnityEngine> for Il2CppGuardedEffect<E> {
     fn apply(&self, level: u32, max_level: u32, _ctx: &TriggerCtx<'_, UnityEngine>) {
         if !effects_enabled() {
             return;
         }
-        let progress = sqrt_progress(level, max_level);
-        let (class, prop, bonus) = (self.class_name, self.prop_name, self.max_bonus);
-        let vanilla = self.vanilla;
-        let _ = MAIN_QUEUE.run(prop, Duration::from_secs(2), move || {
-            let cur = mono::invoke_static(class, &format!("get_{prop}"), &json!([]))
-                .ok()
-                .and_then(|v| v.as_f64())
-                .map(|v| v as f32);
-            let Some(cur) = cur else { return };
-            let baseline = if cur.is_finite() && cur != 0.0 {
-                vanilla.get_or_init(prop, cur)
-            } else {
-                vanilla.get(prop).unwrap_or(cur)
-            };
-            let target = baseline + bonus * progress;
-            let _ = mono::invoke_static(class, &format!("set_{prop}"), &json!([target]));
+        let inner = self.inner;
+        let _ = MAIN_QUEUE.run(self.label, Duration::from_secs(2), move || {
+            inner.apply(level, max_level, &TriggerCtx::SlotChange);
         });
     }
 
     fn format(&self, level: u32, max_level: u32) -> String {
-        format::format_additive_f32_as_int(self.max_bonus, level, max_level, self.format_word)
-    }
-}
-
-/// `vanilla * (1 + max_bonus * progress)` on instance
-/// properties of the (single) live instance of a class,
-/// main-thread queued. Used for the local player's
-/// PunchController damage pair.
-struct InstancePropMultiplyEffect {
-    class_name: &'static str,
-    prop_names: &'static [&'static str],
-    max_bonus: f32,
-    format_word: &'static str,
-    vanilla: &'static VanillaCache<&'static str, f32>,
-}
-
-impl Effect<UnityEngine> for InstancePropMultiplyEffect {
-    fn apply(&self, level: u32, max_level: u32, _ctx: &TriggerCtx<'_, UnityEngine>) {
-        if !effects_enabled() {
-            return;
-        }
-        let mult = 1.0 + self.max_bonus * sqrt_progress(level, max_level);
-        let (class, props) = (self.class_name, self.prop_names);
-        let vanilla = self.vanilla;
-        let _ = MAIN_QUEUE.run(class, Duration::from_secs(2), move || {
-            let Some(ty) = MonoType::find(class) else { return };
-            let Ok(walked) = ty.walk(false) else { return };
-            let Some(h) = walked
-                .as_array()
-                .and_then(|a| a.first())
-                .and_then(|i| i["handle"].as_i64())
-            else {
-                return;
-            };
-            // SAFETY: handle just acquired by the walk; Drop
-            // releases it when this scope ends.
-            let obj = unsafe {
-                unityforge::mono::MonoObject::from_handle(unityforge::bridge::MonoHandle(h as i32))
-            };
-            for prop in props {
-                let cur = obj
-                    .invoke(&format!("get_{prop}"), &json!([]))
-                    .ok()
-                    .and_then(|v| v.as_f64())
-                    .map(|v| v as f32);
-                let Some(cur) = cur else { continue };
-                let baseline = if cur.is_finite() && cur != 0.0 {
-                    vanilla.get_or_init(prop, cur)
-                } else {
-                    vanilla.get(prop).unwrap_or(cur)
-                };
-                let _ = obj.invoke(&format!("set_{prop}"), &json!([baseline * mult]));
-            }
-        });
-    }
-
-    fn format(&self, level: u32, max_level: u32) -> String {
-        format::format_multiplier(self.max_bonus, level, max_level, self.format_word)
+        self.inner.format(level, max_level)
     }
 }
 
 #[allow(dead_code)]
 static VITALITY_VANILLA: VanillaCache<&'static str, f32> = VanillaCache::new();
 #[allow(dead_code)]
-static VITALITY_EFFECT: StaticPropAdditiveEffect = StaticPropAdditiveEffect {
-    class_name: "Il2CppScheduleOne.PlayerScripts.Health.PlayerHealth",
-    prop_name: "MaxHealth",
-    max_bonus: 400.0,
-    format_word: "max health",
-    vanilla: &VITALITY_VANILLA,
+static VITALITY_INNER: UnityStaticPropAdditiveEffect = UnityStaticPropAdditiveEffect::new(
+    "Il2CppScheduleOne.PlayerScripts.Health.PlayerHealth",
+    "MaxHealth",
+    400.0,
+    "max health",
+    &VITALITY_VANILLA,
+);
+#[allow(dead_code)]
+static VITALITY_EFFECT: Il2CppGuardedEffect<UnityStaticPropAdditiveEffect> = Il2CppGuardedEffect {
+    label: "vitality",
+    inner: &VITALITY_INNER,
 };
 
 #[allow(dead_code)]
 static REGENERATION_VANILLA: VanillaCache<&'static str, f32> = VanillaCache::new();
 #[allow(dead_code)]
-static REGENERATION_EFFECT: StaticPropAdditiveEffect = StaticPropAdditiveEffect {
-    class_name: "Il2CppScheduleOne.PlayerScripts.Health.PlayerHealth",
-    prop_name: "HealthRecoveryPerMinute",
-    max_bonus: 100.0,
-    format_word: "health per minute",
-    vanilla: &REGENERATION_VANILLA,
-};
+static REGENERATION_INNER: UnityStaticPropAdditiveEffect = UnityStaticPropAdditiveEffect::new(
+    "Il2CppScheduleOne.PlayerScripts.Health.PlayerHealth",
+    "HealthRecoveryPerMinute",
+    100.0,
+    "health per minute",
+    &REGENERATION_VANILLA,
+);
+#[allow(dead_code)]
+static REGENERATION_EFFECT: Il2CppGuardedEffect<UnityStaticPropAdditiveEffect> =
+    Il2CppGuardedEffect {
+        label: "regeneration",
+        inner: &REGENERATION_INNER,
+    };
 
 static HEAVY_HANDS_VANILLA: VanillaCache<&'static str, f32> = VanillaCache::new();
-static HEAVY_HANDS_EFFECT: InstancePropMultiplyEffect = InstancePropMultiplyEffect {
-    class_name: "Il2CppScheduleOne.Combat.PunchController",
-    prop_names: &["MinPunchDamage", "MaxPunchDamage"],
-    max_bonus: 4.0,
-    format_word: "punch damage",
-    vanilla: &HEAVY_HANDS_VANILLA,
-};
+static HEAVY_HANDS_INNER: UnityInstancePropMultiplyEffect =
+    UnityInstancePropMultiplyEffect::new(
+        "Il2CppScheduleOne.Combat.PunchController",
+        &["MinPunchDamage", "MaxPunchDamage"],
+        4.0,
+        "punch damage",
+        &HEAVY_HANDS_VANILLA,
+    );
+static HEAVY_HANDS_EFFECT: Il2CppGuardedEffect<UnityInstancePropMultiplyEffect> =
+    Il2CppGuardedEffect {
+        label: "heavy_hands",
+        inner: &HEAVY_HANDS_INNER,
+    };
 
 // ---- Catalog --------------------------------------------------------
 

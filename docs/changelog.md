@@ -25,6 +25,8 @@ Newest first.
 
 | System | Item | Done when |
 |---|---|---|
+| `unityforge` | [x] Add `UnityStaticPropAdditiveEffect` and `UnityInstancePropMultiplyEffect` to `unityforge::rpg::std_effect` | Two new framework effect types for static properties and instance properties. |
+| `schedule1-mod` | [x] Repoint catalog at framework effect types; local Effect impls replaced by thin `Il2CppGuardedEffect` wrapper for MAIN_QUEUE + bisection guard | schedule1 skills.rs has no local read/write logic; uses framework effect types. |
 | `modforge` | [x] Enrich `skill_state` op to include `max_level` and `effect` text per skill | Framework `skill_state` now returns the same rich format schedule1 had locally. |
 | `schedule1-mod` | [x] Remove 4 duplicate RPG ops (`skill_state`, `skill_add_xp`, `skill_levelup`, `skill_grant_points`) from `register_ops`; keep only `effects_enable` | schedule1 uses framework ops; only the game-specific `effects_enable` remains local. |
 | `modforge` | [x] Add `skill_state` and `skill_add_xp` to `modforge::rpg::ops::register`; all RPG mods get 7 standard ops for free | Framework registers 7 ops; wwm-mod removed 5 duplicate custom ops (net -65 lines). |
