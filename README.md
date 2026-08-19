@@ -54,6 +54,11 @@ reads / writes / pattern scans), the winproc helpers (module
 base, address-rebase, VirtualProtect), the per-line-flushed
 log, the shutdown registry, and the settings file loader.
 
+The placement rule (operator, 2026-08-19): anything generic,
+anything that could apply to other games or mods, goes in
+modforge. A consumer repo carries only what is specific to that
+one game.
+
 Decided 2026-08-19: the game systems proven in survivalist-mod
 (storyteller, genome, acts, quality, named uniques, the work
 board, upgrades, chronicle, the edge) will be lifted into this
