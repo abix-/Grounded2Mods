@@ -54,6 +54,14 @@ reads / writes / pattern scans), the winproc helpers (module
 base, address-rebase, VirtualProtect), the per-line-flushed
 log, the shutdown registry, and the settings file loader.
 
+Decided 2026-08-19: the game systems proven in survivalist-mod
+(storyteller, genome, acts, quality, named uniques, the work
+board, upgrades, chronicle, the edge) will be lifted into this
+crate as modules, like the RPG module, so one dependency serves
+mods OR a standalone game. The first standalone consumer is the
+topside game (private repo; its docs/authority.md carries the
+ownership map). Nothing is lifted yet.
+
 ## The two engine forges
 
 An engine forge is a thin crate that binds modforge into one
