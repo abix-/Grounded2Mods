@@ -44,6 +44,9 @@ windows-sys = { workspace = true, features = [
     "Win32_Graphics_Gdi",
 ] }
 tiny_http = { workspace = true }
+# Structure vocabulary math (modforge::structure). Pinned to the glam
+# line Bevy 0.18 ships so topside's Vec3 and ours are the same type.
+glam = "0.30"
 socket2 = { workspace = true }
 ureq = { workspace = true }
 hex = { workspace = true }
