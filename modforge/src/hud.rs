@@ -99,23 +99,18 @@ pub struct Vitals {
 
 /// The whole HUD state. The consumer writes fields directly from
 /// its game systems and reads them to paint. No binder trait.
+/// Inventories are not here: they belong to the actor or container
+/// that owns them, and the HUD reads those when it paints.
+#[derive(Default)]
 pub struct HudState {
     pub vitals: Vitals,
     pub prompt: Prompt,
     pub open_panel: OpenPanel,
-    pub inventory: Inventory,
-    pub container: Option<Inventory>,
 }
 
 impl HudState {
-    pub fn new(inventory_slots: usize) -> Self {
-        Self {
-            vitals: Vitals::default(),
-            prompt: Prompt::default(),
-            open_panel: OpenPanel::None,
-            inventory: Inventory::new(inventory_slots),
-            container: None,
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 
@@ -176,7 +171,7 @@ mod tests {
 
     #[test]
     fn toggle_panel_opens_and_closes() {
-        let mut state = HudState::new(5);
+        let mut state = HudState::new();
         assert_eq!(state.open_panel, OpenPanel::None);
         toggle_panel(&mut state, OpenPanel::Inventory);
         assert_eq!(state.open_panel, OpenPanel::Inventory);
@@ -222,7 +217,7 @@ mod tests {
     #[test]
     fn interact_door_returns_toggle() {
         let mut inv = Inventory::new(5);
-        let mut state = HudState::new(5);
+        let mut state = HudState::new();
         let r = interact(InteractKind::Door { open: false }, &mut inv, None, 10, &mut state);
         assert_eq!(r, InteractResult::ToggleDoor);
     }
@@ -230,7 +225,7 @@ mod tests {
     #[test]
     fn interact_pickup_adds_to_inventory() {
         let mut inv = Inventory::new(5);
-        let mut state = HudState::new(5);
+        let mut state = HudState::new();
         let s = stack("scrap", 3);
         let r = interact(InteractKind::Pickup, &mut inv, Some(s), 20, &mut state);
         assert_eq!(r, InteractResult::PickedUp);
@@ -241,7 +236,7 @@ mod tests {
     fn interact_pickup_full_inventory() {
         let mut inv = Inventory::new(1);
         inv.slots[0] = Some(stack("cloth", 20));
-        let mut state = HudState::new(1);
+        let mut state = HudState::new();
         let s = stack("scrap", 5);
         let r = interact(InteractKind::Pickup, &mut inv, Some(s), 20, &mut state);
         assert_eq!(r, InteractResult::InventoryFull);
@@ -250,7 +245,7 @@ mod tests {
     #[test]
     fn interact_container_opens_inventory_panel() {
         let mut inv = Inventory::new(5);
-        let mut state = HudState::new(5);
+        let mut state = HudState::new();
         let r = interact(InteractKind::Container, &mut inv, None, 10, &mut state);
         assert_eq!(r, InteractResult::OpenContainer);
         assert_eq!(state.open_panel, OpenPanel::Inventory);
