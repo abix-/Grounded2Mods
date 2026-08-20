@@ -15,6 +15,7 @@ pub mod envelope;
 pub mod genome;
 pub mod harness;
 pub mod hook;
+pub mod hud;
 pub mod hot_reload;
 pub mod input;
 pub mod item;
