@@ -107,9 +107,9 @@ pub struct HudState {
     pub vitals: Vitals,
     pub prompt: Prompt,
     pub open_panel: OpenPanel,
-    /// The inventory slot picked by the first click, waiting for
-    /// the second (pick-up-then-place, as in Minecraft and Rust).
-    pub selected_slot: Option<usize>,
+    /// The inventory slot a drag started on, until it is dropped
+    /// (drag and drop, as in Atlas).
+    pub dragging_slot: Option<usize>,
 }
 
 impl HudState {
@@ -118,35 +118,38 @@ impl HudState {
     }
 }
 
-/// A click on inventory slot `slot` while the panel is open. The
-/// first click selects; a second click on another slot moves the
-/// stack there (merge or swap, see [`move_stack`]); a second click
-/// on the same slot deselects. Clicking an empty slot with nothing
-/// selected does nothing.
-pub fn click_slot(state: &mut HudState, inv: &mut Inventory, slot: usize, registry: &ItemRegistry) {
-    if slot >= inv.slots.len() {
-        return;
-    }
-    match state.selected_slot {
-        None => {
-            if inv.slots[slot].is_some() {
-                state.selected_slot = Some(slot);
-            }
-        }
-        Some(from) if from == slot => state.selected_slot = None,
-        Some(from) => {
-            let max_stack = inv.slots[from]
-                .as_ref()
-                .and_then(|s| registry.def(&s.item))
-                .map(|d| d.max_stack)
-                .unwrap_or(1);
-            move_stack(inv, from, slot, max_stack);
-            state.selected_slot = None;
-        }
+/// A drag starts on `slot`. Empty slots start nothing.
+pub fn start_drag(state: &mut HudState, inv: &Inventory, slot: usize) {
+    if inv.slots.get(slot).is_some_and(Option::is_some) {
+        state.dragging_slot = Some(slot);
     }
 }
 
-/// Use what is in `slot`: food is eaten through
+/// A drag ends on `slot`: the dragged stack moves there (merge or
+/// swap, see [`move_stack`]). Dropping back on its own slot, or
+/// with no drag in progress, changes nothing.
+pub fn end_drag(state: &mut HudState, inv: &mut Inventory, slot: usize, registry: &ItemRegistry) {
+    let Some(from) = state.dragging_slot.take() else {
+        return;
+    };
+    if from == slot || slot >= inv.slots.len() {
+        return;
+    }
+    let max_stack = inv.slots[from]
+        .as_ref()
+        .and_then(|s| registry.def(&s.item))
+        .map(|d| d.max_stack)
+        .unwrap_or(1);
+    move_stack(inv, from, slot, max_stack);
+}
+
+/// Hover plus O: take the whole stack out of `slot` to drop it in
+/// the world. The consumer spawns the returned stack at the feet.
+pub fn drop_slot(inv: &mut Inventory, slot: usize) -> Option<ItemStack> {
+    inv.remove(slot, u32::MAX)
+}
+
+/// Double click: use what is in `slot`. Food is eaten through
 /// [`SurvivalStats::eat_from_slot`]. Other kinds have no use yet.
 pub fn use_slot(
     stats: &mut SurvivalStats,
@@ -320,30 +323,43 @@ mod tests {
     }
 
     #[test]
-    fn click_select_then_click_moves_and_clears_selection() {
+    fn drag_and_drop_moves_stacks() {
         let reg = registry();
         let mut state = HudState::new();
         let mut inv = Inventory::new(3);
         inv.slots[0] = Some(stack("scrap", 5));
         inv.slots[1] = Some(stack("cloth", 2));
 
-        click_slot(&mut state, &mut inv, 2, &reg);
-        assert_eq!(state.selected_slot, None, "empty slot selects nothing");
-        click_slot(&mut state, &mut inv, 0, &reg);
-        assert_eq!(state.selected_slot, Some(0));
-        click_slot(&mut state, &mut inv, 0, &reg);
-        assert_eq!(state.selected_slot, None, "same slot deselects");
+        start_drag(&mut state, &inv, 2);
+        assert_eq!(state.dragging_slot, None, "empty slot starts no drag");
+        end_drag(&mut state, &mut inv, 0, &reg);
+        assert_eq!(inv.slots[0].as_ref().unwrap().item, "scrap", "no drag, no move");
 
-        click_slot(&mut state, &mut inv, 0, &reg);
-        click_slot(&mut state, &mut inv, 1, &reg);
-        assert_eq!(state.selected_slot, None);
+        start_drag(&mut state, &inv, 0);
+        assert_eq!(state.dragging_slot, Some(0));
+        end_drag(&mut state, &mut inv, 0, &reg);
+        assert_eq!(state.dragging_slot, None, "dropping on itself ends the drag");
+        assert_eq!(inv.slots[0].as_ref().unwrap().item, "scrap");
+
+        start_drag(&mut state, &inv, 0);
+        end_drag(&mut state, &mut inv, 1, &reg);
         assert_eq!(inv.slots[0].as_ref().unwrap().item, "cloth", "swapped");
         assert_eq!(inv.slots[1].as_ref().unwrap().item, "scrap");
 
-        click_slot(&mut state, &mut inv, 1, &reg);
-        click_slot(&mut state, &mut inv, 2, &reg);
+        start_drag(&mut state, &inv, 1);
+        end_drag(&mut state, &mut inv, 2, &reg);
         assert!(inv.slots[1].is_none(), "moved to the empty slot");
         assert_eq!(inv.slots[2].as_ref().unwrap().count, 5);
+    }
+
+    #[test]
+    fn drop_slot_takes_the_whole_stack() {
+        let mut inv = Inventory::new(2);
+        inv.slots[0] = Some(stack("scrap", 5));
+        let dropped = drop_slot(&mut inv, 0).unwrap();
+        assert_eq!(dropped.count, 5);
+        assert!(inv.slots[0].is_none());
+        assert!(drop_slot(&mut inv, 1).is_none(), "empty slot drops nothing");
     }
 
     #[test]
