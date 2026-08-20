@@ -1,8 +1,7 @@
 //! The ONE player-facing information layer, made of panels.
 //! Engine-agnostic data and decisions: what to show, when, which
 //! panel is open, moving stacks between slots. The consumer
-//! implements [`HudBinder`] to read its world and a renderer to
-//! paint the result.
+//! writes HudState fields directly and reads them to paint.
 
 use crate::item::{Inventory, ItemStack};
 
@@ -98,12 +97,14 @@ pub struct Vitals {
     pub food_max: f32,
 }
 
-/// The whole HUD state. The consumer reads this to paint.
+/// The whole HUD state. The consumer writes fields directly from
+/// its game systems and reads them to paint. No binder trait.
 pub struct HudState {
     pub vitals: Vitals,
     pub prompt: Prompt,
     pub open_panel: OpenPanel,
     pub inventory: Inventory,
+    pub container: Option<Inventory>,
 }
 
 impl HudState {
@@ -113,25 +114,9 @@ impl HudState {
             prompt: Prompt::default(),
             open_panel: OpenPanel::None,
             inventory: Inventory::new(inventory_slots),
+            container: None,
         }
     }
-}
-
-/// The binder a consumer implements so the HUD can read the world.
-/// Called once per tick to refresh the HUD state.
-pub trait HudBinder {
-    fn vitals(&self) -> Vitals;
-    fn prompt(&self) -> Prompt;
-    fn inventory(&self) -> &Inventory;
-}
-
-/// Refresh the HUD state from the world through the binder.
-pub fn tick(state: &mut HudState, binder: &dyn HudBinder) {
-    state.vitals = binder.vitals();
-    state.prompt = binder.prompt();
-    let inv = binder.inventory();
-    state.inventory.slots.clear();
-    state.inventory.slots.extend_from_slice(&inv.slots);
 }
 
 /// Toggle a panel open or closed.
@@ -187,46 +172,6 @@ mod tests {
             count,
             quality: None,
         }
-    }
-
-    struct FakeBinder {
-        vitals: Vitals,
-        inv: Inventory,
-    }
-
-    impl HudBinder for FakeBinder {
-        fn vitals(&self) -> Vitals {
-            self.vitals.clone()
-        }
-        fn prompt(&self) -> Prompt {
-            Prompt {
-                text: "open door".to_string(),
-                can_interact: true,
-            }
-        }
-        fn inventory(&self) -> &Inventory {
-            &self.inv
-        }
-    }
-
-    #[test]
-    fn tick_refreshes_from_binder() {
-        let mut state = HudState::new(5);
-        let mut inv = Inventory::new(5);
-        inv.add(stack("scrap", 3), 20);
-        let binder = FakeBinder {
-            vitals: Vitals {
-                health: 80.0,
-                health_max: 100.0,
-                food: 2.5,
-                food_max: 3.0,
-            },
-            inv,
-        };
-        tick(&mut state, &binder);
-        assert_eq!(state.vitals.health, 80.0);
-        assert_eq!(state.prompt.text, "open door");
-        assert_eq!(state.inventory.count_of("scrap"), 3);
     }
 
     #[test]
