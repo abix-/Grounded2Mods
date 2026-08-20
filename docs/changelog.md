@@ -21,6 +21,12 @@ Newest first.
 - Put new days above older days. Add rows to the existing table when that date already exists.
 - Entries before 2026-08-17 keep their existing historical format.
 
+## 2026-08-20
+
+| System | Item | Done when |
+|---|---|---|
+| `modforge` | [x] Add modforge::item module: the item vocabulary (ItemDef, ItemRegistry, ItemStack, ItemQuality, Inventory with slots and stacks, transfer) with quality rolled by create, the one item-creation function | modforge builds with the module and its 7 tests pass covering stacking, remove, transfer, capacity, and a quality tier rolled at creation. |
+
 ## 2026-08-19
 
 | System | Item | Done when |
