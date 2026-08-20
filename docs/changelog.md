@@ -25,6 +25,7 @@ Newest first.
 
 | System | Item | Done when |
 |---|---|---|
+| `modforge` | [x] Add modforge::biome module: the biome vocabulary (BiomeDef as the generic definition of a type of area: ground, scatter, weather, monuments, npcs, wildlife, harvest; BiomeRegistry) | modforge builds with the module and its registry test passes; topside design.md records what biomes control. |
 | `modforge` | [x] Add modforge::item module: the item vocabulary (ItemDef, ItemRegistry, ItemStack, ItemQuality, Inventory with slots and stacks, transfer) with quality rolled by create, the one item-creation function | modforge builds with the module and its 7 tests pass covering stacking, remove, transfer, capacity, and a quality tier rolled at creation. |
 
 ## 2026-08-19
