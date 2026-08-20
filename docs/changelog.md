@@ -25,6 +25,7 @@ Newest first.
 
 | System | Item | Done when |
 |---|---|---|
+| `modforge` | [x] Add InteractKind (Door, Pickup, Container), prompt_for, and interact function to modforge::hud: modforge decides the prompt text and the interaction result, the consumer executes the engine side | modforge builds and 6 new tests pass covering prompt text per kind, door toggle, pickup into inventory, full inventory, and container opens inventory panel. |
 | `modforge` | [x] Add modforge::hud module: the one player-facing info layer (HudState, Vitals, Prompt, OpenPanel, HudBinder trait, tick, toggle_panel, move_stack); panels for inventory, health, food, and prompts | modforge builds with the module and its 5 tests pass covering binder tick, panel toggle, stack move to empty, merge matching, and swap different items. |
 | `modforge` | [x] Add modforge::biome module: the biome vocabulary (BiomeDef as the generic definition of a type of area: ground, scatter, weather, monuments, npcs, wildlife, harvest; BiomeRegistry) | modforge builds with the module and its registry test passes; topside design.md records what biomes control. |
 | `modforge` | [x] Add modforge::item module: the item vocabulary (ItemDef, ItemRegistry, ItemStack, ItemQuality, Inventory with slots and stacks, transfer) with quality rolled by create, the one item-creation function | modforge builds with the module and its 7 tests pass covering stacking, remove, transfer, capacity, and a quality tier rolled at creation. |
