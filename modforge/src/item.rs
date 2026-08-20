@@ -29,6 +29,14 @@ pub struct CombatStats {
     pub ammo: Option<String>,
 }
 
+/// What eating one of this item restores. Present on food and
+/// drink; None on everything else.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FoodStats {
+    pub hunger: f32,
+    pub thirst: f32,
+}
+
 /// One item kind as data. `name` is the id; one concept, one name.
 /// `quality_siblings` is how many statistical siblings each quality
 /// tier has (see [`crate::quality`]).
@@ -39,6 +47,7 @@ pub struct ItemDef {
     pub max_stack: u32,
     pub quality_siblings: u64,
     pub combat: Option<CombatStats>,
+    pub food: Option<FoodStats>,
 }
 
 /// The collection of checked-in ItemDefs. Consumers register their
@@ -193,6 +202,7 @@ mod tests {
             max_stack: 10,
             quality_siblings: 3,
             combat: None,
+            food: None,
         }
     }
 

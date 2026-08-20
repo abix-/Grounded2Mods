@@ -111,6 +111,7 @@ mod tests {
             max_stack: 20,
             quality_siblings: 1,
             combat: None,
+            food: None,
         }).unwrap();
         items.register(ItemDef {
             name: "knife".to_string(),
@@ -123,6 +124,7 @@ mod tests {
                 range: 1.5,
                 ammo: None,
             }),
+            food: None,
         }).unwrap();
 
         let mut recipes = RecipeRegistry::default();
