@@ -21,6 +21,12 @@ Newest first.
 - Put new days above older days. Add rows to the existing table when that date already exists.
 - Entries before 2026-08-17 keep their existing historical format.
 
+## 2026-08-19
+
+| System | Item | Done when |
+|---|---|---|
+| `modforge` | [x] Add modforge::structure module: the structure vocabulary (StructureDef, RoomSpec, Opening, StairSpec, SolidSpec, LightSpec, Aabb, validate, side_frame) as engine-agnostic data on glam math and plain rgb, moved from the topside game | modforge builds with the module and its 2 tests pass; topside consumes it with no local copy of the defs (its spawn_structure stays as the Bevy binder). |
+
 ## 2026-08-18
 
 | System | Item | Done when |
