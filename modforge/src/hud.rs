@@ -143,6 +143,21 @@ pub fn end_drag(state: &mut HudState, inv: &mut Inventory, slot: usize, registry
     move_stack(inv, from, slot, max_stack);
 }
 
+/// The hotbar is the first HOTBAR_SLOTS slots of the actor's one
+/// inventory, always on screen (Atlas: items live in the bar, it is
+/// not a list of shortcuts).
+pub const HOTBAR_SLOTS: usize = 10;
+
+/// The inventory slot a hotbar digit key uses: 1 to 9 are slots 0
+/// to 8, 0 is slot 9 (Atlas key order). Other digits are nothing.
+pub fn hotbar_slot(digit: u8) -> Option<usize> {
+    match digit {
+        1..=9 => Some(digit as usize - 1),
+        0 => Some(9),
+        _ => None,
+    }
+}
+
 /// Hover plus O: take the whole stack out of `slot` to drop it in
 /// the world. The consumer spawns the returned stack at the feet.
 pub fn drop_slot(inv: &mut Inventory, slot: usize) -> Option<ItemStack> {
@@ -360,6 +375,15 @@ mod tests {
         assert_eq!(dropped.count, 5);
         assert!(inv.slots[0].is_none());
         assert!(drop_slot(&mut inv, 1).is_none(), "empty slot drops nothing");
+    }
+
+    #[test]
+    fn hotbar_keys_map_in_atlas_order() {
+        assert_eq!(hotbar_slot(1), Some(0));
+        assert_eq!(hotbar_slot(9), Some(8));
+        assert_eq!(hotbar_slot(0), Some(9));
+        assert_eq!(hotbar_slot(10), None);
+        assert!(HOTBAR_SLOTS == 10);
     }
 
     #[test]
