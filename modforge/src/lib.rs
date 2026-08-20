@@ -10,6 +10,7 @@ pub mod args;
 pub mod biome;
 pub mod client;
 pub mod counters;
+pub mod crafting;
 pub mod debug;
 pub mod envelope;
 pub mod genome;
