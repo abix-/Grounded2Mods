@@ -4,14 +4,81 @@
 //! implements [`HudBinder`] to read its world and a renderer to
 //! paint the result.
 
-use crate::item::Inventory;
+use crate::item::{Inventory, ItemStack};
 
-/// What the player is looking at right now (fed by the consumer's
-/// binder every tick).
+/// What kind of thing can be interacted with.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum InteractKind {
+    Door { open: bool },
+    Pickup,
+    Container,
+}
+
+/// What the player is looking at right now.
 #[derive(Clone, Default)]
 pub struct Prompt {
     pub text: String,
     pub can_interact: bool,
+}
+
+/// Build the prompt text for an interactable. The consumer feeds the
+/// kind; modforge decides what the player reads.
+pub fn prompt_for(kind: InteractKind, item_name: Option<&str>, item_count: Option<u32>) -> Prompt {
+    let text = match kind {
+        InteractKind::Door { open } => {
+            if open { "[E] close door" } else { "[E] open door" }.to_string()
+        }
+        InteractKind::Pickup => match (item_name, item_count) {
+            (Some(name), Some(count)) if count > 1 => format!("[E] pick up {name} x{count}"),
+            (Some(name), _) => format!("[E] pick up {name}"),
+            _ => "[E] pick up".to_string(),
+        },
+        InteractKind::Container => "[E] open".to_string(),
+    };
+    Prompt {
+        text,
+        can_interact: true,
+    }
+}
+
+/// The result of interacting with something. The consumer reads this
+/// and executes the engine side (toggle transform, despawn entity,
+/// open panel).
+#[derive(Debug, PartialEq)]
+pub enum InteractResult {
+    ToggleDoor,
+    PickedUp,
+    InventoryFull,
+    OpenContainer,
+}
+
+/// Execute an interaction. modforge decides what happens; the
+/// consumer carries out the engine side based on the result.
+pub fn interact(
+    kind: InteractKind,
+    player_inv: &mut Inventory,
+    pickup_stack: Option<ItemStack>,
+    max_stack: u32,
+    state: &mut HudState,
+) -> InteractResult {
+    match kind {
+        InteractKind::Door { .. } => InteractResult::ToggleDoor,
+        InteractKind::Pickup => {
+            if let Some(stack) = pickup_stack {
+                if player_inv.add(stack, max_stack).is_some() {
+                    InteractResult::InventoryFull
+                } else {
+                    InteractResult::PickedUp
+                }
+            } else {
+                InteractResult::PickedUp
+            }
+        }
+        InteractKind::Container => {
+            toggle_panel(state, OpenPanel::Inventory);
+            InteractResult::OpenContainer
+        }
+    }
 }
 
 /// Which panel is open. Only one panel open at a time (or none).
@@ -189,6 +256,59 @@ mod tests {
         move_stack(&mut inv, 0, 1, 10);
         assert_eq!(inv.slots[0].as_ref().unwrap().count, 4);
         assert_eq!(inv.slots[1].as_ref().unwrap().count, 10);
+    }
+
+    #[test]
+    fn prompt_for_door() {
+        let p = prompt_for(InteractKind::Door { open: false }, None, None);
+        assert_eq!(p.text, "[E] open door");
+        let p = prompt_for(InteractKind::Door { open: true }, None, None);
+        assert_eq!(p.text, "[E] close door");
+    }
+
+    #[test]
+    fn prompt_for_pickup_with_count() {
+        let p = prompt_for(InteractKind::Pickup, Some("scrap"), Some(5));
+        assert_eq!(p.text, "[E] pick up scrap x5");
+        let p = prompt_for(InteractKind::Pickup, Some("hatchet"), Some(1));
+        assert_eq!(p.text, "[E] pick up hatchet");
+    }
+
+    #[test]
+    fn interact_door_returns_toggle() {
+        let mut inv = Inventory::new(5);
+        let mut state = HudState::new(5);
+        let r = interact(InteractKind::Door { open: false }, &mut inv, None, 10, &mut state);
+        assert_eq!(r, InteractResult::ToggleDoor);
+    }
+
+    #[test]
+    fn interact_pickup_adds_to_inventory() {
+        let mut inv = Inventory::new(5);
+        let mut state = HudState::new(5);
+        let s = stack("scrap", 3);
+        let r = interact(InteractKind::Pickup, &mut inv, Some(s), 20, &mut state);
+        assert_eq!(r, InteractResult::PickedUp);
+        assert_eq!(inv.count_of("scrap"), 3);
+    }
+
+    #[test]
+    fn interact_pickup_full_inventory() {
+        let mut inv = Inventory::new(1);
+        inv.slots[0] = Some(stack("cloth", 20));
+        let mut state = HudState::new(1);
+        let s = stack("scrap", 5);
+        let r = interact(InteractKind::Pickup, &mut inv, Some(s), 20, &mut state);
+        assert_eq!(r, InteractResult::InventoryFull);
+    }
+
+    #[test]
+    fn interact_container_opens_inventory_panel() {
+        let mut inv = Inventory::new(5);
+        let mut state = HudState::new(5);
+        let r = interact(InteractKind::Container, &mut inv, None, 10, &mut state);
+        assert_eq!(r, InteractResult::OpenContainer);
+        assert_eq!(state.open_panel, OpenPanel::Inventory);
     }
 
     #[test]
