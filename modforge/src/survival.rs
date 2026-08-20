@@ -9,7 +9,7 @@
 //! second, food restores a fixed amount, empty is the consumer's
 //! cue for starvation damage.
 
-use crate::item::ItemDef;
+use crate::item::{Inventory, ItemDef, ItemRegistry};
 
 /// Full value of each stat.
 pub const FULL: f32 = 100.0;
@@ -51,6 +51,10 @@ impl SurvivalRates {
 pub enum SurvivalError {
     /// The item has no food stats; it cannot be eaten.
     NotFood(String),
+    /// Nothing in that inventory slot.
+    EmptySlot(usize),
+    /// The stack names an item the registry does not know.
+    Unregistered(String),
 }
 
 impl SurvivalStats {
@@ -69,6 +73,26 @@ impl SurvivalStats {
         };
         self.hunger = (self.hunger + food.hunger).min(FULL);
         self.thirst = (self.thirst + food.thirst).min(FULL);
+        Ok(())
+    }
+
+    /// Eat one item out of `slot` of `inventory`. The one path the
+    /// inventory HUD and the hotbar both take: look the stack's def
+    /// up in `registry`, refuse non-food, restore, remove one.
+    pub fn eat_from_slot(
+        &mut self,
+        inventory: &mut Inventory,
+        slot: usize,
+        registry: &ItemRegistry,
+    ) -> Result<(), SurvivalError> {
+        let Some(stack) = inventory.slots.get(slot).and_then(|s| s.as_ref()) else {
+            return Err(SurvivalError::EmptySlot(slot));
+        };
+        let Some(def) = registry.def(&stack.item) else {
+            return Err(SurvivalError::Unregistered(stack.item.clone()));
+        };
+        self.eat(def)?;
+        inventory.remove(slot, 1);
         Ok(())
     }
 
@@ -129,6 +153,49 @@ mod tests {
         stats.eat(&can).unwrap();
         assert_eq!(stats.hunger, 70.0);
         assert_eq!(stats.thirst, FULL);
+    }
+
+    #[test]
+    fn eating_from_a_slot_consumes_one_and_refuses_the_rest() {
+        let mut registry = ItemRegistry::default();
+        let can = def(
+            "canned food",
+            Some(FoodStats {
+                hunger: 50.0,
+                thirst: 0.0,
+            }),
+        );
+        registry.register(can.clone()).unwrap();
+        registry.register(def("scrap", None)).unwrap();
+        let mut inv = Inventory::new(3);
+        inv.slots[0] = Some(crate::item::create(&can, 2, &[], 0.0, 0));
+        inv.slots[1] = Some(crate::item::create(&def("scrap", None), 1, &[], 0.0, 0));
+        inv.slots[2] = Some(crate::item::ItemStack {
+            item: "bogus".to_string(),
+            count: 1,
+            quality: None,
+        });
+        let mut stats = SurvivalStats {
+            hunger: 10.0,
+            thirst: FULL,
+        };
+
+        stats.eat_from_slot(&mut inv, 0, &registry).unwrap();
+        assert_eq!(stats.hunger, 60.0);
+        assert_eq!(inv.count_of("canned food"), 1);
+        assert_eq!(
+            stats.eat_from_slot(&mut inv, 1, &registry),
+            Err(SurvivalError::NotFood("scrap".to_string()))
+        );
+        assert_eq!(
+            stats.eat_from_slot(&mut inv, 2, &registry),
+            Err(SurvivalError::Unregistered("bogus".to_string()))
+        );
+        assert_eq!(
+            stats.eat_from_slot(&mut inv, 5, &registry),
+            Err(SurvivalError::EmptySlot(5))
+        );
+        assert_eq!(inv.count_of("scrap"), 1, "refused eats consume nothing");
     }
 
     #[test]
