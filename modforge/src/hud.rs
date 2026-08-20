@@ -3,7 +3,8 @@
 //! panel is open, moving stacks between slots. The consumer
 //! writes HudState fields directly and reads them to paint.
 
-use crate::item::{Inventory, ItemStack};
+use crate::item::{Inventory, ItemRegistry, ItemStack};
+use crate::survival::{SurvivalError, SurvivalStats};
 
 /// What kind of thing can be interacted with.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -106,11 +107,62 @@ pub struct HudState {
     pub vitals: Vitals,
     pub prompt: Prompt,
     pub open_panel: OpenPanel,
+    /// The inventory slot picked by the first click, waiting for
+    /// the second (pick-up-then-place, as in Minecraft and Rust).
+    pub selected_slot: Option<usize>,
 }
 
 impl HudState {
     pub fn new() -> Self {
         Self::default()
+    }
+}
+
+/// A click on inventory slot `slot` while the panel is open. The
+/// first click selects; a second click on another slot moves the
+/// stack there (merge or swap, see [`move_stack`]); a second click
+/// on the same slot deselects. Clicking an empty slot with nothing
+/// selected does nothing.
+pub fn click_slot(state: &mut HudState, inv: &mut Inventory, slot: usize, registry: &ItemRegistry) {
+    if slot >= inv.slots.len() {
+        return;
+    }
+    match state.selected_slot {
+        None => {
+            if inv.slots[slot].is_some() {
+                state.selected_slot = Some(slot);
+            }
+        }
+        Some(from) if from == slot => state.selected_slot = None,
+        Some(from) => {
+            let max_stack = inv.slots[from]
+                .as_ref()
+                .and_then(|s| registry.def(&s.item))
+                .map(|d| d.max_stack)
+                .unwrap_or(1);
+            move_stack(inv, from, slot, max_stack);
+            state.selected_slot = None;
+        }
+    }
+}
+
+/// Use what is in `slot`: food is eaten through
+/// [`SurvivalStats::eat_from_slot`]. Other kinds have no use yet.
+pub fn use_slot(
+    stats: &mut SurvivalStats,
+    inv: &mut Inventory,
+    slot: usize,
+    registry: &ItemRegistry,
+) -> Result<(), SurvivalError> {
+    stats.eat_from_slot(inv, slot, registry)
+}
+
+/// The text one inventory slot shows. Empty slots show nothing.
+pub fn slot_label(stack: Option<&ItemStack>) -> String {
+    match stack {
+        None => String::new(),
+        Some(s) if s.count > 1 => format!("{} x{}", s.item, s.count),
+        Some(s) => s.item.clone(),
     }
 }
 
@@ -249,6 +301,56 @@ mod tests {
         let r = interact(InteractKind::Container, &mut inv, None, 10, &mut state);
         assert_eq!(r, InteractResult::OpenContainer);
         assert_eq!(state.open_panel, OpenPanel::Inventory);
+    }
+
+    fn registry() -> ItemRegistry {
+        let mut reg = ItemRegistry::default();
+        for (name, max_stack) in [("scrap", 20), ("cloth", 20)] {
+            reg.register(crate::item::ItemDef {
+                name: name.to_string(),
+                kind: crate::item::ItemKind::Material,
+                max_stack,
+                quality_siblings: 1,
+                combat: None,
+                food: None,
+            })
+            .unwrap();
+        }
+        reg
+    }
+
+    #[test]
+    fn click_select_then_click_moves_and_clears_selection() {
+        let reg = registry();
+        let mut state = HudState::new();
+        let mut inv = Inventory::new(3);
+        inv.slots[0] = Some(stack("scrap", 5));
+        inv.slots[1] = Some(stack("cloth", 2));
+
+        click_slot(&mut state, &mut inv, 2, &reg);
+        assert_eq!(state.selected_slot, None, "empty slot selects nothing");
+        click_slot(&mut state, &mut inv, 0, &reg);
+        assert_eq!(state.selected_slot, Some(0));
+        click_slot(&mut state, &mut inv, 0, &reg);
+        assert_eq!(state.selected_slot, None, "same slot deselects");
+
+        click_slot(&mut state, &mut inv, 0, &reg);
+        click_slot(&mut state, &mut inv, 1, &reg);
+        assert_eq!(state.selected_slot, None);
+        assert_eq!(inv.slots[0].as_ref().unwrap().item, "cloth", "swapped");
+        assert_eq!(inv.slots[1].as_ref().unwrap().item, "scrap");
+
+        click_slot(&mut state, &mut inv, 1, &reg);
+        click_slot(&mut state, &mut inv, 2, &reg);
+        assert!(inv.slots[1].is_none(), "moved to the empty slot");
+        assert_eq!(inv.slots[2].as_ref().unwrap().count, 5);
+    }
+
+    #[test]
+    fn slot_labels() {
+        assert_eq!(slot_label(None), "");
+        assert_eq!(slot_label(Some(&stack("hatchet", 1))), "hatchet");
+        assert_eq!(slot_label(Some(&stack("scrap", 6))), "scrap x6");
     }
 
     #[test]
