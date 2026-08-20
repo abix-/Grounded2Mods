@@ -3,7 +3,7 @@
 //! panel is open, moving stacks between slots. The consumer
 //! writes HudState fields directly and reads them to paint.
 
-use crate::item::{Inventory, ItemRegistry, ItemStack};
+use crate::item::{Inventory, ItemRegistry, ItemStack, move_between};
 use crate::survival::{SurvivalError, SurvivalStats};
 
 /// What kind of thing can be interacted with.
@@ -107,9 +107,9 @@ pub struct HudState {
     pub vitals: Vitals,
     pub prompt: Prompt,
     pub open_panel: OpenPanel,
-    /// The inventory slot a drag started on, until it is dropped
-    /// (drag and drop, as in Atlas).
-    pub dragging_slot: Option<usize>,
+    /// The slot a drag started on, until it is dropped (drag and
+    /// drop, as in Atlas).
+    pub dragging: Option<SlotRef>,
 }
 
 impl HudState {
@@ -118,34 +118,102 @@ impl HudState {
     }
 }
 
-/// A drag starts on `slot`. Empty slots start nothing.
-pub fn start_drag(state: &mut HudState, inv: &Inventory, slot: usize) {
-    if inv.slots.get(slot).is_some_and(Option::is_some) {
-        state.dragging_slot = Some(slot);
+/// Which of the actor's separate item holders a slot belongs to.
+/// Equipment is not slot-indexed and is not draggable yet.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Holder {
+    Inventory,
+    Hotbar,
+}
+
+/// One slot of one holder.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct SlotRef {
+    pub holder: Holder,
+    pub index: usize,
+}
+
+/// The actor's draggable holders, borrowed together for a move.
+pub struct Holders<'a> {
+    pub inventory: &'a mut Inventory,
+    pub hotbar: &'a mut Inventory,
+}
+
+impl Holders<'_> {
+    fn get(&self, holder: Holder) -> &Inventory {
+        match holder {
+            Holder::Inventory => self.inventory,
+            Holder::Hotbar => self.hotbar,
+        }
     }
 }
 
-/// A drag ends on `slot`: the dragged stack moves there (merge or
-/// swap, see [`move_stack`]). Dropping back on its own slot, or
-/// with no drag in progress, changes nothing.
-pub fn end_drag(state: &mut HudState, inv: &mut Inventory, slot: usize, registry: &ItemRegistry) {
-    let Some(from) = state.dragging_slot.take() else {
+/// A drag starts on `slot`. Empty slots start nothing.
+pub fn start_drag(state: &mut HudState, holders: &Holders<'_>, slot: SlotRef) {
+    if holders
+        .get(slot.holder)
+        .slots
+        .get(slot.index)
+        .is_some_and(Option::is_some)
+    {
+        state.dragging = Some(slot);
+    }
+}
+
+/// A drag ends on `slot`: the dragged stack moves there, within one
+/// holder ([`move_stack`]) or across two ([`move_between`]), merging
+/// or swapping. Dropping back on its own slot, or with no drag in
+/// progress, changes nothing.
+pub fn end_drag(
+    state: &mut HudState,
+    holders: &mut Holders<'_>,
+    slot: SlotRef,
+    registry: &ItemRegistry,
+) {
+    let Some(from) = state.dragging.take() else {
         return;
     };
-    if from == slot || slot >= inv.slots.len() {
+    if from == slot {
         return;
     }
-    let max_stack = inv.slots[from]
-        .as_ref()
+    let max_stack = holders
+        .get(from.holder)
+        .slots
+        .get(from.index)
+        .and_then(|s| s.as_ref())
         .and_then(|s| registry.def(&s.item))
         .map(|d| d.max_stack)
         .unwrap_or(1);
-    move_stack(inv, from, slot, max_stack);
+    match (from.holder, slot.holder) {
+        (a, b) if a == b => {
+            let inv = match a {
+                Holder::Inventory => &mut *holders.inventory,
+                Holder::Hotbar => &mut *holders.hotbar,
+            };
+            move_stack(inv, from.index, slot.index, max_stack);
+        }
+        (Holder::Inventory, Holder::Hotbar) => move_between(
+            holders.inventory,
+            from.index,
+            holders.hotbar,
+            slot.index,
+            max_stack,
+        ),
+        (Holder::Hotbar, Holder::Inventory) => move_between(
+            holders.hotbar,
+            from.index,
+            holders.inventory,
+            slot.index,
+            max_stack,
+        ),
+        _ => unreachable!("two holders are either the same or the two different ones"),
+    }
 }
 
-/// The hotbar is the first HOTBAR_SLOTS slots of the actor's one
-/// inventory, always on screen (Atlas: items live in the bar, it is
-/// not a list of shortcuts).
+/// Slots in the hotbar: its own small [`Inventory`] on the actor,
+/// separate from the main inventory and the equipment, always on
+/// screen (Atlas: items live in the bar, it is not a list of
+/// shortcuts).
 pub const HOTBAR_SLOTS: usize = 10;
 
 /// The inventory slot a hotbar digit key uses: 1 to 9 are slots 0
@@ -337,34 +405,53 @@ mod tests {
         reg
     }
 
+    fn at(holder: Holder, index: usize) -> SlotRef {
+        SlotRef { holder, index }
+    }
+
     #[test]
-    fn drag_and_drop_moves_stacks() {
+    fn drag_and_drop_moves_stacks_within_and_across_holders() {
         let reg = registry();
         let mut state = HudState::new();
         let mut inv = Inventory::new(3);
+        let mut bar = Inventory::new(2);
         inv.slots[0] = Some(stack("scrap", 5));
         inv.slots[1] = Some(stack("cloth", 2));
+        bar.slots[1] = Some(stack("scrap", 18));
+        let mut holders = Holders {
+            inventory: &mut inv,
+            hotbar: &mut bar,
+        };
+        let inv_ = |i| at(Holder::Inventory, i);
+        let bar_ = |i| at(Holder::Hotbar, i);
 
-        start_drag(&mut state, &inv, 2);
-        assert_eq!(state.dragging_slot, None, "empty slot starts no drag");
-        end_drag(&mut state, &mut inv, 0, &reg);
-        assert_eq!(inv.slots[0].as_ref().unwrap().item, "scrap", "no drag, no move");
+        start_drag(&mut state, &holders, inv_(2));
+        assert_eq!(state.dragging, None, "empty slot starts no drag");
+        end_drag(&mut state, &mut holders, inv_(0), &reg);
+        assert_eq!(holders.inventory.slots[0].as_ref().unwrap().item, "scrap", "no drag, no move");
 
-        start_drag(&mut state, &inv, 0);
-        assert_eq!(state.dragging_slot, Some(0));
-        end_drag(&mut state, &mut inv, 0, &reg);
-        assert_eq!(state.dragging_slot, None, "dropping on itself ends the drag");
-        assert_eq!(inv.slots[0].as_ref().unwrap().item, "scrap");
+        start_drag(&mut state, &holders, inv_(0));
+        assert_eq!(state.dragging, Some(inv_(0)));
+        end_drag(&mut state, &mut holders, inv_(0), &reg);
+        assert_eq!(state.dragging, None, "dropping on itself ends the drag");
 
-        start_drag(&mut state, &inv, 0);
-        end_drag(&mut state, &mut inv, 1, &reg);
-        assert_eq!(inv.slots[0].as_ref().unwrap().item, "cloth", "swapped");
-        assert_eq!(inv.slots[1].as_ref().unwrap().item, "scrap");
+        start_drag(&mut state, &holders, inv_(0));
+        end_drag(&mut state, &mut holders, inv_(1), &reg);
+        assert_eq!(holders.inventory.slots[0].as_ref().unwrap().item, "cloth", "swapped");
+        assert_eq!(holders.inventory.slots[1].as_ref().unwrap().item, "scrap");
 
-        start_drag(&mut state, &inv, 1);
-        end_drag(&mut state, &mut inv, 2, &reg);
-        assert!(inv.slots[1].is_none(), "moved to the empty slot");
-        assert_eq!(inv.slots[2].as_ref().unwrap().count, 5);
+        // Inventory to hotbar: the scrap merges up to the max stack
+        // of 20, the rest stays behind.
+        start_drag(&mut state, &holders, inv_(1));
+        end_drag(&mut state, &mut holders, bar_(1), &reg);
+        assert_eq!(holders.hotbar.slots[1].as_ref().unwrap().count, 20);
+        assert_eq!(holders.inventory.slots[1].as_ref().unwrap().count, 3);
+
+        // Hotbar to an empty inventory slot: moves whole.
+        start_drag(&mut state, &holders, bar_(1));
+        end_drag(&mut state, &mut holders, inv_(2), &reg);
+        assert!(holders.hotbar.slots[1].is_none());
+        assert_eq!(holders.inventory.slots[2].as_ref().unwrap().count, 20);
     }
 
     #[test]

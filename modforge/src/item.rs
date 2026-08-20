@@ -180,6 +180,90 @@ impl Inventory {
     }
 }
 
+/// Where worn and held gear goes: one named slot each (the Atlas
+/// set). The weapon slot is what the hands hold.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum EquipSlot {
+    Head,
+    Chest,
+    Hands,
+    Legs,
+    Feet,
+    Weapon,
+}
+
+impl EquipSlot {
+    pub const ALL: [EquipSlot; 6] = [
+        EquipSlot::Head,
+        EquipSlot::Chest,
+        EquipSlot::Hands,
+        EquipSlot::Legs,
+        EquipSlot::Feet,
+        EquipSlot::Weapon,
+    ];
+
+    fn index(self) -> usize {
+        match self {
+            EquipSlot::Head => 0,
+            EquipSlot::Chest => 1,
+            EquipSlot::Hands => 2,
+            EquipSlot::Legs => 3,
+            EquipSlot::Feet => 4,
+            EquipSlot::Weapon => 5,
+        }
+    }
+}
+
+/// An actor's equipment: the third item holder next to the
+/// inventory and the hotbar, each its own thing. One stack at most
+/// per slot. What may go where is decided when equipping lands
+/// with combat.
+#[derive(Clone, Default)]
+pub struct Equipment {
+    slots: [Option<ItemStack>; 6],
+}
+
+impl Equipment {
+    pub fn get(&self, slot: EquipSlot) -> Option<&ItemStack> {
+        self.slots[slot.index()].as_ref()
+    }
+
+    /// Put a stack in a slot, returning what was there.
+    pub fn set(&mut self, slot: EquipSlot, stack: Option<ItemStack>) -> Option<ItemStack> {
+        std::mem::replace(&mut self.slots[slot.index()], stack)
+    }
+}
+
+/// Move the stack in `from.slots[from_slot]` onto `to.slots[to_slot]`
+/// across two different inventories: merge into a matching stack up
+/// to `max_stack`, swap with a different one, or fill an empty slot.
+/// The two-inventory twin of [`crate::hud::move_stack`].
+pub fn move_between(
+    from: &mut Inventory,
+    from_slot: usize,
+    to: &mut Inventory,
+    to_slot: usize,
+    max_stack: u32,
+) {
+    let (Some(src), Some(dst)) = (from.slots.get_mut(from_slot), to.slots.get_mut(to_slot))
+    else {
+        return;
+    };
+    match (src.as_mut(), dst.as_mut()) {
+        (None, _) => {}
+        (Some(_), None) => *dst = src.take(),
+        (Some(s), Some(d)) if s.item == d.item && s.quality == d.quality => {
+            let moved = s.count.min(max_stack.saturating_sub(d.count));
+            d.count += moved;
+            s.count -= moved;
+            if s.count == 0 {
+                *src = None;
+            }
+        }
+        _ => std::mem::swap(src, dst),
+    }
+}
+
 /// Move one slot's stack from one inventory into another; what does
 /// not fit stays in the source slot.
 pub fn transfer(from: &mut Inventory, to: &mut Inventory, slot: usize, max_stack: u32) {
@@ -221,6 +305,19 @@ mod tests {
         assert!(reg.def("scrap").is_some());
         assert!(reg.def("gold").is_none());
         assert!(reg.register(def("scrap")).is_err());
+    }
+
+    #[test]
+    fn equipment_holds_one_stack_per_named_slot() {
+        let mut gear = Equipment::default();
+        for slot in EquipSlot::ALL {
+            assert!(gear.get(slot).is_none());
+        }
+        assert!(gear.set(EquipSlot::Weapon, Some(plain("pipe", 1))).is_none());
+        let swapped = gear.set(EquipSlot::Weapon, Some(plain("hatchet", 1)));
+        assert_eq!(swapped.unwrap().item, "pipe");
+        assert_eq!(gear.get(EquipSlot::Weapon).unwrap().item, "hatchet");
+        assert!(gear.get(EquipSlot::Head).is_none(), "slots are independent");
     }
 
     #[test]
