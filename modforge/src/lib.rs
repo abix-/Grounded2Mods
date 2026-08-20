@@ -9,6 +9,7 @@
 pub mod args;
 pub mod biome;
 pub mod client;
+pub mod combat;
 pub mod counters;
 pub mod crafting;
 pub mod debug;

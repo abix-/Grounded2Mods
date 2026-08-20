@@ -110,12 +110,19 @@ mod tests {
             kind: ItemKind::Material,
             max_stack: 20,
             quality_siblings: 1,
+            combat: None,
         }).unwrap();
         items.register(ItemDef {
             name: "knife".to_string(),
             kind: ItemKind::Weapon,
             max_stack: 1,
             quality_siblings: 3,
+            combat: Some(crate::item::CombatStats {
+                damage: 15.0,
+                attack_speed: 1.2,
+                range: 1.5,
+                ammo: None,
+            }),
         }).unwrap();
 
         let mut recipes = RecipeRegistry::default();

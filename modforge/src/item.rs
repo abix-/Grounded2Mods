@@ -19,6 +19,16 @@ pub enum ItemKind {
     Weapon,
 }
 
+/// Combat stats on an item. Present on weapons and tools that can
+/// deal damage; None on food, materials, and non-combat items.
+#[derive(Clone, Debug)]
+pub struct CombatStats {
+    pub damage: f32,
+    pub attack_speed: f32,
+    pub range: f32,
+    pub ammo: Option<String>,
+}
+
 /// One item kind as data. `name` is the id; one concept, one name.
 /// `quality_siblings` is how many statistical siblings each quality
 /// tier has (see [`crate::quality`]).
@@ -28,6 +38,7 @@ pub struct ItemDef {
     pub kind: ItemKind,
     pub max_stack: u32,
     pub quality_siblings: u64,
+    pub combat: Option<CombatStats>,
 }
 
 /// The collection of checked-in ItemDefs. Consumers register their
@@ -181,6 +192,7 @@ mod tests {
             kind: ItemKind::Material,
             max_stack: 10,
             quality_siblings: 3,
+            combat: None,
         }
     }
 
