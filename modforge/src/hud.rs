@@ -118,12 +118,14 @@ impl HudState {
     }
 }
 
-/// Which of the actor's separate item holders a slot belongs to.
+/// Which slot-indexed holder a slot belongs to: the actor's own
+/// inventory or hotbar, or the container open in front of them.
 /// Equipment is not slot-indexed and is not draggable yet.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Holder {
     Inventory,
     Hotbar,
+    Container,
 }
 
 /// One slot of one holder.
@@ -133,18 +135,57 @@ pub struct SlotRef {
     pub index: usize,
 }
 
-/// The actor's draggable holders, borrowed together for a move.
+/// The slot-indexed holders on screen, borrowed together for a
+/// move. `container` is the open crate, if any.
 pub struct Holders<'a> {
     pub inventory: &'a mut Inventory,
     pub hotbar: &'a mut Inventory,
+    pub container: Option<&'a mut Inventory>,
 }
 
 impl Holders<'_> {
-    fn get(&self, holder: Holder) -> &Inventory {
+    fn get(&self, holder: Holder) -> Option<&Inventory> {
         match holder {
-            Holder::Inventory => self.inventory,
-            Holder::Hotbar => self.hotbar,
+            Holder::Inventory => Some(self.inventory),
+            Holder::Hotbar => Some(self.hotbar),
+            Holder::Container => self.container.as_deref(),
         }
+    }
+
+    fn get_mut(&mut self, holder: Holder) -> Option<&mut Inventory> {
+        match holder {
+            Holder::Inventory => Some(self.inventory),
+            Holder::Hotbar => Some(self.hotbar),
+            Holder::Container => self.container.as_deref_mut(),
+        }
+    }
+
+    /// Two different holders borrowed at once.
+    fn pair_mut(&mut self, a: Holder, b: Holder) -> Option<(&mut Inventory, &mut Inventory)> {
+        let Holders {
+            inventory,
+            hotbar,
+            container,
+        } = self;
+        let container = container.as_deref_mut();
+        match (a, b) {
+            (Holder::Inventory, Holder::Hotbar) => Some((inventory, hotbar)),
+            (Holder::Hotbar, Holder::Inventory) => Some((hotbar, inventory)),
+            (Holder::Inventory, Holder::Container) => container.map(|c| (&mut **inventory, c)),
+            (Holder::Container, Holder::Inventory) => container.map(|c| (c, &mut **inventory)),
+            (Holder::Hotbar, Holder::Container) => container.map(|c| (&mut **hotbar, c)),
+            (Holder::Container, Holder::Hotbar) => container.map(|c| (c, &mut **hotbar)),
+            _ => None,
+        }
+    }
+
+    fn max_stack_of(&self, slot: SlotRef, registry: &ItemRegistry) -> u32 {
+        self.get(slot.holder)
+            .and_then(|inv| inv.slots.get(slot.index))
+            .and_then(|s| s.as_ref())
+            .and_then(|s| registry.def(&s.item))
+            .map(|d| d.max_stack)
+            .unwrap_or(1)
     }
 }
 
@@ -152,8 +193,7 @@ impl Holders<'_> {
 pub fn start_drag(state: &mut HudState, holders: &Holders<'_>, slot: SlotRef) {
     if holders
         .get(slot.holder)
-        .slots
-        .get(slot.index)
+        .and_then(|inv| inv.slots.get(slot.index))
         .is_some_and(Option::is_some)
     {
         state.dragging = Some(slot);
@@ -176,37 +216,42 @@ pub fn end_drag(
     if from == slot {
         return;
     }
-    let max_stack = holders
-        .get(from.holder)
-        .slots
-        .get(from.index)
-        .and_then(|s| s.as_ref())
-        .and_then(|s| registry.def(&s.item))
-        .map(|d| d.max_stack)
-        .unwrap_or(1);
-    match (from.holder, slot.holder) {
-        (a, b) if a == b => {
-            let inv = match a {
-                Holder::Inventory => &mut *holders.inventory,
-                Holder::Hotbar => &mut *holders.hotbar,
-            };
+    let max_stack = holders.max_stack_of(from, registry);
+    if from.holder == slot.holder {
+        if let Some(inv) = holders.get_mut(from.holder) {
             move_stack(inv, from.index, slot.index, max_stack);
         }
-        (Holder::Inventory, Holder::Hotbar) => move_between(
-            holders.inventory,
-            from.index,
-            holders.hotbar,
-            slot.index,
-            max_stack,
-        ),
-        (Holder::Hotbar, Holder::Inventory) => move_between(
-            holders.hotbar,
-            from.index,
-            holders.inventory,
-            slot.index,
-            max_stack,
-        ),
-        _ => unreachable!("two holders are either the same or the two different ones"),
+    } else if let Some((src, dst)) = holders.pair_mut(from.holder, slot.holder) {
+        move_between(src, from.index, dst, slot.index, max_stack);
+    }
+}
+
+/// Hover plus T (Atlas): the stack under the cursor goes to the
+/// other side, container to inventory or inventory/hotbar to
+/// container, whatever fits; `half` is Shift+T. Without an open
+/// container nothing moves.
+pub fn transfer_slot(holders: &mut Holders<'_>, slot: SlotRef, half: bool, registry: &ItemRegistry) {
+    let other = match slot.holder {
+        Holder::Container => Holder::Inventory,
+        Holder::Inventory | Holder::Hotbar => Holder::Container,
+    };
+    let max_stack = holders.max_stack_of(slot, registry);
+    let Some((src, dst)) = holders.pair_mut(slot.holder, other) else {
+        return;
+    };
+    let count = match (half, src.slots.get(slot.index).and_then(|s| s.as_ref())) {
+        (_, None) => return,
+        (true, Some(stack)) => stack.count.div_ceil(2),
+        (false, Some(stack)) => stack.count,
+    };
+    let Some(taken) = src.remove(slot.index, count) else {
+        return;
+    };
+    if let Some(rest) = dst.add(taken, max_stack) {
+        // Put back what did not fit; the slot may have been emptied.
+        if let Some(left) = src.add(rest.clone(), max_stack) {
+            src.slots[slot.index] = Some(left);
+        }
     }
 }
 
@@ -421,9 +466,16 @@ mod tests {
         let mut holders = Holders {
             inventory: &mut inv,
             hotbar: &mut bar,
+            container: None,
         };
         let inv_ = |i| at(Holder::Inventory, i);
         let bar_ = |i| at(Holder::Hotbar, i);
+
+        // No container open: a drag onto a container slot is lost
+        // nowhere, the stack stays put.
+        start_drag(&mut state, &holders, inv_(0));
+        end_drag(&mut state, &mut holders, at(Holder::Container, 0), &reg);
+        assert_eq!(holders.inventory.slots[0].as_ref().unwrap().item, "scrap");
 
         start_drag(&mut state, &holders, inv_(2));
         assert_eq!(state.dragging, None, "empty slot starts no drag");
@@ -452,6 +504,58 @@ mod tests {
         end_drag(&mut state, &mut holders, inv_(2), &reg);
         assert!(holders.hotbar.slots[1].is_none());
         assert_eq!(holders.inventory.slots[2].as_ref().unwrap().count, 20);
+    }
+
+    #[test]
+    fn t_transfers_to_the_other_side_and_shift_t_half() {
+        let reg = registry();
+        let mut inv = Inventory::new(2);
+        let mut bar = Inventory::new(1);
+        let mut crate_ = Inventory::new(2);
+        inv.slots[0] = Some(stack("scrap", 6));
+        crate_.slots[0] = Some(stack("cloth", 4));
+        crate_.slots[1] = Some(stack("scrap", 19));
+        let mut holders = Holders {
+            inventory: &mut inv,
+            hotbar: &mut bar,
+            container: Some(&mut crate_),
+        };
+
+        // Container to inventory, whole stack.
+        transfer_slot(&mut holders, at(Holder::Container, 0), false, &reg);
+        assert!(holders.container.as_ref().unwrap().slots[0].is_none());
+        assert_eq!(holders.inventory.count_of("cloth"), 4);
+
+        // Inventory to container, half of 6 is 3: it tops up the 19
+        // to 20, the other 2 take the slot the cloth left.
+        transfer_slot(&mut holders, at(Holder::Inventory, 0), true, &reg);
+        assert_eq!(holders.container.as_ref().unwrap().slots[1].as_ref().unwrap().count, 20);
+        assert_eq!(holders.container.as_ref().unwrap().slots[0].as_ref().unwrap().count, 2);
+        assert_eq!(holders.inventory.count_of("scrap"), 3);
+
+        // Whole stack: the last 3 join the 2.
+        transfer_slot(&mut holders, at(Holder::Inventory, 0), false, &reg);
+        assert_eq!(holders.container.as_ref().unwrap().slots[0].as_ref().unwrap().count, 5);
+        assert_eq!(holders.inventory.count_of("scrap"), 0);
+
+        // Container to a full inventory: the stack comes back.
+        holders.inventory.slots[0] = Some(stack("cloth", 20));
+        holders.inventory.slots[1] = Some(stack("cloth", 20));
+        transfer_slot(&mut holders, at(Holder::Container, 0), false, &reg);
+        assert_eq!(holders.container.as_ref().unwrap().slots[0].as_ref().unwrap().count, 5);
+
+        // Empty slot: nothing happens.
+        transfer_slot(&mut holders, at(Holder::Hotbar, 0), false, &reg);
+        assert_eq!(holders.container.as_ref().unwrap().count_of("scrap"), 25);
+
+        // No container open: nothing moves.
+        let mut closed = Holders {
+            inventory: &mut inv,
+            hotbar: &mut bar,
+            container: None,
+        };
+        transfer_slot(&mut closed, at(Holder::Inventory, 0), false, &reg);
+        assert_eq!(closed.inventory.count_of("cloth"), 40);
     }
 
     #[test]
