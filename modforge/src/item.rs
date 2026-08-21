@@ -273,6 +273,28 @@ impl Equipment {
     pub fn set(&mut self, slot: EquipSlot, stack: Option<ItemStack>) -> Option<ItemStack> {
         std::mem::replace(&mut self.slots[slot.index()], stack)
     }
+
+    /// Take everything worn, leaving every slot empty.
+    pub fn drain_all(&mut self) -> Vec<ItemStack> {
+        self.slots.iter_mut().filter_map(|s| s.take()).collect()
+    }
+}
+
+impl Inventory {
+    /// Take every stack, leaving every slot empty.
+    pub fn drain_all(&mut self) -> Vec<ItemStack> {
+        self.slots.iter_mut().filter_map(|s| s.take()).collect()
+    }
+}
+
+/// Everything a dead actor leaves behind: its inventory, its hotbar,
+/// and what it wore, in that order, all holders left empty. The
+/// consumer puts the list in a box where the body fell.
+pub fn loot_all(inv: &mut Inventory, hotbar: &mut Inventory, worn: &mut Equipment) -> Vec<ItemStack> {
+    let mut loot = inv.drain_all();
+    loot.extend(hotbar.drain_all());
+    loot.extend(worn.drain_all());
+    loot
 }
 
 /// Move the stack in `from.slots[from_slot]` onto `to.slots[to_slot]`
@@ -339,6 +361,23 @@ mod tests {
             count,
             quality: None,
         }
+    }
+
+    #[test]
+    fn loot_all_empties_every_holder_in_order() {
+        let mut inv = Inventory::new(3);
+        inv.slots[2] = Some(plain("scrap", 4));
+        let mut bar = Inventory::new(2);
+        bar.slots[0] = Some(plain("pipe", 1));
+        let mut worn = Equipment::default();
+        worn.set(EquipSlot::Chest, Some(plain("vest", 1)));
+        let loot = loot_all(&mut inv, &mut bar, &mut worn);
+        let names: Vec<&str> = loot.iter().map(|s| s.item.as_str()).collect();
+        assert_eq!(names, ["scrap", "pipe", "vest"]);
+        assert_eq!(inv.count_of("scrap"), 0);
+        assert_eq!(bar.count_of("pipe"), 0);
+        assert!(worn.get(EquipSlot::Chest).is_none());
+        assert!(loot_all(&mut inv, &mut bar, &mut worn).is_empty(), "nothing twice");
     }
 
     #[test]
