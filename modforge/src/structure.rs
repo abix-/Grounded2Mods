@@ -178,6 +178,183 @@ pub fn validate(def: &StructureDef) -> Result<(), String> {
     Ok(())
 }
 
+/// Floor and landing slab thickness, step depth, and the most one
+/// step may rise. Shared by the piece builder and the generators.
+pub const SLAB: f32 = 0.1;
+pub const STEP_DEPTH: f32 = 0.3;
+pub const STEP_RISE_MAX: f32 = 0.31;
+/// Health of a freshly built piece until grades land.
+pub const PIECE_HEALTH: f32 = 100.0;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PieceKind {
+    Wall,
+    Floor,
+    Ceiling,
+    Step,
+    Landing,
+    Furniture,
+}
+
+/// One solid box of a built structure: a wall segment, a slab, a
+/// step, a piece of furniture. The unit of damage and rebuild, the
+/// way Rust (the game) treats building blocks. Structure-local
+/// centre; the consumer bakes the whole list into one collider and
+/// one mesh per colour, and rebakes when the list changes.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Piece {
+    pub kind: PieceKind,
+    pub center: Vec3,
+    pub size: Vec3,
+    pub color: Rgb,
+    pub health: f32,
+}
+
+impl Piece {
+    pub fn aabb(&self) -> Aabb {
+        Aabb::from_center_size(self.center, self.size)
+    }
+}
+
+/// Every solid box of a structure, from its def: wall segments
+/// between openings, panels under sills, floor and ceiling slabs,
+/// steps and landings, furniture. Doors are not pieces; they move,
+/// and the consumer spawns them from the openings.
+pub fn pieces_of(def: &StructureDef) -> Vec<Piece> {
+    let mut pieces = Vec::new();
+    let mut push = |kind, center, size, color| {
+        pieces.push(Piece {
+            kind,
+            center,
+            size,
+            color,
+            health: PIECE_HEALTH,
+        });
+    };
+    for room in &def.rooms {
+        let t = room.wall_thickness;
+        let height = room.interior.y;
+        for side in [Side::North, Side::South, Side::East, Side::West] {
+            let (axis, frame, length) = side_frame(side, room.interior, t);
+            let wall_center = room.origin + frame;
+            let mut cuts: Vec<(f32, f32)> = room
+                .openings
+                .iter()
+                .filter(|o| o.side == side)
+                .map(|o| (o.offset - o.width / 2.0, o.offset + o.width / 2.0))
+                .collect();
+            cuts.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let mut cursor = -length / 2.0;
+            let mut segments = Vec::new();
+            for (start, end) in cuts {
+                if start > cursor {
+                    segments.push((cursor, start));
+                }
+                cursor = cursor.max(end);
+            }
+            if cursor < length / 2.0 {
+                segments.push((cursor, length / 2.0));
+            }
+            for (start, end) in segments {
+                let mid = (start + end) / 2.0;
+                let run = end - start;
+                let center = wall_center + axis * mid + Vec3::Y * (height / 2.0);
+                let size = axis * run + Vec3::Y * height + (Vec3::ONE - axis - Vec3::Y) * t;
+                push(PieceKind::Wall, center, size, def.wall_color);
+            }
+            // Panels below raised sills.
+            for opening in room
+                .openings
+                .iter()
+                .filter(|o| o.side == side && o.sill > 0.0)
+            {
+                let center = wall_center + axis * opening.offset + Vec3::Y * (opening.sill / 2.0);
+                let size = axis * opening.width
+                    + Vec3::Y * opening.sill
+                    + (Vec3::ONE - axis - Vec3::Y) * t;
+                push(PieceKind::Wall, center, size, def.wall_color);
+            }
+        }
+        let slab_xz = Vec3::new(room.interior.x + 2.0 * t, 0.0, room.interior.z + 2.0 * t);
+        if room.floor {
+            push(
+                PieceKind::Floor,
+                room.origin + Vec3::Y * (SLAB / 2.0),
+                slab_xz + Vec3::Y * SLAB,
+                def.floor_color,
+            );
+        }
+        if room.ceiling {
+            push(
+                PieceKind::Ceiling,
+                room.origin + Vec3::Y * (height + SLAB),
+                slab_xz + Vec3::Y * 0.2,
+                def.wall_color,
+            );
+        }
+    }
+    for stair in &def.stairs {
+        let dir = stair.side.outward();
+        let across = Vec3::ONE - dir.abs() - Vec3::Y;
+        let steps = (stair.rise / STEP_RISE_MAX).ceil().max(1.0) as usize;
+        let step_rise = stair.rise / steps as f32;
+        for i in 0..steps {
+            let height = step_rise * (i + 1) as f32;
+            push(
+                PieceKind::Step,
+                stair.base + dir * (STEP_DEPTH * (i as f32 + 0.5)) + Vec3::Y * (height / 2.0),
+                dir.abs() * STEP_DEPTH + across * stair.width + Vec3::Y * height,
+                def.floor_color,
+            );
+        }
+        if stair.landing > 0.0 {
+            push(
+                PieceKind::Landing,
+                stair.base
+                    + dir * (STEP_DEPTH * steps as f32 + stair.landing / 2.0)
+                    + Vec3::Y * (stair.rise - SLAB / 2.0),
+                dir.abs() * stair.landing + across * stair.width + Vec3::Y * SLAB,
+                def.floor_color,
+            );
+        }
+    }
+    for piece in &def.furniture {
+        push(PieceKind::Furniture, piece.center, piece.size, piece.color);
+    }
+    pieces
+}
+
+/// The piece containing a structure-local point, if any: the hit to
+/// piece lookup. A point on a shared face belongs to the first piece
+/// in list order.
+pub fn piece_at(pieces: &[Piece], point: Vec3) -> Option<usize> {
+    const SKIN: f32 = 1e-3;
+    pieces.iter().position(|p| {
+        let a = p.aabb();
+        point.x >= a.min.x - SKIN
+            && point.x <= a.max.x + SKIN
+            && point.y >= a.min.y - SKIN
+            && point.y <= a.max.y + SKIN
+            && point.z >= a.min.z - SKIN
+            && point.z <= a.max.z + SKIN
+    })
+}
+
+/// Take `amount` off piece `index`. A piece at zero health is removed
+/// and `true` comes back: the consumer must rebake.
+pub fn damage(pieces: &mut Vec<Piece>, index: usize, amount: f32) -> bool {
+    let Some(piece) = pieces.get_mut(index) else {
+        return false;
+    };
+    piece.health -= amount;
+    if piece.health <= 0.0 {
+        pieces.remove(index);
+        true
+    } else {
+        false
+    }
+}
+
 /// Wall run axis, outward wall-center offset from the room origin,
 /// and wall run length for one side of one room. The shared frame
 /// math every spawner builds walls from.
@@ -274,6 +451,37 @@ mod tests {
         // (shared wall plane).
         assert!(validate(&def(vec![room(Vec3::ZERO), room(Vec3::new(0.0, 3.0, 0.0))])).is_ok());
         assert!(validate(&def(vec![room(Vec3::ZERO), room(Vec3::new(6.0, 0.0, 0.0))])).is_ok());
+    }
+
+    #[test]
+    fn a_room_with_a_doorway_becomes_seven_pieces_and_a_hit_finds_the_wall() {
+        let mut r = room(Vec3::ZERO);
+        r.openings.push(Opening {
+            side: Side::North,
+            offset: 0.0,
+            width: 1.2,
+            sill: 0.0,
+            door: true,
+        });
+        let d = def(vec![r]);
+        let mut pieces = pieces_of(&d);
+        // Three whole walls, two segments beside the doorway, floor,
+        // ceiling.
+        assert_eq!(pieces.len(), 7);
+        assert_eq!(pieces.iter().filter(|p| p.kind == PieceKind::Wall).count(), 5);
+
+        // A point in the east wall band (x 3.0 to 3.2).
+        let hit = piece_at(&pieces, Vec3::new(3.1, 1.0, 0.0)).expect("the east wall");
+        assert_eq!(pieces[hit].kind, PieceKind::Wall);
+        // The doorway gap has no piece.
+        assert!(piece_at(&pieces, Vec3::new(0.0, 1.0, -4.1)).is_none());
+
+        // Damage short of death keeps it; death removes it.
+        assert!(!damage(&mut pieces, hit, 40.0));
+        assert_eq!(pieces.len(), 7);
+        assert!(damage(&mut pieces, hit, 60.0));
+        assert_eq!(pieces.len(), 6);
+        assert!(piece_at(&pieces, Vec3::new(3.1, 1.0, 0.0)).is_none());
     }
 
     #[test]

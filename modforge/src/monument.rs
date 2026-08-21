@@ -19,7 +19,8 @@ use glam::Vec3;
 
 use crate::structure::{
     Aabb, Gate, LightSpec, LootSpot, MonumentDef, MonumentMember, NpcSpot, Opening, Rgb,
-    RoomSpec, Side, SolidSpec, StairSpec, StructureDef, room_interior_aabb, validate,
+    RoomSpec, SLAB, STEP_DEPTH, STEP_RISE_MAX, Side, SolidSpec, StairSpec, StructureDef,
+    room_interior_aabb, validate,
 };
 use crate::unknown::rng;
 
@@ -39,11 +40,6 @@ const HALF_LANDING: f32 = 1.8;
 /// Flat room in front of the first step, and the slab each level's
 /// doorway opens onto.
 const STAIR_APPROACH: f32 = 1.0;
-/// Step depth and max rise match the consumer's spawner (0.3 deep,
-/// 0.31 max rise), so a flight's run is steps * 0.3.
-const STEP_DEPTH: f32 = 0.3;
-const STEP_RISE_MAX: f32 = 0.31;
-const SLAB: f32 = 0.1;
 
 /// A seeded roll stream: every draw advances the salt, so one seed
 /// yields one reproducible sequence. Built on the one random
