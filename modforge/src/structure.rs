@@ -97,15 +97,23 @@ pub struct LightSpec {
     pub intensity: f32,
 }
 
-/// A whole building as data.
+/// A whole building as data. `wall_color` paints walls, ceilings,
+/// and stairs; `floor_color` the floor slabs.
 #[derive(Clone)]
 pub struct StructureDef {
     pub name: String,
+    pub wall_color: Rgb,
+    pub floor_color: Rgb,
     pub rooms: Vec<RoomSpec>,
     pub stairs: Vec<StairSpec>,
     pub furniture: Vec<SolidSpec>,
     pub lights: Vec<LightSpec>,
 }
+
+/// The bare concrete every hand-authored building used before
+/// colours were data.
+pub const CONCRETE_WALL: Rgb = [0.45, 0.45, 0.47];
+pub const CONCRETE_FLOOR: Rgb = [0.35, 0.35, 0.36];
 
 /// Axis-aligned box, the shared geometry primitive for interiors,
 /// colliders, and walkable surfaces.
@@ -146,9 +154,20 @@ pub fn room_interior_aabb(room: &RoomSpec) -> Aabb {
 /// legal). Reachability, matching openings, and stair clearance
 /// join this check when generation starts authoring defs.
 pub fn validate(def: &StructureDef) -> Result<(), String> {
+    // Touching planes computed two ways (k*h + h against (k+1)*h)
+    // differ by rounding; shrink each interior by a hair so touching
+    // never reads as overlapping.
+    const HAIR: f32 = 1e-3;
+    let interior = |room: &RoomSpec| {
+        let a = room_interior_aabb(room);
+        Aabb {
+            min: a.min + Vec3::splat(HAIR),
+            max: a.max - Vec3::splat(HAIR),
+        }
+    };
     for (i, a) in def.rooms.iter().enumerate() {
         for (j, b) in def.rooms.iter().enumerate().skip(i + 1) {
-            if room_interior_aabb(a).overlaps(&room_interior_aabb(b)) {
+            if interior(a).overlaps(&interior(b)) {
                 return Err(format!(
                     "structure '{}': room {i} and room {j} interiors overlap",
                     def.name
@@ -235,6 +254,8 @@ mod tests {
     fn def(rooms: Vec<RoomSpec>) -> StructureDef {
         StructureDef {
             name: "test".to_string(),
+            wall_color: CONCRETE_WALL,
+            floor_color: CONCRETE_FLOOR,
             rooms,
             stairs: vec![],
             furniture: vec![],
