@@ -47,6 +47,8 @@ tiny_http = { workspace = true }
 # Structure vocabulary math (modforge::structure). Pinned to the glam
 # line Bevy 0.19 ships so topside's Vec3 and ours are the same type.
 glam = "0.32"
+# Terrain noise for modforge::worldgen (the crate Endless used).
+noise = "0.9"
 socket2 = { workspace = true }
 ureq = { workspace = true }
 hex = { workspace = true }

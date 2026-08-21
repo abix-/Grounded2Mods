@@ -47,3 +47,4 @@ pub mod unknown;
 pub mod vanilla;
 pub mod winproc;
 pub mod worker;
+pub mod worldgen;
