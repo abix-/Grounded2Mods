@@ -5,14 +5,15 @@
 //! by an arrangement rule, loot spots, NPC spots, and gates come
 //! with it, and even the name is random. Never the same twice.
 //!
-//! Engine-agnostic and deterministic: the same seed rolls the same
-//! monument, so a world can be re-rolled and replayed. The output
-//! is a [`MonumentDef`] of plain [`StructureDef`]s; the consumer's
-//! spawner places them (topside: spawn_monument over
-//! spawn_structure).
+//! Like [`crate::item`] and [`crate::biome`]: modforge owns the
+//! shapes ([`BuildingTypeDef`], [`MonumentTypeDef`]) and the
+//! registries; the consumer registers which building and monument
+//! types exist in its game. Engine-agnostic and deterministic: the
+//! same seed rolls the same monument. The output is a
+//! [`MonumentDef`] of plain [`StructureDef`]s; the consumer's
+//! spawner places them.
 //!
-//! Prior art: Rust's monuments (the types below are Rust's, adapted)
-//! and its card rooms (the gates).
+//! Prior art: Rust's monuments and its card rooms (the gates).
 
 use glam::Vec3;
 
@@ -76,31 +77,6 @@ impl Roll {
     }
 }
 
-/// The building types monuments are made of (design.md "Building
-/// types"): small, medium, large.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum BuildingKind {
-    // Small: one room, one floor.
-    GasStation,
-    ConvenienceStore,
-    WaterWell,
-    GuardTower,
-    Shack,
-    Lighthouse,
-    // Medium: two to four rooms, one or two floors.
-    Warehouse,
-    OfficeBuilding,
-    Workshop,
-    Barracks,
-    Lab,
-    Supermarket,
-    // Large: five or more rooms, two or more floors.
-    Hangar,
-    IndustrialPlant,
-    Silo,
-    DockBuilding,
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum BuildingSize {
     Small,
@@ -108,11 +84,13 @@ pub enum BuildingSize {
     Large,
 }
 
-/// What varies on every roll of one building type (design.md,
-/// operator-locked: "the buildings should have parameters that
-/// change"). Rooms are per floor, laid in a row; floors stack.
-#[derive(Clone, Copy, Debug)]
-pub struct BuildingParams {
+/// One building type as data (design.md "Building types"): what
+/// varies on every roll (operator-locked: "the buildings should
+/// have parameters that change"). Rooms are per floor, laid in a
+/// row; floors stack. `name` is the id.
+#[derive(Clone, Debug)]
+pub struct BuildingTypeDef {
+    pub name: String,
     pub size: BuildingSize,
     pub rooms: (u32, u32),
     pub floors: (u32, u32),
@@ -123,117 +101,58 @@ pub struct BuildingParams {
     pub windows: u64,
     /// Chance per room of a piece of furniture, per mille.
     pub clutter: u64,
-    pub palette: &'static [Rgb],
+    pub palette: Vec<Rgb>,
 }
 
-const CONCRETE: &[Rgb] = &[[0.45, 0.45, 0.47], [0.5, 0.48, 0.45], [0.38, 0.4, 0.42]];
-const WOOD: &[Rgb] = &[[0.45, 0.32, 0.18], [0.55, 0.45, 0.2], [0.35, 0.25, 0.15]];
-const STEEL: &[Rgb] = &[[0.3, 0.32, 0.35], [0.25, 0.3, 0.4], [0.5, 0.2, 0.15]];
-const CLEAN: &[Rgb] = &[[0.8, 0.82, 0.85], [0.6, 0.7, 0.75], [0.3, 0.5, 0.6]];
+/// The checked-in building types. The consumer registers its
+/// content at startup and looks types up by name.
+#[derive(Default)]
+pub struct BuildingRegistry {
+    defs: Vec<BuildingTypeDef>,
+}
 
-impl BuildingKind {
-    pub const ALL: [BuildingKind; 16] = [
-        BuildingKind::GasStation,
-        BuildingKind::ConvenienceStore,
-        BuildingKind::WaterWell,
-        BuildingKind::GuardTower,
-        BuildingKind::Shack,
-        BuildingKind::Lighthouse,
-        BuildingKind::Warehouse,
-        BuildingKind::OfficeBuilding,
-        BuildingKind::Workshop,
-        BuildingKind::Barracks,
-        BuildingKind::Lab,
-        BuildingKind::Supermarket,
-        BuildingKind::Hangar,
-        BuildingKind::IndustrialPlant,
-        BuildingKind::Silo,
-        BuildingKind::DockBuilding,
-    ];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            BuildingKind::GasStation => "gas station",
-            BuildingKind::ConvenienceStore => "convenience store",
-            BuildingKind::WaterWell => "water well",
-            BuildingKind::GuardTower => "guard tower",
-            BuildingKind::Shack => "shack",
-            BuildingKind::Lighthouse => "lighthouse",
-            BuildingKind::Warehouse => "warehouse",
-            BuildingKind::OfficeBuilding => "office building",
-            BuildingKind::Workshop => "workshop",
-            BuildingKind::Barracks => "barracks",
-            BuildingKind::Lab => "lab",
-            BuildingKind::Supermarket => "supermarket",
-            BuildingKind::Hangar => "hangar",
-            BuildingKind::IndustrialPlant => "industrial plant",
-            BuildingKind::Silo => "silo",
-            BuildingKind::DockBuilding => "dock building",
+impl BuildingRegistry {
+    pub fn register(&mut self, def: BuildingTypeDef) -> Result<(), String> {
+        if self.defs.iter().any(|d| d.name == def.name) {
+            return Err(format!("building type '{}' registered twice", def.name));
         }
+        if def.palette.is_empty() {
+            return Err(format!("building type '{}' has an empty palette", def.name));
+        }
+        if def.floors.1 > 2 {
+            return Err(format!(
+                "building type '{}': floors top out at two until multi-flight stairwells land",
+                def.name
+            ));
+        }
+        self.defs.push(def);
+        Ok(())
     }
 
-    /// The parameter ranges for this type. Floors top out at two
-    /// until multi-flight stairwells land.
-    pub fn params(self) -> BuildingParams {
-        use BuildingKind::*;
-        use BuildingSize::*;
-        let p = |size, rooms, floors, width, length, height, windows, clutter, palette| {
-            BuildingParams {
-                size,
-                rooms,
-                floors,
-                width,
-                length,
-                height,
-                windows,
-                clutter,
-                palette,
-            }
-        };
-        match self {
-            Shack => p(Small, (1, 1), (1, 1), (4.0, 6.0), (4.0, 6.0), 2.8, 400, 500, WOOD),
-            GasStation => p(Small, (1, 2), (1, 1), (5.0, 8.0), (5.0, 7.0), 3.0, 600, 500, STEEL),
-            ConvenienceStore => {
-                p(Small, (2, 3), (1, 1), (5.0, 7.0), (6.0, 9.0), 3.0, 500, 700, CONCRETE)
-            }
-            WaterWell => p(Small, (1, 1), (1, 1), (3.5, 4.5), (3.5, 4.5), 3.0, 0, 300, CONCRETE),
-            GuardTower => p(Small, (1, 1), (2, 2), (3.5, 4.0), (5.0, 6.0), 3.0, 800, 200, WOOD),
-            Lighthouse => p(Small, (1, 1), (2, 2), (4.0, 5.0), (5.0, 6.0), 3.0, 500, 200, CLEAN),
-            Warehouse => {
-                p(Medium, (2, 3), (1, 1), (8.0, 12.0), (10.0, 16.0), 5.0, 300, 800, STEEL)
-            }
-            OfficeBuilding => {
-                p(Medium, (3, 4), (2, 2), (5.0, 6.0), (6.0, 8.0), 3.0, 800, 600, CONCRETE)
-            }
-            Workshop => p(Medium, (2, 3), (1, 1), (6.0, 8.0), (7.0, 10.0), 4.0, 400, 900, STEEL),
-            Barracks => p(Medium, (3, 4), (1, 1), (5.0, 6.0), (7.0, 9.0), 3.0, 500, 700, WOOD),
-            Lab => p(Medium, (2, 4), (1, 2), (5.0, 7.0), (6.0, 8.0), 3.0, 300, 800, CLEAN),
-            Supermarket => {
-                p(Medium, (2, 3), (1, 1), (10.0, 14.0), (10.0, 14.0), 4.0, 200, 900, CONCRETE)
-            }
-            Hangar => p(Large, (2, 3), (1, 1), (14.0, 20.0), (20.0, 30.0), 8.0, 100, 600, STEEL),
-            IndustrialPlant => {
-                p(Large, (4, 6), (2, 2), (8.0, 10.0), (10.0, 12.0), 5.0, 300, 900, STEEL)
-            }
-            Silo => p(Large, (2, 3), (2, 2), (5.0, 6.0), (5.0, 6.0), 3.0, 100, 500, CONCRETE),
-            DockBuilding => {
-                p(Large, (3, 5), (1, 1), (6.0, 8.0), (14.0, 20.0), 4.0, 400, 700, WOOD)
-            }
-        }
+    pub fn def(&self, name: &str) -> Option<&BuildingTypeDef> {
+        self.defs.iter().find(|d| d.name == name)
     }
 
-    pub fn size(self) -> BuildingSize {
-        self.params().size
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.defs.iter().map(|d| d.name.as_str())
+    }
+
+    pub fn len(&self) -> usize {
+        self.defs.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.defs.is_empty()
     }
 }
 
-/// Roll one building of `kind`: a row of rooms per floor, doors
+/// Roll one building of type `def`: a row of rooms per floor, doors
 /// between neighbours and one out the south of the first room,
 /// windows by chance, a full-height stairwell at the east end when
 /// there is a second floor, furniture and a light per room. Every
-/// def passes [`validate`].
-pub fn generate_building(kind: BuildingKind, roll: &mut Roll) -> StructureDef {
-    let p = kind.params();
+/// result passes [`validate`].
+pub fn generate_building(def: &BuildingTypeDef, roll: &mut Roll) -> StructureDef {
+    let p = def;
     let per_floor = roll.between(p.rooms.0, p.rooms.1);
     let floors = roll.between(p.floors.0, p.floors.1);
     let length = roll.measure(p.length.0, p.length.1);
@@ -309,9 +228,10 @@ pub fn generate_building(kind: BuildingKind, roll: &mut Roll) -> StructureDef {
                 // Against the north wall, clear of every doorway.
                 let dx = roll.measure(-(w / 2.0 - 1.0).max(0.0), (w / 2.0 - 1.0).max(0.1));
                 furniture.push(SolidSpec {
-                    center: origin + Vec3::new(dx, size.y / 2.0, -length / 2.0 + size.z / 2.0 + 0.3),
+                    center: origin
+                        + Vec3::new(dx, size.y / 2.0, -length / 2.0 + size.z / 2.0 + 0.3),
                     size,
-                    color: *roll.pick(p.palette),
+                    color: *roll.pick(&p.palette),
                 });
             }
             lights.push(LightSpec {
@@ -349,8 +269,8 @@ pub fn generate_building(kind: BuildingKind, roll: &mut Roll) -> StructureDef {
             floor: true,
             ceiling: true,
         });
-        // The flight runs north along the stairwell's east half and
-        // tops out with its landing centred on the doorway (z 0).
+        // The flight runs north and tops out with its landing
+        // centred on the doorway (z 0).
         let steps = (p.height / STEP_RISE_MAX).ceil().max(1.0);
         let run = steps * STEP_DEPTH;
         let base_z = run + STAIR_LANDING / 2.0;
@@ -368,15 +288,15 @@ pub fn generate_building(kind: BuildingKind, roll: &mut Roll) -> StructureDef {
         });
     }
 
-    let def = StructureDef {
-        name: kind.label().to_string(),
+    let out = StructureDef {
+        name: def.name.clone(),
         rooms,
         stairs,
         furniture,
         lights,
     };
-    debug_assert!(validate(&def).is_ok(), "generated buildings are legal");
-    def
+    debug_assert!(validate(&out).is_ok(), "generated buildings are legal");
+    out
 }
 
 fn door(side: Side, offset: f32) -> Opening {
@@ -430,222 +350,173 @@ pub enum Arrangement {
 }
 
 /// One pick from a monument type's building list: `min` to `max`
-/// buildings drawn from `choices`.
-#[derive(Clone, Copy, Debug)]
+/// buildings drawn from `choices` (building type names).
+#[derive(Clone, Debug)]
 pub struct BuildingSlot {
-    pub choices: &'static [BuildingKind],
+    pub choices: Vec<String>,
     pub min: u32,
     pub max: u32,
 }
 
-/// What one monument type rolls from.
-#[derive(Clone, Copy, Debug)]
-pub struct MonumentRules {
-    pub slots: &'static [BuildingSlot],
+/// One monument type as data (design.md "Monument types"). `name`
+/// is the id; `suffix` ends every rolled monument's name.
+#[derive(Clone, Debug)]
+pub struct MonumentTypeDef {
+    pub name: String,
+    pub slots: Vec<BuildingSlot>,
     pub arrangement: Arrangement,
     /// Base danger of its loot and NPC spots (design.md "Danger").
     pub danger: u32,
     /// Whether its last building hides a gated back room.
     pub gated: bool,
-    /// The last word of its rolled name.
-    pub suffix: &'static str,
+    pub suffix: String,
 }
 
-/// The monument types (design.md "Monument types", Rust's adapted).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum MonumentKind {
-    RoadsideStop,
-    Airfield,
-    PowerPlant,
-    TrainYard,
-    MilitaryOutpost,
-    ResearchStation,
-    Harbor,
-    Junkyard,
-    Sewer,
-    LaunchSite,
+/// The checked-in monument types plus the word pools rolled names
+/// are built from. Registering a type checks that every building it
+/// names exists in the building registry.
+#[derive(Default)]
+pub struct MonumentRegistry {
+    defs: Vec<MonumentTypeDef>,
+    name_first: Vec<String>,
+    name_second: Vec<String>,
 }
 
-const SMALL: &[BuildingKind] = &[
-    BuildingKind::GasStation,
-    BuildingKind::ConvenienceStore,
-    BuildingKind::WaterWell,
-    BuildingKind::GuardTower,
-    BuildingKind::Shack,
-    BuildingKind::Lighthouse,
-];
-const MEDIUM: &[BuildingKind] = &[
-    BuildingKind::Warehouse,
-    BuildingKind::OfficeBuilding,
-    BuildingKind::Workshop,
-    BuildingKind::Barracks,
-    BuildingKind::Lab,
-    BuildingKind::Supermarket,
-];
-const SMALL_OR_MEDIUM: &[BuildingKind] = &[
-    BuildingKind::GasStation,
-    BuildingKind::Shack,
-    BuildingKind::GuardTower,
-    BuildingKind::Warehouse,
-    BuildingKind::Workshop,
-    BuildingKind::OfficeBuilding,
-];
-
-const fn slot(choices: &'static [BuildingKind], min: u32, max: u32) -> BuildingSlot {
-    BuildingSlot { choices, min, max }
-}
-
-const ROADSIDE_STOP: &[BuildingSlot] = &[slot(SMALL, 1, 2)];
-const AIRFIELD: &[BuildingSlot] = &[
-    slot(&[BuildingKind::Hangar], 1, 1),
-    slot(SMALL_OR_MEDIUM, 1, 2),
-];
-const POWER_PLANT: &[BuildingSlot] = &[
-    slot(&[BuildingKind::IndustrialPlant], 1, 1),
-    slot(MEDIUM, 1, 3),
-];
-const TRAIN_YARD: &[BuildingSlot] = &[
-    slot(&[BuildingKind::Warehouse], 1, 2),
-    slot(SMALL, 1, 2),
-];
-const MILITARY_OUTPOST: &[BuildingSlot] = &[
-    slot(&[BuildingKind::Barracks], 1, 1),
-    slot(&[BuildingKind::GuardTower], 1, 2),
-];
-const RESEARCH_STATION: &[BuildingSlot] = &[
-    slot(&[BuildingKind::Lab], 1, 1),
-    slot(MEDIUM, 1, 2),
-];
-const HARBOR: &[BuildingSlot] = &[
-    slot(&[BuildingKind::DockBuilding], 1, 1),
-    slot(&[BuildingKind::Warehouse], 1, 2),
-];
-const JUNKYARD: &[BuildingSlot] = &[slot(&[BuildingKind::Shack, BuildingKind::Workshop], 2, 3)];
-const SEWER: &[BuildingSlot] = &[
-    slot(&[BuildingKind::Silo], 1, 1),
-    slot(&[BuildingKind::Shack], 1, 1),
-];
-const LAUNCH_SITE: &[BuildingSlot] = &[
-    slot(&[BuildingKind::Hangar], 1, 1),
-    slot(&[BuildingKind::IndustrialPlant], 1, 1),
-    slot(MEDIUM, 1, 2),
-];
-
-impl MonumentKind {
-    pub const ALL: [MonumentKind; 10] = [
-        MonumentKind::RoadsideStop,
-        MonumentKind::Airfield,
-        MonumentKind::PowerPlant,
-        MonumentKind::TrainYard,
-        MonumentKind::MilitaryOutpost,
-        MonumentKind::ResearchStation,
-        MonumentKind::Harbor,
-        MonumentKind::Junkyard,
-        MonumentKind::Sewer,
-        MonumentKind::LaunchSite,
-    ];
-
-    pub fn rules(self) -> MonumentRules {
-        use Arrangement::*;
-        use MonumentKind::*;
-        let r = |slots, arrangement, danger, gated, suffix| MonumentRules {
-            slots,
-            arrangement,
-            danger,
-            gated,
-            suffix,
-        };
-        match self {
-            RoadsideStop => r(ROADSIDE_STOP, AlongRoad, 1, false, "Stop"),
-            Airfield => r(AIRFIELD, AlongRoad, 3, true, "Airfield"),
-            PowerPlant => r(POWER_PLANT, Clustered, 4, true, "Plant"),
-            TrainYard => r(TRAIN_YARD, AlongRoad, 2, false, "Yard"),
-            MilitaryOutpost => r(MILITARY_OUTPOST, AroundYard, 3, true, "Outpost"),
-            ResearchStation => r(RESEARCH_STATION, AroundYard, 3, true, "Station"),
-            Harbor => r(HARBOR, AlongRoad, 2, false, "Harbor"),
-            Junkyard => r(JUNKYARD, Clustered, 1, false, "Junkyard"),
-            Sewer => r(SEWER, Clustered, 3, true, "Sewer"),
-            LaunchSite => r(LAUNCH_SITE, AroundYard, 5, true, "Site"),
+impl MonumentRegistry {
+    pub fn register(
+        &mut self,
+        def: MonumentTypeDef,
+        buildings: &BuildingRegistry,
+    ) -> Result<(), String> {
+        if self.defs.iter().any(|d| d.name == def.name) {
+            return Err(format!("monument type '{}' registered twice", def.name));
         }
-    }
-}
-
-const NAME_FIRST: &[&str] = &[
-    "Ash", "Rust", "Hollow", "Grey", "Salt", "Cinder", "Dust", "Black", "Cold", "Broken", "Iron",
-    "Sour", "Dead", "Low", "Far",
-];
-const NAME_SECOND: &[&str] = &[
-    "fall", "ridge", "water", "field", "mark", "reach", "pass", "well", "brook", "gate", "fork",
-    "hill", "marsh", "bend", "row",
-];
-
-/// A rolled monument name: two joined words and the type's suffix
-/// ("Ashfall Stop"). Random every time (design.md: "even the
-/// monument NAME is random").
-pub fn roll_name(kind: MonumentKind, roll: &mut Roll) -> String {
-    format!(
-        "{}{} {}",
-        roll.pick(NAME_FIRST),
-        roll.pick(NAME_SECOND),
-        kind.rules().suffix
-    )
-}
-
-/// Roll one monument of `kind` from `seed`: pick building types per
-/// the rules, generate each building, arrange them, then place loot
-/// spots (one per building), NPC spots (one outside each door), and
-/// the gate (the last building's back room, when gated).
-pub fn roll_monument(kind: MonumentKind, seed: u64) -> MonumentDef {
-    let rules = kind.rules();
-    let mut roll = Roll::new(seed);
-    let name = roll_name(kind, &mut roll);
-
-    let mut buildings = Vec::new();
-    for slot in rules.slots {
-        let count = roll.between(slot.min, slot.max);
-        for _ in 0..count {
-            let kind = *roll.pick(slot.choices);
-            buildings.push(generate_building(kind, &mut roll));
+        if def.slots.is_empty() {
+            return Err(format!("monument type '{}' has no building slots", def.name));
         }
+        for slot in &def.slots {
+            if slot.choices.is_empty() || slot.min > slot.max {
+                return Err(format!("monument type '{}': bad building slot", def.name));
+            }
+            for choice in &slot.choices {
+                if buildings.def(choice).is_none() {
+                    return Err(format!(
+                        "monument type '{}' names unknown building type '{choice}'",
+                        def.name
+                    ));
+                }
+            }
+        }
+        self.defs.push(def);
+        Ok(())
     }
 
-    let members = arrange(buildings, rules.arrangement, &mut roll);
+    /// The two word pools a rolled name joins ("Ash" + "fall").
+    pub fn set_name_words(&mut self, first: Vec<String>, second: Vec<String>) {
+        self.name_first = first;
+        self.name_second = second;
+    }
 
-    let mut loot_spots = Vec::new();
-    let mut npc_spots = Vec::new();
-    let mut gates = Vec::new();
-    let count = members.len();
-    for (i, member) in members.iter().enumerate() {
-        let first = &member.structure.rooms[0];
-        let back = member.structure.rooms[member.structure.rooms.len() - 1].clone();
-        let gated_here = rules.gated && i + 1 == count && member.structure.rooms.len() > 1;
-        let danger = rules.danger + u32::from(gated_here);
-        // Loot inside the back room; NPC outside the front door.
-        loot_spots.push(LootSpot {
-            position: member.offset + back.origin + Vec3::new(0.0, 0.35, 0.0),
-            danger,
-        });
-        npc_spots.push(NpcSpot {
-            position: member.offset + first.origin + Vec3::new(0.0, 0.0, first.interior.z / 2.0 + 2.0),
-            danger: rules.danger,
-        });
-        if gated_here {
-            // The door between the back room and its west neighbour.
-            gates.push(Gate {
-                position: member.offset
-                    + back.origin
-                    + Vec3::new(-(back.interior.x / 2.0 + back.wall_thickness), 0.0, 0.0),
-                level: rules.danger,
+    pub fn def(&self, name: &str) -> Option<&MonumentTypeDef> {
+        self.defs.iter().find(|d| d.name == name)
+    }
+
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.defs.iter().map(|d| d.name.as_str())
+    }
+
+    pub fn len(&self) -> usize {
+        self.defs.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.defs.is_empty()
+    }
+
+    /// A rolled monument name: two joined words and the type's
+    /// suffix ("Ashfall Stop"). Random every time (design.md: "even
+    /// the monument NAME is random"). Without word pools, the
+    /// suffix alone.
+    pub fn roll_name(&self, def: &MonumentTypeDef, roll: &mut Roll) -> String {
+        if self.name_first.is_empty() || self.name_second.is_empty() {
+            return def.suffix.clone();
+        }
+        format!(
+            "{}{} {}",
+            roll.pick(&self.name_first),
+            roll.pick(&self.name_second),
+            def.suffix
+        )
+    }
+
+    /// Roll one monument of type `name` from `seed`: pick building
+    /// types per the slots, generate each building, arrange them,
+    /// then place loot spots (one per building, in its back room),
+    /// NPC spots (one outside each front door), and the gate (the
+    /// last building's back room, when gated).
+    pub fn roll(
+        &self,
+        name: &str,
+        buildings: &BuildingRegistry,
+        seed: u64,
+    ) -> Result<MonumentDef, String> {
+        let def = self
+            .def(name)
+            .ok_or_else(|| format!("monument type '{name}' is not registered"))?;
+        let mut roll = Roll::new(seed);
+        let rolled_name = self.roll_name(def, &mut roll);
+
+        let mut generated = Vec::new();
+        for slot in &def.slots {
+            let count = roll.between(slot.min, slot.max);
+            for _ in 0..count {
+                let kind = roll.pick(&slot.choices);
+                let building = buildings
+                    .def(kind)
+                    .ok_or_else(|| format!("building type '{kind}' is not registered"))?;
+                generated.push(generate_building(building, &mut roll));
+            }
+        }
+
+        let members = arrange(generated, def.arrangement, &mut roll);
+
+        let mut loot_spots = Vec::new();
+        let mut npc_spots = Vec::new();
+        let mut gates = Vec::new();
+        let count = members.len();
+        for (i, member) in members.iter().enumerate() {
+            let first = &member.structure.rooms[0];
+            let back = member.structure.rooms[member.structure.rooms.len() - 1].clone();
+            let gated_here = def.gated && i + 1 == count && member.structure.rooms.len() > 1;
+            let danger = def.danger + u32::from(gated_here);
+            loot_spots.push(LootSpot {
+                position: member.offset + back.origin + Vec3::new(0.0, 0.35, 0.0),
+                danger,
             });
+            npc_spots.push(NpcSpot {
+                position: member.offset
+                    + first.origin
+                    + Vec3::new(0.0, 0.0, first.interior.z / 2.0 + 2.0),
+                danger: def.danger,
+            });
+            if gated_here {
+                // The door between the back room and its west neighbour.
+                gates.push(Gate {
+                    position: member.offset
+                        + back.origin
+                        + Vec3::new(-(back.interior.x / 2.0 + back.wall_thickness), 0.0, 0.0),
+                    level: def.danger,
+                });
+            }
         }
-    }
 
-    MonumentDef {
-        name,
-        members,
-        loot_spots,
-        npc_spots,
-        gates,
+        Ok(MonumentDef {
+            name: rolled_name,
+            members,
+            loot_spots,
+            npc_spots,
+            gates,
+        })
     }
 }
 
@@ -654,7 +525,11 @@ pub fn roll_monument(kind: MonumentKind, seed: u64) -> MonumentDef {
 /// packed around the origin. Around a yard: on a ring leaving the
 /// middle open. Each placement pushes outward until it is clear of
 /// the ones before it.
-fn arrange(buildings: Vec<StructureDef>, arrangement: Arrangement, roll: &mut Roll) -> Vec<MonumentMember> {
+fn arrange(
+    buildings: Vec<StructureDef>,
+    arrangement: Arrangement,
+    roll: &mut Roll,
+) -> Vec<MonumentMember> {
     const GAP: f32 = 4.0;
     let mut placed: Vec<Aabb> = Vec::new();
     let mut members = Vec::new();
@@ -662,6 +537,7 @@ fn arrange(buildings: Vec<StructureDef>, arrangement: Arrangement, roll: &mut Ro
         let foot = footprint(&structure);
         let size = foot.max - foot.min;
         let centre = (foot.min + foot.max) / 2.0;
+        let jitter = roll.measure(0.0, 0.6);
         let mut offset = Vec3::ZERO;
         for attempt in 0..16u32 {
             let reach = attempt as f32 * GAP;
@@ -672,23 +548,25 @@ fn arrange(buildings: Vec<StructureDef>, arrangement: Arrangement, roll: &mut Ro
                     Vec3::new(along, 0.0, side * (6.0 + size.z / 2.0))
                 }
                 Arrangement::Clustered => {
-                    let angle = (i as f32 * 2.4 + roll.measure(0.0, 0.6)) as f32;
-                    let radius = if i == 0 { 0.0 } else { size.length() / 2.0 + GAP + reach };
+                    let angle = i as f32 * 2.4 + jitter;
+                    let radius = if i == 0 {
+                        0.0
+                    } else {
+                        size.length() / 2.0 + GAP + reach
+                    };
                     Vec3::new(angle.cos() * radius, 0.0, angle.sin() * radius)
                 }
                 Arrangement::AroundYard => {
-                    let angle = i as f32 * 2.4 + roll.measure(0.0, 0.6);
+                    let angle = i as f32 * 2.4 + jitter;
                     let radius = 12.0 + size.length() / 2.0 + reach;
                     Vec3::new(angle.cos() * radius, 0.0, angle.sin() * radius)
                 }
             } - centre.with_y(0.0);
             let here = shifted(&foot, candidate);
-            let clear = placed.iter().all(|p| !grown(p, GAP / 2.0).overlaps(&here));
-            if clear {
-                offset = candidate;
+            offset = candidate;
+            if placed.iter().all(|p| !grown(p, GAP / 2.0).overlaps(&here)) {
                 break;
             }
-            offset = candidate;
         }
         placed.push(shifted(&foot, offset));
         members.push(MonumentMember { structure, offset });
@@ -728,25 +606,115 @@ pub fn validate_monument(def: &MonumentDef) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    fn building(name: &str, rooms: (u32, u32), floors: (u32, u32)) -> BuildingTypeDef {
+        BuildingTypeDef {
+            name: name.to_string(),
+            size: BuildingSize::Small,
+            rooms,
+            floors,
+            width: (4.0, 8.0),
+            length: (5.0, 9.0),
+            height: 3.0,
+            windows: 500,
+            clutter: 600,
+            palette: vec![[0.5, 0.4, 0.3]],
+        }
+    }
+
+    fn registries() -> (BuildingRegistry, MonumentRegistry) {
+        let mut b = BuildingRegistry::default();
+        b.register(building("shack", (1, 1), (1, 1))).unwrap();
+        b.register(building("office", (2, 4), (2, 2))).unwrap();
+        b.register(building("warehouse", (2, 3), (1, 1))).unwrap();
+        let mut m = MonumentRegistry::default();
+        m.set_name_words(
+            vec!["Ash".into(), "Rust".into(), "Grey".into()],
+            vec!["fall".into(), "ridge".into(), "well".into()],
+        );
+        m.register(
+            MonumentTypeDef {
+                name: "roadside stop".into(),
+                slots: vec![BuildingSlot {
+                    choices: vec!["shack".into(), "warehouse".into()],
+                    min: 1,
+                    max: 2,
+                }],
+                arrangement: Arrangement::AlongRoad,
+                danger: 1,
+                gated: false,
+                suffix: "Stop".into(),
+            },
+            &b,
+        )
+        .unwrap();
+        m.register(
+            MonumentTypeDef {
+                name: "launch site".into(),
+                slots: vec![
+                    BuildingSlot {
+                        choices: vec!["office".into()],
+                        min: 1,
+                        max: 1,
+                    },
+                    BuildingSlot {
+                        choices: vec!["warehouse".into(), "shack".into()],
+                        min: 1,
+                        max: 2,
+                    },
+                ],
+                arrangement: Arrangement::AroundYard,
+                danger: 5,
+                gated: true,
+                suffix: "Site".into(),
+            },
+            &b,
+        )
+        .unwrap();
+        (b, m)
+    }
+
+    #[test]
+    fn registries_reject_unknown_buildings_and_duplicates() {
+        let (mut b, mut m) = registries();
+        assert!(b.register(building("shack", (1, 1), (1, 1))).is_err());
+        assert!(b.def("shack").is_some() && b.def("tower").is_none());
+        let bad = MonumentTypeDef {
+            name: "bad".into(),
+            slots: vec![BuildingSlot {
+                choices: vec!["tower".into()],
+                min: 1,
+                max: 1,
+            }],
+            arrangement: Arrangement::Clustered,
+            danger: 1,
+            gated: false,
+            suffix: "Bad".into(),
+        };
+        assert!(m.register(bad, &b).is_err());
+        assert!(m.roll("nowhere", &b, 1).is_err());
+    }
+
     #[test]
     fn a_seed_rolls_the_same_building_twice_and_another_seed_differs() {
-        let a = generate_building(BuildingKind::Warehouse, &mut Roll::new(7));
-        let b = generate_building(BuildingKind::Warehouse, &mut Roll::new(7));
+        let def = building("office", (2, 4), (2, 2));
+        let a = generate_building(&def, &mut Roll::new(7));
+        let b = generate_building(&def, &mut Roll::new(7));
         assert_eq!(a.rooms.len(), b.rooms.len());
         assert_eq!(a.rooms[0].interior, b.rooms[0].interior);
         let differs = (0..20u64).any(|seed| {
-            let c = generate_building(BuildingKind::Warehouse, &mut Roll::new(seed));
+            let c = generate_building(&def, &mut Roll::new(seed));
             c.rooms.len() != a.rooms.len() || c.rooms[0].interior != a.rooms[0].interior
         });
         assert!(differs, "parameters must change between rolls");
     }
 
     #[test]
-    fn every_building_kind_generates_legal_defs_within_its_ranges() {
-        for kind in BuildingKind::ALL {
-            let p = kind.params();
+    fn generated_buildings_are_legal_and_within_their_ranges() {
+        let (b, _) = registries();
+        for name in ["shack", "office", "warehouse"] {
+            let p = b.def(name).unwrap();
             for seed in 0..25u64 {
-                let def = generate_building(kind, &mut Roll::new(seed));
+                let def = generate_building(p, &mut Roll::new(seed));
                 validate(&def).unwrap();
                 let floors = def
                     .rooms
@@ -754,25 +722,24 @@ mod tests {
                     .map(|r| (r.origin.y / p.height).round() as u32 + 1)
                     .max()
                     .unwrap();
-                assert!(floors >= p.floors.0 && floors <= p.floors.1, "{kind:?} floors {floors}");
+                assert!(floors >= p.floors.0 && floors <= p.floors.1, "{name} floors {floors}");
                 let stairwells = def.rooms.iter().filter(|r| r.interior.y > p.height).count();
-                assert_eq!(stairwells, usize::from(floors > 1), "{kind:?} stairwell");
-                assert_eq!(def.stairs.len(), usize::from(floors > 1), "{kind:?} stairs");
+                assert_eq!(stairwells, usize::from(floors > 1), "{name} stairwell");
+                assert_eq!(def.stairs.len(), usize::from(floors > 1), "{name} stairs");
                 let ground: Vec<_> = def
                     .rooms
                     .iter()
                     .filter(|r| r.origin.y == 0.0 && r.interior.y <= p.height)
                     .collect();
                 let n = ground.len() as u32;
-                assert!(n >= p.rooms.0 && n <= p.rooms.1, "{kind:?} rooms {n}");
+                assert!(n >= p.rooms.0 && n <= p.rooms.1, "{name} rooms {n}");
                 assert!(
                     ground[0]
                         .openings
                         .iter()
                         .any(|o| o.side == Side::South && o.door),
-                    "{kind:?} has a front door"
+                    "{name} has a front door"
                 );
-                // Every neighbouring pair authors both sides of its doorway.
                 for pair in ground.windows(2) {
                     assert!(pair[0].openings.iter().any(|o| o.side == Side::East));
                     assert!(pair[1].openings.iter().any(|o| o.side == Side::West));
@@ -782,60 +749,59 @@ mod tests {
     }
 
     #[test]
-    fn every_monument_kind_rolls_legal_monuments_per_its_rules() {
-        for kind in MonumentKind::ALL {
-            let rules = kind.rules();
+    fn rolled_monuments_are_legal_and_follow_their_type() {
+        let (b, m) = registries();
+        for name in ["roadside stop", "launch site"] {
+            let def = m.def(name).unwrap();
             for seed in 0..15u64 {
-                let m = roll_monument(kind, seed);
-                validate_monument(&m).unwrap();
-                let min: u32 = rules.slots.iter().map(|s| s.min).sum();
-                let max: u32 = rules.slots.iter().map(|s| s.max).sum();
-                let n = m.members.len() as u32;
-                assert!(n >= min && n <= max, "{kind:?} rolled {n} buildings");
-                assert_eq!(m.loot_spots.len(), m.members.len(), "one loot spot per building");
-                assert_eq!(m.npc_spots.len(), m.members.len(), "one npc spot per building");
-                assert!(m.name.ends_with(rules.suffix), "{}", m.name);
-                if !rules.gated {
-                    assert!(m.gates.is_empty());
+                let rolled = m.roll(name, &b, seed).unwrap();
+                validate_monument(&rolled).unwrap();
+                let min: u32 = def.slots.iter().map(|s| s.min).sum();
+                let max: u32 = def.slots.iter().map(|s| s.max).sum();
+                let n = rolled.members.len() as u32;
+                assert!(n >= min && n <= max, "{name} rolled {n} buildings");
+                assert_eq!(rolled.loot_spots.len(), rolled.members.len());
+                assert_eq!(rolled.npc_spots.len(), rolled.members.len());
+                assert!(rolled.name.ends_with(&def.suffix), "{}", rolled.name);
+                if !def.gated {
+                    assert!(rolled.gates.is_empty());
+                }
+                for member in &rolled.members {
+                    assert!(
+                        def.slots
+                            .iter()
+                            .any(|s| s.choices.contains(&member.structure.name)),
+                        "{name} rolled a building outside its list"
+                    );
                 }
             }
         }
     }
 
     #[test]
-    fn roadside_stop_is_one_or_two_small_buildings_along_a_road() {
-        let m = roll_monument(MonumentKind::RoadsideStop, 3);
-        assert!((1..=2).contains(&m.members.len()));
-        for member in &m.members {
-            let kind = BuildingKind::ALL
-                .iter()
-                .find(|k| k.label() == member.structure.name)
-                .unwrap();
-            assert_eq!(kind.size(), BuildingSize::Small);
-        }
-    }
-
-    #[test]
     fn names_are_rolled_not_fixed() {
+        let (b, m) = registries();
         let names: std::collections::HashSet<String> = (0..30u64)
-            .map(|seed| roll_monument(MonumentKind::Junkyard, seed).name)
+            .map(|seed| m.roll("roadside stop", &b, seed).unwrap().name)
             .collect();
-        assert!(names.len() > 5, "{names:?}");
-        assert!(names.iter().all(|n| n.ends_with(" Junkyard")));
+        assert!(names.len() > 3, "{names:?}");
+        assert!(names.iter().all(|n| n.ends_with(" Stop")));
     }
 
     #[test]
     fn gated_monuments_gate_the_back_room_of_the_last_building() {
+        let (b, m) = registries();
         let gated = (0..30u64)
-            .map(|seed| roll_monument(MonumentKind::LaunchSite, seed))
-            .find(|m| !m.gates.is_empty())
+            .map(|seed| m.roll("launch site", &b, seed).unwrap())
+            .find(|r| !r.gates.is_empty())
             .expect("a launch site with a multi-room last building");
         let last = gated.members.last().unwrap();
         let back = last.structure.rooms[last.structure.rooms.len() - 1].clone();
         let gate = &gated.gates[0];
-        let expected_x = last.offset.x + back.origin.x - back.interior.x / 2.0 - back.wall_thickness;
+        let expected_x =
+            last.offset.x + back.origin.x - back.interior.x / 2.0 - back.wall_thickness;
         assert!((gate.position.x - expected_x).abs() < 1e-4);
-        assert_eq!(gate.level, MonumentKind::LaunchSite.rules().danger);
-        assert_eq!(gated.loot_spots.last().unwrap().danger, gate.level + 1);
+        assert_eq!(gate.level, 5);
+        assert_eq!(gated.loot_spots.last().unwrap().danger, 6);
     }
 }
