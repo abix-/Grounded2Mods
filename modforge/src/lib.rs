@@ -7,6 +7,7 @@
 //! both consumers are Rust.
 
 pub mod actions;
+pub mod actor;
 pub mod args;
 pub mod biome;
 pub mod client;
