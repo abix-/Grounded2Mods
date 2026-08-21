@@ -65,6 +65,10 @@ pub struct ItemDef {
     /// Inventory slots this item holds once deployed in the world
     /// (a storage box). None for everything that holds nothing.
     pub storage: Option<usize>,
+    /// Armor this item gives the body area of the slot it is worn in
+    /// (design.md "protection per body area from worn gear"). None
+    /// for everything that is not worn.
+    pub armor: Option<f32>,
 }
 
 /// The collection of checked-in ItemDefs. Consumers register their
@@ -186,6 +190,19 @@ impl Inventory {
         Some(taken)
     }
 
+    /// Take one of `item` from the first slot holding it (a round of
+    /// ammo). False when there is none.
+    pub fn take_one(&mut self, item: &str) -> bool {
+        let Some(slot) = self
+            .slots
+            .iter()
+            .position(|s| s.as_ref().is_some_and(|s| s.item == item))
+        else {
+            return false;
+        };
+        self.remove(slot, 1).is_some()
+    }
+
     /// Total count of one item across all slots, any quality.
     pub fn count_of(&self, item: &str) -> u32 {
         self.slots
@@ -305,6 +322,7 @@ mod tests {
             combat: None,
             food: None,
             storage: None,
+            armor: None,
         }
     }
 

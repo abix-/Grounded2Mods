@@ -123,6 +123,7 @@ mod tests {
             combat: None,
             food,
             storage: None,
+            armor: None,
         }
     }
 

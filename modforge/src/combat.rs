@@ -163,6 +163,106 @@ pub struct Hit<'a> {
     pub location_scale: f32,
 }
 
+/// Where on a body a hit landed, by height up the body (Rust: head
+/// shots hurt double, legs less). Each area is guarded by the gear
+/// worn in its equipment slot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BodyArea {
+    Head,
+    Chest,
+    Legs,
+}
+
+impl BodyArea {
+    /// From the hit's height as a fraction of body height, feet 0 to
+    /// top 1.
+    pub fn from_height(fraction: f32) -> BodyArea {
+        if fraction >= 0.85 {
+            BodyArea::Head
+        } else if fraction >= 0.45 {
+            BodyArea::Chest
+        } else {
+            BodyArea::Legs
+        }
+    }
+
+    /// Damage multiplier for the area (Rust's head 2x, legs 0.75x).
+    pub fn scale(self) -> f32 {
+        match self {
+            BodyArea::Head => 2.0,
+            BodyArea::Chest => 1.0,
+            BodyArea::Legs => 0.75,
+        }
+    }
+
+    /// The equipment slot whose worn item guards this area.
+    pub fn slot(self) -> crate::item::EquipSlot {
+        match self {
+            BodyArea::Head => crate::item::EquipSlot::Head,
+            BodyArea::Chest => crate::item::EquipSlot::Chest,
+            BodyArea::Legs => crate::item::EquipSlot::Legs,
+        }
+    }
+}
+
+impl Protection {
+    /// This actor's protection for a hit on `area`: the base plus the
+    /// armor of whatever is worn in the area's slot. `armor_of` looks
+    /// an item name up in the consumer's registry.
+    pub fn for_area(
+        &self,
+        area: BodyArea,
+        worn: &crate::item::Equipment,
+        armor_of: impl Fn(&str) -> Option<f32>,
+    ) -> Protection {
+        let worn_armor = worn
+            .get(area.slot())
+            .and_then(|stack| armor_of(&stack.item))
+            .unwrap_or(0.0);
+        Protection {
+            armor: self.armor + worn_armor,
+            resistances: self.resistances.clone(),
+        }
+    }
+}
+
+/// The directions of one shot's pellets: the aim, each pellet pushed
+/// off it by up to `spread_degrees` in a deterministic pattern from
+/// `seed` (the tick), so a test and a replay land the same shot. One
+/// pellet with no spread is the aim itself.
+pub fn pellet_directions(
+    forward: glam::Vec3,
+    spread_degrees: f32,
+    pellets: u32,
+    seed: u64,
+) -> Vec<glam::Vec3> {
+    let forward = forward.normalize();
+    if pellets <= 1 || spread_degrees <= 0.0 {
+        return vec![forward; pellets.max(1) as usize];
+    }
+    let up = if forward.y.abs() < 0.99 {
+        glam::Vec3::Y
+    } else {
+        glam::Vec3::X
+    };
+    let right = forward.cross(up).normalize();
+    let up = right.cross(forward);
+    let spread = spread_degrees.to_radians();
+    (0..pellets)
+        .map(|i| {
+            // Two cheap hashes per pellet for angle and radius.
+            let h = seed
+                .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                .wrapping_add(u64::from(i).wrapping_mul(0xBF58_476D_1CE4_E5B9));
+            let a = (h >> 11) as f32 / (1u64 << 53) as f32;
+            let r = ((h.rotate_left(29) >> 11) as f32 / (1u64 << 53) as f32).sqrt();
+            let angle = a * std::f32::consts::TAU;
+            let off = r * spread;
+            (forward + (right * angle.cos() + up * angle.sin()) * off.tan()).normalize()
+        })
+        .collect()
+}
+
 /// What one resolved hit did.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HitResult {
@@ -294,6 +394,50 @@ mod tests {
             self_scale: 0.5,
             falloff: Falloff::NONE,
         }
+    }
+
+    #[test]
+    fn body_areas_by_height_with_rust_scales() {
+        assert_eq!(BodyArea::from_height(0.95), BodyArea::Head);
+        assert_eq!(BodyArea::from_height(0.6), BodyArea::Chest);
+        assert_eq!(BodyArea::from_height(0.2), BodyArea::Legs);
+        assert_eq!(BodyArea::Head.scale(), 2.0);
+        assert_eq!(BodyArea::Legs.scale(), 0.75);
+        assert_eq!(BodyArea::Head.slot(), crate::item::EquipSlot::Head);
+    }
+
+    #[test]
+    fn worn_gear_guards_only_its_own_area() {
+        let mut worn = crate::item::Equipment::default();
+        worn.set(
+            crate::item::EquipSlot::Chest,
+            Some(crate::item::ItemStack {
+                item: "vest".to_string(),
+                count: 1,
+                quality: None,
+            }),
+        );
+        let armor_of = |name: &str| (name == "vest").then_some(30.0);
+        let base = Protection::default();
+        assert_eq!(base.for_area(BodyArea::Chest, &worn, armor_of).armor, 30.0);
+        assert_eq!(base.for_area(BodyArea::Head, &worn, armor_of).armor, 0.0);
+    }
+
+    #[test]
+    fn pellets_spread_inside_the_cone_and_repeat_by_seed() {
+        let aim = glam::Vec3::NEG_Z;
+        let one = pellet_directions(aim, 0.0, 1, 7);
+        assert_eq!(one, vec![aim]);
+        let a = pellet_directions(aim, 5.0, 8, 7);
+        let b = pellet_directions(aim, 5.0, 8, 7);
+        assert_eq!(a, b, "same seed, same pattern");
+        assert_ne!(a, pellet_directions(aim, 5.0, 8, 8), "another seed differs");
+        for d in &a {
+            let angle = d.angle_between(aim).to_degrees();
+            assert!(angle <= 5.0 + 1e-3, "{angle}");
+            assert!((d.length() - 1.0).abs() < 1e-5);
+        }
+        assert!(a.iter().any(|d| d.angle_between(aim) > 0.0), "not all dead centre");
     }
 
     fn pistol() -> DamageDef {

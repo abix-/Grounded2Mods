@@ -469,6 +469,7 @@ mod tests {
                 combat: None,
                 food: None,
                 storage: None,
+                armor: None,
             })
             .unwrap();
         }
@@ -594,6 +595,7 @@ mod tests {
             combat: None,
             food: None,
             storage: None,
+            armor: None,
         })
         .unwrap();
         reg.register(crate::item::ItemDef {
@@ -604,6 +606,7 @@ mod tests {
             combat: None,
             food: None,
             storage: None,
+            armor: None,
         })
         .unwrap();
         let mut stats = crate::survival::SurvivalStats::default();
