@@ -232,7 +232,8 @@ pub fn roll_world(
                 + 0.5 * elevation.get([x * f * 2.0, y * f * 2.0])
                 + 0.25 * elevation.get([x * f * 4.0, y * f * 4.0]))
                 / 1.75;
-            let e = (((e + 1.0) * 0.5) as f32).powf(def.flatness.max(0.1));
+            let raw = ((e + 1.0) * 0.5) as f32;
+            let e = raw.powf(def.flatness.max(0.1));
             let m = ((moisture.get([x * f * 0.7, y * f * 0.7]) + 1.0) * 0.5) as f32;
             let mut height = e * def.height_scale;
 
@@ -255,7 +256,9 @@ pub fn roll_world(
 
             let i = world.index(col, row);
             world.heights[i] = height;
-            base[i] = e;
+            // Biome rules read the raw fraction, so the biome picture
+            // does not move when the relief numbers change.
+            base[i] = raw;
             moist[i] = m;
         }
     }
@@ -303,6 +306,9 @@ pub fn roll_world(
             if world.is_water(col, row) {
                 continue;
             }
+            // Spacing is checked on the snapped centre, where the site
+            // will actually stand.
+            let p = world.cell_center(col, row);
             if p.distance(def.bunker) < spacing.max(def.bunker_clear)
                 || world
                     .sites
@@ -677,6 +683,7 @@ mod tests {
     fn mountains_and_plateaus_shape_the_base_terrain() {
         let (biomes, monuments) = registries();
         let mut plain = def();
+        plain.flatness = 1.0;
         plain.mountain_height = 0.0;
         plain.plateau_step = 0.0;
         let flat = roll_world(&plain, 5, &biomes, &monuments).unwrap();
