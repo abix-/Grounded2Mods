@@ -444,6 +444,7 @@ mod tests {
                 quality_siblings: 1,
                 combat: None,
                 food: None,
+                storage: None,
             })
             .unwrap();
         }

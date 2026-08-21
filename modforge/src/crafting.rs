@@ -112,6 +112,7 @@ mod tests {
             quality_siblings: 1,
             combat: None,
             food: None,
+            storage: None,
         }).unwrap();
         items.register(ItemDef {
             name: "knife".to_string(),
@@ -125,6 +126,7 @@ mod tests {
                 ammo: None,
             }),
             food: None,
+            storage: None,
         }).unwrap();
 
         let mut recipes = RecipeRegistry::default();

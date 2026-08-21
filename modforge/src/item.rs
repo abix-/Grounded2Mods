@@ -17,6 +17,9 @@ pub enum ItemKind {
     Material,
     Tool,
     Weapon,
+    /// Placed in the world and used there: a storage box, a crafting
+    /// bench. A deployable with `storage` slots holds an inventory.
+    Deployable,
 }
 
 /// Combat stats on an item. Present on weapons and tools that can
@@ -48,6 +51,9 @@ pub struct ItemDef {
     pub quality_siblings: u64,
     pub combat: Option<CombatStats>,
     pub food: Option<FoodStats>,
+    /// Inventory slots this item holds once deployed in the world
+    /// (a storage box). None for everything that holds nothing.
+    pub storage: Option<usize>,
 }
 
 /// The collection of checked-in ItemDefs. Consumers register their
@@ -287,6 +293,7 @@ mod tests {
             quality_siblings: 3,
             combat: None,
             food: None,
+            storage: None,
         }
     }
 

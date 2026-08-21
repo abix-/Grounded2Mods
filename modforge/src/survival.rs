@@ -122,6 +122,7 @@ mod tests {
             quality_siblings: 1,
             combat: None,
             food,
+            storage: None,
         }
     }
 
