@@ -172,6 +172,51 @@ pub fn side_frame(side: Side, interior: Vec3, t: f32) -> (Vec3, Vec3, f32) {
     }
 }
 
+/// A member structure placed within a monument: a StructureDef at a
+/// position relative to the monument origin.
+#[derive(Clone)]
+pub struct MonumentMember {
+    pub structure: StructureDef,
+    pub offset: Vec3,
+}
+
+/// A spot where loot spawns within the monument. Position is
+/// relative to the monument origin. `danger` scales the loot table
+/// (icarus difficulty: higher danger, better drops).
+#[derive(Clone)]
+pub struct LootSpot {
+    pub position: Vec3,
+    pub danger: u32,
+}
+
+/// A spot where an NPC spawns within the monument. Position is
+/// relative to the monument origin. `danger` scales the trait pool.
+#[derive(Clone)]
+pub struct NpcSpot {
+    pub position: Vec3,
+    pub danger: u32,
+}
+
+/// A gate: a locked area requiring progression to access. The gate
+/// blocks passage until the player meets the requirement.
+#[derive(Clone)]
+pub struct Gate {
+    pub position: Vec3,
+    pub level: u32,
+}
+
+/// One monument as data: a destination worth traveling to, composed
+/// of member structures with loot, NPCs, and gates. spawn_monument
+/// is the one path; members spawn only through spawn_structure.
+#[derive(Clone)]
+pub struct MonumentDef {
+    pub name: String,
+    pub members: Vec<MonumentMember>,
+    pub loot_spots: Vec<LootSpot>,
+    pub npc_spots: Vec<NpcSpot>,
+    pub gates: Vec<Gate>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -208,5 +253,30 @@ mod tests {
         // (shared wall plane).
         assert!(validate(&def(vec![room(Vec3::ZERO), room(Vec3::new(0.0, 3.0, 0.0))])).is_ok());
         assert!(validate(&def(vec![room(Vec3::ZERO), room(Vec3::new(6.0, 0.0, 0.0))])).is_ok());
+    }
+
+    #[test]
+    fn monument_def_composes_structures() {
+        let warehouse = def(vec![room(Vec3::ZERO)]);
+        let shack = def(vec![room(Vec3::ZERO)]);
+        let monument = MonumentDef {
+            name: "roadside stop".to_string(),
+            members: vec![
+                MonumentMember { structure: warehouse, offset: Vec3::ZERO },
+                MonumentMember { structure: shack, offset: Vec3::new(15.0, 0.0, 0.0) },
+            ],
+            loot_spots: vec![
+                LootSpot { position: Vec3::new(0.0, 0.3, 0.0), danger: 1 },
+                LootSpot { position: Vec3::new(15.0, 0.3, 0.0), danger: 1 },
+            ],
+            npc_spots: vec![
+                NpcSpot { position: Vec3::new(7.0, 0.0, 3.0), danger: 1 },
+            ],
+            gates: vec![],
+        };
+        assert_eq!(monument.members.len(), 2);
+        assert_eq!(monument.loot_spots.len(), 2);
+        assert_eq!(monument.npc_spots.len(), 1);
+        assert!(monument.gates.is_empty());
     }
 }
