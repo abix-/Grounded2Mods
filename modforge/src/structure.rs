@@ -413,9 +413,21 @@ pub struct Gate {
     pub level: u32,
 }
 
+/// A solid prop standing in a monument (a car hull, a tent, a
+/// barrel): a coloured box. Minor sites are mostly props.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Prop {
+    /// Centre of the box, relative to the monument origin.
+    pub position: Vec3,
+    pub size: Vec3,
+    pub color: Rgb,
+}
+
 /// One monument as data: a destination worth traveling to, composed
-/// of member structures with loot, NPCs, and gates. spawn_monument
-/// is the one path; members spawn only through spawn_structure.
+/// of member structures with loot, NPCs, gates, and props.
+/// spawn_monument is the one path; members spawn only through
+/// spawn_structure. A minor site has no members: props and a loot
+/// spot.
 #[derive(Clone)]
 pub struct MonumentDef {
     pub name: String,
@@ -423,6 +435,7 @@ pub struct MonumentDef {
     pub loot_spots: Vec<LootSpot>,
     pub npc_spots: Vec<NpcSpot>,
     pub gates: Vec<Gate>,
+    pub props: Vec<Prop>,
 }
 
 #[cfg(test)]
@@ -534,6 +547,7 @@ mod tests {
                 NpcSpot { position: Vec3::new(7.0, 0.0, 3.0), danger: 1 },
             ],
             gates: vec![],
+            props: vec![],
         };
         assert_eq!(monument.members.len(), 2);
         assert_eq!(monument.loot_spots.len(), 2);

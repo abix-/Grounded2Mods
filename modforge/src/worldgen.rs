@@ -56,10 +56,11 @@ pub struct WorldDef {
     /// Below this fraction of height_scale the cell is water.
     pub water_level: f32,
     pub biome_rules: Vec<BiomeRule>,
-    /// Monument types to place, as (type name, how many).
+    /// Monument types to place, as (type name, how many). Each type's
+    /// own `spacing` keeps it off other sites and the bunker: two
+    /// sites may stand as close as the smaller of their spacings, so
+    /// a wreck can sit near a city but two cities never touch.
     pub monuments: Vec<(String, u32)>,
-    /// Least distance between two sites, and from any site to the bunker.
-    pub site_spacing: f32,
     /// Where the bunker is; the world rolls around it and roads lead
     /// there. Flat ground is kept in `bunker_clear` around it.
     pub bunker: Vec2,
@@ -72,6 +73,9 @@ pub struct Site {
     pub monument: String,
     pub position: Vec2,
     pub biome: String,
+    /// The type's spacing, kept so the consumer knows how much ground
+    /// around the site is the site's.
+    pub spacing: f32,
 }
 
 /// A road: a polyline of cell centres from a site (`site` indexes
@@ -284,8 +288,9 @@ pub fn roll_world(
     // biome that allows the type.
     let mut roll = Roll::new(seed ^ 0x5173);
     let half = def.size / 2.0;
-    let margin = def.site_spacing / 2.0;
     for (kind, count) in &def.monuments {
+        let spacing = monuments.def(kind).map_or(0.0, |d| d.spacing);
+        let margin = spacing / 2.0;
         let mut placed = 0;
         let mut attempts = 0;
         while placed < *count && attempts < 4000 {
@@ -298,8 +303,11 @@ pub fn roll_world(
             if world.is_water(col, row) {
                 continue;
             }
-            if p.distance(def.bunker) < def.site_spacing
-                || world.sites.iter().any(|s| s.position.distance(p) < def.site_spacing)
+            if p.distance(def.bunker) < spacing.max(def.bunker_clear)
+                || world
+                    .sites
+                    .iter()
+                    .any(|s| s.position.distance(p) < spacing.min(s.spacing))
             {
                 continue;
             }
@@ -313,26 +321,33 @@ pub fn roll_world(
             let position = world.cell_center(col, row);
             // Monuments stand on flat ground.
             let height = world.height_at_cell(col, row);
-            world.flatten(position, def.site_spacing * 0.25, height);
+            world.flatten(position, spacing * 0.25, height);
             world.sites.push(Site {
                 monument: kind.clone(),
                 position,
                 biome,
+                spacing,
             });
             placed += 1;
         }
         if placed < *count {
             return Err(format!(
-                "could only place {placed} of {count} '{kind}' sites with spacing {}",
-                def.site_spacing
+                "could only place {placed} of {count} '{kind}' sites with spacing {spacing}"
             ));
         }
     }
 
-    // Roads: from every site to the nearest already-connected point
-    // (the bunker first), so the network is a tree everyone can walk.
+    // Roads: from every site with buildings to the nearest
+    // already-connected point (the bunker first), so the network is
+    // a tree everyone can walk. Minor sites sit off the road.
     let mut connected: Vec<Vec2> = vec![def.bunker];
-    let mut order: Vec<usize> = (0..world.sites.len()).collect();
+    let mut order: Vec<usize> = (0..world.sites.len())
+        .filter(|i| {
+            monuments
+                .def(&world.sites[*i].monument)
+                .is_some_and(|d| !d.slots.is_empty())
+        })
+        .collect();
     order.sort_by(|a, b| {
         let da = world.sites[*a].position.distance(def.bunker);
         let db = world.sites[*b].position.distance(def.bunker);
@@ -425,14 +440,15 @@ mod tests {
     use crate::biome::{BiomeDef, BiomeRegistry};
     use crate::monument::{
         Arrangement, BuildingRegistry, BuildingSize, BuildingSlot, BuildingTypeDef, MonumentRegistry,
-        MonumentTypeDef,
+        MonumentTypeDef, PropSpec,
     };
+    use glam::Vec3;
 
     fn registries() -> (BiomeRegistry, MonumentRegistry) {
         let mut biomes = BiomeRegistry::default();
         for (name, allowed) in [
-            ("lowland", vec!["roadside stop"]),
-            ("hills", vec!["roadside stop", "radio tower"]),
+            ("lowland", vec!["roadside stop", "wreck"]),
+            ("hills", vec!["roadside stop", "radio tower", "wreck"]),
         ] {
             biomes
                 .register(BiomeDef {
@@ -482,11 +498,33 @@ mod tests {
                         danger: 1,
                         gated: false,
                         suffix: "stop".to_string(),
+                        spacing: 120.0,
+                        props: vec![],
                     },
                     &buildings,
                 )
                 .unwrap();
         }
+        monuments
+            .register(
+                MonumentTypeDef {
+                    name: "wreck".to_string(),
+                    slots: vec![],
+                    arrangement: Arrangement::Clustered,
+                    danger: 0,
+                    gated: false,
+                    suffix: "wreck".to_string(),
+                    spacing: 40.0,
+                    props: vec![PropSpec {
+                        size: Vec3::new(4.0, 1.4, 1.8),
+                        color: [0.4, 0.2, 0.15],
+                        count: (1, 2),
+                        radius: 4.0,
+                    }],
+                },
+                &buildings,
+            )
+            .unwrap();
         (biomes, monuments)
     }
 
@@ -512,8 +550,11 @@ mod tests {
                     moisture: (0.0, 1.0),
                 },
             ],
-            monuments: vec![("roadside stop".to_string(), 4), ("radio tower".to_string(), 1)],
-            site_spacing: 120.0,
+            monuments: vec![
+                ("roadside stop".to_string(), 4),
+                ("radio tower".to_string(), 1),
+                ("wreck".to_string(), 30),
+            ],
             bunker: Vec2::ZERO,
             bunker_clear: 20.0,
         }
@@ -536,13 +577,23 @@ mod tests {
         let (biomes, monuments) = registries();
         for seed in 1..=12u64 {
             let world = roll_world(&def(), seed, &biomes, &monuments).unwrap();
-            assert_eq!(world.sites.len(), 5, "seed {seed}");
+            assert_eq!(world.sites.len(), 35, "seed {seed}");
             for (i, site) in world.sites.iter().enumerate() {
                 let (c, r) = world.cell_of(site.position);
                 assert!(!world.is_water(c, r), "seed {seed}: site on water");
-                assert!(site.position.distance(Vec2::ZERO) >= 120.0, "seed {seed}: on the bunker");
+                assert!(
+                    site.position.distance(Vec2::ZERO) >= site.spacing,
+                    "seed {seed}: on the bunker"
+                );
+                // Two sites keep the smaller of their spacings.
                 for other in &world.sites[i + 1..] {
-                    assert!(other.position.distance(site.position) >= 120.0, "seed {seed}: crowded");
+                    let least = site.spacing.min(other.spacing);
+                    assert!(
+                        other.position.distance(site.position) >= least,
+                        "seed {seed}: crowded: {} and {}",
+                        site.monument,
+                        other.monument
+                    );
                 }
                 let allowed = biomes.def(&site.biome).unwrap();
                 assert!(allowed.monuments.contains(&site.monument), "seed {seed}: {site:?}");
@@ -550,7 +601,7 @@ mod tests {
                     assert_eq!(site.biome, "hills");
                 }
             }
-            assert_eq!(world.roads.len(), 5, "one road per site");
+            assert_eq!(world.roads.len(), 5, "one road per built site, none to wrecks");
             for road in &world.roads {
                 assert!(road.points.len() >= 2);
                 for p in &road.points {
@@ -576,6 +627,33 @@ mod tests {
         }
     }
 
+    /// Bethesda's rule: from any point on land, something worth
+    /// stopping for within 30 seconds of walking.
+    #[test]
+    fn something_worth_stopping_for_within_reach_of_most_land() {
+        let (biomes, monuments) = registries();
+        let world = roll_world(&def(), 4, &biomes, &monuments).unwrap();
+        let reach = 150.0;
+        let mut roll = Roll::new(99);
+        let (mut land, mut covered) = (0, 0);
+        for _ in 0..200 {
+            let p = Vec2::new(roll.measure(-380.0, 380.0), roll.measure(-380.0, 380.0));
+            let (c, r) = world.cell_of(p);
+            if world.is_water(c, r) {
+                continue;
+            }
+            land += 1;
+            if world.sites.iter().any(|s| s.position.distance(p) <= reach) {
+                covered += 1;
+            }
+        }
+        assert!(land > 100, "the test world is mostly land");
+        assert!(
+            covered * 10 >= land * 9,
+            "{covered} of {land} land points have a site within {reach} m"
+        );
+    }
+
     #[test]
     fn the_bunker_and_every_site_stand_on_flat_ground() {
         let (biomes, monuments) = registries();
@@ -588,7 +666,10 @@ mod tests {
         }
         for site in &world.sites {
             let h = world.height_at(site.position);
-            assert!((world.height_at(site.position + Vec2::new(18.0, 0.0)) - h).abs() < 1e-3);
+            // Flat to a quarter of the spacing, less one cell of blend.
+            let out = site.spacing * 0.25 - world.def.cell * 1.5;
+            let at = world.height_at(site.position + Vec2::new(out, 0.0));
+            assert!((at - h).abs() < 1e-3, "{} slopes {out} m out: {at} vs {h}", site.monument);
         }
     }
 

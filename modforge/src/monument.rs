@@ -548,8 +548,21 @@ pub struct BuildingSlot {
     pub max: u32,
 }
 
+/// A prop a monument type scatters around its origin on every roll:
+/// size, colour, how many of them, and how far out they stand.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PropSpec {
+    pub size: Vec3,
+    pub color: Rgb,
+    pub count: (u32, u32),
+    pub radius: f32,
+}
+
 /// One monument type as data (design.md "Monument types"). `name`
-/// is the id; `suffix` ends every rolled monument's name.
+/// is the id; `suffix` ends every rolled monument's name. A minor
+/// site (design.md: "something worth stopping for every 30 seconds")
+/// has no building slots, only props and a loot spot, and a small
+/// `spacing`.
 #[derive(Clone, Debug)]
 pub struct MonumentTypeDef {
     pub name: String,
@@ -560,6 +573,10 @@ pub struct MonumentTypeDef {
     /// Whether its last building hides a gated back room.
     pub gated: bool,
     pub suffix: String,
+    /// Least distance from another site of any type when worldgen
+    /// places it; and how much ground is pressed flat under it.
+    pub spacing: f32,
+    pub props: Vec<PropSpec>,
 }
 
 /// The checked-in monument types plus the word pools rolled names
@@ -581,8 +598,14 @@ impl MonumentRegistry {
         if self.defs.iter().any(|d| d.name == def.name) {
             return Err(format!("monument type '{}' registered twice", def.name));
         }
-        if def.slots.is_empty() {
-            return Err(format!("monument type '{}' has no building slots", def.name));
+        if def.slots.is_empty() && def.props.is_empty() {
+            return Err(format!(
+                "monument type '{}' has no building slots and no props",
+                def.name
+            ));
+        }
+        if def.spacing <= 0.0 {
+            return Err(format!("monument type '{}' needs a spacing", def.name));
         }
         for slot in &def.slots {
             if slot.choices.is_empty() || slot.min > slot.max {
@@ -698,12 +721,40 @@ impl MonumentRegistry {
             }
         }
 
+        // A site with no buildings keeps its loot at the origin.
+        if members.is_empty() {
+            loot_spots.push(LootSpot {
+                position: Vec3::new(0.0, 0.35, 0.0),
+                danger: def.danger,
+            });
+        }
+        // Props in a ring around the origin, each at a rolled angle
+        // and distance, never on the loot spot.
+        let mut props = Vec::new();
+        for spec in &def.props {
+            let count = roll.between(spec.count.0, spec.count.1);
+            for _ in 0..count {
+                let angle = roll.measure(0.0, std::f32::consts::TAU);
+                let distance = roll.measure(spec.radius * 0.4 + 1.0, spec.radius.max(1.5));
+                props.push(crate::structure::Prop {
+                    position: Vec3::new(
+                        angle.cos() * distance,
+                        spec.size.y / 2.0,
+                        angle.sin() * distance,
+                    ),
+                    size: spec.size,
+                    color: spec.color,
+                });
+            }
+        }
+
         Ok(MonumentDef {
             name: rolled_name,
             members,
             loot_spots,
             npc_spots,
             gates,
+            props,
         })
     }
 }
@@ -891,6 +942,8 @@ mod tests {
                 danger: 1,
                 gated: false,
                 suffix: "Stop".into(),
+                spacing: 120.0,
+                props: vec![],
             },
             &b,
         )
@@ -914,6 +967,8 @@ mod tests {
                 danger: 5,
                 gated: true,
                 suffix: "Site".into(),
+                spacing: 200.0,
+                props: vec![],
             },
             &b,
         )
@@ -930,6 +985,8 @@ mod tests {
                 danger: 3,
                 gated: true,
                 suffix: "City".into(),
+                spacing: 300.0,
+                props: vec![],
             },
             &b,
         )
@@ -957,9 +1014,60 @@ mod tests {
             danger: 1,
             gated: false,
             suffix: "Bad".into(),
+            spacing: 50.0,
+            props: vec![],
         };
         assert!(m.register(bad, &b).is_err());
         assert!(m.roll("nowhere", &b, 1).is_err());
+        // No buildings and no props is nothing; no spacing is refused.
+        let empty = MonumentTypeDef {
+            name: "nothing".into(),
+            slots: vec![],
+            arrangement: Arrangement::Clustered,
+            danger: 0,
+            gated: false,
+            suffix: "Nothing".into(),
+            spacing: 50.0,
+            props: vec![],
+        };
+        assert!(m.register(empty, &b).is_err());
+    }
+
+    #[test]
+    fn a_minor_site_rolls_props_and_a_loot_spot_with_no_buildings() {
+        let (b, mut m) = registries();
+        m.register(
+            MonumentTypeDef {
+                name: "wreck".into(),
+                slots: vec![],
+                arrangement: Arrangement::Clustered,
+                danger: 0,
+                gated: false,
+                suffix: "Wreck".into(),
+                spacing: 60.0,
+                props: vec![PropSpec {
+                    size: Vec3::new(4.0, 1.4, 1.8),
+                    color: [0.4, 0.2, 0.15],
+                    count: (1, 3),
+                    radius: 5.0,
+                }],
+            },
+            &b,
+        )
+        .unwrap();
+        for seed in 0..5u64 {
+            let site = m.roll("wreck", &b, seed).unwrap();
+            assert!(site.members.is_empty());
+            assert_eq!(site.loot_spots.len(), 1, "one box at the origin");
+            assert!(site.npc_spots.is_empty());
+            assert!((1..=3).contains(&site.props.len()), "{} props", site.props.len());
+            for prop in &site.props {
+                let flat = prop.position.with_y(0.0).length();
+                assert!(flat >= 1.0 && flat <= 5.0, "prop at {flat}");
+                assert_eq!(prop.position.y, 0.7, "stands on the ground");
+            }
+            validate_monument(&site).unwrap();
+        }
     }
 
     #[test]
