@@ -176,6 +176,156 @@ impl<H: Copy + Eq + std::hash::Hash> ActorMap<H> {
     }
 }
 
+/// The seven signed axes of a person (Endless behavior.md; topside
+/// design.md's Diablo 2 enemy traits through the genome). Each is a
+/// value in -1.5..=1.5: the sign is the pole (Brave or Coward), the
+/// magnitude how strongly. Zero is unremarkable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Axis {
+    /// Brave (+) never flees; Coward (-) flees early.
+    Courage,
+    /// Efficient (+) works more; Lazy (-) wanders more.
+    Diligence,
+    /// Hardy (+) has more health; Frail (-) less.
+    Vitality,
+    /// Strong (+) hits harder; Weak (-) softer.
+    Power,
+    /// Swift (+) walks faster; Slow (-) slower.
+    Agility,
+    /// Sharpshot (+) reaches farther; Myopic (-) shorter.
+    Precision,
+    /// Berserker (+) hits harder when hurt; Timid (-) flees more.
+    Ferocity,
+}
+
+impl Axis {
+    pub const ALL: [Axis; 7] = [
+        Axis::Courage,
+        Axis::Diligence,
+        Axis::Vitality,
+        Axis::Power,
+        Axis::Agility,
+        Axis::Precision,
+        Axis::Ferocity,
+    ];
+
+    pub const NAMES: [&'static str; 7] = [
+        "courage",
+        "diligence",
+        "vitality",
+        "power",
+        "agility",
+        "precision",
+        "ferocity",
+    ];
+}
+
+/// The genome pool every person's axes live in, so they can learn
+/// and persist the way factions do (crate::genome).
+pub static PEOPLE: crate::genome::Pool = crate::genome::Pool::new(crate::genome::PoolConfig {
+    traits: &Axis::NAMES,
+    learn_rate: 0.05,
+    min: -1.5,
+    max: 1.5,
+});
+
+/// One person's personality: the seven axes.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Personality {
+    pub axes: [f32; 7],
+}
+
+impl Default for Personality {
+    fn default() -> Self {
+        Self { axes: [0.0; 7] }
+    }
+}
+
+impl Personality {
+    /// Seed a person from the genome by id and world seed: up to two
+    /// axes get a signed magnitude of 0.5 to 1.5 (Endless: "0-2
+    /// spectrum traits"), the rest stay zero. The same id and seed
+    /// give the same person; the pool remembers it after.
+    pub fn seed(id: ActorId, world_seed: u64) -> Personality {
+        let key = (id.0 as i64) ^ (world_seed as i64).rotate_left(17);
+        let values = PEOPLE.get_or_seed(key, || {
+            let mut axes = vec![0.0f64; 7];
+            // How many axes: 0, 1, or 2, weighted toward 1.
+            let count = match (crate::genome::jitter(key, 1, 1.0) + 1.0) * 1.5 {
+                x if x < 0.6 => 0,
+                x if x < 2.1 => 1,
+                _ => 2,
+            };
+            let mut picked = Vec::new();
+            let mut salt = 10;
+            while picked.len() < count {
+                let axis = (((crate::genome::jitter(key, salt, 1.0) + 1.0) / 2.0) * 7.0) as usize;
+                let axis = axis.min(6);
+                salt += 1;
+                if picked.contains(&axis) {
+                    continue;
+                }
+                picked.push(axis);
+                let magnitude = 0.5 + ((crate::genome::jitter(key, salt, 1.0) + 1.0) / 2.0);
+                let sign = if crate::genome::jitter(key, salt + 100, 1.0) < 0.0 {
+                    -1.0
+                } else {
+                    1.0
+                };
+                axes[axis] = sign * magnitude;
+                salt += 1;
+            }
+            axes
+        });
+        let mut axes = [0.0f32; 7];
+        for (i, v) in values.iter().enumerate().take(7) {
+            axes[i] = *v as f32;
+        }
+        Personality { axes }
+    }
+
+    pub fn get(&self, axis: Axis) -> f32 {
+        self.axes[axis as usize]
+    }
+
+    /// Stat multipliers (Endless: plus or minus 25 percent per unit).
+    pub fn health_mult(&self) -> f32 {
+        1.0 + 0.25 * self.get(Axis::Vitality)
+    }
+
+    /// Damage dealt; a Berserker hits half again as hard under half
+    /// health, a Timid one less.
+    pub fn damage_mult(&self, health_fraction: f32) -> f32 {
+        let base = 1.0 + 0.25 * self.get(Axis::Power);
+        let hurt = if health_fraction < 0.5 {
+            1.0 + 0.5 * self.get(Axis::Ferocity)
+        } else {
+            1.0
+        };
+        base * hurt
+    }
+
+    pub fn speed_mult(&self) -> f32 {
+        1.0 + 0.25 * self.get(Axis::Agility)
+    }
+
+    pub fn range_mult(&self) -> f32 {
+        1.0 + 0.25 * self.get(Axis::Precision)
+    }
+
+    /// The health fraction below which this person flees: a base of
+    /// 0.3, pushed up 20 percent per unit of cowardice, and a Brave
+    /// person never flees.
+    pub fn flee_line(&self) -> f32 {
+        let courage = self.get(Axis::Courage);
+        if courage > 0.0 {
+            return 0.0;
+        }
+        let timid = (-self.get(Axis::Ferocity)).max(0.0);
+        (0.3 + 0.2 * (-courage) + 0.1 * timid).min(0.9)
+    }
+}
+
 /// What the AI can see this tick, gathered by the consumer from its
 /// world. Positions are flat (x, z on the ground); the consumer
 /// decides what counts as a target (a hostile faction, in line of
@@ -299,6 +449,50 @@ mod tests {
         assert!(map.spawn(2).is_some());
         assert!(map.spawn(3).is_none());
         assert_eq!(map.live_count(), 2);
+    }
+
+    #[test]
+    fn personality_seeds_the_same_person_twice_and_people_differ() {
+        let a = Personality::seed(ActorId(5), 42);
+        let b = Personality::seed(ActorId(5), 42);
+        assert_eq!(a, b);
+        // Across a hundred people: at most two axes each, magnitudes
+        // in 0.5..=1.5, and not everyone the same.
+        let mut distinct = std::collections::HashSet::new();
+        let mut with_traits = 0;
+        for id in 1..=100u64 {
+            let p = Personality::seed(ActorId(id), 42);
+            let set: Vec<f32> = p.axes.iter().copied().filter(|v| *v != 0.0).collect();
+            assert!(set.len() <= 2, "{id}: {:?}", p.axes);
+            for v in &set {
+                assert!((0.5..=1.5).contains(&v.abs()), "{id}: {v}");
+            }
+            if !set.is_empty() {
+                with_traits += 1;
+            }
+            distinct.insert(p.axes.map(|v| v.to_bits()));
+        }
+        assert!(with_traits > 50, "most people have a trait: {with_traits}");
+        assert!(distinct.len() > 20, "people differ: {}", distinct.len());
+        // Another world seed, another person.
+        assert_ne!(Personality::seed(ActorId(5), 43).axes, a.axes);
+    }
+
+    #[test]
+    fn axes_move_the_stats_the_endless_way() {
+        let mut p = Personality::default();
+        assert_eq!(p.health_mult(), 1.0);
+        assert_eq!(p.flee_line(), 0.3);
+        p.axes[Axis::Vitality as usize] = 1.0;
+        assert_eq!(p.health_mult(), 1.25);
+        p.axes[Axis::Power as usize] = -1.0;
+        assert_eq!(p.damage_mult(1.0), 0.75);
+        p.axes[Axis::Ferocity as usize] = 1.0;
+        assert_eq!(p.damage_mult(0.4), 0.75 * 1.5, "berserker under half health");
+        p.axes[Axis::Courage as usize] = -1.0;
+        assert!((p.flee_line() - 0.5).abs() < 1e-6, "a coward flees at half");
+        p.axes[Axis::Courage as usize] = 1.0;
+        assert_eq!(p.flee_line(), 0.0, "the brave never flee");
     }
 
     #[test]
