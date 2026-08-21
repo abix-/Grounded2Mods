@@ -35,6 +35,8 @@ pub enum Action {
     Drop,
     /// Transfer the hovered stack (T); `half` is Shift+T.
     Transfer { half: bool },
+    /// Admin: toggle flying through everything (Quake's noclip, V).
+    Fly,
 }
 
 /// A key or button, by the name a binding file uses. The consumer
@@ -49,6 +51,7 @@ pub enum Key {
     I,
     O,
     T,
+    V,
     Tab,
     Escape,
     ShiftLeft,
@@ -99,6 +102,7 @@ impl Bindings {
                 (Key::I, Tapped(Inventory)),
                 (Key::Tab, Tapped(Inventory)),
                 (Key::Escape, Tapped(Cancel)),
+                (Key::V, Tapped(Fly)),
                 (Key::Digit1, Tapped(Hotbar { index: 0 })),
                 (Key::Digit2, Tapped(Hotbar { index: 1 })),
                 (Key::Digit3, Tapped(Hotbar { index: 2 })),
