@@ -536,8 +536,9 @@ impl MonumentRegistry {
         let count = members.len();
         for (i, member) in members.iter().enumerate() {
             let first = &member.structure.rooms[0];
-            let back = member.structure.rooms[member.structure.rooms.len() - 1].clone();
-            let gated_here = def.gated && i + 1 == count && member.structure.rooms.len() > 1;
+            let back = back_room(&member.structure);
+            let gate_wall = gate_wall(back);
+            let gated_here = def.gated && i + 1 == count && gate_wall.is_some();
             let danger = def.danger + u32::from(gated_here);
             loot_spots.push(LootSpot {
                 position: member.offset + back.origin + Vec3::new(0.0, 0.35, 0.0),
@@ -549,12 +550,9 @@ impl MonumentRegistry {
                     + Vec3::new(0.0, 0.0, first.interior.z / 2.0 + 2.0),
                 danger: def.danger,
             });
-            if gated_here {
-                // The door between the back room and its west neighbour.
+            if let (true, Some(wall)) = (gated_here, gate_wall) {
                 gates.push(Gate {
-                    position: member.offset
-                        + back.origin
-                        + Vec3::new(-(back.interior.x / 2.0 + back.wall_thickness), 0.0, 0.0),
+                    position: member.offset + wall,
                     level: def.danger,
                 });
             }
@@ -567,6 +565,33 @@ impl MonumentRegistry {
             npc_spots,
             gates,
         })
+    }
+}
+
+/// The back room of a building: the last ground-floor room of its
+/// grid (the far corner from the front door), never the stairwell.
+pub fn back_room(structure: &StructureDef) -> &RoomSpec {
+    let height = structure.rooms[0].interior.y;
+    structure
+        .rooms
+        .iter()
+        .filter(|r| r.origin.y == 0.0 && r.interior.y <= height)
+        .last()
+        .unwrap_or(&structure.rooms[0])
+}
+
+/// Where the back room's gate goes: the centre of its west wall if
+/// a neighbour's door is there, else its south wall's, else none
+/// (a one-room building has no back room to gate).
+fn gate_wall(back: &RoomSpec) -> Option<Vec3> {
+    let t = back.wall_thickness;
+    let has = |side| back.openings.iter().any(|o| o.side == side && o.sill == 0.0);
+    if has(Side::West) {
+        Some(back.origin + Vec3::new(-(back.interior.x / 2.0 + t), 0.0, 0.0))
+    } else if has(Side::South) {
+        Some(back.origin + Vec3::new(0.0, 0.0, back.interior.z / 2.0 + t))
+    } else {
+        None
     }
 }
 
@@ -923,11 +948,22 @@ mod tests {
             .find(|r| !r.gates.is_empty())
             .expect("a launch site with a multi-room last building");
         let last = gated.members.last().unwrap();
-        let back = last.structure.rooms[last.structure.rooms.len() - 1].clone();
+        let back = back_room(&last.structure);
+        assert!(back.origin.y == 0.0, "the back room is on the ground floor");
+        assert!(
+            back.interior.y <= last.structure.rooms[0].interior.y,
+            "the back room is never the stairwell"
+        );
         let gate = &gated.gates[0];
-        let expected_x =
-            last.offset.x + back.origin.x - back.interior.x / 2.0 - back.wall_thickness;
-        assert!((gate.position.x - expected_x).abs() < 1e-4);
+        let on_west = (gate.position.x
+            - (last.offset.x + back.origin.x - back.interior.x / 2.0 - back.wall_thickness))
+            .abs()
+            < 1e-4;
+        let on_south = (gate.position.z
+            - (last.offset.z + back.origin.z + back.interior.z / 2.0 + back.wall_thickness))
+            .abs()
+            < 1e-4;
+        assert!(on_west || on_south, "the gate sits on a back room doorway");
         assert_eq!(gate.level, 5);
         assert_eq!(gated.loot_spots.last().unwrap().danger, 6);
     }
