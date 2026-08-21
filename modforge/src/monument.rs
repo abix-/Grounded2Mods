@@ -86,22 +86,37 @@ pub enum BuildingSize {
 
 /// One building type as data (design.md "Building types"): what
 /// varies on every roll (operator-locked: "the buildings should
-/// have parameters that change"). Rooms are per floor, laid in a
-/// row; floors stack. `name` is the id.
+/// have parameters that change"). Rooms per floor fill a grid of
+/// `columns` by `rows`; floors stack. `name` is the id.
 #[derive(Clone, Debug)]
 pub struct BuildingTypeDef {
     pub name: String,
     pub size: BuildingSize,
-    pub rooms: (u32, u32),
+    /// Rooms across (east-west) per floor.
+    pub columns: (u32, u32),
+    /// Rooms deep (north-south) per floor.
+    pub rows: (u32, u32),
     pub floors: (u32, u32),
+    /// Interior width of one column of rooms.
     pub width: (f32, f32),
+    /// Interior length of one row of rooms.
     pub length: (f32, f32),
     pub height: f32,
-    /// Chance per wall of a window, per mille.
+    /// Chance per exterior wall of a window, per mille.
     pub windows: u64,
     /// Chance per room of a piece of furniture, per mille.
     pub clutter: u64,
+    /// Chance per room of a light, per mille. The first room of a
+    /// building is always lit.
+    pub lights: u64,
     pub palette: Vec<Rgb>,
+}
+
+impl BuildingTypeDef {
+    /// Fewest and most rooms per floor this type can roll.
+    pub fn rooms_per_floor(&self) -> (u32, u32) {
+        (self.columns.0 * self.rows.0, self.columns.1 * self.rows.1)
+    }
 }
 
 /// The checked-in building types. The consumer registers its
@@ -146,108 +161,128 @@ impl BuildingRegistry {
     }
 }
 
-/// Roll one building of type `def`: a row of rooms per floor, doors
-/// between neighbours and one out the south of the first room,
-/// windows by chance, a full-height stairwell at the east end when
-/// there is a second floor, furniture and a light per room. Every
-/// result passes [`validate`].
+/// Roll one building of type `def`: a grid of rooms per floor
+/// (columns east-west, rows running north), doorways between every
+/// pair of neighbours, one door out the south of the front room,
+/// windows on exterior walls by chance, a full-height stairwell
+/// east of the front row when there is a second floor, furniture
+/// and lights by chance. Every result passes [`validate`].
 pub fn generate_building(def: &BuildingTypeDef, roll: &mut Roll) -> StructureDef {
     let p = def;
-    let per_floor = roll.between(p.rooms.0, p.rooms.1);
+    let columns = roll.between(p.columns.0, p.columns.1) as usize;
+    let rows = roll.between(p.rows.0, p.rows.1) as usize;
     let floors = roll.between(p.floors.0, p.floors.1);
-    let length = roll.measure(p.length.0, p.length.1);
-    let widths: Vec<f32> = (0..per_floor)
+    let widths: Vec<f32> = (0..columns)
         .map(|_| roll.measure(p.width.0, p.width.1))
         .collect();
+    let lengths: Vec<f32> = (0..rows)
+        .map(|_| roll.measure(p.length.0, p.length.1))
+        .collect();
 
-    // Room origins along x: neighbours are 2 wall thicknesses apart
-    // (each room builds its own wall on the shared plane).
-    let mut xs = Vec::with_capacity(widths.len());
-    let mut cursor = 0.0;
-    for (i, w) in widths.iter().enumerate() {
-        if i > 0 {
-            cursor += widths[i - 1] / 2.0 + 2.0 * WALL + w / 2.0;
-        }
-        xs.push(cursor);
-    }
-    let last = widths.len() - 1;
-    let stairwell_x = xs[last] + widths[last] / 2.0 + 2.0 * WALL + STAIRWELL_WIDTH / 2.0;
+    // Room origins: neighbours are 2 wall thicknesses apart (each
+    // room builds its own wall on the shared plane). Columns run
+    // east (+x), rows run north (-z) from the front row at z 0.
+    let xs = spaced(&widths, 1.0);
+    let zs = spaced(&lengths, -1.0);
+    let last_col = columns - 1;
+    let last_row = rows - 1;
+    let stairwell_x = xs[last_col] + widths[last_col] / 2.0 + 2.0 * WALL + STAIRWELL_WIDTH / 2.0;
 
     let mut rooms = Vec::new();
     let mut furniture = Vec::new();
     let mut lights = Vec::new();
     for floor in 0..floors {
         let y = floor as f32 * p.height;
-        for (i, (&x, &w)) in xs.iter().zip(&widths).enumerate() {
-            let mut openings = Vec::new();
-            // Exterior door out the south of the first ground room.
-            if i == 0 && floor == 0 {
-                openings.push(door(Side::South, 0.0));
-            }
-            // Doors between neighbours: the west room owns the hinge.
-            if i > 0 {
-                openings.push(Opening {
-                    door: false,
-                    ..door(Side::West, 0.0)
+        for (r, (&z, &l)) in zs.iter().zip(&lengths).enumerate() {
+            for (c, (&x, &w)) in xs.iter().zip(&widths).enumerate() {
+                let front = c == 0 && r == 0;
+                let mut openings = Vec::new();
+                // The door out: south of the front room, ground floor.
+                if front && floor == 0 {
+                    openings.push(door(Side::South, 0.0));
+                }
+                // Doorways to neighbours: the west and south rooms own
+                // the hinge, the east and north rooms author the gap.
+                if c > 0 {
+                    openings.push(Opening {
+                        door: false,
+                        ..door(Side::West, 0.0)
+                    });
+                }
+                if c < last_col {
+                    openings.push(door(Side::East, 0.0));
+                }
+                if r > 0 {
+                    openings.push(Opening {
+                        door: false,
+                        ..door(Side::South, 0.0)
+                    });
+                }
+                if r < last_row {
+                    openings.push(door(Side::North, 0.0));
+                }
+                // Into the stairwell, east of the front row.
+                let stair_door = c == last_col && r == 0 && floors > 1;
+                if stair_door {
+                    openings.push(Opening {
+                        door: false,
+                        ..door(Side::East, 0.0)
+                    });
+                }
+                // Windows on exterior walls that have no doorway.
+                let exterior = [
+                    (Side::North, r == last_row, w),
+                    (Side::South, r == 0 && !(front && floor == 0), w),
+                    (Side::West, c == 0, l),
+                    (Side::East, c == last_col && !stair_door, l),
+                ];
+                for (side, free, run) in exterior {
+                    if free && run >= 2.0 * WINDOW_WIDTH + 1.0 && roll.chance(p.windows) {
+                        openings.push(window(side, 0.0));
+                    }
+                }
+                let origin = Vec3::new(x, y, z);
+                rooms.push(RoomSpec {
+                    origin,
+                    interior: Vec3::new(w, p.height, l),
+                    wall_thickness: WALL,
+                    openings,
+                    floor: true,
+                    ceiling: floor + 1 == floors,
                 });
-            }
-            if i < last {
-                openings.push(door(Side::East, 0.0));
-            } else if floors > 1 {
-                // Into the stairwell, at this floor's level.
-                openings.push(Opening {
-                    door: false,
-                    ..door(Side::East, 0.0)
-                });
-            }
-            // Windows where a door does not already sit.
-            for side in [Side::North, Side::South] {
-                let taken = side == Side::South && i == 0 && floor == 0;
-                if !taken && w >= 2.0 * WINDOW_WIDTH + 1.0 && roll.chance(p.windows) {
-                    openings.push(window(side, 0.0));
+                if roll.chance(p.clutter) {
+                    let size = Vec3::new(
+                        roll.measure(0.6, 1.4),
+                        roll.measure(0.4, 1.0),
+                        roll.measure(0.6, 1.2),
+                    );
+                    // In a corner, clear of the centred doorways.
+                    let dx = (w / 2.0 - size.x / 2.0 - 0.3).max(0.0)
+                        * if roll.chance(500) { 1.0 } else { -1.0 };
+                    furniture.push(SolidSpec {
+                        center: origin + Vec3::new(dx, size.y / 2.0, -l / 2.0 + size.z / 2.0 + 0.3),
+                        size,
+                        color: *roll.pick(&p.palette),
+                    });
+                }
+                if (front && floor == 0) || roll.chance(p.lights) {
+                    lights.push(LightSpec {
+                        position: origin + Vec3::new(0.0, p.height - 0.4, 0.0),
+                        color: [1.0, 0.9, 0.7],
+                        intensity: 400_000.0,
+                    });
                 }
             }
-            if i == 0 && length >= 2.0 * WINDOW_WIDTH + 1.0 && roll.chance(p.windows) {
-                openings.push(window(Side::West, 0.0));
-            }
-            let origin = Vec3::new(x, y, 0.0);
-            rooms.push(RoomSpec {
-                origin,
-                interior: Vec3::new(w, p.height, length),
-                wall_thickness: WALL,
-                openings,
-                floor: true,
-                ceiling: floor + 1 == floors,
-            });
-            if roll.chance(p.clutter) {
-                let size = Vec3::new(
-                    roll.measure(0.6, 1.4),
-                    roll.measure(0.4, 1.0),
-                    roll.measure(0.6, 1.2),
-                );
-                // Against the north wall, clear of every doorway.
-                let dx = roll.measure(-(w / 2.0 - 1.0).max(0.0), (w / 2.0 - 1.0).max(0.1));
-                furniture.push(SolidSpec {
-                    center: origin
-                        + Vec3::new(dx, size.y / 2.0, -length / 2.0 + size.z / 2.0 + 0.3),
-                    size,
-                    color: *roll.pick(&p.palette),
-                });
-            }
-            lights.push(LightSpec {
-                position: origin + Vec3::new(0.0, p.height - 0.4, 0.0),
-                color: [1.0, 0.9, 0.7],
-                intensity: 400_000.0,
-            });
         }
     }
 
-    // The stairwell: one full-height room east of the row with a
-    // flight from the ground floor to the first, its landing at
-    // the first floor's doorway.
+    // The stairwell: one full-height room east of the front row
+    // with a flight from the ground floor to the first, its landing
+    // at the first floor's doorway.
     let mut stairs = Vec::new();
     if floors > 1 {
         let total = floors as f32 * p.height;
+        let length = lengths[0];
         let mut openings = vec![Opening {
             door: false,
             ..door(Side::West, 0.0)
@@ -296,6 +331,21 @@ pub fn generate_building(def: &BuildingTypeDef, roll: &mut Roll) -> StructureDef
         lights,
     };
     debug_assert!(validate(&out).is_ok(), "generated buildings are legal");
+    out
+}
+
+/// Centre coordinates of rooms laid side by side with the given
+/// interior extents, two wall thicknesses apart, starting at 0 and
+/// advancing in `direction` (+1 east, -1 north).
+fn spaced(extents: &[f32], direction: f32) -> Vec<f32> {
+    let mut out = Vec::with_capacity(extents.len());
+    let mut cursor = 0.0;
+    for (i, e) in extents.iter().enumerate() {
+        if i > 0 {
+            cursor += direction * (extents[i - 1] / 2.0 + 2.0 * WALL + e / 2.0);
+        }
+        out.push(cursor);
+    }
     out
 }
 
@@ -520,65 +570,80 @@ impl MonumentRegistry {
     }
 }
 
-/// Place buildings by the rule without footprints overlapping.
-/// Along a road: alternating sides of a road along x. Clustered:
-/// packed around the origin. Around a yard: on a ring leaving the
-/// middle open. Each placement pushes outward until it is clear of
-/// the ones before it.
+/// Place buildings by the rule on city-block cells sized to the
+/// largest footprint plus a gap, so no two can overlap at any count.
+/// Clustered: a compact grid of blocks around the origin. Around a
+/// yard: the same grid with the middle cell left open. Along a
+/// road: pairs of buildings face each other across streets that
+/// run east, a new street every few pairs. Each building is jittered
+/// inside the slack of its cell.
 fn arrange(
     buildings: Vec<StructureDef>,
     arrangement: Arrangement,
     roll: &mut Roll,
 ) -> Vec<MonumentMember> {
     const GAP: f32 = 4.0;
-    let mut placed: Vec<Aabb> = Vec::new();
-    let mut members = Vec::new();
-    for (i, structure) in buildings.into_iter().enumerate() {
-        let foot = footprint(&structure);
-        let size = foot.max - foot.min;
-        let centre = (foot.min + foot.max) / 2.0;
-        let jitter = roll.measure(0.0, 0.6);
-        let mut offset = Vec3::ZERO;
-        for attempt in 0..16u32 {
-            let reach = attempt as f32 * GAP;
-            let candidate = match arrangement {
-                Arrangement::AlongRoad => {
-                    let side = if i % 2 == 0 { 1.0 } else { -1.0 };
-                    let along = (i / 2) as f32 * (size.x + GAP * 2.0) + reach;
-                    Vec3::new(along, 0.0, side * (6.0 + size.z / 2.0))
-                }
-                Arrangement::Clustered => {
-                    let angle = i as f32 * 2.4 + jitter;
-                    let radius = if i == 0 {
-                        0.0
-                    } else {
-                        size.length() / 2.0 + GAP + reach
-                    };
-                    Vec3::new(angle.cos() * radius, 0.0, angle.sin() * radius)
-                }
-                Arrangement::AroundYard => {
-                    let angle = i as f32 * 2.4 + jitter;
-                    let radius = 12.0 + size.length() / 2.0 + reach;
-                    Vec3::new(angle.cos() * radius, 0.0, angle.sin() * radius)
-                }
-            } - centre.with_y(0.0);
-            let here = shifted(&foot, candidate);
-            offset = candidate;
-            if placed.iter().all(|p| !grown(p, GAP / 2.0).overlaps(&here)) {
-                break;
-            }
-        }
-        placed.push(shifted(&foot, offset));
-        members.push(MonumentMember { structure, offset });
-    }
-    members
-}
+    const ROAD: f32 = 8.0;
+    let feet: Vec<Aabb> = buildings.iter().map(footprint).collect();
+    let cell_x = feet.iter().map(|f| f.max.x - f.min.x).fold(0.0, f32::max) + GAP;
+    let cell_z = feet.iter().map(|f| f.max.z - f.min.z).fold(0.0, f32::max) + GAP;
+    let n = buildings.len();
 
-fn grown(a: &Aabb, by: f32) -> Aabb {
-    Aabb {
-        min: a.min - Vec3::new(by, 0.0, by),
-        max: a.max + Vec3::new(by, 0.0, by),
-    }
+    // Cell centres, one per building, by rule.
+    let cells: Vec<Vec3> = match arrangement {
+        Arrangement::Clustered | Arrangement::AroundYard => {
+            let yard = arrangement == Arrangement::AroundYard;
+            let slots = n + usize::from(yard);
+            let columns = (slots as f32).sqrt().ceil().max(1.0) as usize;
+            let rows = slots.div_ceil(columns);
+            let middle = (rows / 2) * columns + columns / 2;
+            (0..slots)
+                .filter(|i| !(yard && *i == middle))
+                .map(|i| {
+                    let (c, r) = (i % columns, i / columns);
+                    Vec3::new(
+                        (c as f32 - (columns as f32 - 1.0) / 2.0) * cell_x,
+                        0.0,
+                        (r as f32 - (rows as f32 - 1.0) / 2.0) * cell_z,
+                    )
+                })
+                .collect()
+        }
+        Arrangement::AlongRoad => {
+            let per_street = ((n as f32 / 2.0).sqrt().ceil() as usize).clamp(1, 6);
+            (0..n)
+                .map(|i| {
+                    let street = i / (2 * per_street);
+                    let along = (i % (2 * per_street)) / 2;
+                    let side = if i % 2 == 0 { -1.0 } else { 1.0 };
+                    Vec3::new(
+                        along as f32 * cell_x,
+                        0.0,
+                        street as f32 * (2.0 * cell_z + ROAD) + side * (ROAD + cell_z) / 2.0,
+                    )
+                })
+                .collect()
+        }
+    };
+
+    buildings
+        .into_iter()
+        .zip(feet)
+        .zip(cells)
+        .map(|((structure, foot), cell)| {
+            let size = foot.max - foot.min;
+            let centre = (foot.min + foot.max) / 2.0;
+            let slack_x = (cell_x - GAP - size.x).max(0.0);
+            let slack_z = (cell_z - GAP - size.z).max(0.0);
+            let jitter = Vec3::new(
+                roll.measure(-slack_x / 2.0, slack_x / 2.0),
+                0.0,
+                roll.measure(-slack_z / 2.0, slack_z / 2.0),
+            );
+            let offset = cell + jitter - centre.with_y(0.0);
+            MonumentMember { structure, offset }
+        })
+        .collect()
 }
 
 /// The relation rules of a monument: every member is a legal
@@ -606,26 +671,34 @@ pub fn validate_monument(def: &MonumentDef) -> Result<(), String> {
 mod tests {
     use super::*;
 
-    fn building(name: &str, rooms: (u32, u32), floors: (u32, u32)) -> BuildingTypeDef {
+    fn building(
+        name: &str,
+        columns: (u32, u32),
+        rows: (u32, u32),
+        floors: (u32, u32),
+    ) -> BuildingTypeDef {
         BuildingTypeDef {
             name: name.to_string(),
             size: BuildingSize::Small,
-            rooms,
+            columns,
+            rows,
             floors,
             width: (4.0, 8.0),
             length: (5.0, 9.0),
             height: 3.0,
             windows: 500,
             clutter: 600,
+            lights: 300,
             palette: vec![[0.5, 0.4, 0.3]],
         }
     }
 
     fn registries() -> (BuildingRegistry, MonumentRegistry) {
         let mut b = BuildingRegistry::default();
-        b.register(building("shack", (1, 1), (1, 1))).unwrap();
-        b.register(building("office", (2, 4), (2, 2))).unwrap();
-        b.register(building("warehouse", (2, 3), (1, 1))).unwrap();
+        b.register(building("shack", (1, 1), (1, 1), (1, 1))).unwrap();
+        b.register(building("office", (2, 4), (1, 2), (2, 2))).unwrap();
+        b.register(building("warehouse", (2, 3), (1, 1), (1, 1))).unwrap();
+        b.register(building("tower block", (4, 5), (4, 5), (2, 2))).unwrap();
         let mut m = MonumentRegistry::default();
         m.set_name_words(
             vec!["Ash".into(), "Rust".into(), "Grey".into()],
@@ -670,13 +743,29 @@ mod tests {
             &b,
         )
         .unwrap();
+        m.register(
+            MonumentTypeDef {
+                name: "city".into(),
+                slots: vec![BuildingSlot {
+                    choices: vec!["tower block".into(), "office".into()],
+                    min: 50,
+                    max: 50,
+                }],
+                arrangement: Arrangement::Clustered,
+                danger: 3,
+                gated: true,
+                suffix: "City".into(),
+            },
+            &b,
+        )
+        .unwrap();
         (b, m)
     }
 
     #[test]
     fn registries_reject_unknown_buildings_and_duplicates() {
         let (mut b, mut m) = registries();
-        assert!(b.register(building("shack", (1, 1), (1, 1))).is_err());
+        assert!(b.register(building("shack", (1, 1), (1, 1), (1, 1))).is_err());
         assert!(b.def("shack").is_some() && b.def("tower").is_none());
         let bad = MonumentTypeDef {
             name: "bad".into(),
@@ -696,7 +785,7 @@ mod tests {
 
     #[test]
     fn a_seed_rolls_the_same_building_twice_and_another_seed_differs() {
-        let def = building("office", (2, 4), (2, 2));
+        let def = building("office", (2, 4), (1, 2), (2, 2));
         let a = generate_building(&def, &mut Roll::new(7));
         let b = generate_building(&def, &mut Roll::new(7));
         assert_eq!(a.rooms.len(), b.rooms.len());
@@ -711,7 +800,7 @@ mod tests {
     #[test]
     fn generated_buildings_are_legal_and_within_their_ranges() {
         let (b, _) = registries();
-        for name in ["shack", "office", "warehouse"] {
+        for name in ["shack", "office", "warehouse", "tower block"] {
             let p = b.def(name).unwrap();
             for seed in 0..25u64 {
                 let def = generate_building(p, &mut Roll::new(seed));
@@ -732,7 +821,8 @@ mod tests {
                     .filter(|r| r.origin.y == 0.0 && r.interior.y <= p.height)
                     .collect();
                 let n = ground.len() as u32;
-                assert!(n >= p.rooms.0 && n <= p.rooms.1, "{name} rooms {n}");
+                let (lo, hi) = p.rooms_per_floor();
+                assert!(n >= lo && n <= hi, "{name} rooms {n}");
                 assert!(
                     ground[0]
                         .openings
@@ -740,18 +830,55 @@ mod tests {
                         .any(|o| o.side == Side::South && o.door),
                     "{name} has a front door"
                 );
-                for pair in ground.windows(2) {
-                    assert!(pair[0].openings.iter().any(|o| o.side == Side::East));
-                    assert!(pair[1].openings.iter().any(|o| o.side == Side::West));
+                // Every room reaches every neighbour: a doorway east
+                // to the room beside it, north to the room behind it,
+                // each authored on both sides.
+                let touching = |a: &RoomSpec, b: &RoomSpec, side: Side| {
+                    let d = b.origin - a.origin;
+                    match side {
+                        Side::East => d.z.abs() < 1e-3 && d.x > 0.0 && d.x < a.interior.x + b.interior.x,
+                        Side::North => d.x.abs() < 1e-3 && d.z < 0.0 && -d.z < a.interior.z + b.interior.z,
+                        _ => false,
+                    }
+                };
+                for a in &ground {
+                    for b in &ground {
+                        if touching(a, b, Side::East) {
+                            assert!(a.openings.iter().any(|o| o.side == Side::East && o.door));
+                            assert!(b.openings.iter().any(|o| o.side == Side::West));
+                        }
+                        if touching(a, b, Side::North) {
+                            assert!(a.openings.iter().any(|o| o.side == Side::North && o.door));
+                            assert!(b.openings.iter().any(|o| o.side == Side::South));
+                        }
+                    }
                 }
             }
         }
     }
 
     #[test]
+    fn a_city_of_fifty_big_buildings_rolls_legal_and_large() {
+        let (b, m) = registries();
+        let city = m.roll("city", &b, 11).unwrap();
+        validate_monument(&city).unwrap();
+        assert_eq!(city.members.len(), 50);
+        let rooms: usize = city.members.iter().map(|x| x.structure.rooms.len()).sum();
+        assert!(rooms >= 50 * 16, "a city is thousands of rooms, got {rooms}");
+        let blocks = city
+            .members
+            .iter()
+            .filter(|x| x.structure.name == "tower block")
+            .map(|x| x.structure.rooms.len())
+            .min()
+            .unwrap();
+        assert!(blocks >= 2 * 16 + 1, "a tower block is 20+ rooms, got {blocks}");
+    }
+
+    #[test]
     fn rolled_monuments_are_legal_and_follow_their_type() {
         let (b, m) = registries();
-        for name in ["roadside stop", "launch site"] {
+        for name in ["roadside stop", "launch site", "city"] {
             let def = m.def(name).unwrap();
             for seed in 0..15u64 {
                 let rolled = m.roll(name, &b, seed).unwrap();
