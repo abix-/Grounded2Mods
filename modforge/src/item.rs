@@ -22,13 +22,24 @@ pub enum ItemKind {
     Deployable,
 }
 
-/// Combat stats on an item. Present on weapons and tools that can
-/// deal damage; None on food, materials, and non-combat items.
-#[derive(Clone, Debug)]
+/// How a weapon fires (topside design.md "How a hit works"). Present
+/// on weapons and tools that can deal damage; None on food,
+/// materials, and non-combat items. What a hit does is the damage
+/// def it names (`crate::combat::DamageDef`); this is the firing.
+#[derive(Clone, Debug, PartialEq)]
 pub struct CombatStats {
-    pub damage: f32,
-    pub attack_speed: f32,
-    pub range: f32,
+    /// The damage def this weapon lands.
+    pub damage: String,
+    /// Seconds between shots (Quake 3's per-weapon `addTime`).
+    pub delay: f32,
+    /// How far a hit can land. Melee: the swing's reach. Ranged: the
+    /// Rust hybrid's instant part; past it the shot is a projectile.
+    pub reach: f32,
+    /// Rays per shot: 1 for most, more for shotguns.
+    pub pellets: u32,
+    /// Spread half-angle in degrees; 0 for melee.
+    pub spread_degrees: f32,
+    /// Ammo item consumed per shot; None for melee.
     pub ammo: Option<String>,
 }
 
