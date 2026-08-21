@@ -65,10 +65,17 @@ pub struct ItemDef {
     /// Inventory slots this item holds once deployed in the world
     /// (a storage box). None for everything that holds nothing.
     pub storage: Option<usize>,
-    /// Armor this item gives the body area of the slot it is worn in
-    /// (design.md "protection per body area from worn gear"). None
-    /// for everything that is not worn.
-    pub armor: Option<f32>,
+    /// Worn gear: the slot it is worn in and the armor it gives that
+    /// slot's body area (design.md "protection per body area from
+    /// worn gear"). None for everything that is not worn.
+    pub armor: Option<Armor>,
+}
+
+/// What a worn item does.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Armor {
+    pub slot: EquipSlot,
+    pub amount: f32,
 }
 
 /// The collection of checked-in ItemDefs. Consumers register their

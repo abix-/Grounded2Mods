@@ -208,16 +208,19 @@ impl BodyArea {
 impl Protection {
     /// This actor's protection for a hit on `area`: the base plus the
     /// armor of whatever is worn in the area's slot. `armor_of` looks
-    /// an item name up in the consumer's registry.
+    /// an item name up in the consumer's registry; gear worn in the
+    /// wrong slot guards nothing.
     pub fn for_area(
         &self,
         area: BodyArea,
         worn: &crate::item::Equipment,
-        armor_of: impl Fn(&str) -> Option<f32>,
+        armor_of: impl Fn(&str) -> Option<crate::item::Armor>,
     ) -> Protection {
         let worn_armor = worn
             .get(area.slot())
             .and_then(|stack| armor_of(&stack.item))
+            .filter(|armor| armor.slot == area.slot())
+            .map(|armor| armor.amount)
             .unwrap_or(0.0);
         Protection {
             armor: self.armor + worn_armor,
@@ -313,9 +316,15 @@ pub fn resolve_hit(hit: &Hit<'_>, protection: &mut Protection, target: &mut Heal
 /// Pellets summed per target before one resolve each (Half-Life's
 /// multi-damage): a shotgun blast is one hit on each thing it
 /// touched, not ten pains.
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct MultiDamage<T: PartialEq> {
     hits: Vec<(T, f32, u32)>,
+}
+
+impl<T: PartialEq> Default for MultiDamage<T> {
+    fn default() -> Self {
+        Self { hits: Vec::new() }
+    }
 }
 
 impl<T: PartialEq + Clone> MultiDamage<T> {
@@ -417,10 +426,19 @@ mod tests {
                 quality: None,
             }),
         );
-        let armor_of = |name: &str| (name == "vest").then_some(30.0);
+        let armor_of = |name: &str| {
+            (name == "vest").then_some(crate::item::Armor {
+                slot: crate::item::EquipSlot::Chest,
+                amount: 30.0,
+            })
+        };
         let base = Protection::default();
         assert_eq!(base.for_area(BodyArea::Chest, &worn, armor_of).armor, 30.0);
         assert_eq!(base.for_area(BodyArea::Head, &worn, armor_of).armor, 0.0);
+        // The vest stuffed in the head slot guards nothing.
+        let mut wrong = crate::item::Equipment::default();
+        wrong.set(crate::item::EquipSlot::Head, worn.get(crate::item::EquipSlot::Chest).cloned());
+        assert_eq!(base.for_area(BodyArea::Head, &wrong, armor_of).armor, 0.0);
     }
 
     #[test]

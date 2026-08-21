@@ -286,9 +286,9 @@ pub fn drop_slot(inv: &mut Inventory, slot: usize) -> Option<ItemStack> {
 
 /// Double click or the hotbar key: use what is in `slot`. Food is
 /// eaten through [`SurvivalStats::eat_from_slot`]; a weapon or tool
-/// goes into the hands (the equipment's weapon slot), and whatever
-/// was held takes its place in the slot (Atlas: the number key
-/// equips). Other kinds have no use yet.
+/// goes into the hands (the equipment's weapon slot), worn gear goes
+/// into its own slot, and whatever was there takes its place in the
+/// slot (Atlas: the number key equips). Other kinds have no use yet.
 pub fn use_slot(
     stats: &mut SurvivalStats,
     inv: &mut Inventory,
@@ -302,6 +302,11 @@ pub fn use_slot(
     let Some(def) = registry.def(&stack.item) else {
         return Err(SurvivalError::Unregistered(stack.item.clone()));
     };
+    if let Some(armor) = def.armor {
+        let held = inv.slots[slot].take();
+        inv.slots[slot] = equipment.set(armor.slot, held);
+        return Ok(());
+    }
     match def.kind {
         ItemKind::Weapon | ItemKind::Tool => {
             let held = inv.slots[slot].take();
