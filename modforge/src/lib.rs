@@ -23,6 +23,7 @@ pub mod input;
 pub mod item;
 pub mod log;
 pub mod mission;
+pub mod monument;
 pub mod ops;
 pub mod patterns;
 pub mod quality;
