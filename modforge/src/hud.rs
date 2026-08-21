@@ -3,7 +3,7 @@
 //! panel is open, moving stacks between slots. The consumer
 //! writes HudState fields directly and reads them to paint.
 
-use crate::item::{EquipSlot, Equipment, Inventory, ItemKind, ItemRegistry, ItemStack, move_between};
+use crate::item::{Equipment, Inventory, ItemKind, ItemRegistry, ItemStack, move_between};
 use crate::survival::{SurvivalError, SurvivalStats};
 
 /// What kind of thing can be interacted with.
@@ -284,11 +284,40 @@ pub fn drop_slot(inv: &mut Inventory, slot: usize) -> Option<ItemStack> {
     inv.remove(slot, u32::MAX)
 }
 
-/// Double click or the hotbar key: use what is in `slot`. Food is
-/// eaten through [`SurvivalStats::eat_from_slot`]; a weapon or tool
-/// goes into the hands (the equipment's weapon slot), worn gear goes
-/// into its own slot, and whatever was there takes its place in the
-/// slot (Atlas: the number key equips). Other kinds have no use yet.
+/// The hotbar with the slot in the hands (Rust: the item stays in
+/// the belt, the selected slot is what you hold). Every actor has
+/// one; the fire system reads the weapon from `held`.
+#[derive(Clone)]
+pub struct Hotbar {
+    pub slots: Inventory,
+    /// The selected slot, if any. Selecting an empty slot is allowed
+    /// (Rust: empty hands).
+    pub held: Option<usize>,
+}
+
+impl Default for Hotbar {
+    fn default() -> Self {
+        Self {
+            slots: Inventory::new(HOTBAR_SLOTS),
+            held: None,
+        }
+    }
+}
+
+impl Hotbar {
+    /// What is in the hands right now.
+    pub fn held_stack(&self) -> Option<&ItemStack> {
+        self.held
+            .and_then(|i| self.slots.slots.get(i))
+            .and_then(|s| s.as_ref())
+    }
+}
+
+/// Double click: use what is in `slot` of any holder. Food is eaten
+/// through [`SurvivalStats::eat_from_slot`]; worn gear goes into its
+/// own equipment slot and whatever was there takes its place. A
+/// weapon or tool is not used from here: it is held from the bar
+/// (`hotbar_key`). Other kinds have no use yet.
 pub fn use_slot(
     stats: &mut SurvivalStats,
     inv: &mut Inventory,
@@ -303,17 +332,44 @@ pub fn use_slot(
         return Err(SurvivalError::Unregistered(stack.item.clone()));
     };
     if let Some(armor) = def.armor {
-        let held = inv.slots[slot].take();
-        inv.slots[slot] = equipment.set(armor.slot, held);
+        let worn = inv.slots[slot].take();
+        inv.slots[slot] = equipment.set(armor.slot, worn);
         return Ok(());
     }
     match def.kind {
-        ItemKind::Weapon | ItemKind::Tool => {
-            let held = inv.slots[slot].take();
-            inv.slots[slot] = equipment.set(EquipSlot::Weapon, held);
+        ItemKind::Weapon | ItemKind::Tool => Ok(()),
+        _ => stats.eat_from_slot(inv, slot, registry),
+    }
+}
+
+/// The hotbar key: a weapon or tool in `slot` is selected into the
+/// hands and stays in the bar (Rust); the same key again puts it
+/// away. Anything else is used as by double click.
+pub fn hotbar_key(
+    stats: &mut SurvivalStats,
+    hotbar: &mut Hotbar,
+    slot: usize,
+    registry: &ItemRegistry,
+    equipment: &mut Equipment,
+) -> Result<(), SurvivalError> {
+    let kind = hotbar
+        .slots
+        .slots
+        .get(slot)
+        .and_then(|s| s.as_ref())
+        .and_then(|s| registry.def(&s.item))
+        .filter(|d| d.armor.is_none())
+        .map(|d| d.kind);
+    match kind {
+        Some(ItemKind::Weapon | ItemKind::Tool) => {
+            hotbar.held = if hotbar.held == Some(slot) {
+                None
+            } else {
+                Some(slot)
+            };
             Ok(())
         }
-        _ => stats.eat_from_slot(inv, slot, registry),
+        _ => use_slot(stats, &mut hotbar.slots, slot, registry, equipment),
     }
 }
 
@@ -616,21 +672,30 @@ mod tests {
         .unwrap();
         let mut stats = crate::survival::SurvivalStats::default();
         let mut gear = Equipment::default();
-        let mut bar = Inventory::new(2);
-        bar.slots[0] = Some(stack("pipe", 1));
-        bar.slots[1] = Some(stack("hatchet", 1));
+        let mut bar = Hotbar::default();
+        bar.slots.slots[0] = Some(stack("pipe", 1));
+        bar.slots.slots[1] = Some(stack("hatchet", 1));
 
-        use_slot(&mut stats, &mut bar, 0, &reg, &mut gear).unwrap();
-        assert_eq!(gear.get(EquipSlot::Weapon).unwrap().item, "pipe");
-        assert!(bar.slots[0].is_none(), "the pipe left the bar");
+        // The key holds the pipe; it stays in the bar (Rust).
+        hotbar_key(&mut stats, &mut bar, 0, &reg, &mut gear).unwrap();
+        assert_eq!(bar.held, Some(0));
+        assert_eq!(bar.held_stack().unwrap().item, "pipe");
+        assert!(bar.slots.slots[0].is_some(), "the pipe stays in the bar");
+        assert!(gear.get(EquipSlot::Weapon).is_none(), "the hands hold a bar slot, not a copy");
 
-        use_slot(&mut stats, &mut bar, 1, &reg, &mut gear).unwrap();
-        assert_eq!(gear.get(EquipSlot::Weapon).unwrap().item, "hatchet");
-        assert_eq!(bar.slots[1].as_ref().unwrap().item, "pipe", "the pipe came back");
+        // Another key switches; the same key again puts it away.
+        hotbar_key(&mut stats, &mut bar, 1, &reg, &mut gear).unwrap();
+        assert_eq!(bar.held_stack().unwrap().item, "hatchet");
+        hotbar_key(&mut stats, &mut bar, 1, &reg, &mut gear).unwrap();
+        assert_eq!(bar.held, None, "put away");
 
+        // Double click on a weapon in any holder does nothing; on an
+        // empty slot it is an error.
+        use_slot(&mut stats, &mut bar.slots, 0, &reg, &mut gear).unwrap();
+        assert!(bar.slots.slots[0].is_some());
         assert_eq!(
-            use_slot(&mut stats, &mut bar, 0, &reg, &mut gear),
-            Err(SurvivalError::EmptySlot(0))
+            hotbar_key(&mut stats, &mut bar, 5, &reg, &mut gear),
+            Err(SurvivalError::EmptySlot(5))
         );
     }
 
