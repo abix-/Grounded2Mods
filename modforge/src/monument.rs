@@ -729,13 +729,17 @@ pub fn back_room(structure: &StructureDef) -> &RoomSpec {
 /// (a one-room building has no back room to gate).
 fn gate_wall(back: &RoomSpec) -> Option<Vec3> {
     let t = back.wall_thickness;
-    let has = |side| back.openings.iter().any(|o| o.side == side && o.sill == 0.0);
-    if has(Side::West) {
-        Some(back.origin + Vec3::new(-(back.interior.x / 2.0 + t), 0.0, 0.0))
-    } else if has(Side::South) {
-        Some(back.origin + Vec3::new(0.0, 0.0, back.interior.z / 2.0 + t))
+    let doorway = |side| {
+        back.openings
+            .iter()
+            .find(|o| o.side == side && o.sill == 0.0)
+            .map(|o| o.offset)
+    };
+    if let Some(offset) = doorway(Side::West) {
+        Some(back.origin + Vec3::new(-(back.interior.x / 2.0 + t), 0.0, offset))
     } else {
-        None
+        doorway(Side::South)
+            .map(|offset| back.origin + Vec3::new(offset, 0.0, back.interior.z / 2.0 + t))
     }
 }
 
@@ -1126,14 +1130,28 @@ mod tests {
             "the back room is never the stairwell"
         );
         let gate = &gated.gates[0];
-        let on_west = (gate.position.x
-            - (last.offset.x + back.origin.x - back.interior.x / 2.0 - back.wall_thickness))
-            .abs()
-            < 1e-4;
-        let on_south = (gate.position.z
-            - (last.offset.z + back.origin.z + back.interior.z / 2.0 + back.wall_thickness))
-            .abs()
-            < 1e-4;
+        let west = back
+            .openings
+            .iter()
+            .find(|o| o.side == Side::West && o.sill == 0.0);
+        let south = back
+            .openings
+            .iter()
+            .find(|o| o.side == Side::South && o.sill == 0.0);
+        let on_west = west.is_some_and(|o| {
+            (gate.position.x
+                - (last.offset.x + back.origin.x - back.interior.x / 2.0 - back.wall_thickness))
+                .abs()
+                < 1e-4
+                && (gate.position.z - (last.offset.z + back.origin.z + o.offset)).abs() < 1e-4
+        });
+        let on_south = south.is_some_and(|o| {
+            (gate.position.z
+                - (last.offset.z + back.origin.z + back.interior.z / 2.0 + back.wall_thickness))
+                .abs()
+                < 1e-4
+                && (gate.position.x - (last.offset.x + back.origin.x + o.offset)).abs() < 1e-4
+        });
         assert!(on_west || on_south, "the gate sits on a back room doorway");
         assert_eq!(gate.level, 5);
         assert_eq!(gated.loot_spots.last().unwrap().danger, 6);
