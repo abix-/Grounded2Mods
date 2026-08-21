@@ -10,6 +10,9 @@ use crate::survival::{SurvivalError, SurvivalStats};
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum InteractKind {
     Door { open: bool },
+    /// A locked door into a gated room (Rust's card rooms); opens
+    /// only at `level` of progression, which nothing grants yet.
+    Gate { level: u32 },
     Pickup,
     Container,
 }
@@ -28,6 +31,7 @@ pub fn prompt_for(kind: InteractKind, item_name: Option<&str>, item_count: Optio
         InteractKind::Door { open } => {
             if open { "[E] close door" } else { "[E] open door" }.to_string()
         }
+        InteractKind::Gate { level } => format!("locked (level {level})"),
         InteractKind::Pickup => match (item_name, item_count) {
             (Some(name), Some(count)) if count > 1 => format!("[E] pick up {name} x{count}"),
             (Some(name), _) => format!("[E] pick up {name}"),
@@ -47,6 +51,8 @@ pub fn prompt_for(kind: InteractKind, item_name: Option<&str>, item_count: Optio
 #[derive(Debug, PartialEq)]
 pub enum InteractResult {
     ToggleDoor,
+    /// A gate at `level` stays shut.
+    Locked(u32),
     PickedUp,
     InventoryFull,
     OpenContainer,
@@ -63,6 +69,7 @@ pub fn interact(
 ) -> InteractResult {
     match kind {
         InteractKind::Door { .. } => InteractResult::ToggleDoor,
+        InteractKind::Gate { level } => InteractResult::Locked(level),
         InteractKind::Pickup => {
             if let Some(stack) = pickup_stack {
                 if player_inv.add(stack, max_stack).is_some() {
