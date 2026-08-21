@@ -78,8 +78,13 @@ pub struct World {
     pub def: WorldDef,
     /// Cells per side.
     pub cells: usize,
-    /// Height in metres, row-major, `cells * cells`.
+    /// Height in metres, row-major, `cells * cells`. Zero is the
+    /// ground at the bunker: the whole map is shifted so the bunker
+    /// built at height zero stands on its floor.
     pub heights: Vec<f32>,
+    /// Below this height a cell is water (the def's water level,
+    /// shifted with the map).
+    pub sea_level: f32,
     /// Biome name per cell, as an index into `biomes`.
     pub biome_of_cell: Vec<u16>,
     pub biomes: Vec<String>,
@@ -133,7 +138,7 @@ impl World {
     }
 
     pub fn is_water(&self, col: usize, row: usize) -> bool {
-        self.height_at_cell(col, row) < self.def.water_level * self.def.height_scale
+        self.height_at_cell(col, row) < self.sea_level
     }
 
     /// Press the ground flat at `height` inside `radius` of `center`,
@@ -181,6 +186,7 @@ pub fn roll_world(
         def: def.clone(),
         cells,
         heights: vec![0.0; cells * cells],
+        sea_level: def.water_level * def.height_scale,
         biome_of_cell: vec![0; cells * cells],
         biomes: def.biome_rules.iter().map(|r| r.biome.clone()).collect(),
         sites: Vec::new(),
@@ -208,13 +214,18 @@ pub fn roll_world(
             moist[i] = m;
         }
     }
-    // The bunker stands on flat ground at the height it was built.
+    // The bunker was built at height zero: shift the whole map so the
+    // ground at the bunker is zero, then press the disc around it flat.
     let bunker_height = world.height_at(def.bunker);
-    world.flatten(def.bunker, def.bunker_clear, bunker_height);
+    for h in &mut world.heights {
+        *h -= bunker_height;
+    }
+    world.sea_level -= bunker_height;
+    world.flatten(def.bunker, def.bunker_clear, 0.0);
     for row in 0..cells {
         for col in 0..cells {
             let i = world.index(col, row);
-            let h = world.heights[i] / def.height_scale;
+            let h = (world.heights[i] + bunker_height) / def.height_scale;
             let m = moist[i];
             let rule = def
                 .biome_rules
@@ -527,6 +538,7 @@ mod tests {
         let world = roll_world(&def(), 3, &biomes, &monuments).unwrap();
         // Inside the flat radius less one cell (the edge cells blend).
         let at = world.height_at(Vec2::ZERO);
+        assert!(at.abs() < 1e-4, "the bunker stands at height zero, not {at}");
         for d in [Vec2::new(10.0, 0.0), Vec2::new(-6.0, 8.0), Vec2::new(0.0, -10.0)] {
             assert!((world.height_at(d) - at).abs() < 1e-3, "bunker ground slopes at {d}");
         }
