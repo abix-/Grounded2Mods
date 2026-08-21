@@ -117,6 +117,9 @@ pub struct HudState {
     /// The slot a drag started on, until it is dropped (drag and
     /// drop, as in Atlas).
     pub dragging: Option<SlotRef>,
+    /// The actor under the crosshair: its name, health, max health.
+    /// The consumer writes it from its own world each frame.
+    pub target: Option<(String, f32, f32)>,
 }
 
 impl HudState {
