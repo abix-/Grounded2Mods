@@ -3,7 +3,7 @@
 //! panel is open, moving stacks between slots. The consumer
 //! writes HudState fields directly and reads them to paint.
 
-use crate::item::{Inventory, ItemRegistry, ItemStack, move_between};
+use crate::item::{EquipSlot, Equipment, Inventory, ItemKind, ItemRegistry, ItemStack, move_between};
 use crate::survival::{SurvivalError, SurvivalStats};
 
 /// What kind of thing can be interacted with.
@@ -284,15 +284,32 @@ pub fn drop_slot(inv: &mut Inventory, slot: usize) -> Option<ItemStack> {
     inv.remove(slot, u32::MAX)
 }
 
-/// Double click: use what is in `slot`. Food is eaten through
-/// [`SurvivalStats::eat_from_slot`]. Other kinds have no use yet.
+/// Double click or the hotbar key: use what is in `slot`. Food is
+/// eaten through [`SurvivalStats::eat_from_slot`]; a weapon or tool
+/// goes into the hands (the equipment's weapon slot), and whatever
+/// was held takes its place in the slot (Atlas: the number key
+/// equips). Other kinds have no use yet.
 pub fn use_slot(
     stats: &mut SurvivalStats,
     inv: &mut Inventory,
     slot: usize,
     registry: &ItemRegistry,
+    equipment: &mut Equipment,
 ) -> Result<(), SurvivalError> {
-    stats.eat_from_slot(inv, slot, registry)
+    let Some(stack) = inv.slots.get(slot).and_then(|s| s.as_ref()) else {
+        return Err(SurvivalError::EmptySlot(slot));
+    };
+    let Some(def) = registry.def(&stack.item) else {
+        return Err(SurvivalError::Unregistered(stack.item.clone()));
+    };
+    match def.kind {
+        ItemKind::Weapon | ItemKind::Tool => {
+            let held = inv.slots[slot].take();
+            inv.slots[slot] = equipment.set(EquipSlot::Weapon, held);
+            Ok(())
+        }
+        _ => stats.eat_from_slot(inv, slot, registry),
+    }
 }
 
 /// The text one inventory slot shows. Empty slots show nothing.
@@ -564,6 +581,49 @@ mod tests {
         };
         transfer_slot(&mut closed, at(Holder::Inventory, 0), false, &reg);
         assert_eq!(closed.inventory.count_of("cloth"), 40);
+    }
+
+    #[test]
+    fn using_a_weapon_slot_puts_it_in_the_hands_and_swaps_the_held_one() {
+        let mut reg = registry();
+        reg.register(crate::item::ItemDef {
+            name: "pipe".to_string(),
+            kind: crate::item::ItemKind::Weapon,
+            max_stack: 1,
+            quality_siblings: 1,
+            combat: None,
+            food: None,
+            storage: None,
+        })
+        .unwrap();
+        reg.register(crate::item::ItemDef {
+            name: "hatchet".to_string(),
+            kind: crate::item::ItemKind::Tool,
+            max_stack: 1,
+            quality_siblings: 1,
+            combat: None,
+            food: None,
+            storage: None,
+        })
+        .unwrap();
+        let mut stats = crate::survival::SurvivalStats::default();
+        let mut gear = Equipment::default();
+        let mut bar = Inventory::new(2);
+        bar.slots[0] = Some(stack("pipe", 1));
+        bar.slots[1] = Some(stack("hatchet", 1));
+
+        use_slot(&mut stats, &mut bar, 0, &reg, &mut gear).unwrap();
+        assert_eq!(gear.get(EquipSlot::Weapon).unwrap().item, "pipe");
+        assert!(bar.slots[0].is_none(), "the pipe left the bar");
+
+        use_slot(&mut stats, &mut bar, 1, &reg, &mut gear).unwrap();
+        assert_eq!(gear.get(EquipSlot::Weapon).unwrap().item, "hatchet");
+        assert_eq!(bar.slots[1].as_ref().unwrap().item, "pipe", "the pipe came back");
+
+        assert_eq!(
+            use_slot(&mut stats, &mut bar, 0, &reg, &mut gear),
+            Err(SurvivalError::EmptySlot(0))
+        );
     }
 
     #[test]

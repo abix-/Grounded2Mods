@@ -13,6 +13,8 @@
 
 use glam::Vec3;
 
+use crate::combat::{Health, Hit, HitResult, Protection, resolve_hit};
+
 /// Plain linear rgb triplet; consumers convert to their engine's
 /// color type.
 pub type Rgb = [f32; 3];
@@ -340,19 +342,29 @@ pub fn piece_at(pieces: &[Piece], point: Vec3) -> Option<usize> {
     })
 }
 
-/// Take `amount` off piece `index`. A piece at zero health is removed
-/// and `true` comes back: the consumer must rebake.
-pub fn damage(pieces: &mut Vec<Piece>, index: usize, amount: f32) -> bool {
-    let Some(piece) = pieces.get_mut(index) else {
-        return false;
+/// Land `hit` on piece `index` through the one damage function
+/// (a piece is a target with health and no armor). A piece at zero
+/// health is removed; `removed` tells the consumer to rebake.
+pub fn damage(pieces: &mut Vec<Piece>, index: usize, hit: &Hit<'_>) -> Option<PieceHit> {
+    let piece = pieces.get_mut(index)?;
+    let mut health = Health {
+        current: piece.health,
+        max: PIECE_HEALTH,
     };
-    piece.health -= amount;
-    if piece.health <= 0.0 {
+    let result = resolve_hit(hit, &mut Protection::default(), &mut health);
+    piece.health = health.current;
+    let removed = result.killed;
+    if removed {
         pieces.remove(index);
-        true
-    } else {
-        false
     }
+    Some(PieceHit { result, removed })
+}
+
+/// What a hit did to a piece.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PieceHit {
+    pub result: HitResult,
+    pub removed: bool,
 }
 
 /// Wall run axis, outward wall-center offset from the room origin,
@@ -476,12 +488,32 @@ mod tests {
         // The doorway gap has no piece.
         assert!(piece_at(&pieces, Vec3::new(0.0, 1.0, -4.1)).is_none());
 
-        // Damage short of death keeps it; death removes it.
-        assert!(!damage(&mut pieces, hit, 40.0));
+        // Damage short of death keeps it; death removes it. The
+        // piece goes through the one damage function.
+        let def = crate::combat::DamageDef {
+            name: "test".to_string(),
+            amount: 40.0,
+            kind: crate::combat::DamageType::Blunt,
+            knockback: 0.0,
+            ignores_armor: false,
+            self_scale: 1.0,
+            falloff: crate::combat::Falloff::NONE,
+        };
+        let swing = Hit {
+            def: &def,
+            self_inflicted: false,
+            distance: 1.0,
+            location_scale: 1.0,
+        };
+        let first = damage(&mut pieces, hit, &swing).unwrap();
+        assert!(!first.removed);
+        assert_eq!(first.result.damage_dealt, 40.0);
         assert_eq!(pieces.len(), 7);
-        assert!(damage(&mut pieces, hit, 60.0));
+        assert!(!damage(&mut pieces, hit, &swing).unwrap().removed);
+        assert!(damage(&mut pieces, hit, &swing).unwrap().removed, "120 of 100 health");
         assert_eq!(pieces.len(), 6);
         assert!(piece_at(&pieces, Vec3::new(3.1, 1.0, 0.0)).is_none());
+        assert!(damage(&mut pieces, 99, &swing).is_none());
     }
 
     #[test]
