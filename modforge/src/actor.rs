@@ -66,6 +66,114 @@ impl ActorRegistry {
     }
 }
 
+/// The one persistent identity of an actor: issued once by the
+/// `ActorMap`, never reused, kept across save and load. The host's
+/// runtime handle and the GPU row are bookkeeping; this is the name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ActorId(pub u64);
+
+/// A record of one live actor: its host handle and its GPU row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ActorRecord<H> {
+    pub handle: H,
+    pub row: usize,
+}
+
+/// The one actor registry (Endless's EntityMap and GpuSlotPool folded
+/// together). Issues ids and rows at spawn, frees rows at removal,
+/// answers lookups by id, by handle, and by row. Generic over the
+/// host's runtime handle so any game can use it. Two counts, two
+/// methods: `row_count` is the high-water mark for sizing buffers,
+/// `live_count` is how many actors exist now. Never one number.
+#[derive(Debug)]
+pub struct ActorMap<H> {
+    next_id: u64,
+    free_rows: Vec<usize>,
+    next_row: usize,
+    max_rows: usize,
+    by_id: std::collections::HashMap<ActorId, ActorRecord<H>>,
+    by_handle: std::collections::HashMap<H, ActorId>,
+    by_row: Vec<Option<ActorId>>,
+}
+
+impl<H: Copy + Eq + std::hash::Hash> ActorMap<H> {
+    /// `max_rows` bounds every row-indexed buffer.
+    pub fn new(max_rows: usize) -> Self {
+        Self {
+            next_id: 1,
+            free_rows: Vec::new(),
+            next_row: 0,
+            max_rows,
+            by_id: Default::default(),
+            by_handle: Default::default(),
+            by_row: Vec::new(),
+        }
+    }
+
+    /// Register a new actor: a fresh id and a row (a freed row first,
+    /// LIFO). None when every row is taken.
+    pub fn spawn(&mut self, handle: H) -> Option<(ActorId, usize)> {
+        let row = match self.free_rows.pop() {
+            Some(row) => row,
+            None if self.next_row < self.max_rows => {
+                self.next_row += 1;
+                self.next_row - 1
+            }
+            None => return None,
+        };
+        let id = ActorId(self.next_id);
+        self.next_id += 1;
+        self.by_id.insert(id, ActorRecord { handle, row });
+        self.by_handle.insert(handle, id);
+        if self.by_row.len() <= row {
+            self.by_row.resize(row + 1, None);
+        }
+        self.by_row[row] = Some(id);
+        Some((id, row))
+    }
+
+    /// Forget an actor and free its row. Returns its record, or None
+    /// if it was not live (a second remove is a no-op).
+    pub fn remove(&mut self, id: ActorId) -> Option<ActorRecord<H>> {
+        let record = self.by_id.remove(&id)?;
+        self.by_handle.remove(&record.handle);
+        self.by_row[record.row] = None;
+        self.free_rows.push(record.row);
+        Some(record)
+    }
+
+    pub fn handle_of(&self, id: ActorId) -> Option<H> {
+        self.by_id.get(&id).map(|r| r.handle)
+    }
+
+    pub fn row_of(&self, id: ActorId) -> Option<usize> {
+        self.by_id.get(&id).map(|r| r.row)
+    }
+
+    pub fn id_of(&self, handle: H) -> Option<ActorId> {
+        self.by_handle.get(&handle).copied()
+    }
+
+    pub fn id_at_row(&self, row: usize) -> Option<ActorId> {
+        self.by_row.get(row).copied().flatten()
+    }
+
+    /// High-water row count: the bound for buffer sizing and dispatch.
+    /// Includes freed rows.
+    pub fn row_count(&self) -> usize {
+        self.next_row
+    }
+
+    /// How many actors exist right now.
+    pub fn live_count(&self) -> usize {
+        self.by_id.len()
+    }
+
+    pub fn ids(&self) -> impl Iterator<Item = ActorId> + '_ {
+        self.by_id.keys().copied()
+    }
+}
+
 /// What the AI can see this tick, gathered by the consumer from its
 /// world. Positions are flat (x, z on the ground); the consumer
 /// decides what counts as a target (a hostile faction, in line of
@@ -144,6 +252,51 @@ mod tests {
         assert_eq!(registry.def("raider").unwrap().max_health, 80.0);
         assert_eq!(registry.def("raider").unwrap().health().current, 80.0);
         assert!(registry.def("nobody").is_none());
+    }
+
+    #[test]
+    fn ids_are_never_reused_and_rows_are() {
+        let mut map: ActorMap<u32> = ActorMap::new(8);
+        let (a, ra) = map.spawn(10).unwrap();
+        let (b, rb) = map.spawn(11).unwrap();
+        assert_ne!(a, b);
+        assert_ne!(ra, rb);
+        assert!(map.remove(a).is_some());
+        assert!(map.remove(a).is_none(), "a second remove is a no-op");
+        let (c, rc) = map.spawn(12).unwrap();
+        assert!(c != a && c != b, "ids never come back");
+        assert_eq!(rc, ra, "the freed row does");
+        assert_eq!(map.live_count(), 2);
+        assert_eq!(map.row_count(), 2, "high-water, not live");
+    }
+
+    #[test]
+    fn every_lookup_resolves_and_stale_ones_do_not() {
+        let mut map: ActorMap<u32> = ActorMap::new(8);
+        let (a, ra) = map.spawn(10).unwrap();
+        assert_eq!(map.handle_of(a), Some(10));
+        assert_eq!(map.id_of(10), Some(a));
+        assert_eq!(map.row_of(a), Some(ra));
+        assert_eq!(map.id_at_row(ra), Some(a));
+        map.remove(a);
+        assert_eq!(map.handle_of(a), None);
+        assert_eq!(map.id_of(10), None);
+        assert_eq!(map.id_at_row(ra), None);
+        // The row is reused by someone else: the old id still resolves
+        // to nothing, the row to the new actor.
+        let (b, rb) = map.spawn(20).unwrap();
+        assert_eq!(rb, ra);
+        assert_eq!(map.id_at_row(ra), Some(b));
+        assert_eq!(map.row_of(a), None);
+    }
+
+    #[test]
+    fn rows_run_out_at_the_bound() {
+        let mut map: ActorMap<u32> = ActorMap::new(2);
+        assert!(map.spawn(1).is_some());
+        assert!(map.spawn(2).is_some());
+        assert!(map.spawn(3).is_none());
+        assert_eq!(map.live_count(), 2);
     }
 
     #[test]
