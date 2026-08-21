@@ -38,10 +38,21 @@ pub struct WorldDef {
     pub size: f32,
     /// Metres per heightmap cell.
     pub cell: f32,
-    /// Metres from the lowest to the highest ground.
+    /// Metres from the lowest to the highest ground of the base
+    /// terrain, before mountains.
     pub height_scale: f32,
     /// Metres per noise period for the largest feature.
     pub feature_size: f32,
+    /// Shaping (Rust's map: flat lowlands, ridged mountain ranges in
+    /// some regions, stepped plateaus in others). `flatness` is the
+    /// power the base noise is raised to (1 is plain fBm; 2 flattens
+    /// the low ground into plains and valleys). `mountain_height` is
+    /// the extra metres ridged mountains add where the mountain mask
+    /// is high; `plateau_step` is the terrace height where the
+    /// plateau mask is high (0 for none).
+    pub flatness: f32,
+    pub mountain_height: f32,
+    pub plateau_step: f32,
     /// Below this fraction of height_scale the cell is water.
     pub water_level: f32,
     pub biome_rules: Vec<BiomeRule>,
@@ -194,10 +205,20 @@ pub fn roll_world(
     };
     let elevation = Simplex::new((seed & 0xffff_ffff) as u32);
     let moisture = Simplex::new(((seed >> 32) & 0xffff_ffff) as u32);
+    let ridges = Simplex::new((seed.rotate_left(16) & 0xffff_ffff) as u32);
+    let regions = Simplex::new((seed.rotate_left(48) & 0xffff_ffff) as u32);
 
-    // Height and biome per cell: three octaves of simplex (Red Blob's
-    // fBm), normalised to 0..1 and scaled.
+    // Height and biome per cell. Base: three octaves of simplex (Red
+    // Blob's fBm) raised to `flatness` so low ground is plains and
+    // valleys. Mountains: ridged noise (1 - |n|, Musgrave) where the
+    // mountain region mask is high. Plateaus: terraced height where
+    // the plateau region mask is high. Biomes read the base fraction.
     let mut moist = vec![0.0f32; cells * cells];
+    let mut base = vec![0.0f32; cells * cells];
+    let smooth = |t: f32| {
+        let t = t.clamp(0.0, 1.0);
+        t * t * (3.0 - 2.0 * t)
+    };
     for row in 0..cells {
         for col in 0..cells {
             let p = world.cell_center(col, row);
@@ -207,10 +228,30 @@ pub fn roll_world(
                 + 0.5 * elevation.get([x * f * 2.0, y * f * 2.0])
                 + 0.25 * elevation.get([x * f * 4.0, y * f * 4.0]))
                 / 1.75;
-            let e = ((e + 1.0) * 0.5) as f32;
+            let e = (((e + 1.0) * 0.5) as f32).powf(def.flatness.max(0.1));
             let m = ((moisture.get([x * f * 0.7, y * f * 0.7]) + 1.0) * 0.5) as f32;
+            let mut height = e * def.height_scale;
+
+            // Mountain ranges: regions from a slow noise, ridges from a
+            // faster one, squared for sharp crests.
+            let region = regions.get([x * f * 0.5, y * f * 0.5]) as f32;
+            let mountain_mask = smooth((region - 0.15) / 0.35);
+            if mountain_mask > 0.0 && def.mountain_height > 0.0 {
+                let r1 = 1.0 - (ridges.get([x * f * 2.0, y * f * 2.0]) as f32).abs();
+                let r2 = 1.0 - (ridges.get([x * f * 4.0, y * f * 4.0]) as f32).abs();
+                let ridge = (r1 * 0.7 + r2 * 0.3).powi(2);
+                height += ridge * mountain_mask * def.mountain_height;
+            }
+            // Plateaus: the opposite regions, terraced.
+            let plateau_mask = smooth((-region - 0.15) / 0.35);
+            if plateau_mask > 0.0 && def.plateau_step > 0.0 {
+                let stepped = (height / def.plateau_step).round() * def.plateau_step;
+                height = height * (1.0 - plateau_mask) + stepped * plateau_mask;
+            }
+
             let i = world.index(col, row);
-            world.heights[i] = e * def.height_scale;
+            world.heights[i] = height;
+            base[i] = e;
             moist[i] = m;
         }
     }
@@ -225,7 +266,7 @@ pub fn roll_world(
     for row in 0..cells {
         for col in 0..cells {
             let i = world.index(col, row);
-            let h = (world.heights[i] + bunker_height) / def.height_scale;
+            let h = base[i];
             let m = moist[i];
             let rule = def
                 .biome_rules
@@ -455,6 +496,9 @@ mod tests {
             cell: 8.0,
             height_scale: 30.0,
             feature_size: 250.0,
+            flatness: 1.6,
+            mountain_height: 40.0,
+            plateau_step: 6.0,
             water_level: 0.2,
             biome_rules: vec![
                 BiomeRule {
@@ -546,6 +590,44 @@ mod tests {
             let h = world.height_at(site.position);
             assert!((world.height_at(site.position + Vec2::new(18.0, 0.0)) - h).abs() < 1e-3);
         }
+    }
+
+    #[test]
+    fn mountains_and_plateaus_shape_the_base_terrain() {
+        let (biomes, monuments) = registries();
+        let mut plain = def();
+        plain.mountain_height = 0.0;
+        plain.plateau_step = 0.0;
+        let flat = roll_world(&plain, 5, &biomes, &monuments).unwrap();
+        let shaped = roll_world(&def(), 5, &biomes, &monuments).unwrap();
+        let relief = |w: &World| {
+            let max = w.heights.iter().cloned().fold(f32::MIN, f32::max);
+            let min = w.heights.iter().cloned().fold(f32::MAX, f32::min);
+            max - min
+        };
+        assert!(relief(&shaped) > relief(&flat) + 10.0, "mountains add relief");
+        // Plateaus: terraces make runs of cells at exactly the same
+        // height; smooth noise never does outside the flattened discs.
+        let level_runs = |w: &World| {
+            let mut n = 0;
+            for row in 0..w.cells {
+                for col in 0..w.cells - 1 {
+                    if w.height_at_cell(col, row) == w.height_at_cell(col + 1, row) {
+                        n += 1;
+                    }
+                }
+            }
+            n
+        };
+        assert!(
+            level_runs(&shaped) > level_runs(&flat) + 200,
+            "terraced runs: {} vs {}",
+            level_runs(&shaped),
+            level_runs(&flat)
+        );
+        // The biome picture is the same either way: the rules read the
+        // base fraction, not the mountains and terraces.
+        assert!(flat.biome_of_cell == shaped.biome_of_cell, "biomes follow the base terrain");
     }
 
     #[test]
