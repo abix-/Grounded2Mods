@@ -681,7 +681,10 @@ mod tests {
         assert_eq!(bar.held, Some(0));
         assert_eq!(bar.held_stack().unwrap().item, "pipe");
         assert!(bar.slots.slots[0].is_some(), "the pipe stays in the bar");
-        assert!(gear.get(EquipSlot::Weapon).is_none(), "the hands hold a bar slot, not a copy");
+        assert!(
+            gear.get(crate::item::EquipSlot::Weapon).is_none(),
+            "the hands hold a bar slot, not a copy"
+        );
 
         // Another key switches; the same key again puts it away.
         hotbar_key(&mut stats, &mut bar, 1, &reg, &mut gear).unwrap();
