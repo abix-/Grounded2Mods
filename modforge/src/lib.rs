@@ -16,6 +16,7 @@ pub mod counters;
 pub mod crafting;
 pub mod debug;
 pub mod envelope;
+pub mod faction;
 pub mod genome;
 pub mod harness;
 pub mod hook;

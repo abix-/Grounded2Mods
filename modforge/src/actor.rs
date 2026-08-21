@@ -25,7 +25,9 @@ pub enum Behaviour {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ActorDef {
     pub name: String,
-    pub faction: String,
+    /// A registered faction, or None for a neutral who belongs to no
+    /// side (design.md).
+    pub faction: Option<String>,
     pub behaviour: Behaviour,
     pub max_health: f32,
     pub protection: Protection,
@@ -234,7 +236,7 @@ mod tests {
     fn raider() -> ActorDef {
         ActorDef {
             name: "raider".into(),
-            faction: "raiders".into(),
+            faction: Some("raiders".into()),
             behaviour: Behaviour::Hunter,
             max_health: 80.0,
             protection: Protection::default(),
