@@ -35,21 +35,37 @@ impl GoodFor {
     }
 }
 
-/// A thing the person knows of. `key` is the consumer's handle for
-/// it (an entity index, a site index), so the brain can hand it
-/// back; `kind` names the def whose `GoodFor` applies.
+/// A thing the person knows of: what kind, where, when, and what
+/// was seen inside it. `key` is the consumer's handle for it (an
+/// entity index, a site index), so the brain can hand it back;
+/// `kind` names the def, and the registry says what that kind does.
+/// No copy of the def's numbers lives here (life.md "What things are
+/// good for": memory stores only what it saw).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Known {
     pub key: u64,
     pub kind: String,
     pub position: Vec3,
-    pub good_for: GoodFor,
     /// Tick last seen.
     pub seen_at: u64,
     /// Tick last checked up close (looted, opened), if ever.
     pub checked_at: Option<u64>,
-    /// What it held when last checked: true means something is left.
-    pub had_something: bool,
+    /// The kinds of stacks seen inside it when last checked; None
+    /// until looked (believed to hold something), empty when it was
+    /// found bare.
+    pub held: Option<Vec<String>>,
+}
+
+impl Known {
+    /// Never looked inside, or found holding something.
+    pub fn believed_to_hold(&self) -> bool {
+        self.held.as_ref().is_none_or(|h| !h.is_empty())
+    }
+
+    /// Seen holding this kind of stack.
+    pub fn held_kind(&self, kind: &str) -> bool {
+        self.held.as_ref().is_some_and(|h| h.iter().any(|k| k == kind))
+    }
 }
 
 /// A person's memory: things seen, grudges, the last threat.
@@ -69,32 +85,31 @@ pub const FORGET_AFTER: u64 = 3 * 72_000;
 
 impl Memory {
     /// Note a thing seen now. An already known thing is refreshed
-    /// (its seen tick, position, and good-for), never duplicated.
-    pub fn see(&mut self, key: u64, kind: &str, position: Vec3, good_for: &GoodFor, now: u64) {
+    /// (its seen tick and position), never duplicated.
+    pub fn see(&mut self, key: u64, kind: &str, position: Vec3, now: u64) {
         match self.known.iter_mut().find(|k| k.key == key) {
             Some(k) => {
                 k.seen_at = now;
                 k.position = position;
-                k.good_for = good_for.clone();
             }
             None => self.known.push(Known {
                 key,
                 kind: kind.to_string(),
                 position,
-                good_for: good_for.clone(),
                 seen_at: now,
                 checked_at: None,
-                had_something: true,
+                held: None,
             }),
         }
     }
 
-    /// Note a thing checked up close now: whether it had anything.
-    pub fn checked(&mut self, key: u64, had_something: bool, now: u64) {
+    /// Note a thing checked up close now: the kinds of stacks found
+    /// inside it (empty when bare).
+    pub fn checked(&mut self, key: u64, held: Vec<String>, now: u64) {
         if let Some(k) = self.known.iter_mut().find(|k| k.key == key) {
             k.checked_at = Some(now);
             k.seen_at = now;
-            k.had_something = had_something;
+            k.held = Some(held);
         }
     }
 
@@ -124,14 +139,20 @@ impl Memory {
         }
     }
 
-    /// Known things good for `need` that are believed to still hold
-    /// something, with what they give.
-    pub fn good_for(&self, need: Need) -> impl Iterator<Item = (&Known, f32)> {
+    /// Known things worth something for `need` and believed to still
+    /// hold something, with what they give. `worth` is the registry's
+    /// answer for a remembered thing (the brain never reads the
+    /// world, and memory never copies a def).
+    pub fn good_for<'a>(
+        &'a self,
+        need: Need,
+        worth: &'a dyn Fn(&Known, Need) -> f32,
+    ) -> impl Iterator<Item = (&'a Known, f32)> + 'a {
         self.known
             .iter()
-            .filter(|k| k.had_something)
+            .filter(|k| k.believed_to_hold())
             .filter_map(move |k| {
-                let v = k.good_for.satisfies(need);
+                let v = worth(k, need);
                 (v > 0.0).then_some((k, v))
             })
     }
@@ -158,15 +179,25 @@ impl Memory {
 mod tests {
     use super::*;
 
-    fn food_box() -> GoodFor {
-        GoodFor::new(&[(Need::Hunger, 50.0)])
+    /// The registry's answer in these tests: a storage box is worth
+    /// 50 for hunger, nothing else is worth anything.
+    fn worth(known: &Known, need: Need) -> f32 {
+        if known.kind == "storage box" && need == Need::Hunger {
+            50.0
+        } else {
+            0.0
+        }
+    }
+
+    fn kinds(kinds: &[&str]) -> Vec<String> {
+        kinds.iter().map(|k| k.to_string()).collect()
     }
 
     #[test]
     fn seeing_twice_refreshes_and_never_duplicates() {
         let mut m = Memory::default();
-        m.see(7, "storage box", Vec3::new(1.0, 0.0, 0.0), &food_box(), 10);
-        m.see(7, "storage box", Vec3::new(2.0, 0.0, 0.0), &food_box(), 20);
+        m.see(7, "storage box", Vec3::new(1.0, 0.0, 0.0), 10);
+        m.see(7, "storage box", Vec3::new(2.0, 0.0, 0.0), 20);
         assert_eq!(m.known.len(), 1);
         assert_eq!(m.known[0].seen_at, 20);
         assert_eq!(m.known[0].position.x, 2.0);
@@ -174,32 +205,46 @@ mod tests {
     }
 
     #[test]
+    fn a_checked_box_is_remembered_by_what_it_held() {
+        let mut m = Memory::default();
+        m.see(7, "storage box", Vec3::ZERO, 10);
+        assert!(m.known[0].believed_to_hold(), "never looked: believed full");
+        assert!(!m.known[0].held_kind("canned food"), "not seen yet");
+        m.checked(7, kinds(&["canned food", "canned food", "pipe"]), 30);
+        let box_ = &m.known[0];
+        assert_eq!(box_.checked_at, Some(30));
+        assert!(box_.held_kind("canned food") && box_.held_kind("pipe"));
+        assert!(!box_.held_kind("cloth"));
+        assert!(box_.believed_to_hold());
+    }
+
+    #[test]
     fn checked_empty_things_are_not_good_for_anything_until_seen_full_again() {
         let mut m = Memory::default();
-        m.see(7, "storage box", Vec3::ZERO, &food_box(), 10);
-        assert_eq!(m.good_for(Need::Hunger).count(), 1);
-        assert_eq!(m.good_for(Need::Rest).count(), 0, "a box is not a bed");
-        m.checked(7, false, 30);
-        assert_eq!(m.good_for(Need::Hunger).count(), 0, "known empty");
+        m.see(7, "storage box", Vec3::ZERO, 10);
+        assert_eq!(m.good_for(Need::Hunger, &worth).count(), 1);
+        assert_eq!(m.good_for(Need::Rest, &worth).count(), 0, "a box is not a bed");
+        m.checked(7, vec![], 30);
+        assert_eq!(m.good_for(Need::Hunger, &worth).count(), 0, "known empty");
         assert!(m.unchecked_nearest(Vec3::ZERO).is_none(), "checked, so not a place to look");
-        m.checked(7, true, 40);
-        assert_eq!(m.good_for(Need::Hunger).count(), 1);
+        m.checked(7, kinds(&["canned food"]), 40);
+        assert_eq!(m.good_for(Need::Hunger, &worth).count(), 1);
     }
 
     #[test]
     fn looking_goes_to_the_nearest_unchecked_thing() {
         let mut m = Memory::default();
-        m.see(1, "wreck", Vec3::new(50.0, 0.0, 0.0), &food_box(), 1);
-        m.see(2, "wreck", Vec3::new(10.0, 0.0, 0.0), &food_box(), 1);
-        m.see(3, "wreck", Vec3::new(5.0, 0.0, 0.0), &food_box(), 1);
-        m.checked(3, false, 2);
+        m.see(1, "wreck", Vec3::new(50.0, 0.0, 0.0), 1);
+        m.see(2, "wreck", Vec3::new(10.0, 0.0, 0.0), 1);
+        m.see(3, "wreck", Vec3::new(5.0, 0.0, 0.0), 1);
+        m.checked(3, vec![], 2);
         assert_eq!(m.unchecked_nearest(Vec3::ZERO).unwrap().key, 2);
     }
 
     #[test]
     fn old_things_and_threats_are_forgotten_and_grudges_are_kept_short() {
         let mut m = Memory::default();
-        m.see(1, "wreck", Vec3::ZERO, &food_box(), 0);
+        m.see(1, "wreck", Vec3::ZERO, 0);
         m.threat(ActorId(9), Vec3::ZERO, 0);
         m.forget_old(FORGET_AFTER - 1);
         assert_eq!(m.known.len(), 1);

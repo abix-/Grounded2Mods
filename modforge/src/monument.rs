@@ -759,6 +759,7 @@ impl MonumentRegistry {
 
         Ok(MonumentDef {
             name: rolled_name,
+            kind: def.name.clone(),
             members,
             loot_spots,
             npc_spots,

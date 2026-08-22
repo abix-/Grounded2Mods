@@ -430,7 +430,12 @@ pub struct Prop {
 /// spot.
 #[derive(Clone)]
 pub struct MonumentDef {
+    /// The rolled name ("Miller's Stop").
     pub name: String,
+    /// The monument type it rolled from ("roadside stop"): what a
+    /// person remembers it as, so the registry can say what such a
+    /// place is worth.
+    pub kind: String,
     pub members: Vec<MonumentMember>,
     pub loot_spots: Vec<LootSpot>,
     pub npc_spots: Vec<NpcSpot>,
@@ -538,6 +543,7 @@ mod tests {
         let shack = def(vec![room(Vec3::ZERO)]);
         let monument = MonumentDef {
             name: "roadside stop".to_string(),
+            kind: "roadside stop".to_string(),
             members: vec![
                 MonumentMember { structure: warehouse, offset: Vec3::ZERO },
                 MonumentMember { structure: shack, offset: Vec3::new(15.0, 0.0, 0.0) },

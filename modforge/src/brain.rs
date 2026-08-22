@@ -15,7 +15,7 @@ use glam::Vec3;
 
 use crate::actions::Action;
 use crate::actor::{ActorId, Behaviour, Personality, TURN_RATE};
-use crate::memory::Memory;
+use crate::memory::{Known, Memory};
 use crate::monument::Roll;
 use crate::survival::{Need, SurvivalStats};
 
@@ -53,7 +53,7 @@ pub enum CombatState {
 
 /// What the consumer saw this think. Positions are world metres; y
 /// is up; facing is the yaw the actions' `Look` turns.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone)]
 pub struct Perception<'a> {
     pub now: u64,
     pub position: Vec3,
@@ -70,6 +70,23 @@ pub struct Perception<'a> {
     pub arrived: bool,
     pub memory: &'a Memory,
     pub personality: &'a Personality,
+    /// The registry's answer for a remembered thing: how much its
+    /// kind is worth for a need (RimWorld: the def says, memory only
+    /// remembers the kind). The consumer builds it from its
+    /// registries; the brain never reads the world.
+    pub worth: &'a dyn Fn(&Known, Need) -> f32,
+}
+
+impl std::fmt::Debug for Perception<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Perception")
+            .field("now", &self.now)
+            .field("position", &self.position)
+            .field("needs", &self.needs)
+            .field("hostile", &self.hostile)
+            .field("arrived", &self.arrived)
+            .finish_non_exhaustive()
+    }
 }
 
 /// The one thing the consumer must carry out this tick with its own
@@ -167,7 +184,7 @@ fn arrived(p: &Perception, activity: &Activity, combat: &CombatState) -> Option<
                         .memory
                         .known
                         .iter()
-                        .any(|k| k.key == *key && k.had_something);
+                        .any(|k| k.key == *key && k.believed_to_hold());
                     fed || empty
                 }
                 Doing::Sleep => p.needs.rest >= 95.0 || p.hostile.is_some(),
@@ -305,7 +322,7 @@ fn life(p: &Perception, combat: CombatState) -> Option<Decision> {
     let walk_cost = 1.0 - 0.25 * diligence;
     let best = p
         .memory
-        .good_for(need)
+        .good_for(need, p.worth)
         .map(|(known, gives)| {
             let distance = known.position.distance(p.position);
             let score = gives - distance / METRES_PER_POINT * walk_cost;
@@ -436,10 +453,19 @@ fn walk_toward(p: &Perception, to: Vec3) -> Vec<Action> {
 mod tests {
     use super::*;
     use crate::actor::Axis;
-    use crate::memory::GoodFor;
 
     fn calm() -> Personality {
         Personality::default()
+    }
+
+    /// The registry's answer in these tests: a storage box is worth
+    /// 50 for hunger, home 100 for rest, a wreck nothing.
+    fn worth(known: &Known, need: Need) -> f32 {
+        match (known.kind.as_str(), need) {
+            ("storage box", Need::Hunger) => 50.0,
+            ("home", Need::Rest) => 100.0,
+            _ => 0.0,
+        }
     }
 
     fn perception<'a>(memory: &'a Memory, personality: &'a Personality) -> Perception<'a> {
@@ -457,6 +483,7 @@ mod tests {
             arrived: false,
             memory,
             personality,
+            worth: &worth,
         }
     }
 
@@ -548,8 +575,7 @@ mod tests {
     #[test]
     fn a_hungry_person_goes_to_the_remembered_box_and_eats_until_fed() {
         let mut memory = Memory::default();
-        let food = GoodFor::new(&[(Need::Hunger, 50.0)]);
-        memory.see(7, "storage box", Vec3::new(0.0, 0.0, -12.0), &food, 1);
+        memory.see(7, "storage box", Vec3::new(0.0, 0.0, -12.0), 1);
         let personality = calm();
         let mut p = perception(&memory, &personality);
         p.needs.hunger = 30.0;
@@ -582,11 +608,10 @@ mod tests {
     #[test]
     fn an_empty_box_sends_a_hungry_person_looking_at_the_nearest_unchecked_thing() {
         let mut memory = Memory::default();
-        let food = GoodFor::new(&[(Need::Hunger, 50.0)]);
-        memory.see(7, "storage box", Vec3::new(0.0, 0.0, -2.0), &food, 1);
-        memory.checked(7, false, 2);
-        memory.see(8, "wreck", Vec3::new(40.0, 0.0, 0.0), &GoodFor::default(), 1);
-        memory.see(9, "wreck", Vec3::new(-20.0, 0.0, 0.0), &GoodFor::default(), 1);
+        memory.see(7, "storage box", Vec3::new(0.0, 0.0, -2.0), 1);
+        memory.checked(7, vec![], 2);
+        memory.see(8, "wreck", Vec3::new(40.0, 0.0, 0.0), 1);
+        memory.see(9, "wreck", Vec3::new(-20.0, 0.0, 0.0), 1);
         let personality = calm();
         let mut p = perception(&memory, &personality);
         p.needs.hunger = 20.0;
@@ -608,7 +633,7 @@ mod tests {
     #[test]
     fn a_tired_person_at_home_sleeps_and_wakes_rested() {
         let mut memory = Memory::default();
-        memory.see(1, "home", Vec3::ZERO, &GoodFor::new(&[(Need::Rest, 100.0)]), 1);
+        memory.see(1, "home", Vec3::ZERO, 1);
         let personality = calm();
         let mut p = perception(&memory, &personality);
         p.needs.rest = 20.0;
