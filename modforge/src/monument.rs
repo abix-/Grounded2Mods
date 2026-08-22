@@ -759,6 +759,7 @@ impl MonumentRegistry {
             npc_spots,
             gates,
             props,
+            good_for: def.good_for.clone(),
         })
     }
 }

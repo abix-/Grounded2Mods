@@ -436,6 +436,9 @@ pub struct MonumentDef {
     pub npc_spots: Vec<NpcSpot>,
     pub gates: Vec<Gate>,
     pub props: Vec<Prop>,
+    /// What the place is good for to someone who knows it, from its
+    /// type (life.md).
+    pub good_for: crate::memory::GoodFor,
 }
 
 #[cfg(test)]
@@ -548,6 +551,7 @@ mod tests {
             ],
             gates: vec![],
             props: vec![],
+            good_for: Default::default(),
         };
         assert_eq!(monument.members.len(), 2);
         assert_eq!(monument.loot_spots.len(), 2);
