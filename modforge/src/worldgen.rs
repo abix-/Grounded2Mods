@@ -13,7 +13,7 @@
 
 use std::collections::{BinaryHeap, HashMap};
 
-use glam::Vec2;
+use glam::{Vec2, Vec3};
 use noise::{NoiseFn, Simplex};
 
 use crate::biome::BiomeRegistry;
@@ -112,8 +112,14 @@ pub struct WorldDef {
     /// sites may stand as close as the smaller of their spacings, so
     /// a wreck can sit near a city but two cities never touch.
     pub monuments: Vec<(String, u32)>,
-    /// Where the bunker is; the world rolls around it and roads lead
-    /// there. Flat ground is kept in `bunker_clear` around it.
+    /// How many sites of the tallest type in `monuments` must be in
+    /// sight from the bunker's door (topside design.md "The triangle
+    /// rule": the door opens on one big triangle). Placed before
+    /// everything else.
+    pub landmarks: u32,
+    /// Where the bunker is; the world rolls around it. Flat ground is
+    /// kept in `bunker_clear` around it. No road leads to it: roads
+    /// join sites to each other, the bunker is found, not followed.
     pub bunker: Vec2,
     pub bunker_clear: f32,
 }
@@ -166,6 +172,35 @@ impl World {
     /// stand here.
     pub fn in_corridor(&self, p: Vec2) -> bool {
         self.walls.iter().all(|w| w.distance(p) > w.thickness / 2.0)
+    }
+
+    /// Whether a point `to` (x, height, y) is in sight from `from`
+    /// over the ground and the walls: the line between them stays
+    /// above the heightmap at every cell and above every wall it
+    /// crosses. The triangle rule's one check: landmarks must pass
+    /// it, and a site behind a hill must fail it.
+    pub fn sees(&self, from: Vec3, to: Vec3) -> bool {
+        let a = Vec2::new(from.x, from.z);
+        let b = Vec2::new(to.x, to.z);
+        let flat = a.distance(b);
+        let steps = ((flat / self.def.cell).ceil() as usize).max(1);
+        for i in 1..steps {
+            let t = i as f32 / steps as f32;
+            let p = a.lerp(b, t);
+            let h = from.y + (to.y - from.y) * t;
+            if self.height_at(p) >= h {
+                return false;
+            }
+        }
+        for w in &self.walls {
+            let top = self.height_at((w.start + w.end) / 2.0) + w.height;
+            if let Some(t) = crossing(a, b, w.start, w.end)
+                && from.y + (to.y - from.y) * t < top
+            {
+                return false;
+            }
+        }
+        true
     }
 
     /// Per heightmap cell, whether a wall's footprint overlaps it:
@@ -387,7 +422,14 @@ pub fn roll_world(
         let open = carve_maze(n, &clearing, &mut Roll::new(seed ^ 0x4d41_5a45));
         world.walls = walls_of_maze(&open, n, origin, def, corridor, wall_height, wall_thickness);
     }
-    let blocked = world.blocked_cells();
+    // Cells no site or road may use: a wall stands there, or it is
+    // the bunker's clearing (no road leads to the bunker).
+    let mut blocked = world.blocked_cells();
+    for (i, b) in blocked.iter_mut().enumerate() {
+        if world.cell_center(i % cells, i / cells).distance(def.bunker) < def.bunker_clear {
+            *b = true;
+        }
+    }
     for row in 0..cells {
         for col in 0..cells {
             let i = world.index(col, row);
@@ -409,8 +451,21 @@ pub fn roll_world(
     // biome that allows the type.
     let mut roll = Roll::new(seed ^ 0x5173);
     let half = def.size / 2.0;
-    for (kind, count) in &def.monuments {
-        let spacing = monuments.def(kind).map_or(0.0, |d| d.spacing);
+    // The landmarks: the tallest type in the list, placed first, and
+    // the first `landmarks` of them in sight from the bunker's door
+    // (eye height, 1.7 m). Every other type follows in list order.
+    let landmark_type = def
+        .monuments
+        .iter()
+        .filter_map(|(kind, _)| monuments.def(kind))
+        .max_by(|a, b| a.height.total_cmp(&b.height))
+        .map(|d| d.name.clone());
+    let door = Vec3::new(def.bunker.x, 1.7, def.bunker.y);
+    let mut order: Vec<&(String, u32)> = def.monuments.iter().collect();
+    order.sort_by_key(|(kind, _)| Some(kind) != landmark_type.as_ref());
+    for (kind, count) in order {
+        let monument = monuments.def(kind).expect("checked above");
+        let spacing = monument.spacing;
         let margin = spacing / 2.0;
         let mut placed = 0;
         let mut attempts = 0;
@@ -447,8 +502,16 @@ pub fn roll_world(
                 continue;
             }
             let position = world.cell_center(col, row);
-            // Monuments stand on flat ground.
             let height = world.height_at_cell(col, row);
+            // A landmark stands where its top is in sight from the
+            // door.
+            let landmark = Some(kind) == landmark_type.as_ref() && placed < def.landmarks;
+            if landmark
+                && !world.sees(door, Vec3::new(position.x, height + monument.height, position.y))
+            {
+                continue;
+            }
+            // Monuments stand on flat ground.
             world.flatten(position, spacing * 0.25, height);
             world.sites.push(Site {
                 monument: kind.clone(),
@@ -465,10 +528,13 @@ pub fn roll_world(
         }
     }
 
-    // Roads: from every site with buildings to the nearest
-    // already-connected point (the bunker first), so the network is
-    // a tree everyone can walk. Minor sites sit off the road.
-    let mut connected: Vec<Vec2> = vec![def.bunker];
+    // Roads: from every site with buildings to the nearest site
+    // already on the network, so the roads are a tree between the
+    // places people used. None leads to the bunker (the door opens
+    // on a landmark, not a road); the nearest site to the bunker is
+    // the tree's root and has no road of its own. Minor sites sit
+    // off the road.
+    let mut connected: Vec<Vec2> = Vec::new();
     let mut order: Vec<usize> = (0..world.sites.len())
         .filter(|i| {
             monuments
@@ -483,12 +549,14 @@ pub fn roll_world(
     });
     for i in order {
         let from = world.sites[i].position;
-        let to = *connected
+        if let Some(to) = connected
             .iter()
             .min_by(|a, b| a.distance(from).total_cmp(&b.distance(from)))
-            .expect("the bunker is always connected");
-        let points = path(&world, &blocked, from, to)?;
-        world.roads.push(Road { site: i, points });
+            .copied()
+        {
+            let points = path(&world, &blocked, from, to)?;
+            world.roads.push(Road { site: i, points });
+        }
         connected.push(from);
     }
     Ok(world)
@@ -628,6 +696,20 @@ pub fn carve_maze(n: usize, clearing: &[bool], roll: &mut Roll) -> Vec<u8> {
         stack.push(to);
     }
     open
+}
+
+/// Where segment a-b crosses segment c-d, as the fraction along a-b,
+/// or None when they do not cross.
+fn crossing(a: Vec2, b: Vec2, c: Vec2, d: Vec2) -> Option<f32> {
+    let r = b - a;
+    let s = d - c;
+    let denom = r.perp_dot(s);
+    if denom.abs() < 1e-6 {
+        return None;
+    }
+    let t = (c - a).perp_dot(s) / denom;
+    let u = (c - a).perp_dot(r) / denom;
+    ((0.0..=1.0).contains(&t) && (0.0..=1.0).contains(&u)).then_some(t)
 }
 
 /// Maze cells per side: an odd count, the bunker's cell in the
@@ -788,6 +870,8 @@ mod tests {
                         spacing: 120.0,
                         props: vec![],
                         good_for: Default::default(),
+                        // The radio tower is the landmark.
+                        height: if name == "radio tower" { 40.0 } else { 3.0 },
                     },
                     &buildings,
                 )
@@ -810,6 +894,7 @@ mod tests {
                         radius: 4.0,
                     }],
                     good_for: Default::default(),
+                    height: 1.4,
                 },
                 &buildings,
             )
@@ -846,9 +931,50 @@ mod tests {
                 ("radio tower".to_string(), 1),
                 ("wreck".to_string(), 30),
             ],
+            landmarks: 1,
             bunker: Vec2::ZERO,
             bunker_clear: 20.0,
         }
+    }
+
+    /// The triangle rule: the radio tower (the tallest type) stands
+    /// where its top is in sight from the bunker's door; a wreck
+    /// behind a hill is not.
+    #[test]
+    fn the_landmark_is_in_sight_from_the_door() {
+        let (biomes, monuments) = registries();
+        for seed in 1..=8u64 {
+            let world = roll_world(&def(), seed, &biomes, &monuments).unwrap();
+            let door = Vec3::new(0.0, 1.7, 0.0);
+            let tower = world.sites.iter().find(|s| s.monument == "radio tower").unwrap();
+            let ground = world.height_at(tower.position);
+            let top = Vec3::new(tower.position.x, ground + 40.0, tower.position.y);
+            assert!(world.sees(door, top), "seed {seed}: the tower is hidden");
+            // Its foot need not be: it may stand behind a hill.
+            assert!(
+                world.sites.iter().any(|s| {
+                    let h = world.height_at(s.position);
+                    !world.sees(door, Vec3::new(s.position.x, h + 1.4, s.position.y))
+                }),
+                "seed {seed}: something is hidden from the door"
+            );
+        }
+    }
+
+    #[test]
+    fn sight_stops_at_the_ground_and_at_a_wall() {
+        let (biomes, monuments) = registries();
+        let world = roll_world(&labyrinth_def(), 2, &biomes, &monuments).unwrap();
+        // Across the clearing: clear. Across a wall: blocked. Over the
+        // wall: clear again.
+        let eye = Vec3::new(0.0, 1.7, 0.0);
+        assert!(world.sees(eye, Vec3::new(8.0, 1.7, 0.0)));
+        let w = &world.walls[0];
+        let mid = (w.start + w.end) / 2.0;
+        let across = if w.start.y == w.end.y { Vec2::new(0.0, 3.0) } else { Vec2::new(3.0, 0.0) };
+        let (a, b) = (mid - across, mid + across);
+        assert!(!world.sees(Vec3::new(a.x, 1.7, a.y), Vec3::new(b.x, 1.7, b.y)), "a wall blocks");
+        assert!(world.sees(Vec3::new(a.x, 12.0, a.y), Vec3::new(b.x, 12.0, b.y)), "over the wall");
     }
 
     #[test]
@@ -892,7 +1018,11 @@ mod tests {
                     assert_eq!(site.biome, "hills");
                 }
             }
-            assert_eq!(world.roads.len(), 5, "one road per built site, none to wrecks");
+            assert_eq!(
+                world.roads.len(),
+                4,
+                "one road per built site but the root, none to wrecks, none to the bunker"
+            );
             for road in &world.roads {
                 assert!(road.points.len() >= 2);
                 for p in &road.points {
@@ -900,20 +1030,22 @@ mod tests {
                     assert!(!world.is_water(c, r), "seed {seed}: road through water");
                 }
             }
-            // Every road starts at its site and ends on the bunker or
-            // on another site.
+            // Every road starts at its site and ends on another site,
+            // never at the bunker, and none comes near it.
             for road in &world.roads {
                 let site = &world.sites[road.site];
                 let first = road.points[0];
                 let last = *road.points.last().unwrap();
                 let (sc, sr) = world.cell_of(site.position);
                 assert_eq!(world.cell_of(first), (sc, sr), "seed {seed}: road starts at its site");
-                let ends_well = world.cell_of(last) == world.cell_of(Vec2::ZERO)
-                    || world
-                        .sites
-                        .iter()
-                        .any(|s| world.cell_of(s.position) == world.cell_of(last));
+                let ends_well = world
+                    .sites
+                    .iter()
+                    .any(|s| world.cell_of(s.position) == world.cell_of(last));
                 assert!(ends_well, "seed {seed}: road ends nowhere");
+                for p in &road.points {
+                    assert!(p.distance(Vec2::ZERO) > 20.0, "seed {seed}: a road at the bunker");
+                }
             }
         }
     }
@@ -1026,7 +1158,10 @@ mod tests {
         assert_eq!(sum, FINGERPRINT, "the mixed world changed");
     }
 
-    const FINGERPRINT: u64 = 8564745216555860229;
+    // Re-recorded 2026-08-21 when landmarks began placing first and
+    // roads stopped leading to the bunker (sites and roads moved; the
+    // heights did not).
+    const FINGERPRINT: u64 = 871338364202514350;
 
     fn labyrinth_def() -> WorldDef {
         let mut d = def();
@@ -1039,6 +1174,9 @@ mod tests {
         d.cell = 4.0;
         d.water_level = 0.0;
         d.monuments = vec![("roadside stop".to_string(), 2), ("wreck".to_string(), 20)];
+        // Nothing in the maze stands over its walls yet, so no
+        // landmark can be in sight from the door.
+        d.landmarks = 0;
         d
     }
 
@@ -1169,8 +1307,9 @@ mod tests {
             for site in &world.sites {
                 assert!(world.in_corridor(site.position), "seed {seed}: site in a wall");
             }
-            // A road winds through the corridors to each built site.
-            assert_eq!(world.roads.len(), 2);
+            // A road winds through the corridors from the second
+            // built site to the first.
+            assert_eq!(world.roads.len(), 1);
             for road in &world.roads {
                 for p in &road.points {
                     assert!(world.in_corridor(*p), "seed {seed}: road through a wall at {p}");

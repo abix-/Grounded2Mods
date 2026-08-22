@@ -581,6 +581,11 @@ pub struct MonumentTypeDef {
     /// a camp for rest and safety. Its boxes are good for food on
     /// their own.
     pub good_for: crate::memory::GoodFor,
+    /// The tallest thing that stands there, in metres above its
+    /// ground: what can be seen from far away (topside design.md "The
+    /// triangle rule"). The tallest type in a world def is its
+    /// landmark.
+    pub height: f32,
 }
 
 /// The checked-in monument types plus the word pools rolled names
@@ -950,6 +955,7 @@ mod tests {
                 spacing: 120.0,
                 props: vec![],
                 good_for: Default::default(),
+                height: 6.0,
             },
             &b,
         )
@@ -976,6 +982,7 @@ mod tests {
                 spacing: 200.0,
                 props: vec![],
                 good_for: Default::default(),
+                height: 6.0,
             },
             &b,
         )
@@ -995,6 +1002,7 @@ mod tests {
                 spacing: 300.0,
                 props: vec![],
                 good_for: Default::default(),
+                height: 6.0,
             },
             &b,
         )
@@ -1025,6 +1033,7 @@ mod tests {
             spacing: 50.0,
             props: vec![],
             good_for: Default::default(),
+            height: 6.0,
         };
         assert!(m.register(bad, &b).is_err());
         assert!(m.roll("nowhere", &b, 1).is_err());
@@ -1039,6 +1048,7 @@ mod tests {
             spacing: 50.0,
             props: vec![],
             good_for: Default::default(),
+            height: 6.0,
         };
         assert!(m.register(empty, &b).is_err());
     }
@@ -1062,6 +1072,7 @@ mod tests {
                     radius: 5.0,
                 }],
                 good_for: Default::default(),
+                height: 2.0,
             },
             &b,
         )
