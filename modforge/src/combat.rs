@@ -424,6 +424,7 @@ mod tests {
                 item: "vest".to_string(),
                 count: 1,
                 quality: None,
+                note: None,
             }),
         );
         let armor_of = |name: &str| {

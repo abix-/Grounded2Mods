@@ -20,6 +20,8 @@ pub enum ItemKind {
     /// Placed in the world and used there: a storage box, a crafting
     /// bench. A deployable with `storage` slots holds an inventory.
     Deployable,
+    /// Words someone left: read where it lies (`write` makes one).
+    Note,
 }
 
 /// How a weapon fires (topside design.md "How a hit works"). Present
@@ -121,13 +123,24 @@ pub struct ItemQuality {
     pub sibling: u64,
 }
 
+/// What a note says (topside design.md "The first hour": the note
+/// that tells you not to go outside). Written once, read by whoever
+/// finds it.
+#[derive(Clone, PartialEq, Debug)]
+pub struct Note {
+    pub text: String,
+    pub signed: String,
+}
+
 /// A stack of one item. Stacks merge only when item name AND quality
-/// match; a Rare rifle never stacks on a Normal one.
+/// match; a Rare rifle never stacks on a Normal one. A `Note` item
+/// carries its words on the stack.
 #[derive(Clone, PartialEq, Debug)]
 pub struct ItemStack {
     pub item: String,
     pub count: u32,
     pub quality: Option<ItemQuality>,
+    pub note: Option<Note>,
 }
 
 /// The one item-creation function. Every stack that enters existence
@@ -143,7 +156,19 @@ pub fn create(def: &ItemDef, count: u32, odds: &[u64], now: f32, salt: u64) -> I
         item: def.name.clone(),
         count,
         quality,
+        note: None,
     }
+}
+
+/// The one way a note comes to exist: a single `Note` item through
+/// `create`, with its words. Refuses a def that is not a note.
+pub fn write(def: &ItemDef, note: Note, now: f32, salt: u64) -> Result<ItemStack, String> {
+    if def.kind != ItemKind::Note {
+        return Err(format!("'{}' is not a note", def.name));
+    }
+    let mut stack = create(def, 1, &[], now, salt);
+    stack.note = Some(note);
+    Ok(stack)
 }
 
 /// Slots holding stacks. The ONE inventory type: the player, NPCs,
@@ -366,7 +391,22 @@ mod tests {
             item: name.to_string(),
             count,
             quality: None,
+            note: None,
         }
+    }
+
+    #[test]
+    fn a_note_is_written_once_and_only_on_a_note_def() {
+        let mut paper = def("note");
+        paper.kind = ItemKind::Note;
+        let note = Note {
+            text: "do not go outside".to_string(),
+            signed: "M.".to_string(),
+        };
+        let stack = write(&paper, note.clone(), 0.0, 1).unwrap();
+        assert_eq!(stack.count, 1);
+        assert_eq!(stack.note, Some(note.clone()));
+        assert!(write(&def("scrap"), note, 0.0, 1).is_err(), "scrap is not a note");
     }
 
     #[test]

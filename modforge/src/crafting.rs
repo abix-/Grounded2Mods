@@ -146,7 +146,7 @@ mod tests {
 
         let mut inv = Inventory::new(5);
         inv.add(
-            ItemStack { item: "scrap".to_string(), count: 10, quality: None },
+            ItemStack { item: "scrap".to_string(), count: 10, quality: None, note: None },
             20,
         );
 

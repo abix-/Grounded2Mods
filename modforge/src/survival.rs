@@ -312,6 +312,7 @@ mod tests {
             item: "bogus".to_string(),
             count: 1,
             quality: None,
+            note: None,
         });
         let mut stats = SurvivalStats {
             hunger: 10.0,

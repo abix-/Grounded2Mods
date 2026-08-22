@@ -3,7 +3,7 @@
 //! panel is open, moving stacks between slots. The consumer
 //! writes HudState fields directly and reads them to paint.
 
-use crate::item::{Equipment, Inventory, ItemKind, ItemRegistry, ItemStack, move_between};
+use crate::item::{Equipment, Inventory, ItemKind, ItemRegistry, ItemStack, Note, move_between};
 use crate::survival::{SurvivalError, SurvivalStats};
 
 /// What kind of thing can be interacted with.
@@ -15,6 +15,8 @@ pub enum InteractKind {
     Gate { level: u32 },
     Pickup,
     Container,
+    /// A note lying where someone left it: E reads it where it is.
+    Read,
 }
 
 /// What the player is looking at right now.
@@ -38,6 +40,7 @@ pub fn prompt_for(kind: InteractKind, item_name: Option<&str>, item_count: Optio
             _ => "[E] pick up".to_string(),
         },
         InteractKind::Container => "[E] open".to_string(),
+        InteractKind::Read => "[E] read".to_string(),
     };
     Prompt {
         text,
@@ -56,6 +59,8 @@ pub enum InteractResult {
     PickedUp,
     InventoryFull,
     OpenContainer,
+    /// The note panel toggled; its words are in `HudState.reading`.
+    Read,
 }
 
 /// Execute an interaction. modforge decides what happens; the
@@ -85,6 +90,17 @@ pub fn interact(
             toggle_panel(state, OpenPanel::Inventory);
             InteractResult::OpenContainer
         }
+        InteractKind::Read => {
+            // The words stay on the stack; the panel shows them while
+            // open and forgets them when it closes.
+            toggle_panel(state, OpenPanel::Note);
+            state.reading = if state.open_panel == OpenPanel::Note {
+                pickup_stack.and_then(|s| s.note)
+            } else {
+                None
+            };
+            InteractResult::Read
+        }
     }
 }
 
@@ -94,6 +110,8 @@ pub enum OpenPanel {
     #[default]
     None,
     Inventory,
+    /// A note being read.
+    Note,
 }
 
 /// The vital bars the HUD always shows.
@@ -120,6 +138,8 @@ pub struct HudState {
     /// The actor under the crosshair: its name, health, max health.
     /// The consumer writes it from its own world each frame.
     pub target: Option<(String, f32, f32)>,
+    /// The note open in the note panel, while it is open.
+    pub reading: Option<Note>,
 }
 
 impl HudState {
@@ -437,6 +457,7 @@ mod tests {
             item: name.to_string(),
             count,
             quality: None,
+            note: None,
         }
     }
 
@@ -520,6 +541,26 @@ mod tests {
         let r = interact(InteractKind::Container, &mut inv, None, 10, &mut state);
         assert_eq!(r, InteractResult::OpenContainer);
         assert_eq!(state.open_panel, OpenPanel::Inventory);
+    }
+
+    #[test]
+    fn reading_a_note_opens_its_words_and_reading_again_closes_them() {
+        let mut inv = Inventory::new(5);
+        let mut state = HudState::new();
+        let mut note = stack("note", 1);
+        note.note = Some(Note {
+            text: "do not go outside".to_string(),
+            signed: "M.".to_string(),
+        });
+        assert_eq!(prompt_for(InteractKind::Read, Some("note"), Some(1)).text, "[E] read");
+        let r = interact(InteractKind::Read, &mut inv, Some(note.clone()), 1, &mut state);
+        assert_eq!(r, InteractResult::Read);
+        assert_eq!(state.open_panel, OpenPanel::Note);
+        assert_eq!(state.reading.as_ref().map(|n| n.text.as_str()), Some("do not go outside"));
+        assert!(inv.slots.iter().all(|s| s.is_none()), "the note stays where it lies");
+        interact(InteractKind::Read, &mut inv, Some(note), 1, &mut state);
+        assert_eq!(state.open_panel, OpenPanel::None);
+        assert_eq!(state.reading, None);
     }
 
     fn registry() -> ItemRegistry {
