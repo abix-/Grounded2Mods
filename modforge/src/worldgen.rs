@@ -31,6 +31,25 @@ pub struct BiomeRule {
     pub moisture: (f32, f32),
 }
 
+/// Which generator rolls the ground (design.md "The generators we
+/// want"): each reality is one of these, and every one ends in the
+/// same `World` data.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Generator {
+    /// The mixed world, Rust's map: flat lowlands, ridged mountain
+    /// ranges in some regions, stepped plateaus in others. `flatness`
+    /// is the power the base noise is raised to (1 is plain fBm; 2
+    /// flattens the low ground into plains and valleys).
+    /// `mountain_height` is the extra metres ridged mountains add
+    /// where the mountain mask is high; `plateau_step` is the terrace
+    /// height where the plateau mask is high (0 for none).
+    Relief {
+        flatness: f32,
+        mountain_height: f32,
+        plateau_step: f32,
+    },
+}
+
 /// What to roll: the world's shape and its rules, never a result.
 #[derive(Clone, Debug, PartialEq)]
 pub struct WorldDef {
@@ -43,16 +62,7 @@ pub struct WorldDef {
     pub height_scale: f32,
     /// Metres per noise period for the largest feature.
     pub feature_size: f32,
-    /// Shaping (Rust's map: flat lowlands, ridged mountain ranges in
-    /// some regions, stepped plateaus in others). `flatness` is the
-    /// power the base noise is raised to (1 is plain fBm; 2 flattens
-    /// the low ground into plains and valleys). `mountain_height` is
-    /// the extra metres ridged mountains add where the mountain mask
-    /// is high; `plateau_step` is the terrace height where the
-    /// plateau mask is high (0 for none).
-    pub flatness: f32,
-    pub mountain_height: f32,
-    pub plateau_step: f32,
+    pub generator: Generator,
     /// Below this fraction of height_scale the cell is water.
     pub water_level: f32,
     pub biome_rules: Vec<BiomeRule>,
@@ -217,6 +227,11 @@ pub fn roll_world(
     // valleys. Mountains: ridged noise (1 - |n|, Musgrave) where the
     // mountain region mask is high. Plateaus: terraced height where
     // the plateau region mask is high. Biomes read the base fraction.
+    let Generator::Relief {
+        flatness,
+        mountain_height,
+        plateau_step,
+    } = def.generator;
     let mut moist = vec![0.0f32; cells * cells];
     let mut base = vec![0.0f32; cells * cells];
     let smooth = |t: f32| {
@@ -233,7 +248,7 @@ pub fn roll_world(
                 + 0.25 * elevation.get([x * f * 4.0, y * f * 4.0]))
                 / 1.75;
             let raw = ((e + 1.0) * 0.5) as f32;
-            let e = raw.powf(def.flatness.max(0.1));
+            let e = raw.powf(flatness.max(0.1));
             let m = ((moisture.get([x * f * 0.7, y * f * 0.7]) + 1.0) * 0.5) as f32;
             let mut height = e * def.height_scale;
 
@@ -241,16 +256,16 @@ pub fn roll_world(
             // faster one, squared for sharp crests.
             let region = regions.get([x * f * 0.5, y * f * 0.5]) as f32;
             let mountain_mask = smooth((region - 0.15) / 0.35);
-            if mountain_mask > 0.0 && def.mountain_height > 0.0 {
+            if mountain_mask > 0.0 && mountain_height > 0.0 {
                 let r1 = 1.0 - (ridges.get([x * f * 2.0, y * f * 2.0]) as f32).abs();
                 let r2 = 1.0 - (ridges.get([x * f * 4.0, y * f * 4.0]) as f32).abs();
                 let ridge = (r1 * 0.7 + r2 * 0.3).powi(2);
-                height += ridge * mountain_mask * def.mountain_height;
+                height += ridge * mountain_mask * mountain_height;
             }
             // Plateaus: the opposite regions, terraced.
             let plateau_mask = smooth((-region - 0.15) / 0.35);
-            if plateau_mask > 0.0 && def.plateau_step > 0.0 {
-                let stepped = (height / def.plateau_step).round() * def.plateau_step;
+            if plateau_mask > 0.0 && plateau_step > 0.0 {
+                let stepped = (height / plateau_step).round() * plateau_step;
                 height = height * (1.0 - plateau_mask) + stepped * plateau_mask;
             }
 
@@ -542,9 +557,11 @@ mod tests {
             cell: 8.0,
             height_scale: 30.0,
             feature_size: 250.0,
-            flatness: 1.6,
-            mountain_height: 40.0,
-            plateau_step: 6.0,
+            generator: Generator::Relief {
+                flatness: 1.6,
+                mountain_height: 40.0,
+                plateau_step: 6.0,
+            },
             water_level: 0.2,
             biome_rules: vec![
                 BiomeRule {
@@ -685,9 +702,11 @@ mod tests {
     fn mountains_and_plateaus_shape_the_base_terrain() {
         let (biomes, monuments) = registries();
         let mut plain = def();
-        plain.flatness = 1.0;
-        plain.mountain_height = 0.0;
-        plain.plateau_step = 0.0;
+        plain.generator = Generator::Relief {
+            flatness: 1.0,
+            mountain_height: 0.0,
+            plateau_step: 0.0,
+        };
         let flat = roll_world(&plain, 5, &biomes, &monuments).unwrap();
         let shaped = roll_world(&def(), 5, &biomes, &monuments).unwrap();
         let relief = |w: &World| {
@@ -719,6 +738,29 @@ mod tests {
         // base fraction, not the mountains and terraces.
         assert!(flat.biome_of_cell == shaped.biome_of_cell, "biomes follow the base terrain");
     }
+
+    /// The mixed world must not move when the roll is refactored: a
+    /// fingerprint of seed 7's heights, sites, and roads, recorded
+    /// before `Generator` was added.
+    #[test]
+    fn the_mixed_world_rolls_as_it_always_has() {
+        let (biomes, monuments) = registries();
+        let world = roll_world(&def(), 7, &biomes, &monuments).unwrap();
+        let mut sum = 0u64;
+        for h in &world.heights {
+            sum = sum.wrapping_mul(31).wrapping_add(h.to_bits() as u64);
+        }
+        for s in &world.sites {
+            sum = sum.wrapping_mul(31).wrapping_add(s.position.x.to_bits() as u64);
+            sum = sum.wrapping_mul(31).wrapping_add(s.position.y.to_bits() as u64);
+        }
+        for r in &world.roads {
+            sum = sum.wrapping_mul(31).wrapping_add(r.points.len() as u64);
+        }
+        assert_eq!(sum, FINGERPRINT, "the mixed world changed");
+    }
+
+    const FINGERPRINT: u64 = 8564745216555860229;
 
     #[test]
     fn unregistered_names_are_refused() {
