@@ -506,6 +506,7 @@ mod tests {
                         suffix: "stop".to_string(),
                         spacing: 120.0,
                         props: vec![],
+                        good_for: Default::default(),
                     },
                     &buildings,
                 )
@@ -527,6 +528,7 @@ mod tests {
                         count: (1, 2),
                         radius: 4.0,
                     }],
+                    good_for: Default::default(),
                 },
                 &buildings,
             )

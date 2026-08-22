@@ -206,6 +206,7 @@ mod tests {
             food,
             storage: None,
             armor: None,
+            good_for: Default::default(),
         }
     }
 

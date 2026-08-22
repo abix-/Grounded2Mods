@@ -577,6 +577,10 @@ pub struct MonumentTypeDef {
     /// places it; and how much ground is pressed flat under it.
     pub spacing: f32,
     pub props: Vec<PropSpec>,
+    /// What the site is good for to a person who knows it (life.md):
+    /// a camp for rest and safety. Its boxes are good for food on
+    /// their own.
+    pub good_for: crate::memory::GoodFor,
 }
 
 /// The checked-in monument types plus the word pools rolled names
@@ -944,6 +948,7 @@ mod tests {
                 suffix: "Stop".into(),
                 spacing: 120.0,
                 props: vec![],
+                good_for: Default::default(),
             },
             &b,
         )
@@ -969,6 +974,7 @@ mod tests {
                 suffix: "Site".into(),
                 spacing: 200.0,
                 props: vec![],
+                good_for: Default::default(),
             },
             &b,
         )
@@ -987,6 +993,7 @@ mod tests {
                 suffix: "City".into(),
                 spacing: 300.0,
                 props: vec![],
+                good_for: Default::default(),
             },
             &b,
         )
@@ -1016,6 +1023,7 @@ mod tests {
             suffix: "Bad".into(),
             spacing: 50.0,
             props: vec![],
+            good_for: Default::default(),
         };
         assert!(m.register(bad, &b).is_err());
         assert!(m.roll("nowhere", &b, 1).is_err());
@@ -1029,6 +1037,7 @@ mod tests {
             suffix: "Nothing".into(),
             spacing: 50.0,
             props: vec![],
+            good_for: Default::default(),
         };
         assert!(m.register(empty, &b).is_err());
     }
@@ -1051,6 +1060,7 @@ mod tests {
                     count: (1, 3),
                     radius: 5.0,
                 }],
+                good_for: Default::default(),
             },
             &b,
         )

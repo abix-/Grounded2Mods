@@ -25,6 +25,7 @@ pub mod hot_reload;
 pub mod input;
 pub mod item;
 pub mod log;
+pub mod memory;
 pub mod mission;
 pub mod monument;
 pub mod ops;

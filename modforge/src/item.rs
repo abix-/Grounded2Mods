@@ -69,6 +69,11 @@ pub struct ItemDef {
     /// slot's body area (design.md "protection per body area from
     /// worn gear"). None for everything that is not worn.
     pub armor: Option<Armor>,
+    /// What this is good for once it stands in the world (life.md
+    /// "What things are good for"): a storage box is good for hunger
+    /// (whoever remembers it may come to eat from it). Empty for
+    /// things nobody seeks out.
+    pub good_for: crate::memory::GoodFor,
 }
 
 /// What a worn item does.
@@ -352,6 +357,7 @@ mod tests {
             food: None,
             storage: None,
             armor: None,
+            good_for: Default::default(),
         }
     }
 
