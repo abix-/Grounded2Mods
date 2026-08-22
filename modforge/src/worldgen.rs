@@ -48,6 +48,37 @@ pub enum Generator {
         mountain_height: f32,
         plateau_step: f32,
     },
+    /// The Labyrinth (design.md): a maze of paths and dead ends on
+    /// flat ground, walls as real structures with no ceiling. Maze
+    /// cells are `corridor` metres square; the bunker sits at the
+    /// centre of its cell. Carved by recursive backtracker (Jamis
+    /// Buck, "Mazes for Programmers").
+    Labyrinth {
+        corridor: f32,
+        wall_height: f32,
+        wall_thickness: f32,
+    },
+}
+
+/// One straight run of wall, axis-aligned, from `start` to `end` in
+/// world metres (x east, y the world's z), standing on the ground.
+/// The consumer builds it as a structure.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Wall {
+    pub start: Vec2,
+    pub end: Vec2,
+    pub height: f32,
+    pub thickness: f32,
+}
+
+impl Wall {
+    /// Distance from `p` to the wall's centre line.
+    pub fn distance(&self, p: Vec2) -> f32 {
+        let d = self.end - self.start;
+        let len2 = d.length_squared();
+        let t = if len2 == 0.0 { 0.0 } else { ((p - self.start).dot(d) / len2).clamp(0.0, 1.0) };
+        (self.start + d * t).distance(p)
+    }
 }
 
 /// What to roll: the world's shape and its rules, never a result.
@@ -115,9 +146,18 @@ pub struct World {
     pub biomes: Vec<String>,
     pub sites: Vec<Site>,
     pub roads: Vec<Road>,
+    /// Walls the generator built (the Labyrinth); empty for the
+    /// mixed world.
+    pub walls: Vec<Wall>,
 }
 
 impl World {
+    /// True when `p` is clear of every wall: a site or a road may
+    /// stand here.
+    pub fn in_corridor(&self, p: Vec2) -> bool {
+        self.walls.iter().all(|w| w.distance(p) > w.thickness / 2.0)
+    }
+
     pub fn index(&self, col: usize, row: usize) -> usize {
         row * self.cells + col
     }
@@ -216,6 +256,7 @@ pub fn roll_world(
         biomes: def.biome_rules.iter().map(|r| r.biome.clone()).collect(),
         sites: Vec::new(),
         roads: Vec::new(),
+        walls: Vec::new(),
     };
     let elevation = Simplex::new((seed & 0xffff_ffff) as u32);
     let moisture = Simplex::new(((seed >> 32) & 0xffff_ffff) as u32);
@@ -227,11 +268,16 @@ pub fn roll_world(
     // valleys. Mountains: ridged noise (1 - |n|, Musgrave) where the
     // mountain region mask is high. Plateaus: terraced height where
     // the plateau region mask is high. Biomes read the base fraction.
-    let Generator::Relief {
-        flatness,
-        mountain_height,
-        plateau_step,
-    } = def.generator;
+    // The Labyrinth keeps the ground flat and the biome picture.
+    let (flatness, mountain_height, plateau_step) = match def.generator {
+        Generator::Relief {
+            flatness,
+            mountain_height,
+            plateau_step,
+        } => (flatness, mountain_height, plateau_step),
+        Generator::Labyrinth { .. } => (1.0, 0.0, 0.0),
+    };
+    let flat = matches!(def.generator, Generator::Labyrinth { .. });
     let mut moist = vec![0.0f32; cells * cells];
     let mut base = vec![0.0f32; cells * cells];
     let smooth = |t: f32| {
@@ -270,7 +316,7 @@ pub fn roll_world(
             }
 
             let i = world.index(col, row);
-            world.heights[i] = height;
+            world.heights[i] = if flat { 0.0 } else { height };
             // Biome rules read the raw fraction, so the biome picture
             // does not move when the relief numbers change.
             base[i] = raw;
@@ -285,6 +331,27 @@ pub fn roll_world(
     }
     world.sea_level -= bunker_height;
     world.flatten(def.bunker, def.bunker_clear, 0.0);
+
+    // The Labyrinth's walls, and which heightmap cells they block.
+    if let Generator::Labyrinth {
+        corridor,
+        wall_height,
+        wall_thickness,
+    } = def.generator
+    {
+        let n = ((def.size / corridor).ceil() as usize).max(2);
+        let open = carve_maze(n, &mut Roll::new(seed ^ 0x4d41_5a45));
+        world.walls = walls_of_maze(&open, n, def, corridor, wall_height, wall_thickness);
+    }
+    let blocked: Vec<bool> = (0..cells * cells)
+        .map(|i| {
+            let p = world.cell_center(i % cells, i / cells);
+            world
+                .walls
+                .iter()
+                .any(|w| w.distance(p) <= w.thickness / 2.0 + def.cell * 0.75)
+        })
+        .collect();
     for row in 0..cells {
         for col in 0..cells {
             let i = world.index(col, row);
@@ -322,8 +389,12 @@ pub fn roll_world(
                 continue;
             }
             // Spacing is checked on the snapped centre, where the site
-            // will actually stand.
+            // will actually stand. A site stands in a corridor, never
+            // in a wall.
             let p = world.cell_center(col, row);
+            if blocked[world.index(col, row)] {
+                continue;
+            }
             if p.distance(def.bunker) < spacing.max(def.bunker_clear)
                 || world
                     .sites
@@ -380,7 +451,7 @@ pub fn roll_world(
             .iter()
             .min_by(|a, b| a.distance(from).total_cmp(&b.distance(from)))
             .expect("the bunker is always connected");
-        let points = path(&world, from, to)?;
+        let points = path(&world, &blocked, from, to)?;
         world.roads.push(Road { site: i, points });
         connected.push(from);
     }
@@ -388,8 +459,9 @@ pub fn roll_world(
 }
 
 /// A* over cells from `from` to `to`, cost by distance plus slope
-/// (Rust's roads follow the easy ground), never through water.
-fn path(world: &World, from: Vec2, to: Vec2) -> Result<Vec<Vec2>, String> {
+/// (Rust's roads follow the easy ground), never through water or a
+/// `blocked` cell (a wall).
+fn path(world: &World, blocked: &[bool], from: Vec2, to: Vec2) -> Result<Vec<Vec2>, String> {
     #[derive(PartialEq)]
     struct Open(f32, usize);
     impl Eq for Open {}
@@ -438,10 +510,10 @@ fn path(world: &World, from: Vec2, to: Vec2) -> Result<Vec<Vec2>, String> {
                 continue;
             }
             let (nc, nr) = (nc as usize, nr as usize);
-            if world.is_water(nc, nr) {
+            let j = nr * n + nc;
+            if world.is_water(nc, nr) || (blocked[j] && j != goal) {
                 continue;
             }
-            let j = nr * n + nc;
             let step = world.def.cell * if dc != 0 && dr != 0 { 1.414 } else { 1.0 };
             let rise = (world.height_at_cell(nc, nr) - world.height_at_cell(c, r)).abs();
             let cost = g + step + rise * SLOPE_COST;
@@ -452,7 +524,132 @@ fn path(world: &World, from: Vec2, to: Vec2) -> Result<Vec<Vec2>, String> {
             }
         }
     }
-    Err("no road: the site is cut off by water".to_string())
+    Err("no road: the site is cut off by water or walls".to_string())
+}
+
+/// Carve a maze of `n` by `n` cells by recursive backtracker: walk
+/// to a random unvisited neighbour, knocking the wall between, back
+/// up when stuck. Every cell is reached, there is one path between
+/// any two cells, and the backing up leaves dead ends. Returns the
+/// open sides per cell as bits: 1 north (+y), 2 east, 4 south, 8
+/// west. Seeded, so the same seed carves the same maze.
+pub fn carve_maze(n: usize, roll: &mut Roll) -> Vec<u8> {
+    const N: u8 = 1;
+    const E: u8 = 2;
+    const S: u8 = 4;
+    const W: u8 = 8;
+    let mut open = vec![0u8; n * n];
+    let mut seen = vec![false; n * n];
+    let start = (n / 2) * n + n / 2;
+    let mut stack = vec![start];
+    seen[start] = true;
+    while let Some(&at) = stack.last() {
+        let (x, y) = (at % n, at / n);
+        let mut next = [(0usize, 0u8, 0u8); 4];
+        let mut count = 0;
+        if y + 1 < n && !seen[at + n] {
+            next[count] = (at + n, N, S);
+            count += 1;
+        }
+        if x + 1 < n && !seen[at + 1] {
+            next[count] = (at + 1, E, W);
+            count += 1;
+        }
+        if y > 0 && !seen[at - n] {
+            next[count] = (at - n, S, N);
+            count += 1;
+        }
+        if x > 0 && !seen[at - 1] {
+            next[count] = (at - 1, W, E);
+            count += 1;
+        }
+        if count == 0 {
+            stack.pop();
+            continue;
+        }
+        let (to, side, back) = *roll.pick(&next[..count]);
+        open[at] |= side;
+        open[to] |= back;
+        seen[to] = true;
+        stack.push(to);
+    }
+    open
+}
+
+/// The walls a carved maze needs: every closed side becomes wall,
+/// collinear pieces merged into one run, plus the outer boundary.
+/// The grid is laid so the bunker sits at the centre of cell
+/// (n/2, n/2); runs are clipped to the world.
+fn walls_of_maze(
+    open: &[u8],
+    n: usize,
+    def: &WorldDef,
+    corridor: f32,
+    height: f32,
+    thickness: f32,
+) -> Vec<Wall> {
+    let half = def.size / 2.0;
+    let origin = def.bunker - Vec2::splat(corridor / 2.0 + (n / 2) as f32 * corridor);
+    let clip = |v: f32| v.clamp(-half, half);
+    let mut walls = Vec::new();
+    let mut push = |a: Vec2, b: Vec2| {
+        let (a, b) = (Vec2::new(clip(a.x), clip(a.y)), Vec2::new(clip(b.x), clip(b.y)));
+        if a.distance(b) > 0.01 {
+            walls.push(Wall {
+                start: a,
+                end: b,
+                height,
+                thickness,
+            });
+        }
+    };
+    // Horizontal runs: along the north side of each row (y = origin.y
+    // + (row + 1) * corridor) and the south side of row 0.
+    for row in 0..=n {
+        let y = origin.y + row as f32 * corridor;
+        let mut run: Option<(usize, usize)> = None;
+        for col in 0..=n {
+            // Closed when the cell below has no north opening (or row 0,
+            // the boundary); the cell above's south bit mirrors it.
+            let closed = col < n
+                && (row == 0 || row == n || open[(row - 1) * n + col] & 1 == 0);
+            match (closed, run) {
+                (true, None) => run = Some((col, col)),
+                (true, Some((s, _))) => run = Some((s, col)),
+                (false, Some((s, e))) => {
+                    push(
+                        Vec2::new(origin.x + s as f32 * corridor - thickness / 2.0, y),
+                        Vec2::new(origin.x + (e + 1) as f32 * corridor + thickness / 2.0, y),
+                    );
+                    run = None;
+                }
+                (false, None) => {}
+            }
+        }
+    }
+    // Vertical runs: along the east side of each column and the west
+    // side of column 0.
+    for col in 0..=n {
+        let x = origin.x + col as f32 * corridor;
+        let mut run: Option<(usize, usize)> = None;
+        for row in 0..=n {
+            let closed = row < n
+                && (col == 0 || col == n || open[row * n + col - 1] & 2 == 0);
+            match (closed, run) {
+                (true, None) => run = Some((row, row)),
+                (true, Some((s, _))) => run = Some((s, row)),
+                (false, Some((s, e))) => {
+                    push(
+                        Vec2::new(x, origin.y + s as f32 * corridor - thickness / 2.0),
+                        Vec2::new(x, origin.y + (e + 1) as f32 * corridor + thickness / 2.0),
+                    );
+                    run = None;
+                }
+                (false, None) => {}
+            }
+        }
+    }
+    walls
 }
 
 #[cfg(test)]
@@ -761,6 +958,76 @@ mod tests {
     }
 
     const FINGERPRINT: u64 = 8564745216555860229;
+
+    fn labyrinth_def() -> WorldDef {
+        let mut d = def();
+        d.generator = Generator::Labyrinth {
+            corridor: 40.0,
+            wall_height: 6.0,
+            wall_thickness: 1.0,
+        };
+        d.water_level = 0.0;
+        d.monuments = vec![("roadside stop".to_string(), 4), ("wreck".to_string(), 20)];
+        d
+    }
+
+    #[test]
+    fn the_maze_reaches_every_cell_from_the_bunker_and_has_dead_ends() {
+        let n = 20;
+        let open = carve_maze(n, &mut Roll::new(11));
+        // Flood from the bunker's cell over open sides.
+        let mut seen = vec![false; n * n];
+        let start = (n / 2) * n + n / 2;
+        let mut stack = vec![start];
+        seen[start] = true;
+        while let Some(at) = stack.pop() {
+            let (x, y) = (at % n, at / n);
+            for (bit, to) in [
+                (1u8, if y + 1 < n { Some(at + n) } else { None }),
+                (2, if x + 1 < n { Some(at + 1) } else { None }),
+                (4, if y > 0 { Some(at - n) } else { None }),
+                (8, if x > 0 { Some(at - 1) } else { None }),
+            ] {
+                if let Some(to) = to
+                    && open[at] & bit != 0
+                    && !seen[to]
+                {
+                    seen[to] = true;
+                    stack.push(to);
+                }
+            }
+        }
+        assert!(seen.iter().all(|s| *s), "every cell reachable");
+        let dead_ends = open.iter().filter(|o| o.count_ones() == 1).count();
+        assert!(dead_ends > 10, "a maze has dead ends: {dead_ends}");
+        assert_eq!(open, carve_maze(n, &mut Roll::new(11)), "same seed same maze");
+        assert_ne!(open, carve_maze(n, &mut Roll::new(12)));
+    }
+
+    #[test]
+    fn the_labyrinth_is_flat_with_walls_and_sites_and_roads_in_corridors() {
+        let (biomes, monuments) = registries();
+        for seed in 1..=6u64 {
+            let world = roll_world(&labyrinth_def(), seed, &biomes, &monuments).unwrap();
+            assert!(world.heights.iter().all(|h| *h == 0.0), "seed {seed}: flat");
+            assert!(world.walls.len() > 100, "seed {seed}: {} walls", world.walls.len());
+            for w in &world.walls {
+                assert!(w.start.x == w.end.x || w.start.y == w.end.y, "axis-aligned");
+                assert_eq!(w.height, 6.0);
+            }
+            assert!(world.in_corridor(Vec2::ZERO), "seed {seed}: the bunker stands clear");
+            assert_eq!(world.sites.len(), 24, "seed {seed}");
+            for site in &world.sites {
+                assert!(world.in_corridor(site.position), "seed {seed}: site in a wall");
+            }
+            assert_eq!(world.roads.len(), 4);
+            for road in &world.roads {
+                for p in &road.points {
+                    assert!(world.in_corridor(*p), "seed {seed}: road through a wall at {p}");
+                }
+            }
+        }
+    }
 
     #[test]
     fn unregistered_names_are_refused() {
