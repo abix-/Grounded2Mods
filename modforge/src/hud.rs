@@ -576,6 +576,7 @@ mod tests {
                 storage: None,
                 armor: None,
                 good_for: Default::default(),
+            model: None,
             })
             .unwrap();
         }
@@ -703,6 +704,7 @@ mod tests {
             storage: None,
             armor: None,
             good_for: Default::default(),
+            model: None,
         })
         .unwrap();
         reg.register(crate::item::ItemDef {
@@ -715,6 +717,7 @@ mod tests {
             storage: None,
             armor: None,
             good_for: Default::default(),
+            model: None,
         })
         .unwrap();
         let mut stats = crate::survival::SurvivalStats::default();

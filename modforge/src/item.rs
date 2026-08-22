@@ -76,6 +76,10 @@ pub struct ItemDef {
     /// (whoever remembers it may come to eat from it). Empty for
     /// things nobody seeks out.
     pub good_for: crate::memory::GoodFor,
+    /// The low poly model file for this item (`pipe.glb`), the same
+    /// one on the ground, in the hand, and as the hotbar icon. None
+    /// until one exists; the consumer draws a box then.
+    pub model: Option<String>,
 }
 
 /// What a worn item does.
@@ -383,6 +387,7 @@ mod tests {
             storage: None,
             armor: None,
             good_for: Default::default(),
+            model: None,
         }
     }
 

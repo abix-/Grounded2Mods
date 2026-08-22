@@ -322,6 +322,19 @@ impl Personality {
         1.0 + 0.25 * self.get(Axis::Precision)
     }
 
+    /// Gothic shows training in the swing, not a number: a clumsy
+    /// person (agility under zero) swings slow and cannot chain a
+    /// combo on the beat.
+    pub fn can_chain(&self) -> bool {
+        self.get(Axis::Agility) >= 0.0
+    }
+
+    /// How long this person's swing takes, from the weapon's delay:
+    /// a clumsy person is slower, a nimble one faster.
+    pub fn swing_delay(&self, delay: f32) -> f32 {
+        delay / self.speed_mult()
+    }
+
     /// The health fraction below which this person flees: a base of
     /// 0.3, pushed up 20 percent per unit of cowardice, and a Brave
     /// person never flees.

@@ -348,16 +348,70 @@ impl<T: PartialEq + Clone> MultiDamage<T> {
     }
 }
 
+/// Gothic's four melee moves (design.md "How a hit works" rule 4):
+/// the attack key plus whatever move direction is held.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Swing {
+    /// Forward, or no direction: the overhead that steps in and
+    /// chains into a combo on the beat.
+    #[default]
+    Overhead,
+    /// A horizontal swing from the left across the body.
+    Left,
+    /// A horizontal swing from the right across the body.
+    Right,
+    /// Back: a block, no hit.
+    Block,
+}
+
+impl Swing {
+    /// From the move input held when the attack lands: x is right,
+    /// y is forward.
+    pub fn from_move(x: f32, y: f32) -> Swing {
+        if y < 0.0 {
+            Swing::Block
+        } else if x < 0.0 {
+            Swing::Left
+        } else if x > 0.0 {
+            Swing::Right
+        } else {
+            Swing::Overhead
+        }
+    }
+}
+
 /// Fire rate as a timer on the shooter (Quake 3's `PM_Weapon`): the
 /// weapon is ready when `ready_in` reaches zero; firing adds the
-/// weapon's delay; firing empty adds a penalty instead.
-#[derive(Clone, Debug, PartialEq, Default)]
+/// weapon's delay; firing empty adds a penalty instead. `delay` and
+/// `swing` are the last shot's, so a consumer can draw the swing as
+/// "how far through the delay" without a second timer.
+#[derive(Clone, Debug, PartialEq)]
 pub struct FireTimer {
     pub ready_in: f32,
+    pub delay: f32,
+    pub swing: Swing,
+    /// The trigger has been let go since the last swing, so the
+    /// next press can be a chain on the beat (Gothic: a press on the
+    /// beat, never a held button).
+    pub released: bool,
+}
+
+impl Default for FireTimer {
+    fn default() -> Self {
+        Self {
+            ready_in: 0.0,
+            delay: 0.0,
+            swing: Swing::Overhead,
+            released: true,
+        }
+    }
 }
 
 /// Quake 3: an empty click costs half a second.
 pub const EMPTY_DELAY: f32 = 0.5;
+/// The beat: a chained swing pressed in the last third of the delay
+/// goes at once.
+pub const BEAT: f32 = 1.0 / 3.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Trigger {
@@ -367,11 +421,18 @@ pub enum Trigger {
     Fire,
     /// Ready but no ammo; the penalty has been added.
     Empty,
+    /// A block: no hit, the delay has been added.
+    Block,
 }
 
 impl FireTimer {
     pub fn tick(&mut self, dt: f32) {
         self.ready_in = (self.ready_in - dt).max(0.0);
+    }
+
+    /// No trigger this step: the next press may chain.
+    pub fn release(&mut self) {
+        self.released = true;
     }
 
     /// The trigger is held: decide whether this step fires.
@@ -380,12 +441,35 @@ impl FireTimer {
         if self.ready_in > 0.0 {
             return Trigger::Waiting;
         }
+        self.released = false;
         if !has_ammo {
             self.ready_in = EMPTY_DELAY;
+            self.delay = EMPTY_DELAY;
             return Trigger::Empty;
         }
         self.ready_in = delay;
+        self.delay = delay;
+        self.swing = Swing::Overhead;
         Trigger::Fire
+    }
+
+    /// The attack key with a direction: one of the four moves. Ready
+    /// fires; a fresh press on the beat (the last third of the delay)
+    /// chains at once when this person `can_chain`; otherwise wait.
+    pub fn pull_melee(&mut self, delay: f32, swing: Swing, can_chain: bool) -> Trigger {
+        let on_beat = can_chain && self.released && self.ready_in <= delay * BEAT;
+        if self.ready_in > 0.0 && !on_beat {
+            return Trigger::Waiting;
+        }
+        self.released = false;
+        self.ready_in = delay;
+        self.delay = delay;
+        self.swing = swing;
+        if swing == Swing::Block {
+            Trigger::Block
+        } else {
+            Trigger::Fire
+        }
     }
 }
 
@@ -598,6 +682,41 @@ mod tests {
         timer.tick(0.1);
         assert_eq!(timer.pull(0.4, false), Trigger::Empty);
         assert_eq!(timer.ready_in, EMPTY_DELAY);
+    }
+
+    #[test]
+    fn gothics_four_moves_and_the_beat() {
+        assert_eq!(Swing::from_move(0.0, 0.0), Swing::Overhead);
+        assert_eq!(Swing::from_move(0.0, 1.0), Swing::Overhead);
+        assert_eq!(Swing::from_move(-1.0, 0.0), Swing::Left);
+        assert_eq!(Swing::from_move(1.0, 0.0), Swing::Right);
+        assert_eq!(Swing::from_move(0.0, -1.0), Swing::Block);
+
+        // A swing, then a held button does nothing on the beat; let
+        // go and press again in the last third and it chains at once.
+        let mut timer = FireTimer::default();
+        assert_eq!(timer.pull_melee(0.6, Swing::Left, true), Trigger::Fire);
+        assert_eq!(timer.swing, Swing::Left);
+        timer.tick(0.45);
+        assert_eq!(timer.pull_melee(0.6, Swing::Right, true), Trigger::Waiting, "held, not pressed");
+        timer.release();
+        assert_eq!(timer.pull_melee(0.6, Swing::Right, true), Trigger::Fire, "on the beat");
+        assert_eq!(timer.ready_in, 0.6);
+        assert_eq!(timer.swing, Swing::Right);
+
+        // Too early is a stall; a clumsy person never chains.
+        timer.tick(0.1);
+        timer.release();
+        assert_eq!(timer.pull_melee(0.6, Swing::Left, true), Trigger::Waiting, "early");
+        timer.tick(0.4);
+        assert_eq!(timer.pull_melee(0.6, Swing::Left, false), Trigger::Waiting, "clumsy");
+        timer.tick(0.1);
+        assert_eq!(timer.pull_melee(0.6, Swing::Left, false), Trigger::Fire, "ready at last");
+
+        // Back is a block: no hit, the delay spent.
+        timer.tick(1.0);
+        assert_eq!(timer.pull_melee(0.6, Swing::Block, true), Trigger::Block);
+        assert_eq!(timer.swing, Swing::Block);
     }
 
     #[test]

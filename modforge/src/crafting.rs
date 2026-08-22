@@ -115,6 +115,7 @@ mod tests {
             storage: None,
             armor: None,
             good_for: Default::default(),
+            model: None,
         }).unwrap();
         items.register(ItemDef {
             name: "knife".to_string(),
@@ -133,6 +134,7 @@ mod tests {
             storage: None,
             armor: None,
             good_for: Default::default(),
+            model: None,
         }).unwrap();
 
         let mut recipes = RecipeRegistry::default();

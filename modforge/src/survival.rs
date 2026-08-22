@@ -207,6 +207,7 @@ mod tests {
             storage: None,
             armor: None,
             good_for: Default::default(),
+            model: None,
         }
     }
 
