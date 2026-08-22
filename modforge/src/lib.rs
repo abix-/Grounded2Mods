@@ -10,6 +10,7 @@ pub mod actions;
 pub mod actor;
 pub mod args;
 pub mod biome;
+pub mod brain;
 pub mod client;
 pub mod combat;
 pub mod counters;

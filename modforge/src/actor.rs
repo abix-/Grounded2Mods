@@ -7,18 +7,27 @@
 //! this tick, it returns the actions to push. An NPC and the player
 //! are then the same thing with a different hand on the queue.
 
-use crate::actions::Action;
 use crate::combat::{Health, Protection};
 
-/// How an actor behaves when left alone and when it sees a target.
+/// How far from home an actor ranges when left alone (the brain's
+/// wander and leash radius): a guard holds its post, a hunter roams.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Behaviour {
-    /// Stands where spawned. Turns toward a target in sight and
-    /// attacks it when in reach.
+    /// Stays within a few metres of its post; turns and fights what
+    /// comes, never chases. With speed zero this is the turret.
     Guard,
-    /// Walks toward a target in sight and attacks it when in reach;
-    /// stands still otherwise.
+    /// Ranges tens of metres from home and chases what it sees.
     Hunter,
+}
+
+impl Behaviour {
+    /// How far from home this kind wanders.
+    pub fn home_radius(self) -> f32 {
+        match self {
+            Behaviour::Guard => 5.0,
+            Behaviour::Hunter => 40.0,
+        }
+    }
 }
 
 /// One kind of actor, as data.
@@ -326,58 +335,9 @@ impl Personality {
     }
 }
 
-/// What the AI can see this tick, gathered by the consumer from its
-/// world. Positions are flat (x, z on the ground); the consumer
-/// decides what counts as a target (a hostile faction, in line of
-/// sight).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Sight {
-    /// The actor's own facing, radians, same convention as `Look`.
-    pub yaw: f32,
-    /// Flat offset from the actor to the nearest target, if any.
-    pub target: Option<[f32; 2]>,
-}
-
 /// Turn rate cap per tick, radians, so an NPC turns like a body and
-/// not a teleport.
+/// not a teleport. The brain (crate::brain) turns by this.
 pub const TURN_RATE: f32 = 0.15;
-
-/// The AI. Returns the actions for this tick: a look to face the
-/// target, a move toward it (Hunter) and an attack once in reach.
-/// Nothing in sight means nothing to do.
-pub fn decide(def: &ActorDef, sight: &Sight) -> Vec<Action> {
-    let Some([dx, dz]) = sight.target else {
-        return Vec::new();
-    };
-    let distance = (dx * dx + dz * dz).sqrt();
-    if distance > def.sight {
-        return Vec::new();
-    }
-    let mut actions = Vec::new();
-    // Facing: the world's forward is -z, yaw turns about y, so a
-    // target at -z is yaw 0 and a target at -x is yaw +pi/2.
-    let wanted = (-dx).atan2(-dz);
-    let mut turn = wanted - sight.yaw;
-    while turn > std::f32::consts::PI {
-        turn -= std::f32::consts::TAU;
-    }
-    while turn < -std::f32::consts::PI {
-        turn += std::f32::consts::TAU;
-    }
-    let turn = turn.clamp(-TURN_RATE, TURN_RATE);
-    if turn != 0.0 {
-        actions.push(Action::Look {
-            yaw: turn,
-            pitch: 0.0,
-        });
-    }
-    if distance <= def.reach {
-        actions.push(Action::Attack);
-    } else if def.behaviour == Behaviour::Hunter {
-        actions.push(Action::Move { x: 0.0, y: 1.0 });
-    }
-    actions
-}
 
 #[cfg(test)]
 mod tests {
@@ -496,101 +456,8 @@ mod tests {
     }
 
     #[test]
-    fn nothing_in_sight_means_nothing_to_do() {
-        let def = raider();
-        assert!(decide(&def, &Sight { yaw: 0.0, target: None }).is_empty());
-        assert!(
-            decide(
-                &def,
-                &Sight {
-                    yaw: 0.0,
-                    target: Some([0.0, -50.0])
-                }
-            )
-            .is_empty(),
-            "beyond sight range"
-        );
-    }
-
-    #[test]
-    fn a_hunter_turns_toward_and_walks_at_a_target_then_attacks_in_reach() {
-        let def = raider();
-        // Target dead ahead (-z): no turn, walk.
-        let far = decide(
-            &def,
-            &Sight {
-                yaw: 0.0,
-                target: Some([0.0, -10.0]),
-            },
-        );
-        assert_eq!(far, vec![Action::Move { x: 0.0, y: 1.0 }]);
-        // Target to the left (-x) wants yaw +pi/2: turn capped at TURN_RATE.
-        let left = decide(
-            &def,
-            &Sight {
-                yaw: 0.0,
-                target: Some([-10.0, 0.0]),
-            },
-        );
-        assert_eq!(
-            left,
-            vec![
-                Action::Look {
-                    yaw: TURN_RATE,
-                    pitch: 0.0
-                },
-                Action::Move { x: 0.0, y: 1.0 }
-            ]
-        );
-        // In reach: attack, no walk.
-        let close = decide(
-            &def,
-            &Sight {
-                yaw: 0.0,
-                target: Some([0.0, -1.0]),
-            },
-        );
-        assert_eq!(close, vec![Action::Attack]);
-    }
-
-    #[test]
-    fn a_guard_turns_and_attacks_but_never_walks() {
-        let mut def = raider();
-        def.behaviour = Behaviour::Guard;
-        let far = decide(
-            &def,
-            &Sight {
-                yaw: 0.0,
-                target: Some([0.0, -10.0]),
-            },
-        );
-        assert!(far.is_empty());
-        let close = decide(
-            &def,
-            &Sight {
-                yaw: 0.0,
-                target: Some([0.0, -1.0]),
-            },
-        );
-        assert_eq!(close, vec![Action::Attack]);
-    }
-
-    #[test]
-    fn the_turn_takes_the_short_way_round() {
-        let def = raider();
-        // Facing -3.1 (almost fully round), target behind and a hair
-        // left wants +3.13: the long way is +6.2, the short way is
-        // -0.05.
-        let actions = decide(
-            &def,
-            &Sight {
-                yaw: -3.1,
-                target: Some([-0.1, 10.0]),
-            },
-        );
-        match actions[0] {
-            Action::Look { yaw, .. } => assert!(yaw < 0.0 && yaw >= -TURN_RATE, "{yaw}"),
-            _ => panic!("expected a look first"),
-        }
+    fn guards_keep_close_and_hunters_range() {
+        assert!(Behaviour::Guard.home_radius() < Behaviour::Hunter.home_radius());
+        assert_eq!(raider().behaviour, Behaviour::Hunter);
     }
 }
