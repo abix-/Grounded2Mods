@@ -11,6 +11,7 @@ pub mod debug;
 pub mod dispatch;
 pub mod gameplay;
 pub mod shining;
+pub mod spawning;
 pub mod speed;
 pub mod vendors;
 
@@ -83,6 +84,7 @@ fn on_unreal_init() {
 
     ueforge::features()
         .once("pe_dispatch", dispatch::install)
+        .once("spawning", spawning::install)
         .once("stack_10x", || {
             STACK_TWEAK.apply_when_ready(
                 Duration::from_secs(30),

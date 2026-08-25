@@ -2058,7 +2058,55 @@ spawner number that doubles them. The options:
    spawners in the field, it may only affect the difficulty
    preset's damage-style knobs or nothing observable.
 
-### 25.4 What we do not know (spawning)
+### 25.4 Area grids measured (live, 2026-08-25)
+
+`research_spawners::dump_generator_grids` on the live save:
+
+| Generator | Grid | Squares | Level pool | EmissionsPast |
+|---|---|---|---|---|
+| BP_FactoryGeneration_C | x -2..-1, y 6..7 | 4 | 9 | 42 (active) |
+| BP_BunkerWorldGeneration_C | x 0..2, y 0..2 | 9 | 9 | 0 |
+| BP_MeadowsWorldGeneration_C | x 3..5, y 3..5 | 9 | 18 | 0 |
+| BP_PaneliWorldGeneration_C | x 3..5, y 7..9 | 9 | 9 | 0 |
+
+Factory is a 2x2 area (4 squares); the other three are 3x3
+(9 squares). The Levels array is the pool of preset squares
+the generator picks from; Meadows has twice the variety (18).
+The active area is whichever generator's EmissionsPast is
+climbing; on this save that is Factory at 42, superseding the
+earlier Meadows observation in 19.1.
+
+### 25.5 The scaling spawner (shipped 2026-08-25)
+
+`src/spawning.rs`. A watcher thread censuses live hostiles
+every 5s grouped by owning square (class prefix stripped from
+the full name; leaving it in made every NPC class its own
+square key and over-spawned, fixed same day). Each newly
+streamed square rolls once:
+
+- 20% quiet chance: nothing spawns.
+- Otherwise extras = vanilla * random(0..2) * emissions/30,
+  capped at 8 per square. Average extras equal the vanilla
+  count (a doubling) at emission level 30.
+- Each extra is a copy of a placed NPC, or with chance
+  0.10 + 0.01/emission (cap 0.5) a cross-biome escalation
+  drawn from the live hostile class pool (Tamed, DeerNeutral,
+  Boar excluded).
+- Pack chance 0.05 + 0.002/emission (cap 0.15): 3 to 5 of one
+  pool class at a single anchor.
+- Session cap 60. Squares re-roll when they stream back in.
+  Emission level = max EmissionsPast across the generators;
+  `spawning_override` op forces it for testing,
+  `spawning_stats` reports counters.
+
+Spawns execute on the game thread (section 26.3 recipe) at
+300 to 800 units of scatter around a random anchor NPC.
+
+Live proof at emissions=42: squares rolled 9/8/8/0 extras
+including a pack of 3 BP_UN_ZombieSoilder_C; log lines in the
+mod log, one roll per square.
+
+### 25.6 What we do not know (spawning)
 
 - Whether BP_DwarfSpawn_C re-reads Spawn AI / count after its
   initial spawn (the 25.1 writes await in-game observation).

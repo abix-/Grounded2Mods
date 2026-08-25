@@ -42,6 +42,10 @@ Newest first.
 | `ueforge` | [x] Add walk_class_chain op and ProcessEventHook::install_for_object (survive Blueprint reinstancing) | Chain walk finds actors walk_class misses; hook patches the live instance's vtable. |
 | `misery` | [x] Wire the framework call op through the game-thread drain | UFunction calls from the control plane execute on the game thread (register_pe_call in dispatch.rs). |
 | `misery` | [x] Spawn an NPC from the mod: SpawnAIFromClass via the call op, donor class copied from a live hostile | research_spawn::spawn_one_npc passed live: non-null pawn, census 77 to 78, spawned Assembly confirmed in-world. Recipe in research.md 26.3. |
+| `misery` | [x] Scaling NPC spawner: per-square random threat budget growing with EmissionsPast, cross-biome escalations, packs, quiet rolls; doubling average at emission 30 | Live at emissions 42: squares rolled 9/8/8/0 extras with a zombie soldier pack; log shows one roll per square. research.md 25.5. |
+| `misery` | [x] Fix spawner square keys: class prefix in full names made every NPC class its own square, over-spawning | Post-fix log shows one roll per square with true vanilla counts. |
+| `misery` | [x] Fix pe_dispatch install blocking the features chain at main menu: backoff moved to its own thread | Features after pe_dispatch register immediately; log shows all features watching before load. |
+| `misery` | [x] Measure area grids: Factory 2x2 (4 squares), Bunker/Meadows/Paneli 3x3 (9), Meadows has an 18-preset pool | research_spawners::dump_generator_grids, live values in research.md 25.4. |
 
 ## 2026-08-20
 

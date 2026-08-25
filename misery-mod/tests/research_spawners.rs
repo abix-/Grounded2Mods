@@ -138,6 +138,39 @@ fn dump_spawn_points() {
     }
 }
 
+/// Grid bounds and level counts of the four world generators
+/// (research.md 19.2: GridFirstIndex_X 0x2A8, GridLastIndex_X
+/// 0x2AC, Y 0x2B0/0x2B4, Levels array 0x2C8, EmissionsPast
+/// 0x2F8).
+#[test]
+fn dump_generator_grids() {
+    let Some(api) = api_or_skip() else { return };
+    if !offsets_live(&api) {
+        println!("SKIP: offsets not live");
+        return;
+    }
+    let gens = client::walk_class_chain_instances(&api, "BP_WorldGeneration_Base_C", 8);
+    println!("{} generator(s)", gens.len());
+    for g in &gens {
+        let b = client::read_bytes(&api, g.addr, 0x2A8, 16);
+        if b.len() < 16 {
+            continue;
+        }
+        let (x0, x1) = (client::from_le_i32(&b, 0), client::from_le_i32(&b, 4));
+        let (y0, y1) = (client::from_le_i32(&b, 8), client::from_le_i32(&b, 12));
+        let levels = client::read_tarray_header(&api, g.addr, 0x2C8)
+            .map(|h| h.num)
+            .unwrap_or(-1);
+        let emissions = client::read_bytes(&api, g.addr, 0x2F8, 4);
+        let em = if emissions.len() == 4 { client::from_le_i32(&emissions, 0) } else { -1 };
+        println!(
+            "  {}: grid x {x0}..{x1}, y {y0}..{y1} = {} cells, levels={levels}, emissions_past={em}",
+            g.name,
+            ((x1 - x0 + 1) * (y1 - y0 + 1)).max(0),
+        );
+    }
+}
+
 fn write_bytes_op(api: &Api, sel: &str, offset: u64, data: &[u8]) -> bool {
     let r = api.op(
         "write_bytes",

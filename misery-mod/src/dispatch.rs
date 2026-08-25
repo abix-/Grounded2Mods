@@ -35,29 +35,41 @@ const JOB_TIMEOUT: Duration = Duration::from_secs(3);
 /// 10 minute default).
 pub fn install() {
     register_ops();
-    let policy = ueforge::hook::RetryPolicy::new(
-        Duration::from_millis(500),
-        Duration::from_secs(5),
-        Duration::from_secs(86400),
-    );
-    // find_class_fast resolves a stale reinstanced class for this
-    // game (research.md 22.13): its CDO vtable never fires. Read
-    // the vtable from the LIVE player instance instead, which only
-    // exists once a save is loaded; the backoff waits for it.
-    let Some(h) = ueforge::hook::install_with_backoff("pe_dispatch", policy, || {
-        let ptr = ueforge::ue::actor::find_actors_by_chain(HOOK_CLASS)
-            .into_iter()
-            .next()
-            .ok_or("player not loaded")?;
-        // SAFETY: ptr came from the GObjects iteration inside
-        // find_actors_by_chain this attempt; it is a live UObject.
-        let obj = unsafe { &*(ptr as *const ueforge::ue::UObject) };
-        ueforge::hook::ProcessEventHook::install_for_object(HOOK_CLASS, obj, pe_handler)
-    }) else {
-        return;
-    };
-    ueforge::log::log(format_args!("pe_dispatch: hook installed on {HOOK_CLASS}"));
-    ueforge::hook::register(h);
+    // The backoff blocks until the player class loads (a save is
+    // loaded), and features().once actions run inline and
+    // sequentially, so the wait MUST live on its own thread or
+    // every feature after this one stalls at the main menu.
+    let _ = std::thread::Builder::new()
+        .name("misery-pe-dispatch".into())
+        .spawn(|| {
+            let policy = ueforge::hook::RetryPolicy::new(
+                Duration::from_millis(500),
+                Duration::from_secs(5),
+                Duration::from_secs(86400),
+            );
+            // find_class_fast resolves a stale reinstanced class
+            // for this game (research.md 22.13): its CDO vtable
+            // never fires. Read the vtable from the LIVE player
+            // instance instead, which only exists once a save is
+            // loaded; the backoff waits for it.
+            let Some(h) = ueforge::hook::install_with_backoff("pe_dispatch", policy, || {
+                let ptr = ueforge::ue::actor::find_actors_by_chain(HOOK_CLASS)
+                    .into_iter()
+                    .next()
+                    .ok_or("player not loaded")?;
+                // SAFETY: ptr came from the GObjects iteration
+                // inside find_actors_by_chain this attempt; it is
+                // a live UObject.
+                let obj = unsafe { &*(ptr as *const ueforge::ue::UObject) };
+                ueforge::hook::ProcessEventHook::install_for_object(HOOK_CLASS, obj, pe_handler)
+            }) else {
+                return;
+            };
+            ueforge::log::log(format_args!(
+                "pe_dispatch: hook installed on {HOOK_CLASS}"
+            ));
+            ueforge::hook::register(h);
+        });
 }
 
 fn pe_handler(
