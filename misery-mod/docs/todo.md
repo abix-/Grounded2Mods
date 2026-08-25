@@ -2,8 +2,7 @@
 
 | Priority | System | Todo | Done when |
 |---:|---|---|---|
-| 1 | `vendors` | [ ] Add all ammo and magazine items to the GunDealer's sell list, auto-applied on load | Player can sell any Ammo_ or Magazine_ item at the GunDealer, verified live. |
-| 1 | `vendors` | [ ] Build vendor list config and auto-apply on game load with UI tab | Vendor sell/buy list modifications apply automatically from config on each load. Item list editable from ImGui tab. |
+| 1 | `vendors` | [ ] Build vendor list config and auto-apply on game load with UI tab | Vendor sell/buy list modifications apply automatically from config on each load. Item list editable from ImGui tab, including SELL_PRICE_PCT and SEWING_KIT_COST. |
 | 2 | `lib.rs` | [ ] Set up pe_queue DrainSite + ProcessEventHook for game-thread dispatch | ProcessEvent calls from Rust execute on the game thread via the drain site. |
 | 2 | `lib.rs` | [ ] Find a UE class that fires ProcessEvent before main menu to use as drain site | Drain site class identified and documented. |
 | 5 | `lib.rs` | [ ] Suppress nag screen (WD_PlaytestNote01_C) via game-thread ProcessEvent | Nag screen dismissed automatically on load without manual input. |

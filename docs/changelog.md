@@ -21,6 +21,20 @@ Newest first.
 - Put new days above older days. Add rows to the existing table when that date already exists.
 - Entries before 2026-08-17 keep their existing historical format.
 
+## 2026-08-25
+
+| System | Item | Done when |
+|---|---|---|
+| `misery` | [x] Add all ammo and magazine items to the GunDealer's sell list, auto-applied on load | Player can sell any Ammo_ or Magazine_ item at the GunDealer, verified live: all 13 types on his sell list at 40% of buy cost. |
+| `misery` | [x] Buy-to-sell mirror: every item a vendor sells, he also buys back at 40% of his charge price | vendor_mirror log lines show entries added on each vendor; dump test shows mirrored items with 40% prices. |
+| `misery` | [x] Custom pricing for added sell entries: private price array per entry at SELL_PRICE_PCT (40%) of the item's vanilla buy cost | Live dump shows added GunDealer entries paying 52/60/76/100/104 rubles matching 40% of vanilla costs; vanilla entries unchanged. |
+| `misery` | [x] One dedup vendor pass: vanilla sell lists, then buy mirror, then GunDealer ammo, then Barman food; each item sellable at exactly one logical vendor | no_duplicate_vendor_entries test passes live: 0 within-list, 0 cross-sell, 0 cross-buy duplicates. |
+| `misery` | [x] Sewing kit permanently sold by the ResourseSaler (50 rubles, stock 1) | Live dump shows Resource_SewingKit on his buy list at 50 rubles. |
+| `misery` | [x] Duplicates test for vendor lists | no_duplicate_vendor_entries in research_vendors.rs asserts within-list and cross-vendor uniqueness, with the vanilla Weapon_TOZ exception documented. |
+| `misery` | [x] Fix vendor hooks never firing: find_actor matches class names exactly, so base-class finders never matched subclass vendor actors | misery_mod.log shows the vendors hook applying after load; previously zero vendor lines ever logged. |
+| `misery` | [x] Fix research test client: server state field is now a bool, not a Snapshot struct | research_vendors tests run against the live control plane again. |
+| `ueforge` | [x] Add find_actors_by_chain: inheritance-aware actor search matching a class anywhere in the class chain | misery vendor pass finds all 7 vendors via BP_MasterVendorBuildPart_C. |
+
 ## 2026-08-20
 
 | System | Item | Done when |
