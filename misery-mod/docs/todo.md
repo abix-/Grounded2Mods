@@ -2,8 +2,10 @@
 
 | Priority | System | Todo | Done when |
 |---:|---|---|---|
-| 1 | `lib.rs` | [ ] Set up pe_queue DrainSite + ProcessEventHook for game-thread dispatch | ProcessEvent calls from Rust execute on the game thread via the drain site. |
-| 1 | `lib.rs` | [ ] Find a UE class that fires ProcessEvent before main menu to use as drain site | Drain site class identified and documented. |
+| 1 | `vendors` | [ ] Add all ammo and magazine items to the GunDealer's sell list, auto-applied on load | Player can sell any Ammo_ or Magazine_ item at the GunDealer, verified live. |
+| 1 | `vendors` | [ ] Build vendor list config and auto-apply on game load with UI tab | Vendor sell/buy list modifications apply automatically from config on each load. Item list editable from ImGui tab. |
+| 2 | `lib.rs` | [ ] Set up pe_queue DrainSite + ProcessEventHook for game-thread dispatch | ProcessEvent calls from Rust execute on the game thread via the drain site. |
+| 2 | `lib.rs` | [ ] Find a UE class that fires ProcessEvent before main menu to use as drain site | Drain site class identified and documented. |
 | 5 | `lib.rs` | [ ] Suppress nag screen (WD_PlaytestNote01_C) via game-thread ProcessEvent | Nag screen dismissed automatically on load without manual input. |
 | 10 | `skills` | [ ] Find melee damage address for strength stat | Memory offset for player melee damage documented and verified with a write test. |
 | 10 | `skills` | [ ] Find player max health address for constitution stat | Memory offset for player max health documented and verified with a write test. |
@@ -11,6 +13,5 @@
 | 10 | `skills` | [ ] Find craft completion event as XP source | Craft event fires reliably and delivers XP to the tracker. |
 | 15 | `skills` | [ ] Implement RPG system: XP, leveling, stat/skill point allocation | Skill catalog, tracker, and level-up ops registered. See `docs/rpg.md`. |
 | 15 | `skills` | [ ] Implement RPG persistence (JSON save/load for level, XP, allocations) | RPG state survives save/reload cycle. |
-| 20 | `vendors` | [ ] Build vendor list config and auto-apply on game load with UI tab | Vendor sell/buy list modifications apply automatically from config on each load. Item list editable from ImGui tab. |
 | 50 | `shining` | [ ] Research what depends on shining regeneration before shipping permanent freeze | Dependencies documented; safe to ship or workaround identified. |
 | 50 | `debug` | [ ] Research biome number to area mapping (section 19.4) | Biome numbers mapped to area names in research doc. |
