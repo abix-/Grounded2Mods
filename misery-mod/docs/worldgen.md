@@ -155,10 +155,37 @@ Findings from the first run (area 2 -> 2, Meadows):
   snapshot: manager byte + seed, per-generator streaming level
   count and EmissionsPast.
 
+### 7.1 The area number mapping (swept live, 2026-08-25)
+
+`GenerateCustomBiom(n)` for n in 0..=4:
+
+| n | Result |
+|---|---|
+| 0 | Bunker generates (9 levels streamed) |
+| 1 | NOTHING generates (level byte set, no generator runs) |
+| 2 | Meadows generates |
+| 3 | Paneli generates |
+| 4 | NOTHING generates |
+
+Factory generated normally earlier the same day (a shining put
+it at emissions 42), so Factory is almost certainly number 1
+with a broken or different custom-generation path; open
+question below.
+
+Also learned: **EmissionsPast is the save's GLOBAL shining
+count**, stamped onto whichever generator is active when it
+ticks (Bunker jumped 0 to 45, Paneli 0 to 47). Reading the max
+across generators (what the scaling spawner does) gives the
+global count. The sweep itself advanced the save from 43 to 49:
+every forced regeneration costs one tick of the difficulty
+curve.
+
 ## 8. Open questions
 
-- The full number-to-area mapping: 2 = Meadows confirmed;
-  0, 1, 3 need the sweep (each run ticks EmissionsPast).
+- Why GenerateCustomBiom(1) does nothing when Factory
+  generates fine under normal shinings: broken custom path,
+  or Factory needs a different entry point (GenerateBiom
+  after writing the byte, or an expedition-door flow).
 - Whether GenerateBiom reads the pool live or copies it.
 - Whether cross-area squares connect roads/edges sanely.
 - How `LevelsRefreshed` relates to `Levels`: post-refresh
