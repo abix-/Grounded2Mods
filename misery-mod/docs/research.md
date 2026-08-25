@@ -2110,3 +2110,29 @@ Limitation: the drain site only fires while a save is loaded
 (the player class has no instances at the main menu), so
 main-menu-time dispatch (the nag screen) still needs a
 pre-menu drain site if ever pursued.
+
+### 26.3 Spawning an NPC works (confirmed 2026-08-25)
+
+`research_spawn::spawn_one_npc`, live: copied the class of a
+live hostile (BP_Assembly_C), called
+`AIBlueprintHelperLibrary:SpawnAIFromClass` through the `call`
+op (game thread), got a non-null pawn back, census 77 -> 78,
+and the operator confirmed the spawned NPC in the world.
+
+The recipe:
+
+- `call` op registered via `ueforge::debug::register_pe_call`
+  against the dispatch DrainSite (`src/dispatch.rs`).
+- Function: `/Script/AIModule.AIBlueprintHelperLibrary:
+  SpawnAIFromClass`, invoked on the library CDO. Parm block
+  0x60 bytes: WorldContextObject 0x00 (the player actor),
+  PawnClass 0x08 (donor NPC's UObject +0x10 class ptr),
+  BehaviorTree 0x10 (null; these NPCs drive themselves),
+  Location 0x18 (3 doubles), Rotation 0x30, bNoCollisionFail
+  0x48, Owner 0x50 (null), ReturnValue 0x58 (the pawn).
+- Player position via `Actor:K2_GetActorLocation` through the
+  same `call` op (0x18-byte parm block, FVector return at 0).
+
+This is the whole mechanism the NPC spawn multiplier needs:
+enumerate a tile's placed hostiles, re-spawn copies of their
+classes nearby.

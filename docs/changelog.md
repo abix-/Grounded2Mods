@@ -40,6 +40,8 @@ Newest first.
 | `misery` | [x] NPC spawning research: enemies are placed in the world preset tiles, not spawned; one BP_DwarfSpawn_C point in the hub | research.md sections 25.0 to 25.4, live census via research_spawners tests. |
 | `misery` | [x] Live writes to the hub spawn point (count 1 to 5, class to BP_Swamper_C) verified by read-back | set_spawn_point_more / set_spawn_point_entity; whether the game re-reads them is open. |
 | `ueforge` | [x] Add walk_class_chain op and ProcessEventHook::install_for_object (survive Blueprint reinstancing) | Chain walk finds actors walk_class misses; hook patches the live instance's vtable. |
+| `misery` | [x] Wire the framework call op through the game-thread drain | UFunction calls from the control plane execute on the game thread (register_pe_call in dispatch.rs). |
+| `misery` | [x] Spawn an NPC from the mod: SpawnAIFromClass via the call op, donor class copied from a live hostile | research_spawn::spawn_one_npc passed live: non-null pawn, census 77 to 78, spawned Assembly confirmed in-world. Recipe in research.md 26.3. |
 
 ## 2026-08-20
 

@@ -74,6 +74,15 @@ fn pe_handler(
 }
 
 fn register_ops() {
+    // The framework `call` op: UFunction invocation routed
+    // through the game-thread queue. Anything invoked through it
+    // actually executes now (research.md 26.1: the old direct
+    // path called the wrong virtual).
+    ueforge::debug::register_pe_call(
+        &DRAIN,
+        "misery: is a save loaded? the drain only fires in play",
+        ueforge::selector::resolve,
+    );
     ueforge::ops::OP_REGISTRY.register_many([
         ueforge::ops::OpDef::new(
             "pe_ping",
