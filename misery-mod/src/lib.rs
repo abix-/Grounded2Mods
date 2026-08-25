@@ -96,9 +96,10 @@ fn on_unreal_init() {
                     ueforge::log::log(format_args!("speed_default: {e}"));
                 }
             })
-        .on_each_load("vendor_food", Duration::from_secs(3),
-            || ueforge::ue::actor::find_actor("BP_MasterVendorBuildPart_C", Some("Barman")),
-            vendors::expand_barman_sell_list)
+        .on_each_load("vendors", Duration::from_secs(3),
+            || ueforge::ue::actor::find_actors_by_chain("BP_MasterVendorBuildPart_C")
+                .into_iter().next(),
+            vendors::apply_all)
         .install();
 }
 

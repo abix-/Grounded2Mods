@@ -120,6 +120,35 @@ pub fn find_object(
     None
 }
 
+/// Find all live world actors whose class chain (own class or
+/// any ancestor) contains `class_needle`. Unlike `find_actor`,
+/// this matches subclasses, so a Blueprint base class like
+/// `BP_MasterVendorBuildPart_C` finds every derived vendor.
+/// Skips CDOs and objects outside a PersistentLevel.
+pub fn find_actors_by_chain(class_needle: &str) -> Vec<*const u8> {
+    let mut found = Vec::new();
+    let Some(rt) = ue::try_runtime() else {
+        return found;
+    };
+    let view = unsafe { ue::GObjectsView::from_image(rt.image_base, rt.platform_offsets) };
+    if !view.is_valid() {
+        return found;
+    }
+    for obj in view.iter() {
+        if obj.is_default_object() {
+            continue;
+        }
+        if !class_chain_contains(obj, class_needle) {
+            continue;
+        }
+        if !obj.full_name().contains("PersistentLevel") {
+            continue;
+        }
+        found.push(obj.as_ptr());
+    }
+    found
+}
+
 /// Spawn a background thread that calls `on_load` each time a
 /// finder function returns `Some`. The finder is polled every
 /// `poll_interval`. After `on_load` runs, the thread watches

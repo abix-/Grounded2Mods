@@ -14,18 +14,11 @@
 
 #![allow(dead_code)]
 
-use serde::Deserialize;
-
 const ENV_PORT: &str = "MISERY_DEBUG_PORT";
 
-/// Mirrors `misery_mod::debug::Snapshot`.
-#[derive(Debug, Deserialize, Default)]
-pub struct Snapshot {
-    #[serde(default)]
-    pub offsets_known: bool,
-}
-
-pub type Api = ueforge::client::Api<Snapshot>;
+/// The server's `state` field is a bool: true when the UE
+/// runtime is initialised (`ueforge::start_debug_server`).
+pub type Api = ueforge::client::Api<bool>;
 
 /// Connect, or print a SKIP line and return None.
 pub fn api_or_skip() -> Option<Api> {
@@ -47,11 +40,11 @@ pub fn api_or_skip() -> Option<Api> {
 /// object-walking op fails without it, and the failure looks like
 /// "no instances" rather than "not wired up", so check this first.
 pub fn offsets_live(api: &Api) -> bool {
-    api.snapshot().offsets_known
+    api.snapshot()
 }
 
 /// Pretty-print whatever an op returned, ok or not.
-pub fn show(label: &str, r: &ueforge::OpResponse<Snapshot>) {
+pub fn show(label: &str, r: &ueforge::OpResponse<bool>) {
     if r.ok {
         println!("{label}: {}", serde_json::to_string(&r.result).unwrap_or_default());
     } else {

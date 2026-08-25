@@ -46,7 +46,29 @@ struct SellEntry {
     fname_num: u32,
     item_name: String,
     price_num: i32,
+    price_qty: i32,
+    currency: String,
     cat_num: i32,
+}
+
+/// Read price element 0 of an entry's Price TArray: the currency
+/// item FName at +0x08 and the quantity at +0x10 (research.md 24.6).
+fn read_price0(api: &Api, entry: &[u8], base: usize) -> (i32, String) {
+    let price_ptr = client::from_le_u64(entry, base + 0x18);
+    let price_num = client::from_le_i32(entry, base + 0x20);
+    if price_ptr == 0 || price_num < 1 {
+        return (0, String::from("(none)"));
+    }
+    let elem = client::read_bytes(api, price_ptr, 0, 0x18);
+    if elem.len() < 0x18 {
+        return (0, String::from("(unreadable)"));
+    }
+    let fname_idx = client::from_le_u32(&elem, 0x08);
+    let fname_num = client::from_le_u32(&elem, 0x0C);
+    let qty = client::from_le_i32(&elem, 0x10);
+    let currency = client::fname_from_parts(api, fname_idx, fname_num)
+        .unwrap_or_else(|| format!("(?idx={fname_idx:#x})"));
+    (qty, currency)
 }
 
 struct BuyEntry {
@@ -55,6 +77,8 @@ struct BuyEntry {
     fname_num: u32,
     item_name: String,
     price_num: i32,
+    price_qty: i32,
+    currency: String,
     stock: i32,
     cat_num: i32,
 }
@@ -73,8 +97,9 @@ fn read_sell_entries(api: &Api, comp_addr: u64) -> Option<Vec<SellEntry>> {
         let item_name = client::fname_from_parts(api, fname_idx, fname_num)
             .unwrap_or_else(|| format!("(?idx={fname_idx:#x} num={fname_num})"));
         let price_num = client::from_le_i32(&data, base + 0x20);
+        let (price_qty, currency) = read_price0(api, &data, base);
         let cat_num = client::from_le_i32(&data, base + 0x30);
-        entries.push(SellEntry { item_ptr, fname_idx, fname_num, item_name, price_num, cat_num });
+        entries.push(SellEntry { item_ptr, fname_idx, fname_num, item_name, price_num, price_qty, currency, cat_num });
     }
     Some(entries)
 }
@@ -93,9 +118,10 @@ fn read_buy_entries(api: &Api, comp_addr: u64) -> Option<Vec<BuyEntry>> {
         let item_name = client::fname_from_parts(api, fname_idx, fname_num)
             .unwrap_or_else(|| format!("(?idx={fname_idx:#x} num={fname_num})"));
         let price_num = client::from_le_i32(&data, base + 0x20);
+        let (price_qty, currency) = read_price0(api, &data, base);
         let stock = client::from_le_i32(&data, base + 0x28);
         let cat_num = client::from_le_i32(&data, base + 0x38);
-        entries.push(BuyEntry { item_ptr, fname_idx, fname_num, item_name, price_num, stock, cat_num });
+        entries.push(BuyEntry { item_ptr, fname_idx, fname_num, item_name, price_num, price_qty, currency, stock, cat_num });
     }
     Some(entries)
 }
@@ -136,7 +162,7 @@ fn dump_all_vendors() {
         if let Some(sells) = read_sell_entries(&api, comp_addr) {
             println!("  SELL LIST (vendor buys these from player): {} entries", sells.len());
             for (i, e) in sells.iter().enumerate() {
-                println!("    {i:>2}. {:<40} prices={} cats={}", e.item_name, e.price_num, e.cat_num);
+                println!("    {i:>2}. {:<40} pays={} {} (elems={}) cats={}", e.item_name, e.price_qty, e.currency, e.price_num, e.cat_num);
             }
         } else {
             println!("  SELL LIST: could not read");
@@ -145,13 +171,80 @@ fn dump_all_vendors() {
         if let Some(buys) = read_buy_entries(&api, comp_addr) {
             println!("  BUY LIST (player buys these from vendor): {} entries", buys.len());
             for (i, e) in buys.iter().enumerate() {
-                println!("    {i:>2}. {:<40} stock={:<4} prices={} cats={}", e.item_name, e.stock, e.price_num, e.cat_num);
+                println!("    {i:>2}. {:<40} stock={:<4} costs={} {} (elems={}) cats={}", e.item_name, e.stock, e.price_qty, e.currency, e.price_num, e.cat_num);
             }
         } else {
             println!("  BUY LIST: could not read");
         }
         println!();
     }
+}
+
+/// No item may appear twice within one vendor's sell or buy
+/// list, and no item may appear on two different vendors' sell
+/// lists or two different vendors' buy lists. Catches both
+/// re-apply bugs (same hook appending twice) and overlap between
+/// the food, ammo, and mirror hooks.
+#[test]
+fn no_duplicate_vendor_entries() {
+    let Some(api) = api_or_skip() else { return };
+    if !offsets_live(&api) {
+        println!("SKIP: offsets not live");
+        return;
+    }
+    let vendors = find_all_vendors(&api);
+    assert!(!vendors.is_empty(), "no vendor actors (load into the safe hub)");
+
+    let mut within_dups: Vec<String> = Vec::new();
+    let mut sell_owners: HashMap<String, Vec<String>> = HashMap::new();
+    let mut buy_owners: HashMap<String, Vec<String>> = HashMap::new();
+
+    for v in &vendors {
+        let Some(comp_addr) = get_component_addr(&api, v.addr) else { continue };
+        if let Some(sells) = read_sell_entries(&api, comp_addr) {
+            let mut seen = std::collections::HashSet::new();
+            for e in &sells {
+                if !seen.insert(e.item_name.clone()) {
+                    within_dups.push(format!("{} sell list: {}", v.name, e.item_name));
+                }
+                sell_owners.entry(e.item_name.clone()).or_default()
+                    .push(format!("{} pays={}", v.name, e.price_qty));
+            }
+        }
+        if let Some(buys) = read_buy_entries(&api, comp_addr) {
+            let mut seen = std::collections::HashSet::new();
+            for e in &buys {
+                if !seen.insert(e.item_name.clone()) {
+                    within_dups.push(format!("{} buy list: {}", v.name, e.item_name));
+                }
+                buy_owners.entry(e.item_name.clone()).or_default()
+                    .push(format!("{} costs={}", v.name, e.price_qty));
+            }
+        }
+    }
+
+    let cross_sell: Vec<String> = sell_owners.iter()
+        .filter(|(_, owners)| owners.len() > 1)
+        .map(|(item, owners)| format!("{item}: {}", owners.join(", ")))
+        .collect();
+    // Vanilla itself sells Weapon_TOZ at two vendors (Hunter for
+    // rubles, Technician for weapon parts). The mod never edits
+    // vanilla entries, so that one is exempt.
+    let cross_buy: Vec<String> = buy_owners.iter()
+        .filter(|(item, owners)| owners.len() > 1 && item.as_str() != "Weapon_TOZ")
+        .map(|(item, owners)| format!("{item}: {}", owners.join(", ")))
+        .collect();
+
+    println!("within-list duplicates: {}", within_dups.len());
+    for d in &within_dups { println!("  {d}"); }
+    println!("items on more than one sell list: {}", cross_sell.len());
+    for d in &cross_sell { println!("  {d}"); }
+    println!("items on more than one buy list: {}", cross_buy.len());
+    for d in &cross_buy { println!("  {d}"); }
+
+    assert!(within_dups.is_empty(), "within-list duplicates found");
+    assert!(cross_sell.is_empty(), "items sellable at more than one vendor");
+    assert!(cross_buy.is_empty(), "items buyable at more than one vendor");
 }
 
 /// Check whether the Item pointer (offset 0x00 in each entry)
