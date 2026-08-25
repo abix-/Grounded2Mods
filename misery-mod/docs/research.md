@@ -1952,104 +1952,119 @@ instead of the Rust standard allocator.
 
 ## 25. NPC spawning
 
-Found in the UE4SS object dump, 2026-08-25. Not yet verified
-against live instances.
+Class layouts from the UE4SS object dump; live findings from
+the `research_spawners` test suite, 2026-08-25.
 
-### 25.1 BP_AISpawningVolume_C
+### 25.0 The live answer (confirmed 2026-08-25)
 
-`/Game/SmartAI/Blueprints/AI/BP_AISpawningVolume`. The NPC
-spawner: an invisible box placed in the level tiles (~310
-references in the dump). Each box carries a fixed list of what
-to spawn, which is why a location always produces the same
-NPCs in the same numbers.
+**The NPCs in the expedition areas are placed, not spawned.**
+`walk_class_chain(BP_MasterAICharacter_C)` during an expedition
+returned 14 NPCs, every one owned by a world preset tile:
 
-Properties on the actor:
+```
+WorldPresets/NormalVillage/3353_5_3.L_Swamp01: 4x BP_Swamper_C,
+  1x BP_PlagueDoctor_C, 3x BP_NormalBandit_C
+WorldPresets/.../3353_3_5.L_River_LoggingCamp: 3x BP_AIDwardWild_C
+WorldPresets/.../3353_4_4.L_Meadows_CurveRoad_Drainage:
+  1x BP_Swamper_C, 1x BP_DeerNeutral_C
+WorldPresets/NormalVillage/3353_4_3.L_Meadows01: 1x BP_DeerNeutral_C
+```
 
-| Offset | Type | Name |
-|--------|------|------|
-| 0x298 | Object | Proximity Deactivation Sphere |
-| 0x2A0 | Object | Proximity Activation Sphere |
-| 0x2B8 | Object | AI Spawn Volume (the box component) |
-| 0x2C0 | Struct | AI Spawn Element (S_AISpawner) |
-| 0x2D0 | Bool | Enable Spawn AI |
-| 0x2D8 | Array | Spawning AI (TArray of S_AISpawner, the authored list) |
-| 0x2E8 | Double | Spawn Time |
-| 0x2F0 | Double | Spawn Time Deviation |
-| 0x2F8 | Double | Overlap Size Check |
-| 0x300 | Bool | Random Rotations |
-| 0x308 | Array | Floors |
-| 0x318 | Int | Spawn Retries |
-| 0x320 | Array | Spawned AI (live spawned pawns) |
-| 0x330 | Bool | Respawn AI |
-| 0x338 | Double | Respawn Time |
-| 0x340 | Double | Respawn Time Variation |
-| 0x348 | Array | AI Respawning Timers (S_AIRespawn) |
-| 0x358 | Bool | Use Player Proximity Activation |
-| 0x360 | Double | Player Activation Range |
-| 0x36A | Bool | Player In Area |
-| 0x36C | Int | AI Total |
-| 0x370 | Array | Remaining Spawning AI (work list drained while spawning) |
-| 0x380 | Int | Spawn Index |
-| 0x384 | Bool | Use Player Proximity Deactivation |
-| 0x388 | Double | Player Deactivation Range |
-| 0x390 | Bool | Override Starting Behaviour |
-| 0x391 | Byte | Override Behaviour |
-| 0x398 | Array | Way Points |
-| 0x3C8 | Name | StreamLevelPackageName (the level tile the box belongs to) |
-| 0x3D0 | Object | AIBase |
-| 0x3D8 | Bool | Debug |
+The generator (section 19) streams hand-built preset tiles onto
+the grid; each preset ships with its NPCs already placed in the
+level. Same tile, same crowd, every visit. Changing counts
+therefore means creating new actors, not editing a spawner
+number: there is no per-location spawn list to edit.
 
-Functions: `Find Spawn Location` (random point in the box,
-sphere trace to ground), `Spawn Location Trace` (calls
-`SpawnAIFromClass`), `PlayerInAreaCheck`, `Respawn Timer`,
-`Add AI Respawn Timer`, `AI Respawn Timer Finished`,
-`RespawnAI`, `Reset AI`.
+The only live spawner is ONE `BP_DwarfSpawn_C` point in the hub
+map (`NewMapGENTEST.PersistentLevel.BP_AISpawnPoint_C_0`),
+spawning 1x `BP_AIDwardTamed_C`. `BP_AISpawningVolume_C` (25.2)
+has ZERO placed instances; it is an unused asset from the
+SmartAI pack. `BP_BomberSpawn_C` is the bomber plane / airdrop
+scheduler, not an NPC spawner.
 
-### 25.2 S_AISpawner (one entry of the authored list)
+Enemy characters extend `BP_MasterAICharacter_C` (classes under
+`/Game/Blueprints/AI/`: BP_AIDwardWild_C, BP_Swamper_C,
+BP_Ghoul_C, BP_Boar_C, BP_DeerNeutral_C, BP_NormalBandit_C,
+BP_PlagueDoctor_C, ...). `walk_class` returns 0 for these
+(section 22.13); the `walk_class_chain` op added 2026-08-25
+matches by class-chain name and finds them.
 
-`/Game/SmartAI/Blueprints/Structs/S_AISpawner`:
+### 25.1 BP_DwarfSpawn_C (the spawn point)
+
+`/Game/SmartAI/Blueprints/AI/BP_DwarfSpawn`. Despite the name,
+a generic NPC spawn point: one NPC class + count per point.
 
 | Offset | Type | Name |
 |--------|------|------|
-| 0x00 | Class | AICharacter (which NPC class) |
-| 0x08 | Int | SpawnCount (how many) |
+| 0x2C8 | Bool | Enable Spawn AI |
+| 0x2D0 | Class | Spawn AI (which NPC class) |
+| 0x2D8 | Int | Spawn AI Count |
+| 0x2DC | Bool | Change Default Behaviour |
+| 0x2DD | Byte | Starting Behaviour |
+| 0x2E0 | Double | Spawn Time |
+| 0x2E8 | Double | Spawn Time Deviation |
+| 0x2F0 | Bool | Respawn AI |
+| 0x2F8 | Double | Respawn Time |
+| 0x300 | Double | Respawn Time Variation |
+| 0x308 | Array | Spawned AI |
+| 0x319 | Bool | Use Player Proximity Activation |
+| 0x320 | Double | Player Activation Range |
+| 0x338 | Bool | Player In Area |
+| 0x33C | Int | Current AI Spawned |
+| 0x340 | Array | AI Respawning Timers |
+| 0x358 | Object | AIBase |
+| 0x370 | Array | Way Points |
+| 0x3A0 | Name | StreamLevelPackageName |
+| 0x3A8 | Struct | Location |
 
-### 25.3 How spawning works (from the dump, unverified live)
+Live hub point values: enable=1, respawn=0, use_prox=0,
+range=512, spawn_time=0.2, respawn_time=5.
 
-1. Boxes are authored into the streamed level tiles. Which
-   boxes exist near you changes only when the world
-   regenerates and swaps tiles (section 19); the emission
-   count itself never alters a box's list.
-2. When the player enters the activation range, the box
-   spawns each list entry after Spawn Time plus deviation:
-   random point inside the box, trace down to ground, retry
-   up to Spawn Retries, then spawn the NPC class.
-3. Spawned pawns are tracked in Spawned AI. Killed NPCs come
-   back only if Respawn AI is set, after Respawn Time plus
-   variation.
-4. NPCs at a location are therefore created seconds before
-   the player arrives, in fixed numbers, from a fixed list.
+**Writes land (confirmed 2026-08-25):** `set_spawn_point_more`
+set count 1 -> 5 and respawn on; `set_spawn_point_entity` set
+Spawn AI to BP_Swamper_C (class ptr read from a live swamper's
+UObject +0x10). Both verified by read-back. Whether the game's
+Blueprint logic re-reads these values after its initial spawn
+is NOT yet confirmed.
 
-### 25.4 Doubling NPC counts (not yet attempted)
+### 25.2 BP_AISpawningVolume_C (unused in this game)
 
-Two candidate paths:
+`/Game/SmartAI/Blueprints/AI/BP_AISpawningVolume`: an invisible
+box carrying a list of what to spawn. Zero placed instances
+live; documented for completeness only.
 
-1. Walk all live BP_AISpawningVolume_C actors and double the
-   SpawnCount int in every Spawning AI entry before the box
-   activates. Needs research: whether the box reads the array
-   at activation time (not a cached copy), and re-application
-   as tiles stream in and out.
-2. Cheap experiment first: set EnemySpawnRate
-   (S_GameplaySettings +0x68, already writable from the
-   Gameplay tab) to 2.0 and observe whether counts change.
-   What that setting actually scales is unknown.
+Its list entries are `S_AISpawner`
+(`/Game/SmartAI/Blueprints/Structs/S_AISpawner`): AICharacter
+class at 0x00, SpawnCount int at 0x08.
 
-### 25.5 What we do not know
+### 25.3 Doubling NPC counts (paths after the live findings)
 
-- Per-box values (activation ranges, Respawn AI on or off,
-  actual list contents). Only the class layout has been read.
-- What deactivation does to already-spawned NPCs (despawn or
-  idle).
+Because the crowds are placed in the preset tiles, there is no
+spawner number that doubles them. The options:
+
+1. **Spawn extra actors next to the placed ones.** Needs the
+   engine spawn function on the game thread: blocked on the
+   pe_queue DrainSite + ProcessEventHook todo item (the same
+   one blocking the nag screen).
+2. **Borrow the game's own spawn point logic.** The hub
+   BP_DwarfSpawn_C accepted count=5 and class=BP_Swamper_C via
+   memory writes (25.1). If its Blueprint logic re-reads those
+   values (respawn timer or activation), spawn points could be
+   retargeted, or new points spawned near placed NPCs once
+   path 1 exists anyway.
+3. **EnemySpawnRate** (S_GameplaySettings +0x68, writable in
+   the Gameplay tab): untested what it scales; with no live
+   spawners in the field, it may only affect the difficulty
+   preset's damage-style knobs or nothing observable.
+
+### 25.4 What we do not know
+
+- Whether BP_DwarfSpawn_C re-reads Spawn AI / count after its
+  initial spawn (the 25.1 writes await in-game observation).
 - What consumes EnemySpawnRate.
-- Whether BP_DwarfSpawn_C / BP_BomberSpawn_C are separate
-  point-spawners for specific enemies or unrelated.
+- Whether any expedition preset tiles contain spawn points
+  (only the hub's one has been seen; the 14 field NPCs had
+  none).
+- How the tile pool per grid cell is chosen and how large it
+  is (drives how much variety a world refresh can produce).

@@ -65,6 +65,12 @@ pub fn register_builtins() {
             |args| walk_class(args),
         ),
         OpDef::new(
+            "walk_class_chain",
+            "Walk objects whose class chain contains a name (survives Blueprint reinstancing)",
+            "{needle: str, max?: u64}",
+            |args| walk_class_chain(args),
+        ),
+        OpDef::new(
             "fname_to_string",
             "Resolve an FName u64 to its string form",
             "{fname: u64}",
@@ -463,6 +469,53 @@ where
 /// Walk `GObjects`, return up to `max` non-CDO instances of the
 /// named class (CDOs included if `include_cdo: true`). Pure
 /// engine traversal. No host hooks needed.
+/// Like `walk_class`, but matches by class NAME anywhere in the
+/// object's class chain instead of `find_class_fast` + `is_a`.
+/// This is the section 22.13 workaround: `is_a` against a cached
+/// UClass returns 0 for reinstanced Blueprint classes; the name
+/// chain always matches live instances.
+pub fn walk_class_chain(args: &Json) -> Result<Json, String> {
+    let needle = arg_str(args, "needle")?.to_string();
+    let max = arg_u64(args, "max", Some(256))? as usize;
+
+    let rt = ue::try_runtime().ok_or("ueforge: ue runtime not initialized")?;
+    // SAFETY: rt was returned by try_runtime(); the image_base +
+    // offsets pair is what runtime init validated.
+    let view = unsafe { ue::GObjectsView::from_image(rt.image_base, rt.platform_offsets) };
+    if !view.is_valid() {
+        return Err("gobjects view invalid".to_string());
+    }
+
+    let mut hits = Vec::with_capacity(max);
+    let mut total = 0usize;
+    for obj in view.iter() {
+        if obj.is_default_object() {
+            continue;
+        }
+        if !crate::ue::actor::class_chain_contains(obj, &needle) {
+            continue;
+        }
+        total += 1;
+        if hits.len() >= max {
+            continue;
+        }
+        let addr = obj as *const UObject as usize;
+        hits.push(serde_json::json!({
+            "addr": format!("0x{addr:X}"),
+            "addr_selector": format!("addr:0x{addr:X}"),
+            "name": obj.name(),
+            "full_name": obj.full_name(),
+            "is_cdo": false,
+        }));
+    }
+    Ok(serde_json::json!({
+        "needle": needle,
+        "total": total,
+        "returned": hits.len(),
+        "instances": hits,
+    }))
+}
+
 pub fn walk_class(args: &Json) -> Result<Json, String> {
     let class_name = arg_str(args, "class")?.to_string();
     let max = arg_u64(args, "max", Some(256))? as usize;

@@ -467,6 +467,24 @@ pub fn walk_class_instances_with_cdo<S: DeserializeOwned>(
     walk_class_inner(api, class, max, true)
 }
 
+/// Walk live objects whose class chain contains `needle`.
+/// Survives Blueprint reinstancing, unlike `walk_class_instances`
+/// (misery research.md 22.13).
+pub fn walk_class_chain_instances<S: DeserializeOwned>(
+    api: &Api<S>,
+    needle: &str,
+    max: usize,
+) -> Vec<ClassInstance> {
+    let r = api.op("walk_class_chain", json!({"needle": needle, "max": max}));
+    if !r.ok {
+        return Vec::new();
+    }
+    let Some(arr) = r.result.get("instances").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    arr.iter().filter_map(parse_class_instance).collect()
+}
+
 pub fn find_class_cdo<S: DeserializeOwned>(
     api: &Api<S>,
     class: &str,
