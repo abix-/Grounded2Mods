@@ -953,97 +953,10 @@ Newly open, and worth checking before shipping the freeze:
 
 ## 19. How an expedition area becomes active
 
-### 19.1 The four generators are four biomes
-
-`walk_class(BP_WorldGeneration_Base_C)` returns four subclassed
-instances, one per area:
-
-| Actor | EmissionCountForRefresh | EmissionsPast |
-|---|---|---|
-| `BP_MeadowsWorldGeneration_C` | 5 | 7 (climbing with every shining) |
-| `BP_FactoryGeneration_C` | 0 | 0 |
-| `BP_BunkerWorldGeneration_C` | 0 | 0 |
-| `BP_PaneliWorldGeneration_C` | 0 | 0 |
-
-Only the active one counts. `EmissionsPast` **accumulates**: it
-went 6 -> 7 across a forced shining and did not reset, so it is
-a running total of shinings, not a countdown to the next
-refresh.
-
-### 19.2 What a generator is
-
-`BP_WorldGeneration_Base_C` is a grid-based level streamer:
-
-| Field | Offset |
-|---|---|
-| `GridFirstIndex_X` / `GridLastIndex_X` | 0x2A8 / 0x2AC |
-| `GridFirstIndex_Y` / `GridLastIndex_Y` | 0x2B0 / 0x2B4 |
-| `EmissionCountForRefresh` | 0x2B8 |
-| `TileSize` | 0x2C0 |
-| `Levels` (array) | 0x2C8 |
-| `LevelsRefreshed` (array) | 0x2D8 |
-| `StreamingLevels` (array) | 0x2E8 |
-| `EmissionsPast` | 0x2F8 |
-| `Random Stream` | 0x2FC |
-
-Functions: `GenerateNewRandomLevels`, `RunGenerationFromSeed`,
-`UnloadLevels`, `UnloadStreamingLevels`,
-`CheckIfAllLevelsArevisible`, `BeginCheckIfAllLevelsAreLoad`.
-
-So an area is a grid of streamed level tiles, generated from a
-seed, refreshed against the shining count.
-
-### 19.3 Selection lives on BP_GlobalManager_C
-
-Read live during an expedition:
-
-```
-CurrentGeneratedLevel  +0x2C8 = 2      (Byte)
-CustomBiomSelected     +0x2F8 = 0      (Bool)
-LoadedSave             +0x2F9 = 1
-CurrentWorldSeed       +0x2BC = 6022
-```
-
-Three functions drive it, and their locals say what they do:
-
-- **`SelectRandomBiom`** rolls `RandomIntegerInRange` three
-  times, does `GreaterEqual` comparisons and switches on an
-  integer. This is the roll that picks an area, gated on
-  `HasAuthority`.
-- **`GenerateCustomBiom`** takes `CurrentGeneratedLevel` as its
-  **parameter** (offset 0 in its frame). This is the "pick a
-  specific area" entry point.
-- **`GenerateBiom`** calls `GetActorOfClass` four times, once
-  per generator actor, then switches on an enum. This is the
-  dispatch: it finds the generator matching
-  `CurrentGeneratedLevel` and runs it.
-
-**So an area becomes active when `GenerateBiom` runs with
-`CurrentGeneratedLevel` set to that area's number.** Normally
-`SelectRandomBiom` sets that byte at random (`CustomBiomSelected`
-is 0, so this save is on the random path).
-
-### 19.4 What we do not know
-
-- The mapping from number to area. Current value is 2 while
-  Meadows is the live generator, so 2 is probably Meadows, but
-  that is one data point and the enum has not been read.
-- Whether `CustomBiomSelected` is reachable in normal play (a
-  biome-choice UI) or is unused. Nothing in the object dump
-  references it besides the manager itself.
-- Whether writing `CurrentGeneratedLevel` before generation is
-  enough, or whether `GenerateCustomBiom` must be called. The
-  control plane has no function-call op, so only the write is
-  testable today.
-
-### 19.5 The experiment to run
-
-Write `CurrentGeneratedLevel` to a different number, then start
-an expedition through `BP_ExpeditionDoor_C` and see which
-generator's counters come alive. Repeating that for 0..3 maps
-every number to its area. It changes only which world gets
-generated, and the operator keeps inventory and bunker across a
-regeneration anyway (18.7).
+Moved to [`worldgen.md`](worldgen.md), the authoritative doc
+for world generation: the four generators, grids, tile sizes,
+level pools, area selection, and the remix work. Nothing
+worldgen lives here any more.
 
 ## 20. The manager disappears after world regeneration
 
@@ -2058,23 +1971,10 @@ spawner number that doubles them. The options:
    spawners in the field, it may only affect the difficulty
    preset's damage-style knobs or nothing observable.
 
-### 25.4 Area grids measured (live, 2026-08-25)
+### 25.4 Area grids, tile sizes, level pools
 
-`research_spawners::dump_generator_grids` on the live save:
-
-| Generator | Grid | Squares | Level pool | EmissionsPast |
-|---|---|---|---|---|
-| BP_FactoryGeneration_C | x -2..-1, y 6..7 | 4 | 9 | 42 (active) |
-| BP_BunkerWorldGeneration_C | x 0..2, y 0..2 | 9 | 9 | 0 |
-| BP_MeadowsWorldGeneration_C | x 3..5, y 3..5 | 9 | 18 | 0 |
-| BP_PaneliWorldGeneration_C | x 3..5, y 7..9 | 9 | 9 | 0 |
-
-Factory is a 2x2 area (4 squares); the other three are 3x3
-(9 squares). The Levels array is the pool of preset squares
-the generator picks from; Meadows has twice the variety (18).
-The active area is whichever generator's EmissionsPast is
-climbing; on this save that is Factory at 42, superseding the
-earlier Meadows observation in 19.1.
+Moved to [`worldgen.md`](worldgen.md) sections 3 and 4 (the
+authoritative worldgen doc).
 
 ### 25.5 The scaling spawner (shipped 2026-08-25)
 
@@ -2105,51 +2005,6 @@ Spawns execute on the game thread (section 26.3 recipe) at
 Live proof at emissions=42: squares rolled 9/8/8/0 extras
 including a pack of 3 BP_UN_ZombieSoilder_C; log lines in the
 mod log, one roll per square.
-
-### 25.4.1 Tile sizes (live, 2026-08-25)
-
-`TileSize` (+0x2C0 on the generator) differs per area:
-
-| Area | TileSize | Grid |
-|---|---|---|
-| Factory | 16500 | 2x2 |
-| Bunker | 4800 | 3x3 |
-| Meadows | 12000 | 3x3 |
-| Paneli | 12000 | 3x3 |
-
-Squares are NOT interchangeable across all areas: a foreign
-square only fits a grid with the same tile size. **Meadows and
-Paneli match exactly (12000)**, so cross-area square mixing
-between those two has no geometry problem. Factory squares are
-bigger, Bunker squares much smaller.
-
-Same read: the active area switched on this save; Meadows now
-accumulates (EmissionsPast 43) while Factory stopped at 42.
-"Active" is whichever generator's counter climbs.
-
-### 25.4.2 World remix paths (design notes, not yet attempted)
-
-1. Cross-area square mixing: each generator's `Levels` array
-   (+0x2C8) is its preset pool as runtime data. Swapping or
-   adding entries before generation should make the next world
-   roll pick foreign squares. First target: Meadows <-> Paneli
-   (matching tile size). Unknowns: the Levels element format,
-   whether GenerateBiom reads the pool live or a copy, and
-   whether roads/edges connect across areas (cosmetic risk).
-2. New combinations: grid bounds (+0x2A8..0x2B4) are plain
-   ints; extending them or duplicating pool entries produces
-   worlds the author never generated from his own parts.
-3. New content on existing squares: the game-thread spawn
-   machinery (26.3) can spawn ANY actor class, not just NPCs;
-   a decoration plan could overlay structures, containers, or
-   anomalies onto a square.
-4. A truly new level asset requires pak-level authoring; a
-   different magnitude of work.
-
-Enabler: with the call op working (26.3), `GenerateCustomBiom`
-/ `GenerateBiom` are callable on demand, so the section 19.5
-experiment (force a regeneration, map biome numbers) no longer
-waits for shinings.
 
 ### 25.6 What we do not know (spawning)
 
