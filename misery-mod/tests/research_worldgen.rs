@@ -80,6 +80,115 @@ fn dump_worldgen_state() {
     print_state(&api, "state");
 }
 
+fn write_bytes_op(api: &Api, sel: &str, offset: u64, data: &[u8]) -> bool {
+    let r = api.op(
+        "write_bytes",
+        serde_json::json!({"instance_selector": sel, "offset": offset,
+               "bytes_hex": hex::encode(data)}),
+    );
+    r.ok
+}
+
+const LEVELS_POOL: u64 = 0x2C8;
+const POOL_STRIDE: u64 = 0x28;
+const POOL_ASSET_NAME: usize = 0x10;
+
+/// Read a generator's pool as raw elements plus asset names.
+fn pool_entries(api: &Api, gen_addr: u64) -> Option<(u64, Vec<(String, Vec<u8>)>)> {
+    let hdr = client::read_tarray_header(api, gen_addr, LEVELS_POOL)?;
+    if hdr.num <= 0 || hdr.num > 64 {
+        return None;
+    }
+    let data = client::read_bytes(api, hdr.ptr, 0, (hdr.num as u64) * POOL_STRIDE);
+    if data.is_empty() {
+        return None;
+    }
+    let mut out = Vec::new();
+    for i in 0..hdr.num as usize {
+        let base = i * POOL_STRIDE as usize;
+        let elem = data[base..base + POOL_STRIDE as usize].to_vec();
+        let idx = client::from_le_u32(&elem, POOL_ASSET_NAME);
+        let num = client::from_le_u32(&elem, POOL_ASSET_NAME + 4);
+        let name = client::fname_from_parts(api, idx, num).unwrap_or_default();
+        out.push((name, elem));
+    }
+    Some((hdr.ptr, out))
+}
+
+/// Pool swap: copy a Meadows square's pool element over a
+/// Paneli slot, force a Paneli world, and verify the foreign
+/// square streams into the Paneli grid (y 7..9). The write is
+/// runtime-only and resets on save reload.
+#[test]
+#[ignore = "rebuilds the expedition world"]
+fn pool_swap_meadows_into_paneli() {
+    const DONOR: &str = "L_VehCemetry_Bridge";
+    const VICTIM: &str = "L_Town01";
+
+    let Some(api) = api_or_skip() else { return };
+    if !offsets_live(&api) {
+        println!("SKIP: offsets not live");
+        return;
+    }
+    let gens = client::walk_class_chain_instances(&api, "BP_WorldGeneration_Base_C", 8);
+    let meadows = gens.iter().find(|g| g.name.contains("Meadows")).expect("no Meadows generator");
+    let paneli = gens.iter().find(|g| g.name.contains("Paneli")).expect("no Paneli generator");
+
+    let (_, m_pool) = pool_entries(&api, meadows.addr).expect("meadows pool unreadable");
+    let donor = m_pool
+        .iter()
+        .find(|(n, _)| n == DONOR)
+        .expect("donor square not in Meadows pool");
+    let (p_ptr, p_pool) = pool_entries(&api, paneli.addr).expect("paneli pool unreadable");
+    if let Some(victim_idx) = p_pool.iter().position(|(n, _)| n == VICTIM) {
+        println!("writing {DONOR} over Paneli slot {victim_idx} ({VICTIM})");
+        let sel = format!("addr:0x{p_ptr:x}");
+        assert!(write_bytes_op(&api, &sel, victim_idx as u64 * POOL_STRIDE, &donor.1));
+        let (_, p_after) = pool_entries(&api, paneli.addr).expect("paneli pool unreadable");
+        assert_eq!(p_after[victim_idx].0, DONOR, "write did not land");
+    } else {
+        // Rerun: the swap is already in place from a previous run.
+        assert!(
+            p_pool.iter().any(|(n, _)| n == DONOR),
+            "neither victim nor donor in Paneli pool; unexpected pool state"
+        );
+        println!("swap already in place, rerolling the world");
+    }
+    let (_, p_now) = pool_entries(&api, paneli.addr).expect("paneli pool unreadable");
+    println!("paneli pool now:");
+    for (i, (n, _)) in p_now.iter().enumerate() {
+        println!("  {i:>2}. {n}");
+    }
+
+    let m = manager(&api).expect("no global manager");
+    println!("forcing Paneli world (GenerateCustomBiom(3))");
+    api.call_ufunction("BP_GlobalManager_C", "GenerateCustomBiom", &m.addr_selector, &[3u8])
+        .expect("GenerateCustomBiom failed");
+
+    // Streaming plus NPC creation takes a while.
+    std::thread::sleep(Duration::from_secs(20));
+
+    let mut squares: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for n in client::walk_class_chain_instances(&api, "BP_MasterAICharacter_C", 400) {
+        if let Some(path) = n.full_name.split(' ').nth(1) {
+            if let Some(sq) = path.split(".PersistentLevel").next() {
+                squares.insert(sq.rsplit('/').next().unwrap_or(sq).to_string());
+            }
+        }
+    }
+    println!("squares with NPCs after regen:");
+    for s in &squares {
+        println!("  {s}");
+    }
+    let hit = squares.iter().find(|s| s.contains(DONOR));
+    assert!(
+        hit.is_some(),
+        "foreign square {DONOR} not found in the generated world \
+         (it may simply not have been rolled; rerun to reroll)"
+    );
+    println!("FOREIGN SQUARE PLACED: {}", hit.unwrap());
+}
+
 /// Force a world regeneration via GenerateCustomBiom on the
 /// game thread. MISERY_BIOME selects the area number (default:
 /// the manager's current value, so a plain run just regenerates

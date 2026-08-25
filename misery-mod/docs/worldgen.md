@@ -180,7 +180,33 @@ global count. The sweep itself advanced the save from 43 to 49:
 every forced regeneration costs one tick of the difficulty
 curve.
 
-## 8. Open questions
+## 8. Cross-area square mixing works (confirmed 2026-08-25)
+
+`research_worldgen::pool_swap_meadows_into_paneli`, live: the
+Meadows square `L_VehCemetry_Bridge` was copied over Paneli's
+`L_Town01` pool slot (one 0x28-byte element write), a Paneli
+world was forced, and after two rerolls the foreign square
+generated at grid cell 4,7 inside the Paneli grid with its NPCs
+streamed: `4452_4_7.L_VehCemetry_Bridge` in the census.
+
+Facts established:
+
+- **Generators read the pool live**: a runtime pool write is
+  honored by the next generation. No copy defeats it.
+- **The pool write persists across regenerations** within a
+  session; only a save reload resets it (soft object paths are
+  plain data, nothing re-fetches them).
+- Generation rolls each grid cell independently WITH
+  REPETITION from the pool (duplicate squares in one world are
+  normal), so any single entry misses a 9-cell world roughly a
+  third of the time; reroll until placed.
+- The mixed world generates and streams without errors with
+  matching tile sizes (both 12000).
+
+This is the whole mechanism for the mixed-pool area row: fill
+a pool with entries from any same-size areas and generate.
+
+## 9. Open questions
 
 - Why GenerateCustomBiom(1) does nothing when Factory
   generates fine under normal shinings: broken custom path,
