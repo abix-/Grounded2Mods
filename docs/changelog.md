@@ -34,6 +34,12 @@ Newest first.
 | `misery` | [x] Fix vendor hooks never firing: find_actor matches class names exactly, so base-class finders never matched subclass vendor actors | misery_mod.log shows the vendors hook applying after load; previously zero vendor lines ever logged. |
 | `misery` | [x] Fix research test client: server state field is now a bool, not a Snapshot struct | research_vendors tests run against the live control plane again. |
 | `ueforge` | [x] Add find_actors_by_chain: inheritance-aware actor search matching a class anywhere in the class chain | misery vendor pass finds all 7 vendors via BP_MasterVendorBuildPart_C. |
+| `misery` | [x] Game-thread dispatch: pe_queue DrainSite drained from a ProcessEventHook on the player character class | research_dispatch::game_thread_ping passes live: 205k trampoline fires, zero panics, a worker-thread job executed on the game thread. |
+| `misery` | [x] Drain site class identified: BP_SGKMasterCharacter_C, installed from the live instance's vtable with retry-backoff | research.md 26.2; fires only while a save is loaded, so main-menu dispatch would need a separate pre-menu site. |
+| `misery` | [x] Fix PROCESS_EVENT_IDX: 0x4C was wrong for this game, true index 0x4D measured from the GameInstance vtable | research.md 26.1; explains hooks that never fired and call_ufunction returning Ok with no effect. |
+| `misery` | [x] NPC spawning research: enemies are placed in the world preset tiles, not spawned; one BP_DwarfSpawn_C point in the hub | research.md sections 25.0 to 25.4, live census via research_spawners tests. |
+| `misery` | [x] Live writes to the hub spawn point (count 1 to 5, class to BP_Swamper_C) verified by read-back | set_spawn_point_more / set_spawn_point_entity; whether the game re-reads them is open. |
+| `ueforge` | [x] Add walk_class_chain op and ProcessEventHook::install_for_object (survive Blueprint reinstancing) | Chain walk finds actors walk_class misses; hook patches the live instance's vtable. |
 
 ## 2026-08-20
 

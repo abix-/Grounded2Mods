@@ -8,6 +8,7 @@
 //! control plane. Everything else is `use ueforge::*`.
 
 pub mod debug;
+pub mod dispatch;
 pub mod gameplay;
 pub mod shining;
 pub mod speed;
@@ -32,9 +33,14 @@ static STACK_TWEAK: FieldTweak<i32> = FieldTweak::new("ItemList", 0x44);
 //   append_string: 0x010D_C5E0
 //   g_names:       0x079C_2180
 //
-// process_event_idx 0x4C is the vtable slot for
-// UObject::ProcessEvent, stable across UE 5.x.
-const PROCESS_EVENT_IDX: usize = 0x4C;
+// process_event_idx 0x4D is the vtable slot for
+// UObject::ProcessEvent in THIS game. Measured live 2026-08-25
+// by scanning the GameInstance vtable for the ProcessEvent
+// address UE4SS logs (research_dispatch::vtable_compare). The
+// previous 0x4C ("stable across UE 5.x") was wrong here: hooks
+// installed cleanly but never fired, and call_ufunction invoked
+// the wrong virtual, returning Ok with no visible effect.
+const PROCESS_EVENT_IDX: usize = 0x4D;
 const G_OBJECTS_LAYOUT: GObjectsLayout = GObjectsLayout::WrappedChunked;
 
 /// Control plane port. Distinct from the other mods in this
@@ -76,6 +82,7 @@ fn on_unreal_init() {
     debug::spawn(DEBUG_PORT);
 
     ueforge::features()
+        .once("pe_dispatch", dispatch::install)
         .once("stack_10x", || {
             STACK_TWEAK.apply_when_ready(
                 Duration::from_secs(30),

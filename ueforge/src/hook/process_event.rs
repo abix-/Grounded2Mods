@@ -165,13 +165,41 @@ impl ProcessEventHook {
     {
         let cls: &UClass = find_class_fast(class_name).ok_or("class not found")?;
         let cdo = cls.class_default_object().ok_or("class has no CDO")?;
+        Self::install_from(class_name, cdo, handler)
+    }
 
-        // SAFETY: cdo is the class default object returned by
-        // `class_default_object()` (a live UObject). Reading its
-        // first 8 bytes as a vtable pointer matches every C++ UE
-        // class layout on x86-64; offsets::uobject::VTABLE is 0.
+    /// Install using the vtable of a specific live object instead
+    /// of the class's CDO. Needed when `find_class_fast` resolves
+    /// a stale reinstanced Blueprint class whose CDO vtable no
+    /// live instance shares (misery research.md 22.13): patching
+    /// the stale vtable installs cleanly but never fires. Reading
+    /// the vtable from a live instance patches the table the
+    /// engine actually dispatches through.
+    pub fn install_for_object<F>(
+        class_name: &'static str,
+        obj: &UObject,
+        handler: F,
+    ) -> Result<Self, &'static str>
+    where
+        F: Fn(&UObject, &UFunction, *mut c_void, OriginalProcessEvent) + Send + Sync + 'static,
+    {
+        Self::install_from(class_name, obj, handler)
+    }
+
+    fn install_from<F>(
+        class_name: &'static str,
+        vtable_source: &UObject,
+        handler: F,
+    ) -> Result<Self, &'static str>
+    where
+        F: Fn(&UObject, &UFunction, *mut c_void, OriginalProcessEvent) + Send + Sync + 'static,
+    {
+        // SAFETY: vtable_source is a live UObject (a CDO or a live
+        // instance). Reading its first 8 bytes as a vtable pointer
+        // matches every C++ UE class layout on x86-64;
+        // offsets::uobject::VTABLE is 0.
         let vtable: *mut *mut c_void = unsafe {
-            (cdo as *const UObject as *const u8)
+            (vtable_source as *const UObject as *const u8)
                 .add(ue::offsets::uobject::VTABLE)
                 .cast::<*mut *mut c_void>()
                 .read_unaligned()

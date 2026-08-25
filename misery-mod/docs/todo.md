@@ -2,9 +2,7 @@
 
 | Priority | System | Todo | Done when |
 |---:|---|---|---|
-| 1 | `lib.rs` | [ ] Find a UE class that fires ProcessEvent before main menu to use as drain site | Drain site class identified and documented. |
-| 1 | `lib.rs` | [ ] Set up pe_queue DrainSite + ProcessEventHook for game-thread dispatch | ProcessEvent calls from Rust execute on the game thread via the drain site. |
-| 2 | `spawning` | [ ] NPC spawn multiplier: on each map square load, spawn extra copies of its placed hostile NPCs via game-thread spawn calls | With multiplier 2, a square that ships 3 bandits shows 6, verified live. Single knob constant. |
+| 1 | `spawning` | [ ] NPC spawn multiplier: on each map square load, spawn extra copies of its placed hostile NPCs via game-thread spawn calls | With multiplier 2, a square that ships 3 bandits shows 6, verified live. Single knob constant. |
 | 2 | `spawning` | [ ] Record whether the hub spawn point re-reads count/class after the set_spawn_point writes | Observation from the tamed dwarf spot documented in research.md 25.4. |
 | 3 | `vendors` | [ ] Build vendor list config and auto-apply on game load with UI tab | Vendor sell/buy list modifications apply automatically from config on each load. Item list editable from ImGui tab, including SELL_PRICE_PCT and SEWING_KIT_COST. |
 | 5 | `lib.rs` | [ ] Suppress nag screen (WD_PlaytestNote01_C) via game-thread ProcessEvent | Nag screen dismissed automatically on load without manual input. |

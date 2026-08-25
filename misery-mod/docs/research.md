@@ -2058,7 +2058,7 @@ spawner number that doubles them. The options:
    spawners in the field, it may only affect the difficulty
    preset's damage-style knobs or nothing observable.
 
-### 25.4 What we do not know
+### 25.4 What we do not know (spawning)
 
 - Whether BP_DwarfSpawn_C re-reads Spawn AI / count after its
   initial spawn (the 25.1 writes await in-game observation).
@@ -2068,3 +2068,45 @@ spawner number that doubles them. The options:
   none).
 - How the tile pool per grid cell is chosen and how large it
   is (drives how much variety a world refresh can produce).
+
+## 26. Game-thread dispatch (solved 2026-08-25)
+
+### 26.1 ProcessEvent vtable index is 0x4D in this game
+
+The mod shipped with `PROCESS_EVENT_IDX = 0x4C` ("stable across
+UE 5.x"). In MISERY the true index is **0x4D**, measured live:
+UE4SS logs the resolved ProcessEvent address at startup
+(`UE4SS.log: "ProcessEvent address 0x..."`); scanning the
+GameInstance object's vtable for that address finds it at slot
+0x4D (`research_dispatch::vtable_compare`). Actor vtables hold
+AActor's ProcessEvent override at the same index, so the base
+address is only findable in a plain UObject's vtable.
+
+Consequences of the wrong 0x4C, now explained:
+- ProcessEventHook installed cleanly but never fired (patched a
+  virtual the engine never calls on that class).
+- `call_ufunction` invoked the wrong virtual: "returns Ok but
+  has no visible effect" (the old nag screen mystery, section
+  on failed attempts in the todo history).
+
+### 26.2 The drain site
+
+`src/dispatch.rs`: a `ueforge::pe_queue::DrainSite` drained from
+a ProcessEventHook on `BP_SGKMasterCharacter_C`, installed with
+retry-backoff from the LIVE player instance's vtable
+(`ProcessEventHook::install_for_object`, added to ueforge; the
+find_class_fast CDO route can resolve a stale class, 22.13).
+The player class receives ProcessEvent every frame in play:
+205k fires in minutes, zero panics.
+
+Proof (`research_dispatch::game_thread_ping`, live 2026-08-25):
+a job enqueued from the HTTP worker thread executed on the game
+thread; drained_cmds 0 -> 1.
+
+Ops: `pe_ping` (run a no-op job on the game thread), `pe_stats`
+(fires, drain counters, panic count).
+
+Limitation: the drain site only fires while a save is loaded
+(the player class has no instances at the main menu), so
+main-menu-time dispatch (the nag screen) still needs a
+pre-menu drain site if ever pursued.
