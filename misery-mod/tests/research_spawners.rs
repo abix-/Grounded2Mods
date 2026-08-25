@@ -158,9 +158,14 @@ fn dump_generator_grids() {
         }
         let (x0, x1) = (client::from_le_i32(&b, 0), client::from_le_i32(&b, 4));
         let (y0, y1) = (client::from_le_i32(&b, 8), client::from_le_i32(&b, 12));
+        let tile_size = {
+            let t = client::read_bytes(&api, g.addr, 0x2C0, 8);
+            if t.len() == 8 { client::from_le_f64(&t, 0) } else { -1.0 }
+        };
         let levels = client::read_tarray_header(&api, g.addr, 0x2C8)
             .map(|h| h.num)
             .unwrap_or(-1);
+        println!("  tile_size={tile_size}");
         let emissions = client::read_bytes(&api, g.addr, 0x2F8, 4);
         let em = if emissions.len() == 4 { client::from_le_i32(&emissions, 0) } else { -1 };
         println!(

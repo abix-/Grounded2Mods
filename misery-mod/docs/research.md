@@ -2106,6 +2106,51 @@ Live proof at emissions=42: squares rolled 9/8/8/0 extras
 including a pack of 3 BP_UN_ZombieSoilder_C; log lines in the
 mod log, one roll per square.
 
+### 25.4.1 Tile sizes (live, 2026-08-25)
+
+`TileSize` (+0x2C0 on the generator) differs per area:
+
+| Area | TileSize | Grid |
+|---|---|---|
+| Factory | 16500 | 2x2 |
+| Bunker | 4800 | 3x3 |
+| Meadows | 12000 | 3x3 |
+| Paneli | 12000 | 3x3 |
+
+Squares are NOT interchangeable across all areas: a foreign
+square only fits a grid with the same tile size. **Meadows and
+Paneli match exactly (12000)**, so cross-area square mixing
+between those two has no geometry problem. Factory squares are
+bigger, Bunker squares much smaller.
+
+Same read: the active area switched on this save; Meadows now
+accumulates (EmissionsPast 43) while Factory stopped at 42.
+"Active" is whichever generator's counter climbs.
+
+### 25.4.2 World remix paths (design notes, not yet attempted)
+
+1. Cross-area square mixing: each generator's `Levels` array
+   (+0x2C8) is its preset pool as runtime data. Swapping or
+   adding entries before generation should make the next world
+   roll pick foreign squares. First target: Meadows <-> Paneli
+   (matching tile size). Unknowns: the Levels element format,
+   whether GenerateBiom reads the pool live or a copy, and
+   whether roads/edges connect across areas (cosmetic risk).
+2. New combinations: grid bounds (+0x2A8..0x2B4) are plain
+   ints; extending them or duplicating pool entries produces
+   worlds the author never generated from his own parts.
+3. New content on existing squares: the game-thread spawn
+   machinery (26.3) can spawn ANY actor class, not just NPCs;
+   a decoration plan could overlay structures, containers, or
+   anomalies onto a square.
+4. A truly new level asset requires pak-level authoring; a
+   different magnitude of work.
+
+Enabler: with the call op working (26.3), `GenerateCustomBiom`
+/ `GenerateBiom` are callable on demand, so the section 19.5
+experiment (force a regeneration, map biome numbers) no longer
+waits for shinings.
+
 ### 25.6 What we do not know (spawning)
 
 - Whether BP_DwarfSpawn_C re-reads Spawn AI / count after its
