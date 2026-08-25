@@ -1942,7 +1942,114 @@ instead of the Rust standard allocator.
   vendors have prices=1). Need to decode those 4 price
   elements to understand if the cost is multi-resource
   (e.g. rubles + gun parts + scrap).
-- How to allocate a new price array for custom pricing on
-  added entries (currently reuses the template's price).
+- ~~How to allocate a new price array for custom pricing on
+  added entries~~ Solved 2026-08-25: `vendors.rs` allocates a
+  private single-element price array per added entry (Rust
+  allocator, leaked on purpose) and writes the quantity at
+  +0x10. Live-verified via the dump test.
 - Which GMalloc vtable slot is Malloc (slots 1 through 4
   are identical, slot 5 or later may be the real one).
+
+## 25. NPC spawning
+
+Found in the UE4SS object dump, 2026-08-25. Not yet verified
+against live instances.
+
+### 25.1 BP_AISpawningVolume_C
+
+`/Game/SmartAI/Blueprints/AI/BP_AISpawningVolume`. The NPC
+spawner: an invisible box placed in the level tiles (~310
+references in the dump). Each box carries a fixed list of what
+to spawn, which is why a location always produces the same
+NPCs in the same numbers.
+
+Properties on the actor:
+
+| Offset | Type | Name |
+|--------|------|------|
+| 0x298 | Object | Proximity Deactivation Sphere |
+| 0x2A0 | Object | Proximity Activation Sphere |
+| 0x2B8 | Object | AI Spawn Volume (the box component) |
+| 0x2C0 | Struct | AI Spawn Element (S_AISpawner) |
+| 0x2D0 | Bool | Enable Spawn AI |
+| 0x2D8 | Array | Spawning AI (TArray of S_AISpawner, the authored list) |
+| 0x2E8 | Double | Spawn Time |
+| 0x2F0 | Double | Spawn Time Deviation |
+| 0x2F8 | Double | Overlap Size Check |
+| 0x300 | Bool | Random Rotations |
+| 0x308 | Array | Floors |
+| 0x318 | Int | Spawn Retries |
+| 0x320 | Array | Spawned AI (live spawned pawns) |
+| 0x330 | Bool | Respawn AI |
+| 0x338 | Double | Respawn Time |
+| 0x340 | Double | Respawn Time Variation |
+| 0x348 | Array | AI Respawning Timers (S_AIRespawn) |
+| 0x358 | Bool | Use Player Proximity Activation |
+| 0x360 | Double | Player Activation Range |
+| 0x36A | Bool | Player In Area |
+| 0x36C | Int | AI Total |
+| 0x370 | Array | Remaining Spawning AI (work list drained while spawning) |
+| 0x380 | Int | Spawn Index |
+| 0x384 | Bool | Use Player Proximity Deactivation |
+| 0x388 | Double | Player Deactivation Range |
+| 0x390 | Bool | Override Starting Behaviour |
+| 0x391 | Byte | Override Behaviour |
+| 0x398 | Array | Way Points |
+| 0x3C8 | Name | StreamLevelPackageName (the level tile the box belongs to) |
+| 0x3D0 | Object | AIBase |
+| 0x3D8 | Bool | Debug |
+
+Functions: `Find Spawn Location` (random point in the box,
+sphere trace to ground), `Spawn Location Trace` (calls
+`SpawnAIFromClass`), `PlayerInAreaCheck`, `Respawn Timer`,
+`Add AI Respawn Timer`, `AI Respawn Timer Finished`,
+`RespawnAI`, `Reset AI`.
+
+### 25.2 S_AISpawner (one entry of the authored list)
+
+`/Game/SmartAI/Blueprints/Structs/S_AISpawner`:
+
+| Offset | Type | Name |
+|--------|------|------|
+| 0x00 | Class | AICharacter (which NPC class) |
+| 0x08 | Int | SpawnCount (how many) |
+
+### 25.3 How spawning works (from the dump, unverified live)
+
+1. Boxes are authored into the streamed level tiles. Which
+   boxes exist near you changes only when the world
+   regenerates and swaps tiles (section 19); the emission
+   count itself never alters a box's list.
+2. When the player enters the activation range, the box
+   spawns each list entry after Spawn Time plus deviation:
+   random point inside the box, trace down to ground, retry
+   up to Spawn Retries, then spawn the NPC class.
+3. Spawned pawns are tracked in Spawned AI. Killed NPCs come
+   back only if Respawn AI is set, after Respawn Time plus
+   variation.
+4. NPCs at a location are therefore created seconds before
+   the player arrives, in fixed numbers, from a fixed list.
+
+### 25.4 Doubling NPC counts (not yet attempted)
+
+Two candidate paths:
+
+1. Walk all live BP_AISpawningVolume_C actors and double the
+   SpawnCount int in every Spawning AI entry before the box
+   activates. Needs research: whether the box reads the array
+   at activation time (not a cached copy), and re-application
+   as tiles stream in and out.
+2. Cheap experiment first: set EnemySpawnRate
+   (S_GameplaySettings +0x68, already writable from the
+   Gameplay tab) to 2.0 and observe whether counts change.
+   What that setting actually scales is unknown.
+
+### 25.5 What we do not know
+
+- Per-box values (activation ranges, Respawn AI on or off,
+  actual list contents). Only the class layout has been read.
+- What deactivation does to already-spawned NPCs (despawn or
+  idle).
+- What consumes EnemySpawnRate.
+- Whether BP_DwarfSpawn_C / BP_BomberSpawn_C are separate
+  point-spawners for specific enemies or unrelated.
