@@ -129,12 +129,41 @@ for shinings.
 4. A truly new level asset requires pak-level authoring; a
    different magnitude of work.
 
-## 7. Open questions
+## 7. Forced regeneration works (confirmed 2026-08-25)
 
-- The `CurrentGeneratedLevel` number-to-area mapping (run the
-  forced-regeneration experiment).
+`research_worldgen::force_regenerate`, live:
+`BP_GlobalManager_C:GenerateCustomBiom` (one byte parm, the
+area number) called through the game-thread call op rebuilt the
+expedition world on demand. Evidence: the scaling spawner saw
+brand-new squares stream in under a new grid id (4444_ from
+4442_) with a different layout, seconds after the call. The
+global manager survived. No shining required.
+
+Findings from the first run (area 2 -> 2, Meadows):
+
+- **A forced regeneration increments EmissionsPast** (43 -> 44):
+  it counts as a shining for the difficulty curve. Experiment
+  sweeps climb the emission level one per run.
+- `CurrentWorldSeed` (+0x2BC) did NOT change while the layout
+  did, and the new world contained presets absent from the
+  dumped `Levels` pool (L_Swamp01, L_SwampVillage01). The seed
+  field is not the whole story; suspicion: `LevelsRefreshed`
+  takes over after the refresh threshold.
+- `current_level=2` while Meadows streams and accumulates:
+  **2 = Meadows** (second data point).
+- `research_worldgen::dump_worldgen_state` is the read-only
+  snapshot: manager byte + seed, per-generator streaming level
+  count and EmissionsPast.
+
+## 8. Open questions
+
+- The full number-to-area mapping: 2 = Meadows confirmed;
+  0, 1, 3 need the sweep (each run ticks EmissionsPast).
 - Whether GenerateBiom reads the pool live or copies it.
 - Whether cross-area squares connect roads/edges sanely.
-- How `LevelsRefreshed` differs from `Levels` (the refreshed
-  subset after a world refresh?).
-- Biome number to area mapping for the debug tab (old todo).
+- How `LevelsRefreshed` relates to `Levels`: post-refresh
+  worlds roll presets absent from `Levels` (L_Swamp01), so
+  the effective pool is bigger or swapped after refreshes.
+- Why some freshly rolled squares report "spawned 0 extra
+  NPCs" despite a non-zero plan (intermittent SpawnAIFromClass
+  failure; also seen once on the Factory world).
