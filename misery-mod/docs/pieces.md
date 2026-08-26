@@ -1,0 +1,185 @@
+# MISERY building pieces
+
+> **Authoritative on:** every piece the game can build with, what
+> it measures, and where its position marker sits. `worldgen.md`
+> covers how areas and squares are generated and how pieces get
+> assembled into rooms; this file is the parts list.
+
+Two sources, because neither alone is complete:
+
+- **The object dump** (`UE4SS_ObjectDump.txt`) lists every asset
+  loaded when it was written, organised by folder. The game files
+  the building pieces under
+  `/Game/Meshes/Blockout/Meshes/Architecture/` and
+  `/Game/Meshes/Structures/Constructor/`, so the folder listing
+  is the complete parts list.
+- **A live probe** (`mesh_info` op, `research_inventory` test)
+  measures what is loaded RIGHT NOW. Sizes and markers below come
+  from there.
+
+**Caution: what is loaded changes with the area.** A live probe
+in one world reported 887 meshes with 5 wall sizes; another world
+had 12. Never conclude a piece does not exist because a probe did
+not see it; check this list.
+
+All measurements are full sizes in centimetres, `width x depth x
+height`. "Marker" is where the piece's position handle sits
+relative to the middle of its geometry, which is what placement
+maths needs.
+
+## Walls
+
+Named `<width>x<height>` in centimetres, and those numbers are
+the real size. The marker sits at the bottom of the starting
+edge, so a wall is placed at the corner it starts from, not at
+its middle. All are 20 cm thick.
+
+| Piece | Size | Marker |
+|---|---|---|
+| `SM_Wall_100x100` | 100 x 20 x 100 | 50, 0, 50 |
+| `SM_Wall_100x300` | 100 x 20 x 300 | 50, 0, 150 |
+| `SM_Wall_100x400` | 100 x 20 x 400 | 50, 0, 200 |
+| `SM_Wall_200x100` | 200 x 20 x 100 | 100, 0, 50 |
+| `SM_Wall_200x300` | 200 x 20 x 300 | 100, 0, 150 |
+| `SM_Wall_200x400` | 200 x 20 x 400 | 100, 0, 200 |
+| `SM_Wall_400x100` | 400 x 20 x 100 | 200, 0, 50 |
+| `SM_Wall_400x300` | 400 x 20 x 300 | 200, 0, 150 |
+| `SM_Wall_400x401` | 400 x 20 x 400 | 200, 0, 200 |
+
+`SM_Wall_400x401` is the 4 x 4 m wall; there is no `400x400`.
+
+Ruined variants: `SM_Wall_400x400Broken`,
+`SM_Wall_400x400BrokenCrouch` (crouch-height gap).
+
+Older, thinner walls that do NOT follow the naming rule and are
+pivoted at their middle: `SM_Wall_01` (330 x 1 x 330),
+`SM_Wall_01Half` (170 x 1 x 330), `SM_Wall_DF` (330 x 16 x 330),
+`SM_Chunck`.
+
+## Walls with a door
+
+| Piece | Size | Marker |
+|---|---|---|
+| `SM_WallDoor_200x300` | 200 x 20 x 300 | 100, 0, 150 |
+| `SM_WallDoor_200x400` | 200 x 20 x 400 | 100, 0, 200 |
+| `SM_WallDoor_400x300` | 400 x 20 x 300 | 200, 0, 150 |
+| `SM_WallDoorDouble_400x300` | 400 x 20 x 300 | 200, 0, 150 |
+| `SM_WallDoorDouble_400x400` | 400 x 20 x 400 | 200, 0, 200 |
+| `SM_WallDoorGarage_400x400` | 400 x 20 x 400 | 200, 0, 200 |
+
+**Avoid `SM_WallDoor_400x400`.** It measures 458 x 56 x 460 with
+its marker at 171, 18, 227: it does not follow the rule and will
+not line up. `SM_WallDoor_400x400Long` also exists, unmeasured.
+
+## Walls with a window
+
+| Piece | Size | Marker |
+|---|---|---|
+| `SM_WallWindow_200x400` | 200 x 20 x 400 | 100, 0, 200 |
+| `SM_WallWindow_400x300` | 400 x 20 x 300 | 200, 0, 150 |
+| `SM_WallWindowDouble_400x300` | 400 x 20 x 300 | 200, 0, 150 |
+| `SM_WallWindowDouble_400x400` | 400 x 20 x 400 | 200, 0, 200 |
+| `SM_WallWindowSmall_200x400` | 200 x 20 x 400 | 100, 0, 200 |
+| `SM_WallWindowSmall02_200x400` | 200 x 20 x 400 | 100, 0, 200 |
+
+## Corners
+
+Marker at the OUTER corner, geometry running back from it.
+
+| Piece | Size | Marker |
+|---|---|---|
+| `SM_WallRoundedCorner_200x300_90d` | 210 x 210 x 300 | -105, -105, 150 |
+| `SM_WallRoundedCorner_400x400_90d` | 410 x 410 x 400 | -205, -205, 200 |
+
+## Floors
+
+22 cm thick, marker at a corner with the walking surface at
+marker height, so a floor is placed at floor level.
+
+| Piece | Size | Marker |
+|---|---|---|
+| `SM_Floor_100x100` | 100 x 100 x 22 | 50, 50, -9 |
+| `SM_Floor_100x200` | 100 x 200 x 22 | 50, 100, -9 |
+| `SM_Floor_100x400` | 100 x 400 x 22 | 50, 200, -9 |
+| `SM_Floor_200x200` | 200 x 200 x 22 | 100, 100, -9 |
+| `SM_Floor_200x400` | 200 x 400 x 22 | 100, 200, -9 |
+| `SM_Floor_400x400` | 400 x 400 x 22 | 200, 200, -9 |
+| `SM_Floor_1000x1000` | 1000 x 1000 x 22 | 500, 500, -9 |
+
+## Ceilings
+
+`SM_Concrete_LongCeiling`, `SM_Concrete_BrokenLongCeiling`,
+`SM_Concrete_BrokenWideCeiling`. Not on the wall grid; sized to
+the concrete panel buildings.
+
+## Pillars and beams
+
+| Piece | Size | Marker |
+|---|---|---|
+| `SM_Pillar` | 56 x 56 x 330 | 0, 0, 165 |
+| `SM_Beam_300` | 40 x 40 x 300 | 0, 0, 150 |
+| `SM_Beam_400` | 40 x 40 x 400 | 0, 0, 200 |
+| `SM_Concrete_Post_1_C` | 11 x 11 x 107 | 0, 0, 54 |
+| `SM_MetalPost` | 17 x 15 x 102 | 0, 0, 51 |
+| `SM_Concrete_SmallLthing` | (unmeasured) | |
+
+Beams and pillars are centred in both horizontal axes with the
+marker at their base, unlike walls.
+
+## Stairs and walkways
+
+| Piece | Size | Marker |
+|---|---|---|
+| `SM_Stair_100` | 200 x 150 x 102 | 100, 75, 51 |
+| `SM_StairPlane_200` | 200 x 300 x 222 | 100, 150, 91 |
+| `SM_Ladder_01_Unit` | 52 x 10 x 50 | 0, 5, 25 |
+| `SM_Ladder01` | 90 x 400 x 18 | 0, 0, 9 |
+| `SM_FoldingLadder` | 143 x 78 x 240 | 16, 2, 120 |
+
+Also `SM_CatwalkStair_01`, `SM_CatwalkStairRail_01`,
+`SM_Catwalk_01`, `SM_Catwalk_02`, `SM_CatwalkRail_01`,
+`SM_CatwalkRail_02`, `SM_Barrels_Stairs_02`.
+
+## Frames
+
+Door and window frames that stand alone rather than filling a
+wall segment: `SM_DoorFrame` (132 x 24 x 232),
+`SM_DoorFrameDouble` (232 x 24 x 232), `SM_DoorFrameGarage`,
+`SM_FakeDoor` (132 x 12 x 232), `SM_WindowsFrame` (140 x 22 x
+164), `SM_WindowsFrameUp`, `SM_EnteranceDoorframe01`.
+
+## What the designers actually use
+
+Read from live squares (`research_vanilla_rooms`): in a town and
+road area, 108 placed pieces used only five distinct parts:
+`SM_Floor_400x400` (66), `SM_Wall_400x401` (27),
+`SM_WallRoundedCorner_200x300_90d` (8),
+`SM_WallDoorGarage_400x400` (6), `SM_Floor_1000x1000` (1).
+
+So the designers work mostly at 4 m, and much of what looks like
+building pieces is road paving. Buildings are assembled square-on
+and then turned to an arbitrary angle when placed (the dominant
+angle in that sample was 5 degrees), which is why placed pieces
+never line up with the world axes.
+
+Two caveats on that sample: it is small, and it came from a road
+square rather than a building. Village and garage squares showed
+richer use (the six-part `SM_BrikGarage_*` family, house windows,
+12 wall sizes) and are the better place to study how rooms are
+put together.
+
+## Whole buildings
+
+Separately from the pieces, the game has entire buildings as one
+mesh, which can only be placed, never assembled:
+`SM_WoodenCabit_02` (6.3 x 6.6 x 8.3 m),
+`SM_WatchTower_SM_ContainerHouse1`, `SM_House01_Var_A_Stairs`,
+and the `SM_BrikGarage_*` family (garage, closed garage, left and
+right doors, two tarps) which is a kit for one building type.
+
+## Not building pieces
+
+The name prefixes overlap with props, so filter by folder rather
+than by name where it matters: `SM_WallClock`, `SM_WallLamp`,
+`SM_WallpaperRoll1` to `7`, `SM_WallZaslavFlag` all begin with
+`SM_Wall` but are decoration.

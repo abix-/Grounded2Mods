@@ -399,7 +399,12 @@ Known rough edges, not yet judged in-game:
   at their own offsets, so sloped ground will float or sink
   members.
 
-### 9.5 The piece vocabulary: MISERY ships a modular kit
+### 9.5 The building pieces
+
+The parts list moved to [`pieces.md`](pieces.md), the
+authoritative inventory: every wall, floor, door, window, corner,
+stair and pillar with its measured size and marker position.
+What follows is only how those pieces relate to building.
 
 Measured live 2026-08-26 (`research_harvest::piece_shapes` and
 `piece_vocabulary`), plus the object dump for the full asset
@@ -414,28 +419,20 @@ The game uses BOTH approaches:
 `SM_WatchTower_SM_ContainerHouse1` likewise. These can only be
 placed, never assembled.
 
-**A modular kit on a 100/200/400 cm grid.** The parts a room
-needs all exist as separate meshes:
+**Separate pieces on a 100/200/400 cm grid.** Everything a room
+needs exists as its own mesh: walls in three widths and three
+heights, walls with a door or a window, corners, ruined walls,
+floor tiles, ceilings, stairs and pillars. Full list with
+measurements in [`pieces.md`](pieces.md).
 
-| Part | Examples |
-|---|---|
-| Wall | `SM_Wall_100x100`, `_200x300`, `_400x300`, `_400x401` |
-| Door wall | `SM_WallDoor_200x300`, `_400x400`, `SM_WallDoorDouble_400x400`, `SM_WallDoorGarage_400x400` |
-| Window wall | `SM_WallWindow_200x400`, `_400x300`, `SM_WallWindowDouble_400x400`, `SM_WallWindowSmall_200x400` |
-| Corner | `SM_WallRoundedCorner_400x400_90d` |
-| Ruined wall | `SM_Wall_400x400Broken`, `SM_Wall_400x400BrokenCrouch` |
-| Floor | `SM_Floor_100x100`, `_200x400`, `_400x400`, `_1000x1000` |
-| Ceiling | `SM_Concrete_LongCeiling`, `SM_Concrete_BrokenLongCeiling` |
-| Stair | `SM_Stair_100`, `SM_StairPlane_200`, `SM_CatwalkStair_01` |
-| Pillar | `SM_Pillar` |
+The names carry the dimensions (`400x300` is 4 m wide, 3 m
+tall), so the grid is explicit and pieces line up when placed
+next to each other.
 
-Names carry the dimensions (`400x300` is 4 m wide, 3 m tall),
-so the grid is explicit and pieces are guaranteed to line up.
-
-Kits also exist per building type: the garage ships as
-`SM_BrikGarage_Garage`, `_GarageClosed`, `_DoorL`, `_DoorR`,
-`_tarp1`, `_tarp2` (65 + 51 + 23 + 9 + 9 + 9 instances across
-three squares). A shared name prefix marks a family.
+Some building types ship as their own set of parts: the garage
+is `SM_BrikGarage_Garage`, `_GarageClosed`, `_DoorL`, `_DoorR`,
+`_tarp1`, `_tarp2` (160 instances across three squares). A
+shared name prefix marks such a family.
 
 **What this means.** Rooms are constructible, not merely
 copyable. A room is a floor of tiles, a perimeter of walls with
@@ -443,14 +440,15 @@ one segment swapped for a door and some for windows, corners at
 the turns, a ceiling, and stairs between storeys. modforge
 already models exactly that as `RoomSpec` (origin, interior
 size, wall thickness, openings), which topside builds from
-primitives; misery would build the same RoomSpec from kit
+primitives; misery builds the same RoomSpec from the game's
 meshes. The generic room logic stays in modforge, and the
 binder maps "4 m wall segment with a door" to
-`SM_WallDoor_400x400`.
+`SM_WallDoor_400x300`.
 
-Risk to check when building: kit meshes resolve by name out of
-loaded objects, so a square that uses none of them may not have
-them in memory.
+Risk when building: pieces resolve by name out of loaded
+objects, and what is loaded varies by area. One live probe saw
+5 wall sizes where another saw 12, so a piece missing from a
+probe is not a piece the game lacks.
 
 ### 9.6 Rooms are built, not copied (confirmed 2026-08-26)
 

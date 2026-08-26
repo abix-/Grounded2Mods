@@ -156,6 +156,98 @@ fn vanilla_grid_alignment() {
     }
 }
 
+/// Are pieces on a grid in the BUILDING's own space rather than
+/// the world's? World alignment reads 0% because buildings are
+/// placed at arbitrary rotations; de-rotating by the building's
+/// dominant yaw should reveal the grid the designers built on.
+#[test]
+fn vanilla_local_grid() {
+    let Some(api) = api_or_skip() else { return };
+    if !offsets_live(&api) {
+        println!("SKIP: offsets not live");
+        return;
+    }
+    // Positions are relative to each square's own centre, so
+    // pooling squares mixes coordinate frames. Analyse the
+    // richest single square instead.
+    let mut best: Vec<KitPiece> = Vec::new();
+    let mut best_name = String::new();
+    for square in live_squares(&api) {
+        let pieces = kit_pieces(&api, &square);
+        if pieces.len() > best.len() {
+            best = pieces;
+            best_name = square;
+        }
+    }
+    let pieces = best;
+    if pieces.len() < 8 {
+        println!("SKIP: no square has enough kit pieces to read a grid");
+        return;
+    }
+    println!("reading {} ({} kit pieces)", best_name, pieces.len());
+
+    // The dominant yaw is the building's own facing.
+    let mut yaw_counts: BTreeMap<i64, usize> = BTreeMap::new();
+    for p in &pieces {
+        *yaw_counts.entry(p.yaw.rem_euclid(360.0).round() as i64).or_default() += 1;
+    }
+    let (dominant, n) = yaw_counts
+        .iter()
+        .max_by_key(|(_, n)| **n)
+        .map(|(y, n)| (*y as f64, *n))
+        .unwrap_or((0.0, 0));
+    println!("dominant yaw {dominant} deg ({n}/{} pieces)", pieces.len());
+
+    // De-rotate every piece about the group's own centre.
+    let cx = pieces.iter().map(|p| p.x).sum::<f64>() / pieces.len() as f64;
+    let cy = pieces.iter().map(|p| p.y).sum::<f64>() / pieces.len() as f64;
+    let t = -dominant.to_radians();
+    let (s, c) = t.sin_cos();
+    let local: Vec<(f64, f64)> = pieces
+        .iter()
+        .map(|p| {
+            let (dx, dy) = (p.x - cx, p.y - cy);
+            (dx * c - dy * s, dx * s + dy * c)
+        })
+        .collect();
+
+    for grid in [400.0f64, 200.0, 100.0, 50.0] {
+        let aligned = local
+            .iter()
+            .filter(|(x, y)| {
+                let rx = x.rem_euclid(grid).min(grid - x.rem_euclid(grid));
+                let ry = y.rem_euclid(grid).min(grid - y.rem_euclid(grid));
+                rx < 5.0 && ry < 5.0
+            })
+            .count();
+        println!(
+            "  local {grid:>5.0} cm grid: {aligned}/{} ({:.0}%)",
+            local.len(),
+            100.0 * aligned as f64 / local.len() as f64
+        );
+    }
+
+    // Spacing between neighbouring pieces along the local axes is
+    // the real tell: a 400 cm module shows up as 400 cm gaps.
+    let mut xs: Vec<f64> = local.iter().map(|p| p.0).collect();
+    xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let mut gaps: BTreeMap<i64, usize> = BTreeMap::new();
+    for w in xs.windows(2) {
+        let d = w[1] - w[0];
+        // Guard: a non-finite coordinate would round to i64::MAX
+        // and poison the histogram.
+        if d.is_finite() && d > 10.0 && d < 100_000.0 {
+            *gaps.entry(d.round() as i64).or_default() += 1;
+        }
+    }
+    let mut top: Vec<(&i64, &usize)> = gaps.iter().collect();
+    top.sort_by(|a, b| b.1.cmp(a.1));
+    println!("most common local x spacings:");
+    for (d, n) in top.iter().take(8) {
+        println!("  {d:>5} cm: {n} time(s)");
+    }
+}
+
 /// Group kit pieces into buildings and describe each: footprint,
 /// wall count, openings, storeys.
 #[test]
