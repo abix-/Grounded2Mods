@@ -1,7 +1,20 @@
 # misery-mod open issues
 
+## THE GOAL
+
+Extract ALL the pieces of the game onto disk. Then use those
+pieces to make new stuff, when the operator wants it.
+
+FIRST the extraction. ONLY the extraction. THEN we make stuff.
+
+Nothing generates anything until the extraction exists on disk.
+Anything already built that makes stuff without it (harvesting
+squares at runtime, scattering monuments) is off and stays off.
+
 | Priority | System | Todo | Done when |
 |---:|---|---|---|
+| 1 | `extract` | [ ] Extract ALL the pieces of the game onto disk | Every piece the game ships is in a file on disk, readable with the game closed. |
+| 2 | `extract` | [ ] Use the pieces on disk to make new stuff, on demand | New stuff is built from the file. Not from a live square, not from what a session happened to see. |
 | 1 | `misery` | [ ] Re-enable the features ONE at a time and find which one breaks the game. Baseline established 2026-08-26: with only `pe_dispatch` (offsets, discovery, control plane, game-thread queue) the game works perfectly. Everything else is commented out in `lib.rs`. Start with harvest, rooms and assets, which only register endpoints and are inert until called | The feature that breaks the game is named, with a log line proving it. |
 | 1 | `misery` | [ ] Fix the nested queue wait `each_tick` introduced: a check now runs ON the game thread and its body enqueues again, waiting for a drain that cannot start until it returns. `spawning: plan failed: timed out after 10s waiting for game-thread drain`. Inner enqueues must go through `game_thread::run`, which runs in place when already on the game thread | No timeout lines; the spawner completes its plan. |
 | 1 | `ueforge` | [ ] Stop reading the game's object list from background threads: do it on the game thread instead. Every watcher (vendors, speed, the NPC census, map squares) reads that list every few seconds, and when a level unloads the game deletes those objects while we are reading them | Quitting to the main menu does not crash. Proven by the dump: fault inside `ue::actor::find_objects_by_chain`, one second after "gone (main menu?)". |

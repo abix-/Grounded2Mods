@@ -281,7 +281,10 @@ fn watcher() {
             ));
             let centre = (cx as f64 * tile, cy as f64 * tile);
             let half = tile / 2.0 - EDGE_MARGIN;
-            let r = dispatch::DRAIN.queue().enqueue(
+            // `run`, not `enqueue`: this watcher already runs ON
+            // the game thread, and queueing from there waits for
+            // a drain that cannot start until we return.
+            let r = ueforge::game_thread::run(
                 move || place_phenomena(&plan, centre, half),
                 Duration::from_secs(15),
             );

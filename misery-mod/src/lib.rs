@@ -125,11 +125,15 @@ fn on_unreal_init() {
     // called and are the safe ones to restore first.
     ueforge::features()
         .once("pe_dispatch", dispatch::install)
-        // .once("spawning", spawning::install)
-        // .once("strange", strange::install)
+        .once("spawning", spawning::install)
+        .once("strange", strange::install)
         // .once("harvest", harvest::register_ops)
         // .once("rooms", rooms::register_ops)
         // .once("assets", assets::register_ops)
+        // OFF. Harvesting squares and building monuments from
+        // them was not asked for: it re-read squares every
+        // session, kept the library in memory only, and placed
+        // the results at random while you played.
         // .once("places", places::install)
         // .once("stack_10x", || {
         //     STACK_TWEAK.apply_when_ready(
@@ -138,7 +142,7 @@ fn on_unreal_init() {
         //         |v: i32| v <= 1,
         //     );
         // })
-        // .once("nag", nag::install)
+        .once("nag", nag::install)
         // Auto-load is OFF. It called LoadLevel on
         // BP_HostLoadGameServer, the host-a-server path, and
         // started a FRESH world every launch rather than loading
@@ -147,17 +151,17 @@ fn on_unreal_init() {
         // Turn it back on once the singleplayer load path is
         // read off the menu. See docs/todo.md.
         // .once("autoload", autoload::install)
-        // .on_each_load("speed_default", Duration::from_secs(2),
-        //     || ueforge::ue::actor::find_actor("BP_SGKMasterCharacter_C", None),
-        //     |_| {
-        //         if let Err(e) = speed::set_multiplier(2.0) {
-        //             ueforge::log::log(format_args!("speed_default: {e}"));
-        //         }
-        //     })
-        // .on_each_load("vendors", Duration::from_secs(3),
-        //     || ueforge::ue::actor::find_actors_by_chain("BP_MasterVendorBuildPart_C")
-        //         .into_iter().next(),
-        //     vendors::apply_all)
+        .on_each_load("speed_default", Duration::from_secs(2),
+            || ueforge::ue::actor::find_actor("BP_SGKMasterCharacter_C", None),
+            |_| {
+                if let Err(e) = speed::set_multiplier(2.0) {
+                    ueforge::log::log(format_args!("speed_default: {e}"));
+                }
+            })
+        .on_each_load("vendors", Duration::from_secs(3),
+            || ueforge::ue::actor::find_actors_by_chain("BP_MasterVendorBuildPart_C")
+                .into_iter().next(),
+            vendors::apply_all)
         .install();
 }
 

@@ -256,7 +256,10 @@ fn watcher() {
                 "places: monument in {name} from {} structure(s) {sources:?}",
                 members.len()
             ));
-            let r = dispatch::DRAIN.queue().enqueue(
+            // `run`, not `enqueue`: this watcher already runs ON
+            // the game thread, and queueing from there waits for
+            // a drain that cannot start until we return.
+            let r = ueforge::game_thread::run(
                 move || build_monument(members, centre),
                 Duration::from_secs(30),
             );

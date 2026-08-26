@@ -18,7 +18,6 @@ use std::time::Duration;
 
 use ueforge::ue::{self, UObject, read_at};
 
-use crate::dispatch;
 
 /// One knob for overall intensity; multiplies the budget curve.
 const INTENSITY: f64 = 1.0;
@@ -200,7 +199,11 @@ fn watcher() {
             if total == 0 {
                 continue;
             }
-            let r = dispatch::DRAIN.queue().enqueue(
+            // Not `enqueue`: this watcher already runs ON the
+            // game thread, so queueing here would wait for a
+            // drain that cannot start until we return. `run`
+            // executes in place when we are already there.
+            let r = ueforge::game_thread::run(
                 move || execute_plan(&plan),
                 Duration::from_secs(10),
             );
