@@ -2,10 +2,9 @@
 
 | Priority | System | Todo | Done when |
 |---:|---|---|---|
-| 2 | `strange` | [ ] Lift placing an actor into `ueforge::ue::spawn`: `begin_spawn` / `finish_spawn` / `spawn_actor` and the FTransform writing (GameplayStatics `BeginDeferredActorSpawnFromClass` + `FinishSpawningActor`) | harvest.rs, places.rs and rooms.rs stop reaching through `crate::strange` to place things. |
-| 2 | `strange` | [ ] Lift ground height into a ueforge trace module: `ground_z` / `ground_at` (`KismetSystemLibrary:LineTraceSingle`, 0x180 parms). Keep the note that ImpactPoint Z is at 0x90 and reading 0x88 gets Y, which silently placed everything at the wrong height | Any ueforge mod can drop something onto terrain. |
-| 2 | `strange` | [ ] Delete `strange::actor_location` and `strange::actor_yaw`: both duplicate `ueforge::ue::transform` (`world_location`, and `0x140 + 8` is `RELATIVE_ROTATION + 8`) | One implementation of reading where an actor is. |
+| 1 | `strange` | [ ] Run the game and confirm phenomena, monuments and rooms still land ON the ground: everything that places anything now goes through the lifted `ue::spawn` and `ue::trace`, and none of it has run since | A world generates with props at the right height, verified live. |
 | 3 | `dev` | [ ] Lift the two helpers now duplicated in autoload.rs and nag.rs into ueforge: find the LIVE object (not the `/Game/...` template) and call a UFunction with a parm block checked against `parms_size` | Both lessons are in one place instead of copied per module. |
+| 5 | `strange` | [ ] `live_squares` and `active_tile_size` are MISERY facts but sit in a module about phenomena; places.rs reaches into `strange` for them. Consider a home named for what they are | No module reaches into another for something unrelated to its subject. |
 | 5 | `autoload` | [ ] Decide whether auto-load should fire again after quitting to the main menu; today `SETTLED` makes it once per launch | Behaviour chosen deliberately and documented. |
 | 5 | `autoload` | [ ] Exercise the missing-save path end to end (the guard is measured, the path around it is only reasoned) | Auto-load skips cleanly with the save file moved aside. |
 | 3 | `dispatch` | [ ] Resolve `GGameThreadId` so `IsInGameThread` can be asserted directly, instead of comparing the engine tick thread against the ProcessEvent thread (which needs a save loaded first) | A test can assert "this ran on the game thread" cold, at the menu. |
