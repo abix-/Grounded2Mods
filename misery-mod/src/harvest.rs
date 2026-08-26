@@ -17,23 +17,14 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use ueforge::ue::{self, UObject, read_at};
+use ueforge::ue::{self, read_at};
 
 use crate::dispatch;
 
-const ROOT_COMPONENT_OFFSET: usize = 0x1A0;
-const RELATIVE_LOCATION_OFFSET: usize = 0x128;
-const RELATIVE_ROTATION_OFFSET: usize = 0x140;
-const RELATIVE_SCALE_OFFSET: usize = 0x158;
-/// StaticMeshActor::StaticMeshComponent, and the mesh asset on it.
-const STATIC_MESH_COMPONENT_OFFSET: usize = 0x290;
-const STATIC_MESH_OFFSET: usize = 0x560;
-/// UStaticMesh::ExtendedBounds (FBoxSphereBounds), and BoxExtent
-/// within it: the half-size of the mesh's own geometry.
-const EXTENDED_BOUNDS_OFFSET: usize = 0x1F0;
-const BOX_EXTENT_OFFSET: usize = 0x18;
-/// USceneComponent::Mobility. 0 Static, 1 Stationary, 2 Movable.
-const MOBILITY_MOVABLE: u8 = 2;
+// Actor transforms, mesh assets, and mobility are engine
+// layouts, not MISERY's, so they live in
+// `ueforge::ue::transform`.
+use ueforge::ue::transform;
 
 /// One harvested piece: which class, and where it sits relative
 /// to the square's centre.
@@ -75,52 +66,20 @@ pub struct Composition {
     pub pieces: Vec<Piece>,
 }
 
-/// World-space transform of an actor, via its root component:
-/// position, full rotation (pitch, yaw, roll), and scale.
-/// FRotator is stored pitch, yaw, roll.
+/// World-space transform of an actor, in the shape the harvest
+/// code already used: position, rotation, and a single uniform
+/// scale.
 fn actor_transform(actor: *const u8) -> Option<(f64, f64, f64, f64, f64, f64, f64)> {
-    // SAFETY: actor is a live UObject from a GObjects walk; the
-    // RootComponent slot is a UE-stable AActor field.
-    let root: *const u8 = unsafe { read_at(actor, ROOT_COMPONENT_OFFSET) };
-    if root.is_null() {
-        return None;
-    }
-    // SAFETY: root is a live USceneComponent; the three transform
-    // fields are at documented offsets.
-    unsafe {
-        let x: f64 = read_at(root, RELATIVE_LOCATION_OFFSET);
-        let y: f64 = read_at(root, RELATIVE_LOCATION_OFFSET + 8);
-        let z: f64 = read_at(root, RELATIVE_LOCATION_OFFSET + 16);
-        let pitch: f64 = read_at(root, RELATIVE_ROTATION_OFFSET);
-        let yaw: f64 = read_at(root, RELATIVE_ROTATION_OFFSET + 8);
-        let roll: f64 = read_at(root, RELATIVE_ROTATION_OFFSET + 16);
-        let sx: f64 = read_at(root, RELATIVE_SCALE_OFFSET);
-        Some((x, y, z, pitch, yaw, roll, sx))
-    }
+    // SAFETY: actor is a live UObject from a GObjects walk.
+    let t = unsafe { transform::read(actor)? };
+    Some((t.x, t.y, t.z, t.pitch, t.yaw, t.roll, t.scale_x))
 }
 
 /// The mesh asset name and its local half-extent (UE cm) on a
 /// StaticMeshActor, if it has one.
 fn actor_mesh(actor: *const u8) -> Option<(String, f64, f64, f64)> {
-    // SAFETY: actor is live; the offsets are documented engine
-    // fields (StaticMeshActor -> its component -> the asset), and
-    // ExtendedBounds is FBoxSphereBounds { Origin, BoxExtent,
-    // SphereRadius } with BoxExtent at +0x18.
-    unsafe {
-        let comp: *const u8 = read_at(actor, STATIC_MESH_COMPONENT_OFFSET);
-        if comp.is_null() {
-            return None;
-        }
-        let mesh: *const u8 = read_at(comp, STATIC_MESH_OFFSET);
-        let name = (mesh as *const UObject).as_ref()?.name();
-        let at = EXTENDED_BOUNDS_OFFSET + BOX_EXTENT_OFFSET;
-        Some((
-            name,
-            read_at::<f64>(mesh, at),
-            read_at::<f64>(mesh, at + 8),
-            read_at::<f64>(mesh, at + 16),
-        ))
-    }
+    // SAFETY: actor is a live UObject from a GObjects walk.
+    unsafe { transform::static_mesh(actor) }
 }
 
 /// Every actor owned by a level whose path contains `needle`,
@@ -418,35 +377,17 @@ fn mesh_index() -> HashMap<String, u64> {
 /// Give a freshly begun StaticMeshActor its mesh. Mobility first:
 /// a Static component rejects a mesh swap once registered.
 fn apply_mesh(actor: u64, mesh_ptr: u64) {
-    // SAFETY: actor came from begin_spawn this frame; the
-    // component slot is the documented StaticMeshActor field.
-    let comp: *const u8 = unsafe { read_at(actor as *const u8, STATIC_MESH_COMPONENT_OFFSET) };
-    if comp.is_null() {
-        return;
-    }
-    if let Some(scene) = ue::find_class_fast("SceneComponent") {
-        if let Some(set_mobility) = scene.get_function("SceneComponent", "SetMobility") {
-            let mut parms = [MOBILITY_MOVABLE];
-            // SAFETY: comp is a live USceneComponent; SetMobility
-            // takes one byte.
-            unsafe {
-                (*(comp as *const UObject))
-                    .process_event(set_mobility, parms.as_mut_ptr() as *mut std::ffi::c_void);
-            }
-        }
-    }
-    let Some(smc) = ue::find_class_fast("StaticMeshComponent") else { return };
-    let Some(set_mesh) = smc.get_function("StaticMeshComponent", "SetStaticMesh") else {
+    // SAFETY: actor came from begin_spawn this frame.
+    let Some(comp) = (unsafe { transform::static_mesh_component(actor as *const u8) }) else {
         return;
     };
-    let mut parms = [0u8; 0x10];
-    parms[0x00..0x08].copy_from_slice(&mesh_ptr.to_le_bytes());
-    // SAFETY: comp is a live UStaticMeshComponent; SetStaticMesh
-    // takes NewMesh at 0x00 with a bool return at 0x08.
-    unsafe {
-        (*(comp as *const UObject))
-            .process_event(set_mesh, parms.as_mut_ptr() as *mut std::ffi::c_void);
-    }
+    // Spawned components are Static, which silently ignores every
+    // attempt to move them.
+    // SAFETY: comp is a live USceneComponent on the game thread.
+    let _ = unsafe { transform::set_mobility(comp, transform::MOBILITY_MOVABLE) };
+    // SAFETY: comp is a live UStaticMeshComponent on the game
+    // thread; mesh_ptr is a live UStaticMesh.
+    let _ = unsafe { transform::set_static_mesh(comp, mesh_ptr) };
 }
 
 /// Loaded static meshes whose name starts with `prefix`, with
@@ -481,16 +422,15 @@ fn mesh_info(args: &serde_json::Value) -> Result<serde_json::Value, String> {
         let ptr = obj.as_ptr();
         // SAFETY: ptr is a live UStaticMesh; ExtendedBounds is
         // FBoxSphereBounds { Origin, BoxExtent, SphereRadius }.
-        let (ox, oy, oz, ex, ey, ez) = unsafe {
+        let origin = transform::offsets::EXTENDED_BOUNDS;
+        let (ox, oy, oz) = unsafe {
             (
-                read_at::<f64>(ptr, EXTENDED_BOUNDS_OFFSET),
-                read_at::<f64>(ptr, EXTENDED_BOUNDS_OFFSET + 8),
-                read_at::<f64>(ptr, EXTENDED_BOUNDS_OFFSET + 16),
-                read_at::<f64>(ptr, EXTENDED_BOUNDS_OFFSET + BOX_EXTENT_OFFSET),
-                read_at::<f64>(ptr, EXTENDED_BOUNDS_OFFSET + BOX_EXTENT_OFFSET + 8),
-                read_at::<f64>(ptr, EXTENDED_BOUNDS_OFFSET + BOX_EXTENT_OFFSET + 16),
+                read_at::<f64>(ptr, origin),
+                read_at::<f64>(ptr, origin + 8),
+                read_at::<f64>(ptr, origin + 16),
             )
         };
+        let (ex, ey, ez) = unsafe { transform::mesh_extent(ptr) };
         rows.push(serde_json::json!({
             "name": name,
             "size": [ex * 2.0, ey * 2.0, ez * 2.0],

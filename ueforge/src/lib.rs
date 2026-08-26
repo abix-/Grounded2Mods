@@ -70,6 +70,7 @@
 //! extraction candidates" in `docs/todo.md`.
 
 pub mod args;
+pub mod assets;
 pub mod build;
 pub mod client;
 pub mod counters;

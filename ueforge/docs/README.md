@@ -57,7 +57,9 @@ defined ONCE in ueforge.**
 | UE5 status-effect system | [status-effects.md](status-effects.md) | The universal "data-table-row + component + native query" pattern every UE5 RPG game uses; binding via the framework's `StatusEffectApply` Effect type |
 | UE SDK | [ue-sdk.md](ue-sdk.md) | UObject family + `ClassRef` + `TypedField<T>` + GObjects + `PlayerRef` + `ue::field` byte ops + `ue::actor` (class-chain / controller helpers) + `ue::damage_info` (`DamageInfoLayout`) + `ue::pe_call::call_ufunction` |
 | Hooks | [hooks.md](hooks.md) | `ProcessEventHook` + `HookRegistry::shutdown_all` (hot-reload safety) + `function_table!` + `install_with_backoff` + `install_immediate_or_log` + per-Entry `active_calls` drain |
-| Game-thread queue | [pe-queue.md](pe-queue.md) | `Queue`, `DrainSite`, drain-site selection rules |
+| Game-thread queue | [pe-queue.md](pe-queue.md) | `Queue`, `GameThread`, and `game_thread::serve` (drains from `UEngine::Tick`, so queued work runs at the main menu too) |
+| Actor transforms | rustdoc on `ue::transform` | Where an actor is: `RootComponent` to `USceneComponent`, read location / rotation / scale, static mesh + its half-extent, `set_mobility`, `set_static_mesh` |
+| Asset registry | rustdoc on `assets` | Every asset the game ships whether loaded or not (`assets_of_class`), and `load_asset` to pull one into memory. Sees what a GObjects walk cannot |
 | Counters & rings | [counters.md](counters.md) | `counter!`, `peak!`, `time_scope`, `EventRing<T>`, `counter_json!` |
 | RPG framework | [rpg.md](rpg.md) | `SkillDef`, `Tracker`, `Effect` trait + 8 framework Effect types, `TriggerDef`, `CreatureRegistry`, `tab::render`, `SlotKeyResolver`, `VanillaCache`, `HealthBinding` |
 | HTTP control plane | [http.md](http.md) | `server::spawn` + `SpawnHandle::stop` + `Config::auth_token` + builtin ops + selectors |
