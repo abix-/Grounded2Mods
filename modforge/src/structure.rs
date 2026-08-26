@@ -202,6 +202,32 @@ impl PieceDef {
         classify(self.extent * self.scale.abs())
     }
 
+    /// Where this piece ends up when its whole set is placed at
+    /// `origin` and turned by `turn` radians about the up axis.
+    ///
+    /// Returns the position and the piece's own facing, both
+    /// already turned. A set of pieces keeps its shape because
+    /// every offset turns by the same angle and every facing
+    /// gains it.
+    ///
+    /// Offsets are stored relative to the set's middle, which is
+    /// what lets a captured or authored set be put down anywhere.
+    /// Doing this by hand per consumer is how one caller ends up
+    /// turning the offsets but forgetting the facings, and the
+    /// walls face outward.
+    pub fn placed_at(&self, origin: Vec3, turn: f32) -> (Vec3, f32) {
+        let (s, c) = turn.sin_cos();
+        let o = self.offset;
+        (
+            Vec3::new(
+                origin.x + o.x * c - o.z * s,
+                origin.y + o.y,
+                origin.z + o.x * s + o.z * c,
+            ),
+            self.yaw + turn,
+        )
+    }
+
     /// World-space half-extent ignoring tilt: the box a piece
     /// occupies on the ground, with yaw applied.
     pub fn ground_half_size(&self) -> (f32, f32) {

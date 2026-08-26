@@ -168,6 +168,84 @@ pub unsafe fn static_mesh(actor: *const u8) -> Option<(String, f64, f64, f64)> {
     }
 }
 
+/// Every loaded static mesh, by name.
+///
+/// Built in one pass. A caller placing many pieces resolves each
+/// mesh from this map instead of searching the object list per
+/// piece.
+///
+/// Only meshes currently IN MEMORY appear. What a game ships is a
+/// larger set, and comes from the asset registry
+/// (`ueforge::assets`) rather than from here.
+pub fn loaded_meshes() -> std::collections::HashMap<String, u64> {
+    let mut out = std::collections::HashMap::new();
+    let Some(rt) = super::try_runtime() else {
+        return out;
+    };
+    // SAFETY: rt came from try_runtime; image base and offsets
+    // are what runtime init validated.
+    let view = unsafe { super::GObjectsView::from_image(rt.image_base, rt.platform_offsets) };
+    if !view.is_valid() {
+        return out;
+    }
+    for obj in view.iter() {
+        let is_mesh = obj
+            .class()
+            .map(|c| c.as_object().name() == "StaticMesh")
+            .unwrap_or(false);
+        if is_mesh {
+            out.entry(obj.name()).or_insert(obj.as_ptr() as u64);
+        }
+    }
+    out
+}
+
+/// A mesh's own geometry: where its box sits relative to its
+/// position marker, and its half-size.
+///
+/// The marker offset decides all placement maths. A wall whose
+/// marker is at its base corner is laid differently from one
+/// whose marker is in the middle, and the difference is invisible
+/// until things sit in the wrong place.
+///
+/// # Safety
+/// `mesh` must be a live `UStaticMesh`.
+pub unsafe fn mesh_bounds(mesh: *const u8) -> ((f64, f64, f64), (f64, f64, f64)) {
+    let at = offsets::EXTENDED_BOUNDS;
+    // SAFETY: caller guarantees a live UStaticMesh; ExtendedBounds
+    // is an inline FBoxSphereBounds { Origin, BoxExtent, Radius }.
+    unsafe {
+        let origin = (
+            read_at::<f64>(mesh, at),
+            read_at::<f64>(mesh, at + 8),
+            read_at::<f64>(mesh, at + 16),
+        );
+        (origin, mesh_extent(mesh))
+    }
+}
+
+/// Give a freshly begun static mesh actor its mesh.
+///
+/// Mobility first: a component spawned Static silently rejects
+/// both a mesh swap and every later attempt to move it, so the
+/// order here is not cosmetic.
+///
+/// Call between `spawn::begin_spawn` and `spawn::finish_spawn`,
+/// on the game thread.
+///
+/// # Safety
+/// `actor` must be a live actor and `mesh` a live `UStaticMesh`.
+pub unsafe fn set_actor_mesh(actor: u64, mesh: u64) {
+    // SAFETY: caller guarantees a live actor.
+    let Some(comp) = (unsafe { static_mesh_component(actor as *const u8) }) else {
+        return;
+    };
+    // SAFETY: comp is this actor's live component, game thread.
+    let _ = unsafe { set_mobility(comp, MOBILITY_MOVABLE) };
+    // SAFETY: as above; mesh is a live UStaticMesh.
+    let _ = unsafe { set_static_mesh(comp, mesh) };
+}
+
 /// The actor's static mesh COMPONENT, for callers that need to
 /// write to it.
 ///

@@ -127,7 +127,12 @@ fn on_unreal_init() {
         .once("pe_dispatch", dispatch::install)
         .once("spawning", spawning::install)
         .once("strange", strange::install)
-        .once("harvest", harvest::register_ops)
+        // OFF. Harvest reads a live square's actors and rebuilds
+        // them elsewhere: copying the designers' work, which is
+        // not on the todo and not the goal. Its endpoints are
+        // gone with it. `mesh_info` (measuring a mesh) is worth
+        // keeping and moves to a pieces module.
+        // .once("harvest", harvest::register_ops)
         // .once("rooms", rooms::register_ops)
         .once("assets", assets::register_ops)
         // OFF. Harvesting squares and building monuments from

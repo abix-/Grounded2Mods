@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use ueforge::ue::{self, read_at};
+use ueforge::ue::{self};
 
 use crate::dispatch;
 
@@ -282,7 +282,11 @@ pub fn place_composition_at(
     // Meshes are re-resolved by name so a saved composition works
     // in a later session; one map beats a GObjects walk per piece.
     let need_meshes = comp.pieces.iter().any(|p| p.mesh.is_some());
-    let meshes = if need_meshes { mesh_index() } else { HashMap::new() };
+    let meshes = if need_meshes {
+        transform::loaded_meshes()
+    } else {
+        HashMap::new()
+    };
 
     let mut placed = 0usize;
     let mut failed = 0usize;
@@ -316,7 +320,9 @@ pub fn place_composition_at(
         // refuses changes after registration).
         if let Some(name) = &piece.mesh {
             if let Some(mesh_ptr) = meshes.get(name) {
-                apply_mesh(actor, *mesh_ptr);
+                // SAFETY: actor came from begin_spawn above and
+                // mesh_ptr from this frame's mesh index.
+                unsafe { transform::set_actor_mesh(actor, *mesh_ptr) };
             }
         }
         // SAFETY: actor came from begin_spawn above.
@@ -338,41 +344,6 @@ pub fn place_composition_at(
 
 /// Name to pointer for every loaded UStaticMesh. Built once per
 /// compose so pieces resolve without a walk each.
-fn mesh_index() -> HashMap<String, u64> {
-    let mut out = HashMap::new();
-    let Some(rt) = ue::try_runtime() else { return out };
-    // SAFETY: validated image base + offsets from try_runtime.
-    let view = unsafe { ue::GObjectsView::from_image(rt.image_base, rt.platform_offsets) };
-    if !view.is_valid() {
-        return out;
-    }
-    for obj in view.iter() {
-        let is_mesh = obj
-            .class()
-            .map(|c| c.as_object().name() == "StaticMesh")
-            .unwrap_or(false);
-        if is_mesh {
-            out.entry(obj.name()).or_insert(obj.as_ptr() as u64);
-        }
-    }
-    out
-}
-
-/// Give a freshly begun StaticMeshActor its mesh. Mobility first:
-/// a Static component rejects a mesh swap once registered.
-fn apply_mesh(actor: u64, mesh_ptr: u64) {
-    // SAFETY: actor came from begin_spawn this frame.
-    let Some(comp) = (unsafe { transform::static_mesh_component(actor as *const u8) }) else {
-        return;
-    };
-    // Spawned components are Static, which silently ignores every
-    // attempt to move them.
-    // SAFETY: comp is a live USceneComponent on the game thread.
-    let _ = unsafe { transform::set_mobility(comp, transform::MOBILITY_MOVABLE) };
-    // SAFETY: comp is a live UStaticMeshComponent on the game
-    // thread; mesh_ptr is a live UStaticMesh.
-    let _ = unsafe { transform::set_static_mesh(comp, mesh_ptr) };
-}
 
 /// Loaded static meshes whose name starts with `prefix`, with
 /// the geometry's half-size and where the box sits relative to
@@ -406,15 +377,8 @@ fn mesh_info(args: &serde_json::Value) -> Result<serde_json::Value, String> {
         let ptr = obj.as_ptr();
         // SAFETY: ptr is a live UStaticMesh; ExtendedBounds is
         // FBoxSphereBounds { Origin, BoxExtent, SphereRadius }.
-        let origin = transform::offsets::EXTENDED_BOUNDS;
-        let (ox, oy, oz) = unsafe {
-            (
-                read_at::<f64>(ptr, origin),
-                read_at::<f64>(ptr, origin + 8),
-                read_at::<f64>(ptr, origin + 16),
-            )
-        };
-        let (ex, ey, ez) = unsafe { transform::mesh_extent(ptr) };
+        // SAFETY: ptr is a live UStaticMesh from the walk above.
+        let ((ox, oy, oz), (ex, ey, ez)) = unsafe { transform::mesh_bounds(ptr) };
         rows.push(serde_json::json!({
             "name": name,
             "size": [ex * 2.0, ey * 2.0, ez * 2.0],
