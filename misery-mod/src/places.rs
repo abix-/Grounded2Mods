@@ -195,48 +195,42 @@ fn watcher() {
     }
 }
 
-/// Game thread. Arrange the structures with modforge's rules,
-/// then spawn each member's pieces at its arranged offset.
+/// Game thread. Put one monument in the world.
+///
+/// Finding the ground, laying the buildings out and spawning the
+/// pieces is `ueforge::ue::pieces::place_monument`. What is
+/// MISERY's here is the session budget, this game's trace range,
+/// and the counters.
 fn build_monument(
     members: Vec<StructureDef>,
     centre: (f64, f64),
 ) -> Result<serde_json::Value, String> {
-    let Some(z) =
-        ueforge::ue::trace::ground_at(centre.0, centre.1, crate::TRACE_UP, crate::TRACE_DOWN)
-    else {
-        return Err("no ground under the monument".into());
-    };
-    // Choosing the rule, laying the buildings out, and flattening
-    // them into one piece list is modforge's (`build_at`), seeded
-    // by the spot so the same place always looks the same.
-    let built = modforge::monument::build_at(members, centre.0, centre.1);
     let remaining = SESSION_PIECE_CAP.saturating_sub(PIECES_SPAWNED.load(Ordering::Relaxed));
     if remaining == 0 {
         return Err("session piece cap reached".into());
     }
-
-    let turn = fastrand::f64() * 360.0;
-    let world = ueforge::ue::actor::any_world_actor().ok_or("no level loaded")?;
-    // SAFETY: world came from the search above; game thread.
-    let out = unsafe {
-        ueforge::ue::pieces::spawn(
-            world,
-            &built.pieces,
-            (centre.0, centre.1, z),
-            turn,
-            remaining as usize,
-        )
+    let placer = ueforge::ue::pieces::UePlacer {
+        up: crate::TRACE_UP,
+        down: crate::TRACE_DOWN,
     };
+    let out = modforge::monument::place_monument(
+        &placer,
+        members,
+        centre.0,
+        centre.1,
+        fastrand::f64() * 360.0,
+        remaining as usize,
+    )?;
     PIECES_SPAWNED.fetch_add(out.placed as u64, Ordering::Relaxed);
     MONUMENTS_BUILT.fetch_add(1, Ordering::Relaxed);
     ueforge::log::log(format_args!(
         "places: monument placed {} piece(s), {:?}",
-        out.placed, built.arrangement
+        out.placed, out.arrangement
     ));
     Ok(serde_json::json!({
         "placed": out.placed,
         "failed": out.failed,
-        "arrangement": format!("{:?}", built.arrangement),
+        "arrangement": format!("{:?}", out.arrangement),
     }))
 }
 

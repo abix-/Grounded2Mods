@@ -864,6 +864,70 @@ pub fn build_at(buildings: Vec<StructureDef>, x: f64, z: f64) -> BuiltMonument {
     }
 }
 
+/// How a batch of pieces went into the world.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Placed {
+    pub placed: usize,
+    pub failed: usize,
+}
+
+/// The two things only the host game can do: say how high the
+/// ground is, and put pieces into the world.
+///
+/// Everything else about building a monument is arithmetic and
+/// lives here. A consumer implements these two and gets the whole
+/// sequence, whatever engine it is on.
+pub trait PiecePlacer {
+    /// Ground height at a spot, or `None` if there is nothing
+    /// under it.
+    fn ground_at(&self, x: f64, y: f64) -> Option<f64>;
+
+    /// Put pieces into the world, centred on `at` and turned by
+    /// `turn_deg` about the up axis. `limit` caps how many.
+    fn spawn(&self, pieces: &[PieceDef], at: (f64, f64, f64), turn_deg: f64, limit: usize)
+    -> Placed;
+}
+
+/// A monument put into the world.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlacedMonument {
+    pub arrangement: Arrangement,
+    pub placed: usize,
+    pub failed: usize,
+    /// The ground height it was placed at.
+    pub ground: f64,
+}
+
+/// Build a monument from `buildings` and put it on the ground at
+/// `x`, `y`.
+///
+/// Find the ground, lay the buildings out with [`build_at`]
+/// (seeded from the position, so the same spot always builds the
+/// same thing), then place the pieces.
+///
+/// Fails when there is nothing under the spot, rather than
+/// leaving a monument in the air.
+pub fn place_monument<P: PiecePlacer + ?Sized>(
+    placer: &P,
+    buildings: Vec<StructureDef>,
+    x: f64,
+    y: f64,
+    turn_deg: f64,
+    limit: usize,
+) -> Result<PlacedMonument, String> {
+    let ground = placer
+        .ground_at(x, y)
+        .ok_or("no ground under the monument")?;
+    let built = build_at(buildings, x, y);
+    let out = placer.spawn(&built.pieces, (x, y, ground), turn_deg, limit);
+    Ok(PlacedMonument {
+        arrangement: built.arrangement,
+        placed: out.placed,
+        failed: out.failed,
+        ground,
+    })
+}
+
 /// A seed from a place, so the same place rolls the same layout.
 ///
 /// Positions are signed and often large, so the halves are mixed
@@ -1068,6 +1132,72 @@ mod tests {
     fn nothing_in_builds_nothing_out() {
         let built = build_at(Vec::new(), 0.0, 0.0);
         assert!(built.pieces.is_empty());
+    }
+
+    /// A stand-in for a game: records what it was asked to do.
+    struct FakePlacer {
+        ground: Option<f64>,
+        seen: std::cell::RefCell<Vec<(usize, (f64, f64, f64), f64)>>,
+    }
+
+    impl PiecePlacer for FakePlacer {
+        fn ground_at(&self, _x: f64, _y: f64) -> Option<f64> {
+            self.ground
+        }
+        fn spawn(
+            &self,
+            pieces: &[PieceDef],
+            at: (f64, f64, f64),
+            turn_deg: f64,
+            limit: usize,
+        ) -> Placed {
+            self.seen.borrow_mut().push((pieces.len(), at, turn_deg));
+            let placed = pieces.len().min(limit);
+            Placed {
+                placed,
+                failed: pieces.len() - placed,
+            }
+        }
+    }
+
+    fn placer(ground: Option<f64>) -> FakePlacer {
+        FakePlacer {
+            ground,
+            seen: std::cell::RefCell::new(Vec::new()),
+        }
+    }
+
+    #[test]
+    fn a_monument_is_placed_on_the_ground_it_was_given() {
+        let p = placer(Some(-42.5));
+        let out =
+            place_monument(&p, vec![pieced("a", 3), pieced("b", 3)], 100.0, 200.0, 30.0, 999)
+                .expect("should place");
+        assert_eq!(out.ground, -42.5);
+        assert_eq!(out.placed, 6);
+        assert_eq!(out.failed, 0);
+        let seen = p.seen.borrow();
+        assert_eq!(seen.len(), 1, "one batch, not one per building");
+        assert_eq!(seen[0].1, (100.0, 200.0, -42.5), "placed at the ground");
+        assert_eq!(seen[0].2, 30.0, "turn passed through");
+    }
+
+    /// Better nothing than a monument hanging in the air.
+    #[test]
+    fn no_ground_means_no_monument() {
+        let p = placer(None);
+        let out = place_monument(&p, vec![pieced("a", 3)], 0.0, 0.0, 0.0, 999);
+        assert!(out.is_err());
+        assert!(p.seen.borrow().is_empty(), "nothing should be spawned");
+    }
+
+    #[test]
+    fn a_limit_caps_what_goes_in_and_the_rest_are_reported() {
+        let p = placer(Some(0.0));
+        let out = place_monument(&p, vec![pieced("a", 5), pieced("b", 5)], 0.0, 0.0, 0.0, 4)
+            .expect("should place");
+        assert_eq!(out.placed, 4);
+        assert_eq!(out.failed, 6);
     }
 
     fn building(

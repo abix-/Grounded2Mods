@@ -228,6 +228,51 @@ pub unsafe fn spawn(
     out
 }
 
+/// Unreal's answers to the two questions
+/// [`modforge::monument::PiecePlacer`] asks: how high is the
+/// ground, and put these pieces in the world.
+///
+/// Everything else about building a monument is arithmetic and
+/// lives in modforge, so it is shared with games on other
+/// engines. This is the whole Unreal-shaped part of it.
+///
+/// `up` and `down` bound the ground search and are the consumer's
+/// decision; see [`super::trace::ground_at`].
+///
+/// Game thread only, like everything that enters the engine.
+pub struct UePlacer {
+    pub up: f64,
+    pub down: f64,
+}
+
+impl modforge::monument::PiecePlacer for UePlacer {
+    fn ground_at(&self, x: f64, y: f64) -> Option<f64> {
+        super::trace::ground_at(x, y, self.up, self.down)
+    }
+
+    fn spawn(
+        &self,
+        pieces: &[PieceDef],
+        at: (f64, f64, f64),
+        turn_deg: f64,
+        limit: usize,
+    ) -> modforge::monument::Placed {
+        let Some(world) = super::actor::any_world_actor() else {
+            return modforge::monument::Placed {
+                placed: 0,
+                failed: pieces.len(),
+            };
+        };
+        // SAFETY: world came from the search above; the caller's
+        // contract puts us on the game thread.
+        let out = unsafe { spawn(world, pieces, at, turn_deg, limit) };
+        modforge::monument::Placed {
+            placed: out.placed,
+            failed: out.failed,
+        }
+    }
+}
+
 /// Every loaded static mesh whose name starts with `prefix`, with
 /// its measured half-size and where its box sits relative to its
 /// position marker, both in Unreal centimetres.
