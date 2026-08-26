@@ -51,6 +51,7 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 - Reviewed the Modforge capability inventory against every exported module and both binaries, corrected actor knowledge that had been mislabeled as native memory access, and replaced the broad simulation bucket with narrower system groups.
 - Compacted each framework inventory into logical categories while retaining exactly one one-word source link per unique capability file.
 - Shortened the root README's AI disclaimer to one sentence.
+- Replaced the root game table's feature inventories with one-sentence purpose summaries.
 
 ## Next steps
 

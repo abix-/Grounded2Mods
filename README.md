@@ -115,18 +115,18 @@ See [`unityforge/README.md`](unityforge/README.md) and
 
 ## Game-side mods
 
-| Game | Engine / loader | Features | Rating |
+| Game | Engine / loader | Purpose | Rating |
 |---|---|---|---|
-| [Grounded 2](grounded2-mod/) | ueforge (UE5 / UE4SS) | 14-skill RPG (backpack, hunger, thirst, attack damage, armor, move speed, jump height, glide speed, fall resistance, impact resistance, lifesteal, max health, leap distance, health regen), XP levelling, save persistence, damage hook, fall damage hook, inventory hook, ImGui overlay | 4/10 |
-| [MISERY](misery-mod/) | ueforge (UE5 / UE4SS) | Emission timer control, 10x stack sizes, playtest nag suppression, 2x movement speed, vendor food expansion, ImGui overlay | 2/10 |
-| [Outworld Station](outworld-station-mod/) | ueforge (UE5 / UE4SS) | Stack size multiplier, dynamic data table tweaks, ImGui overlay | 3/10 |
-| [Schedule 1](schedule1-mod/) | unityforge (IL2CPP / MelonLoader) | Combat-XP levelling, heavy hands skill, cash loot drops, farming, kill credit, combat trace | 3/10 |
-| [Survivalist](survivalist-mod/) | unityforge (native mod loader) | No infections, crafted item quality tiers, faction war (AI vs AI revenge), bounties on enemy leaders, camp threat clearing, named unique items, settlement upgrades, refugee recruitment, structure growth, survival desperation ladder, storyteller drama pacing, genome persistence, trade/steal/rob/scavenge/murder missions, horde raids, incursions, stranger events, courier deliveries | 1/10 |
-| [Wild West Miner](wwm-mod/) | unityforge (Mono / BepInEx) | Demo-end block, spacebar jump (Translate +3m), RPG skill catalog (parked) | 2/10 |
-| [Horsey Game](horsey-mod/) | modforge (PE inject) | Fatigue suppressor (sleep-safe, race-eligible), money get/set/add, year get/set, no-tire toggle, debug mode toggle, horse roster/read/age/tiredness, vanilla allele get/set, genome get/set, chromosome dump, gene name lookup, heap string scanner, xref finder, memory peek/poke, data/rdata scan, target resolver (field offsets, data globals, cheat globals, gamestate ptr, chromosome table), hot reload, proxy DLL injection | 3/10 |
-| [Scrap Mechanic](scrapmechanic-mod/) | Lua (native) | 1000 inventory slots, no inventory loss on death, half fuel consumption, no building restrictions, 3x enemy/loot respawn rates | 3/10 |
-| [Quasimorph](quasimorph-mod/) | C# (native mod API) | Empty scaffold (AfterConfigsLoaded + DungeonStarted hooks, no logic) | 1/10 |
-| (il2cpp-smoke) | unityforge (IL2CPP) | IL2CPP path end-to-end test | n/a |
+| [Grounded 2](grounded2-mod/) | ueforge (UE5 / UE4SS) | Adds persistent RPG progression and survival-focused character customization. | 4/10 |
+| [MISERY](misery-mod/) | ueforge (UE5 / UE4SS) | Provides runtime controls for survival balance, movement, vendors, and emission timing. | 2/10 |
+| [Outworld Station](outworld-station-mod/) | ueforge (UE5 / UE4SS) | Adjusts item stack sizes through live Unreal Engine data tables. | 3/10 |
+| [Schedule 1](schedule1-mod/) | unityforge (IL2CPP / MelonLoader) | Adds combat progression, farming rewards, and kill-driven loot. | 3/10 |
+| [Survivalist](survivalist-mod/) | unityforge (native mod loader) | Builds an evolving survival sandbox around factions, settlements, missions, and adaptive events. | 1/10 |
+| [Wild West Miner](wwm-mod/) | unityforge (Mono / BepInEx) | Experiments with RPG progression and removes demo movement restrictions. | 2/10 |
+| [Horsey Game](horsey-mod/) | modforge (PE inject) | Provides an injectable research and control layer for Horsey Game state. | 3/10 |
+| [Scrap Mechanic](scrapmechanic-mod/) | Lua (native) | Rebalances survival inventory, fuel use, building limits, and respawn rates. | 3/10 |
+| [Quasimorph](quasimorph-mod/) | C# (native mod API) | Provides a minimal C# scaffold for the game's first-party mod API. | 1/10 |
+| (il2cpp-smoke) | unityforge (IL2CPP) | Exercises the Unity IL2CPP integration end to end. | n/a |
 
 > **Rating scale:** 10/10 = ready for 1000 players, fun, zero bugs.
 
