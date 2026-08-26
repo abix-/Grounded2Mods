@@ -62,6 +62,10 @@ Newest first.
 | `misery` | [x] Build a generated room from the kit: modforge decides the shell, misery binds slots to meshes | Operator confirmed in-game: four walls closing, doorway, windows, floor. worldgen.md 9.6. |
 | `misery` | [x] Fix ground trace reading FHitResult ImpactPoint Y instead of Z | Everything ground-placed was at the wrong altitude; z came back equal to y. worldgen.md 9.6. |
 | `misery` | [x] Fix yaw conversion: the modforge to UE map is a reflection, so angles negate rather than offset | Two of four walls ran backwards before the fix. worldgen.md 9.6. |
+| `modforge` | [x] Add poller::spawn_interval: a generic stoppable interval worker (stop flag, condvar wake, join, panic count) reusing the existing PollerHandle and registry | SlotPoller only fitted slot tracking; every mod background loop can now be stopped at shutdown. |
+| `misery` | [x] Convert all four watchers (dispatch, spawning, strange, places) from raw threads to stoppable workers, stopped at shutdown order 50 before hooks tear down at 100 | Raw threads keep executing freed code after a DLL unload; they also queued into a drain nobody served once hooks died. |
+| `misery` | [x] Attempt hot reload, diagnose the remaining crash | Swap now completes cleanly and UE4SS restarts the mod, but the reloaded image dies in patternsleuth's scan (rayon's global pool holds first-image code). restart.ps1 stays the supported path. research.md 26.4. |
+| `misery` | [x] Add reload.ps1 with real verification (staged file consumed, main.dll actually changed, control plane back, game alive) | Fails loudly rather than reporting a reload that did not happen. Currently the game does not survive it. |
 
 ## 2026-08-20
 
