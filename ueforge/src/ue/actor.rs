@@ -126,10 +126,28 @@ pub fn find_object(
 /// `BP_MasterVendorBuildPart_C` finds every derived vendor.
 /// Skips CDOs and objects outside a PersistentLevel.
 pub fn find_actors_by_chain(class_needle: &str) -> Vec<*const u8> {
+    find_objects_by_chain(class_needle)
+        .into_iter()
+        .filter(|p| {
+            // SAFETY: p came from find_objects_by_chain's own
+            // GObjects iteration.
+            let obj = unsafe { &*(*p as *const UObject) };
+            obj.full_name().contains("PersistentLevel")
+        })
+        .collect()
+}
+
+/// Every live object whose class chain contains `class_needle`,
+/// with no level requirement. Widgets and the game instance are
+/// not actors and live outside any PersistentLevel, so
+/// `find_actors_by_chain` cannot see them.
+pub fn find_objects_by_chain(class_needle: &str) -> Vec<*const u8> {
     let mut found = Vec::new();
     let Some(rt) = ue::try_runtime() else {
         return found;
     };
+    // SAFETY: rt came from try_runtime(); image_base + offsets
+    // are what runtime init validated.
     let view = unsafe { ue::GObjectsView::from_image(rt.image_base, rt.platform_offsets) };
     if !view.is_valid() {
         return found;
@@ -139,9 +157,6 @@ pub fn find_actors_by_chain(class_needle: &str) -> Vec<*const u8> {
             continue;
         }
         if !class_chain_contains(obj, class_needle) {
-            continue;
-        }
-        if !obj.full_name().contains("PersistentLevel") {
             continue;
         }
         found.push(obj.as_ptr());

@@ -176,6 +176,46 @@ fn dump_generator_grids() {
     }
 }
 
+/// Decode the Levels pool (TArray of FSoftObjectPtr, +0x2C8).
+/// FSoftObjectPtr layout (UE5): WeakPtr 8, TagAtLastTest 4,
+/// pad 4, then FSoftObjectPath { FTopLevelAssetPath
+/// { PackageName FName +0x10, AssetName FName +0x18 },
+/// SubPathString FString +0x20 } = stride 0x30.
+#[test]
+fn dump_level_pools() {
+    let Some(api) = api_or_skip() else { return };
+    if !offsets_live(&api) {
+        println!("SKIP: offsets not live");
+        return;
+    }
+    let gens = client::walk_class_chain_instances(&api, "BP_WorldGeneration_Base_C", 8);
+    for g in &gens {
+        let Some(hdr) = client::read_tarray_header(&api, g.addr, 0x2C8) else {
+            continue;
+        };
+        println!("=== {} pool: {} entries (max {}) ===", g.name, hdr.num, hdr.max);
+        if hdr.num <= 0 || hdr.num > 64 {
+            continue;
+        }
+        // FSoftObjectPtr element, measured live: stride 0x28,
+        // WeakPtr 0x00, PackageName FName 0x08, AssetName FName
+        // 0x10, SubPathString FString 0x18.
+        let data = client::read_bytes(&api, hdr.ptr, 0, (hdr.num as u64) * 0x28);
+        if data.is_empty() {
+            println!("  (unreadable)");
+            continue;
+        }
+        for i in 0..hdr.num as usize {
+            let base = i * 0x28;
+            let asset_idx = client::from_le_u32(&data, base + 0x10);
+            let asset_num = client::from_le_u32(&data, base + 0x14);
+            let asset = client::fname_from_parts(&api, asset_idx, asset_num)
+                .unwrap_or_else(|| format!("(?{asset_idx:#x})"));
+            println!("  {i:>2}. {asset}");
+        }
+    }
+}
+
 fn write_bytes_op(api: &Api, sel: &str, offset: u64, data: &[u8]) -> bool {
     let r = api.op(
         "write_bytes",

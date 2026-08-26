@@ -449,6 +449,58 @@ fn apply_mesh(actor: u64, mesh_ptr: u64) {
     }
 }
 
+/// Loaded static meshes whose name starts with `prefix`, with
+/// the geometry's half-size and where the box sits relative to
+/// the mesh pivot. The pivot offset decides all placement math:
+/// a wall pivoted at its base corner is laid differently from
+/// one pivoted at its centre.
+fn mesh_info(args: &serde_json::Value) -> Result<serde_json::Value, String> {
+    let prefix = args
+        .get("prefix")
+        .and_then(|v| v.as_str())
+        .ok_or("need {prefix: str}")?;
+    let rt = ue::try_runtime().ok_or("runtime not ready")?;
+    // SAFETY: validated image base + offsets from try_runtime.
+    let view = unsafe { ue::GObjectsView::from_image(rt.image_base, rt.platform_offsets) };
+    if !view.is_valid() {
+        return Err("gobjects view invalid".into());
+    }
+    let mut rows = Vec::new();
+    for obj in view.iter() {
+        let is_mesh = obj
+            .class()
+            .map(|c| c.as_object().name() == "StaticMesh")
+            .unwrap_or(false);
+        if !is_mesh {
+            continue;
+        }
+        let name = obj.name();
+        if !name.starts_with(prefix) {
+            continue;
+        }
+        let ptr = obj.as_ptr();
+        // SAFETY: ptr is a live UStaticMesh; ExtendedBounds is
+        // FBoxSphereBounds { Origin, BoxExtent, SphereRadius }.
+        let (ox, oy, oz, ex, ey, ez) = unsafe {
+            (
+                read_at::<f64>(ptr, EXTENDED_BOUNDS_OFFSET),
+                read_at::<f64>(ptr, EXTENDED_BOUNDS_OFFSET + 8),
+                read_at::<f64>(ptr, EXTENDED_BOUNDS_OFFSET + 16),
+                read_at::<f64>(ptr, EXTENDED_BOUNDS_OFFSET + BOX_EXTENT_OFFSET),
+                read_at::<f64>(ptr, EXTENDED_BOUNDS_OFFSET + BOX_EXTENT_OFFSET + 8),
+                read_at::<f64>(ptr, EXTENDED_BOUNDS_OFFSET + BOX_EXTENT_OFFSET + 16),
+            )
+        };
+        rows.push(serde_json::json!({
+            "name": name,
+            "size": [ex * 2.0, ey * 2.0, ez * 2.0],
+            "pivot_offset": [ox, oy, oz],
+        }));
+    }
+    rows.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+    Ok(serde_json::json!({"prefix": prefix, "count": rows.len(), "meshes": rows}))
+}
+
 pub fn register_ops() {
     ueforge::ops::OP_REGISTRY.register_many([
         ueforge::ops::OpDef::new(
@@ -456,6 +508,12 @@ pub fn register_ops() {
             "Class histogram of the actors in a level",
             "{level: str}",
             harvest_classes,
+        ),
+        ueforge::ops::OpDef::new(
+            "mesh_info",
+            "Loaded static meshes by name prefix, with size and pivot offset",
+            "{prefix: str}",
+            mesh_info,
         ),
         ueforge::ops::OpDef::new(
             "harvest_square",
