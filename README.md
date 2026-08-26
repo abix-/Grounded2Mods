@@ -2,10 +2,8 @@
 
 > **Vibecoded.** This repository is AI-generated under human direction and review.
 
-A Rust workspace for game mods. One foundation crate
-(**`modforge`**), two engine-binding "forge" crates that adapt
-it to a specific host runtime (UE5, Unity), and per-game mod
-crates that consume modforge directly or through a forge.
+A Rust toolkit for building mods across Unreal Engine, Unity,
+and native games.
 
 ```
                 ┌────────────────────────────┐

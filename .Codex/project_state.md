@@ -56,6 +56,7 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 - Moved workspace build prerequisites from the root README into `docs/building.md`.
 - Reduced the root framework explanation to one sentence covering UE5, Unity, and native games.
 - Reduced the root ownership rule to one sentence covering shared, engine-specific, and game-specific code.
+- Replaced the root architecture-heavy introduction with a one-sentence description of the toolkit.
 
 ## Next steps
 
