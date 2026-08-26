@@ -98,6 +98,52 @@ L_Garages_ElectricBuilding.
 L_Town_Anomaly01, L_TownSwamp01, L_Garages02, L_Road01,
 L_Anomaly_House.
 
+### 4.1 LevelsRefreshed: the late-game pool (live, 2026-08-25)
+
+`LevelsRefreshed` (+0x2D8) is a SECOND pool, used once the save
+has been through world refreshes. **Only Meadows has one** (28
+entries); Factory, Bunker, and Paneli have it empty.
+
+12 squares exist ONLY in the refreshed pool, so they cannot
+appear in an early-game world at all:
+
+L_BigAntenna01, L_Camp01, L_Forest04, L_Forest05,
+L_ForestDeadEnd, L_Garages01, L_GarbageAnomaly,
+L_MilitaryAnomaly, L_Swamp01, L_Swamp02, L_SwampVillage01,
+L_SwampVillage02.
+
+Two squares are in `Levels` only: L_Forest01, L_Forest02.
+
+So Meadows has 30 unique squares, and the game has 57 in total,
+not the 45 in section 4. This is why a late-game Meadows world
+contains swamps that are absent from the `Levels` catalog
+(observed at emissions 62).
+
+Consequence for mixing: pool writes must target the pool the
+generator will actually read. A save past the refresh threshold
+reads `LevelsRefreshed`; writes to `Levels` are then ignored.
+(The 2026-08-25 Paneli experiments worked because Paneli's
+refreshed pool is empty, so it always reads `Levels`.)
+
+### 4.2 Square world coordinates (live, 2026-08-25)
+
+`research_worldgen::square_world_bounds` compared NPC positions
+against the grid cell in each square's name:
+
+**A square's centre is (cell_x * TileSize, cell_y * TileSize),
+and it extends TileSize/2 in each direction.**
+
+Verified both ways: Meadows `4462_3_5.L_Swamp01` NPCs span
+x 31043..39653, y 58436..61672 around cell (3,5) x 12000 =
+(36000, 60000); Factory `4458_-1_7.L_LF_ElectricFactory` NPCs
+span +/-7500 around cell (-1,7) x 16500 = (-16500, 115500).
+
+Square names are `<worldid>_<cellx>_<celly>.L_<Preset>`, so any
+live actor's owning square and world position are derivable
+from its full name plus the generator's TileSize. Decorations
+can be placed anywhere inside a square by arithmetic; no anchor
+actor is needed.
+
 ## 5. Area selection (from research.md's original section 19)
 
 Selection lives on `BP_GlobalManager_C`:
@@ -244,9 +290,9 @@ restores the pool slot automatically after placement.
   after writing the byte, or an expedition-door flow).
 - Whether GenerateBiom reads the pool live or copies it.
 - Whether cross-area squares connect roads/edges sanely.
-- How `LevelsRefreshed` relates to `Levels`: post-refresh
-  worlds roll presets absent from `Levels` (L_Swamp01), so
-  the effective pool is bigger or swapped after refreshes.
+- What exactly switches a generator from `Levels` to
+  `LevelsRefreshed` (EmissionCountForRefresh threshold?), and
+  whether writes to the inactive pool are simply ignored.
 - Why some freshly rolled squares report "spawned 0 extra
   NPCs" despite a non-zero plan (intermittent SpawnAIFromClass
   failure; also seen once on the Factory world).

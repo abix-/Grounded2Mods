@@ -90,12 +90,21 @@ fn write_bytes_op(api: &Api, sel: &str, offset: u64, data: &[u8]) -> bool {
 }
 
 const LEVELS_POOL: u64 = 0x2C8;
+const LEVELS_REFRESHED_POOL: u64 = 0x2D8;
 const POOL_STRIDE: u64 = 0x28;
 const POOL_ASSET_NAME: usize = 0x10;
 
 /// Read a generator's pool as raw elements plus asset names.
 fn pool_entries(api: &Api, gen_addr: u64) -> Option<(u64, Vec<(String, Vec<u8>)>)> {
-    let hdr = client::read_tarray_header(api, gen_addr, LEVELS_POOL)?;
+    pool_entries_at(api, gen_addr, LEVELS_POOL)
+}
+
+fn pool_entries_at(
+    api: &Api,
+    gen_addr: u64,
+    offset: u64,
+) -> Option<(u64, Vec<(String, Vec<u8>)>)> {
+    let hdr = client::read_tarray_header(api, gen_addr, offset)?;
     if hdr.num <= 0 || hdr.num > 64 {
         return None;
     }
@@ -340,6 +349,145 @@ fn size_mismatch_probe() {
         None => println!("square never rolled in 4 attempts; rerun for more rolls"),
     }
     assert!(placed.is_some(), "no placement in 4 attempts");
+}
+
+/// Factory mystery: GenerateCustomBiom(1) does nothing. Try
+/// the other path: write CurrentGeneratedLevel = 1 directly,
+/// then call the parameterless GenerateBiom.
+#[test]
+#[ignore = "rebuilds the expedition world"]
+fn factory_via_generate_biom() {
+    let Some(api) = api_or_skip() else { return };
+    if !offsets_live(&api) {
+        println!("SKIP: offsets not live");
+        return;
+    }
+    let m = manager(&api).expect("no global manager");
+    print_state(&api, "before");
+    assert!(write_bytes_op(&api, &m.addr_selector, CURRENT_GENERATED_LEVEL, &[1u8]));
+    println!("wrote CurrentGeneratedLevel=1, calling GenerateBiom()");
+    api.call_ufunction("BP_GlobalManager_C", "GenerateBiom", &m.addr_selector, &[])
+        .expect("GenerateBiom failed");
+    for i in 0..4 {
+        std::thread::sleep(Duration::from_secs(5));
+        println!("--- {}s ---", (i + 1) * 5);
+        print_state(&api, "after");
+    }
+}
+
+/// Factory mystery, second angle: bypass the manager and call
+/// GenerateNewRandomLevels directly on the Factory generator.
+#[test]
+#[ignore = "rebuilds the expedition world"]
+fn factory_via_generator_direct() {
+    let Some(api) = api_or_skip() else { return };
+    if !offsets_live(&api) {
+        println!("SKIP: offsets not live");
+        return;
+    }
+    let gens = client::walk_class_chain_instances(&api, "BP_WorldGeneration_Base_C", 8);
+    let factory = gens.iter().find(|g| g.name.contains("Factory")).expect("no Factory generator");
+    print_state(&api, "before");
+    println!("calling GenerateNewRandomLevels on {}", factory.name);
+    api.call_ufunction(
+        "BP_WorldGeneration_Base_C",
+        "GenerateNewRandomLevels",
+        &factory.addr_selector,
+        &[],
+    )
+    .expect("GenerateNewRandomLevels failed");
+    for i in 0..4 {
+        std::thread::sleep(Duration::from_secs(5));
+        println!("--- {}s ---", (i + 1) * 5);
+        print_state(&api, "after");
+    }
+}
+
+/// Dump BOTH pools per generator: Levels (+0x2C8) and
+/// LevelsRefreshed (+0x2D8). Post-refresh worlds contain
+/// squares absent from Levels, so LevelsRefreshed is the
+/// suspected second source.
+#[test]
+fn dump_both_pools() {
+    let Some(api) = api_or_skip() else { return };
+    if !offsets_live(&api) {
+        println!("SKIP: offsets not live");
+        return;
+    }
+    for g in client::walk_class_chain_instances(&api, "BP_WorldGeneration_Base_C", 8) {
+        for (label, off) in [("Levels", LEVELS_POOL), ("LevelsRefreshed", LEVELS_REFRESHED_POOL)] {
+            match pool_entries_at(&api, g.addr, off) {
+                Some((_, entries)) => {
+                    println!("=== {} {label}: {} entries ===", g.name, entries.len());
+                    for (i, (n, _)) in entries.iter().enumerate() {
+                        println!("  {i:>2}. {n}");
+                    }
+                }
+                None => println!("=== {} {label}: empty or unreadable ===", g.name),
+            }
+        }
+    }
+}
+
+/// Where does a square sit in the world? Group live NPCs by
+/// their owning square, read each one's location, and compare
+/// the square's bounding box with the grid cell parsed from its
+/// name times TileSize. Tells us whether decorations can be
+/// placed by grid math instead of anchoring on NPCs.
+#[test]
+fn square_world_bounds() {
+    let Some(api) = api_or_skip() else { return };
+    if !offsets_live(&api) {
+        println!("SKIP: offsets not live");
+        return;
+    }
+    let mut by_square: std::collections::BTreeMap<String, Vec<(f64, f64, f64)>> =
+        std::collections::BTreeMap::new();
+    for n in client::walk_class_chain_instances(&api, "BP_MasterAICharacter_C", 400) {
+        let Some(path) = n.full_name.split(' ').nth(1) else { continue };
+        let Some(sq) = path.split(".PersistentLevel").next() else { continue };
+        let short = sq.rsplit('/').next().unwrap_or(sq).to_string();
+        if !short.contains('_') {
+            continue;
+        }
+        let parms = vec![0u8; 0x18];
+        let Ok((out, _)) =
+            api.call_ufunction("Actor", "K2_GetActorLocation", &n.addr_selector, &parms)
+        else {
+            continue;
+        };
+        if out.len() < 0x18 {
+            continue;
+        }
+        by_square.entry(short).or_default().push((
+            client::from_le_f64(&out, 0x00),
+            client::from_le_f64(&out, 0x08),
+            client::from_le_f64(&out, 0x10),
+        ));
+    }
+
+    for (square, pts) in &by_square {
+        let min_x = pts.iter().map(|p| p.0).fold(f64::MAX, f64::min);
+        let max_x = pts.iter().map(|p| p.0).fold(f64::MIN, f64::max);
+        let min_y = pts.iter().map(|p| p.1).fold(f64::MAX, f64::min);
+        let max_y = pts.iter().map(|p| p.1).fold(f64::MIN, f64::max);
+        let z = pts.iter().map(|p| p.2).sum::<f64>() / pts.len() as f64;
+        // Name shape: <worldid>_<cellx>_<celly>.L_Whatever
+        let cell: Vec<&str> = square.split('.').next().unwrap_or("").split('_').collect();
+        let predicted = if cell.len() == 3 {
+            match (cell[1].parse::<f64>(), cell[2].parse::<f64>()) {
+                (Ok(cx), Ok(cy)) => format!("cell({cx},{cy}) x12000 = ({}, {})", cx * 12000.0, cy * 12000.0),
+                _ => String::from("(unparsed)"),
+            }
+        } else {
+            String::from("(no cell)")
+        };
+        println!(
+            "{square}: {} npc(s) x {min_x:.0}..{max_x:.0} y {min_y:.0}..{max_y:.0} z~{z:.0}",
+            pts.len()
+        );
+        println!("    {predicted}");
+    }
 }
 
 /// Force a world regeneration via GenerateCustomBiom on the
