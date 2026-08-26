@@ -467,6 +467,7 @@ pub fn generate_building(def: &BuildingTypeDef, roll: &mut Roll) -> StructureDef
         stairs,
         furniture,
         lights,
+        pieces: Vec::new(),
     };
     if let Err(e) = validate(&out) {
         debug_assert!(false, "generated buildings are legal: {e}");
@@ -510,7 +511,9 @@ fn window(side: Side, offset: f32) -> Opening {
 }
 
 /// The ground footprint of a structure: every room interior plus
-/// its walls, flattened to the ground.
+/// its walls, and every captured piece, flattened to the ground.
+/// A captured structure has no rooms to measure, so its pieces
+/// carry the extent instead.
 pub fn footprint(def: &StructureDef) -> Aabb {
     let mut min = Vec3::splat(f32::INFINITY);
     let mut max = Vec3::splat(f32::NEG_INFINITY);
@@ -519,6 +522,16 @@ pub fn footprint(def: &StructureDef) -> Aabb {
         let t = Vec3::new(room.wall_thickness, 0.0, room.wall_thickness);
         min = min.min(a.min - t);
         max = max.max(a.max + t);
+    }
+    for piece in &def.pieces {
+        min = min.min(piece.offset);
+        max = max.max(piece.offset);
+    }
+    if def.rooms.is_empty() && def.pieces.is_empty() {
+        return Aabb {
+            min: Vec3::ZERO,
+            max: Vec3::ZERO,
+        };
     }
     Aabb { min, max }
 }
@@ -808,7 +821,7 @@ fn gate_wall(back: &RoomSpec) -> Option<Vec3> {
 /// road: pairs of buildings face each other across streets that
 /// run east, a new street every few pairs. Each building is jittered
 /// inside the slack of its cell.
-fn arrange(
+pub fn arrange(
     buildings: Vec<StructureDef>,
     arrangement: Arrangement,
     roll: &mut Roll,

@@ -35,6 +35,10 @@ default = ["console"]
 
 [dependencies]
 fastrand = { workspace = true }
+# The generic vocabulary: structures, monuments, arrangement rules.
+# misery-mod supplies only the UE halves (read actors, spawn actors).
+glam = "0.32"
+modforge = { path = "../modforge" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 ueforge = { path = "../ueforge" }

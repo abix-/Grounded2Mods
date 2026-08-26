@@ -99,8 +99,40 @@ pub struct LightSpec {
     pub intensity: f32,
 }
 
+/// One placed piece of a CAPTURED structure: an opaque host-game
+/// asset plus where it sits relative to the structure origin.
+///
+/// Authored structures describe themselves as rooms; a structure
+/// captured out of a running game cannot, because its buildings
+/// are prefab meshes with no room data to read. Both are still
+/// structures: one coherent thing you place in the world. The
+/// consumer's spawner resolves `class` and `asset` however its
+/// host game names things (a UE class name and a mesh name, a
+/// prefab id, a blueprint path).
+///
+/// Offsets follow the structure convention: y up, north = -z.
+/// Consumers on z-up engines convert in their binder.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PieceSpec {
+    /// What to spawn, in the host game's naming.
+    pub class: String,
+    /// A second identity for classes that are a shell around an
+    /// asset (a static mesh actor and the mesh it carries).
+    pub asset: Option<String>,
+    pub offset: Vec3,
+    /// Turn about the up axis, radians.
+    pub yaw: f32,
+    pub scale: f32,
+}
+
 /// A whole building as data. `wall_color` paints walls, ceilings,
 /// and stairs; `floor_color` the floor slabs.
+///
+/// A structure is authored (rooms, stairs, furniture, lights) or
+/// captured (`pieces`, lifted from a running game), or both. The
+/// generic machinery (footprints, arrangement, monuments) works
+/// over either, so a game that cannot author rooms still gets
+/// generated places.
 #[derive(Clone)]
 pub struct StructureDef {
     pub name: String,
@@ -110,6 +142,8 @@ pub struct StructureDef {
     pub stairs: Vec<StairSpec>,
     pub furniture: Vec<SolidSpec>,
     pub lights: Vec<LightSpec>,
+    /// Captured pieces. Empty for authored structures.
+    pub pieces: Vec<PieceSpec>,
 }
 
 /// The bare concrete every hand-authored building used before
@@ -470,6 +504,7 @@ mod tests {
             stairs: vec![],
             furniture: vec![],
             lights: vec![],
+            pieces: vec![],
         }
     }
 
