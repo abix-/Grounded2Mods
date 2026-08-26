@@ -12,15 +12,14 @@ content loaded by the game's built-in mod system.
 
 ## Features
 
-| Feature | Rating |
-|---|---:|
-| 1000-slot player inventory | 2/10 |
-| No inventory drop on death | 2/10 |
-| Three-times overworld unit spawn chances | 2/10 |
-| Custom survival world and terrain bootstrap | 2/10 |
-| Half fuel consumption (claimed by metadata, implementation not found) | 0/10 |
-| No building restrictions (claimed by metadata, current script keeps restrictions enabled) | 0/10 |
-| [Modding research](docs/research.md) (Lua, JSON, and native options) | 1/10 |
+| Feature | Description | Rating |
+|---|---|---:|
+| [Inventory](BetterSurvival/Scripts/Game.lua) | Sets the player inventory to 1000 slots. | 2/10 |
+| [Death](BetterSurvival/Scripts/Player.lua) | Respawns without creating an inventory-drop bag. | 2/10 |
+| [Spawns](BetterSurvival/Scripts/survival_spawns_3x.lua) | Triples overworld unit spawn chances. | 2/10 |
+| [World](BetterSurvival/Scripts/Overworld.lua) | Boots a custom survival overworld and terrain. | 2/10 |
+| [Fuel](BetterSurvival/description.json) | Metadata claims half consumption, but no implementation exists. | 0/10 |
+| [Restrictions](BetterSurvival/Scripts/Game.lua) | Metadata claims none, but the current script enables them. | 0/10 |
 
 ## Build
 

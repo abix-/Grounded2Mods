@@ -12,27 +12,29 @@ skills, survival tweaks, and expanded inventory.
 
 ## Features
 
-| Feature | Rating |
-|---|---:|
-| [Backpack skill](docs/inventory.md) (expanded capacity and mouse-wheel scrolling) | 8/10 |
-| [Hunger skill](docs/rpg.md) (reduced hunger drain) | 8/10 |
-| [Thirst skill](docs/rpg.md) (reduced thirst drain) | 8/10 |
-| [Attack Damage skill](docs/rpg.md) | 7/10 |
-| [Armor skill](docs/damage.md) | 7/10 |
-| [Move Speed skill](docs/rpg.md) | 7/10 |
-| [Jump Height skill](docs/rpg.md) | 7/10 |
-| [Leap Distance skill](docs/rpg.md) | 6/10 |
-| [Glide Speed skill](docs/rpg.md) | 6/10 |
-| [Fall Resistance skill](docs/damage.md) | 6/10 |
-| [Impact Resistance skill](docs/damage.md) | 4/10 |
-| [Lifesteal skill](docs/damage.md) | 4/10 |
-| [Max Health skill](docs/rpg.md) | 6/10 |
-| [Health Regeneration skill](docs/rpg.md) | 6/10 |
-| [Kill XP and levelling](docs/rpg.md) | 7/10 |
-| [Per-playthrough persistence](docs/rpg.md) | 7/10 |
-| [Runtime hunger, thirst, and inventory settings](docs/features.md) | 8/10 |
-| ImGui RPG, table, class, and struct tabs | 6/10 |
-| Optional HTTP control plane on port 17171 | 9/10 |
+| Feature | Description | Rating |
+|---|---|---:|
+| [Backpack](src/rpg/skills.rs) | Skill-driven inventory capacity. | 8/10 |
+| [Inventory scrolling](src/inv_hook.rs) | Mouse-wheel access to slots beyond the 4x10 viewport. | 8/10 |
+| [Hunger Resistance](src/rpg/skills.rs) | Reduces hunger drain. | 8/10 |
+| [Thirst Resistance](src/rpg/skills.rs) | Reduces thirst drain. | 8/10 |
+| [Attack Damage](src/rpg/skills.rs) | Increases outgoing damage. | 7/10 |
+| [Armor](src/rpg/skills.rs) | Reduces combat damage. | 7/10 |
+| [Move Speed](src/rpg/skills.rs) | Increases movement speeds. | 7/10 |
+| [Jump Height](src/rpg/skills.rs) | Increases jump velocity. | 7/10 |
+| [Leap Distance](src/rpg/skills.rs) | Increases air control. | 6/10 |
+| [Glide Speed](src/rpg/skills.rs) | Increases flight and glide speed. | 6/10 |
+| [Fall Resistance](src/rpg/fall_hook.rs) | Reduces fall damage before the native calculation. | 6/10 |
+| [Impact Resistance](src/rpg/skills.rs) | Blocks environmental impact damage. | 4/10 |
+| [Lifesteal](src/rpg/effects.rs) | Heals from credited combat damage. | 4/10 |
+| [Max Health](src/rpg/skills.rs) | Raises maximum health. | 6/10 |
+| [Health Regeneration](src/rpg/skills.rs) | Improves combat regeneration. | 6/10 |
+| [Kill XP](src/rpg/kill_hook.rs) | Credits creature kills to progression. | 7/10 |
+| [Progression](src/rpg/tracker.rs) | Levels, skill points, spending, refunds, and toggles. | 7/10 |
+| [Persistence](src/rpg/world_loader.rs) | Loads per-playthrough skill state. | 7/10 |
+| [Settings](src/settings.rs) | Runtime inventory, survival, RPG, and debug configuration. | 8/10 |
+| [ImGui](src/lib.rs) | RPG, table, class, and struct tabs. | 6/10 |
+| [Control plane](src/debug.rs) | Optional HTTP inspection and control on port 17171. | 9/10 |
 
 ## Build
 

@@ -12,12 +12,12 @@ tweaks.
 
 ## Features
 
-| Feature | Rating |
-|---|---:|
-| [Stack size adjustments](docs/research.md) (configurable multiplier with vanilla baselines) | 4/10 |
-| Settings-driven dynamic data-table tweaks | 3/10 |
-| ImGui tweak and engine-inspection tabs | 6/10 |
-| HTTP control plane on port 17172 | 9/10 |
+| Feature | Description | Rating |
+|---|---|---:|
+| [Stacks](src/stacks.rs) | Applies a configurable multiplier from captured vanilla baselines. | 4/10 |
+| [Dynamic tweaks](src/settings.rs) | Applies settings-driven data-table changes. | 3/10 |
+| [ImGui](src/lib.rs) | Tweak, scanner, table, class, and struct tabs. | 6/10 |
+| [Control plane](src/debug.rs) | HTTP inspection and control on port 17172. | 9/10 |
 
 ## Build
 

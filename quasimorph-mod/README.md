@@ -10,9 +10,9 @@ Quasimorph (.NET Framework 4.8) mod. C# project, not Rust.
 
 ## Features
 
-| Feature | Rating |
-|---|---:|
-| [Mod framework](docs/research.md) (empty first-party API hook scaffold) | 1/10 |
+| Feature | Description | Rating |
+|---|---|---:|
+| [Hooks](src/ModMain.cs) | Empty first-party API hooks for config loading and dungeon start. | 1/10 |
 
 ## Build
 

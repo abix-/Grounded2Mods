@@ -12,37 +12,36 @@ game's official mod loader (`Story.LoadDLLs`), not BepInEx.
 
 ## Features
 
-| Feature | Rating |
-|---|---:|
-| [No infections](docs/research.md) (injuries enter uninfected) | 3/10 |
-| [Faction genomes](docs/faction-war.md) (heritable aggression, expansionism, defensiveness, and guile) | 4/10 |
-| [Franchise decisions and learning](docs/faction-war.md) (individual votes reinforce future behavior) | 4/10 |
-| [AI-vs-AI war](docs/faction-war.md) (revenge, ambition, hunger, and invasion targets) | 3/10 |
-| [Peace and surrender](docs/faction-war.md) (bleeding factions can sue for peace) | 3/10 |
-| [Predation and extinction](docs/faction-war.md) (victors absorb survivors and portable goods) | 3/10 |
-| [Repopulation suppression](docs/faction-war.md) (settlements cannot conjure replacement people) | 3/10 |
-| [Refugee recruitment](docs/faction-war.md) (real arrivals replenish settlements) | 3/10 |
-| [Settlement annexes](docs/faction-war.md) (AI planners queue real construction) | 3/10 |
-| [Settlement upgrades](docs/plans/2026-07-11-settlement-upgrades.md) (per-structure and settlement-wide tracks) | 3/10 |
-| [Quality tiers](docs/faction-war.md) (edge, shop, and crafting rolls) | 3/10 |
-| [Theft](docs/faction-war.md) (steal, detection, escape, and organic war ignition) | 3/10 |
-| [AI trade](docs/faction-war.md) (real food delivery and payment) | 3/10 |
-| [Road robbery](docs/faction-war.md) (walking ambush parties and demands) | 3/10 |
-| [Scavenging](docs/faction-war.md) (ownerless loot parties) | 2/10 |
-| [Assassination](docs/faction-war.md) (stealth attacks on enemy leaders) | 2/10 |
-| [Bounties](docs/plans/2026-07-10-bounty-arc.md) (enemy-leader contracts) | 3/10 |
-| [Threat-clearing jobs](docs/status.md) (player-paid camp defense work) | 3/10 |
-| [Work board and payment couriers](docs/status.md) (journal offers and real-goods payment) | 3/10 |
-| [Storyteller](docs/status.md) (weighted event pacing and dread loop) | 2/10 |
-| [Off-map incursions](docs/status.md) (raiders, military, refugees, settlers, signals, and strangers) | 2/10 |
-| [Adaptive horde](docs/status.md) (the largest settlement draws scaled zombie packs) | 2/10 |
-| [Strangers](docs/status.md) (hidden friendly, wary, or aggressive intent) | 2/10 |
-| [Traveling vendors](docs/status.md) (real camp goods carried between settlements) | 2/10 |
-| [Settling factions](docs/status.md) (off-map groups reclaim dead bases) | 2/10 |
-| [Named uniques](docs/status.md) (one-of-a-kind items enter and change hands once per save) | 2/10 |
-| [Chronicle](docs/status.md) (public events narrated in the game HUD) | 3/10 |
-| [Player ecosystem participation](docs/faction-war.md) (trade, robbery, war, murder, surrender, and horde targeting) | 2/10 |
-| HTTP control plane on port 17173 | 9/10 |
+| Feature | Description | Rating |
+|---|---|---:|
+| [Infections](src/infection.rs) | Forces every new injury to enter uninfected. | 3/10 |
+| [Genomes](src/genome.rs) | Persists heritable aggression, expansionism, defensiveness, and guile. | 4/10 |
+| [Learning](src/genome.rs) | Reinforces faction and voter traits from outcomes. | 4/10 |
+| [War](src/war.rs) | Drives AI revenge, invasion targets, and forced ignition. | 3/10 |
+| [Survival](src/survival.rs) | Turns hunger and collapse into raids, defection, and surrender. | 3/10 |
+| [Predation](src/predation.rs) | Lets victors absorb survivors and portable goods. | 3/10 |
+| [Growth](src/growth.rs) | Suppresses conjured population and recruits real refugees. | 3/10 |
+| [Annexes](src/development.rs) | Plans real settlement construction through vanilla builders. | 3/10 |
+| [Upgrades](src/upgrade.rs) | Tracks per-structure and settlement-wide improvements. | 3/10 |
+| [Quality](src/quality.rs) | Rolls item tiers at the edge, in shops, and after crafting. | 3/10 |
+| [Theft](src/steal.rs) | Sends thieves whose detection can ignite an organic war. | 3/10 |
+| [Trade](src/trade.rs) | Moves real food and payment between AI settlements. | 3/10 |
+| [Robbery](src/rob.rs) | Runs walking ambush parties and item demands. | 3/10 |
+| [Scavenging](src/scavenge.rs) | Sends parties to recover ownerless goods. | 2/10 |
+| [Assassination](src/murder.rs) | Sends stealth attackers after enemy leaders. | 2/10 |
+| [Bounties](src/bounty.rs) | Offers contracts on enemy leaders. | 3/10 |
+| [Threats](src/threat.rs) | Pays the player to clear raiders near camps. | 3/10 |
+| [Work board](src/board.rs) | Publishes work in the quest journal and closes outcomes. | 3/10 |
+| [Couriers](src/courier.rs) | Delivers payment from real settlement stores. | 3/10 |
+| [Storyteller](src/storyteller.rs) | Paces weighted events and the dread loop. | 2/10 |
+| [Incursions](src/incursion.rs) | Brings raiders, military, refugees, signals, and strangers from off-map. | 2/10 |
+| [Horde](src/horde.rs) | Sends scaled zombie pressure toward the largest settlement. | 2/10 |
+| [Strangers](src/stranger.rs) | Hides friendly, wary, or aggressive arrival intent. | 2/10 |
+| [Vendors](src/vendor.rs) | Carries real camp goods between settlements. | 2/10 |
+| [Settlers](src/settler.rs) | Lets off-map groups reclaim dead bases. | 2/10 |
+| [Uniques](src/unique.rs) | Introduces and tracks one-of-a-kind items once per save. | 2/10 |
+| [Chronicle](src/chronicle.rs) | Narrates public events through the game HUD. | 3/10 |
+| [Control plane](src/lib.rs) | HTTP inspection and control on port 17173. | 9/10 |
 
 [Current status](docs/status.md) separates code-landed features
 from behavior verified in the running game.

@@ -5,21 +5,21 @@ into the game by the `Unityforge.Shim.Mono` BepInEx plugin.
 
 ## Features
 
-| Feature | Rating |
-|---|---:|
-| Demo boundary removal | 2/10 |
-| Spacebar jump | 2/10 |
-| Quick Pickaxe skill (live-verified dig-range increase) | 5/10 |
-| Strong Back skill (catalogued, awaiting game-skill proxy) | 2/10 |
-| Greedy Miner skill (catalogued, target needs in-save verification) | 2/10 |
-| Charisma skill (catalogued, target under research) | 1/10 |
-| Resilient skill (catalogued, target under research) | 1/10 |
-| Lucky skill (catalogued placeholder) | 1/10 |
-| Digging and currency XP hooks | 3/10 |
-| Per-save RPG persistence | 5/10 |
-| Skill spend, refund, toggle, and point controls | 5/10 |
-| Declarative RPG tab | 3/10 |
-| HTTP control plane on port 17172 | 9/10 |
+| Feature | Description | Rating |
+|---|---|---:|
+| [Demo boundary](src/block_demo_end.rs) | Prevents the demo-complete screen from ending play. | 2/10 |
+| [Jump](src/jump.rs) | Adds a grounded spacebar jump. | 2/10 |
+| [Quick Pickaxe](src/skills.rs) | Live-verified increase to digging range. | 5/10 |
+| [Strong Back](src/skills.rs) | Catalogued capacity skill awaiting a game-skill proxy. | 2/10 |
+| [Greedy Miner](src/skills.rs) | Catalogued ore-value skill awaiting in-save verification. | 2/10 |
+| [Charisma](src/skills.rs) | Catalogued hiring skill with its target under research. | 1/10 |
+| [Resilient](src/skills.rs) | Catalogued stamina skill with its target under research. | 1/10 |
+| [Lucky](src/skills.rs) | Catalogued runtime-effect placeholder. | 1/10 |
+| [XP](src/skills.rs) | Credits digging and currency events. | 3/10 |
+| [Persistence](src/skills.rs) | Stores RPG state per save slot. | 5/10 |
+| [Progression](src/skills.rs) | Supports spend, refund, toggle, and point controls. | 5/10 |
+| [RPG tab](src/skills.rs) | Renders the declarative skill catalog. | 3/10 |
+| [Control plane](src/lib.rs) | HTTP inspection and control on port 17172. | 9/10 |
 
 ## Status
 

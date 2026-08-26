@@ -12,23 +12,23 @@ by UE4SS as `main.dll`.
 
 ## Features
 
-| Feature | Rating |
-|---|---:|
-| [Shining timer control](docs/research.md) (inspect, freeze, set, and extend the countdown) | 5/10 |
-| [Gameplay settings editor](docs/research.md) (live survival and world settings) | 4/10 |
-| [Movement speed control](docs/research.md) (live multiplier and ImGui tab) | 3/10 |
-| [Vendor inventory expansion](docs/research.md) (buy and sell lists reapplied per load) | 4/10 |
-| [Playtest notice removal](docs/research.md) (automatic main-menu dismissal) | 4/10 |
-| [Scaling NPC spawns](docs/research.md) (threat budgets rise with past emissions) | 4/10 |
-| [Alternate-reality phenomena](docs/worldgen.md) (anomalies, camps, caches, lights, and hazards) | 3/10 |
-| [Asset inventory and loading](docs/pieces.md) (query and stream shipped assets) | 4/10 |
-| [Level piece capture and rebuilding](docs/worldgen.md) (Blueprint props and static meshes) | 6/10 |
-| [Generated monuments](docs/worldgen.md) (captured structures arranged into new places) | 4/10 |
-| [Procedural rooms](docs/worldgen.md) (walls, doors, windows, floors, and ceilings from the game kit; currently disabled at startup) | 6/10 |
-| [World regeneration and square-pool mixing](docs/worldgen.md) | 5/10 |
-| Item stack multiplication (implemented, currently disabled at startup) | 2/10 |
-| Save auto-load (implemented against the wrong host path, currently disabled) | 1/10 |
-| HTTP control plane on port 17176 | 9/10 |
+| Feature | Description | Rating |
+|---|---|---:|
+| [Shining](src/shining.rs) | Inspects, freezes, sets, and extends the emission countdown. | 5/10 |
+| [Gameplay](src/gameplay.rs) | Edits live survival and world settings. | 4/10 |
+| [Speed](src/speed.rs) | Applies a live movement multiplier through the UI. | 3/10 |
+| [Vendors](src/vendors.rs) | Expands buy and sell lists on each load. | 4/10 |
+| [Notice](src/nag.rs) | Dismisses the playtest notice at the main menu. | 4/10 |
+| [Spawning](src/spawning.rs) | Scales NPC threat budgets with past emissions. | 4/10 |
+| [Phenomena](src/strange.rs) | Places anomalies, camps, caches, lights, and hazards. | 3/10 |
+| [Assets](src/assets.rs) | Queries and streams shipped assets. | 4/10 |
+| [Pieces](../ueforge/src/ue/pieces.rs) | Captures and rebuilds Blueprint props and static meshes. | 6/10 |
+| [Monuments](src/places.rs) | Arranges captured structures into generated places. | 4/10 |
+| [Rooms](src/rooms.rs) | Builds rooms from the game's construction kit; disabled at startup. | 6/10 |
+| [World generation](tests/research_worldgen.rs) | Regenerates areas and mixes square pools through research operations. | 5/10 |
+| [Stacks](src/lib.rs) | Multiplies item stacks; disabled at startup. | 2/10 |
+| [Auto-load](src/autoload.rs) | Loads a save through an incorrect host path; disabled. | 1/10 |
+| [Control plane](src/debug.rs) | HTTP inspection and control on port 17176. | 9/10 |
 
 Startup status and verification gaps are tracked in
 [the open issues](docs/todo.md).

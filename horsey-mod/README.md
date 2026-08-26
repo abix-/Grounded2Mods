@@ -7,24 +7,23 @@ Where those rely on a managed-runtime plugin loader, horsey-mod attaches
 via an injector EXE that `CreateRemoteThread`s a `LoadLibraryW` on
 `horsey.dll` into the running `Horsey.exe`.
 
-## Status
+## Features
 
-| Component | Status |
-|---|---|
-| `horsey.dll`, `horsey-inject.exe`, and `horsey-play.exe` | implemented |
-| Fresh-launch DLL injection | implemented |
-| HTTP control plane on `127.0.0.1:33077` | implemented, localhost only, no auth |
-| Runtime target registry and structural validation | implemented, hardening continues |
-| Game-state snapshot, money, year, sleep, and cheat controls | implemented |
-| Horse roster discovery and field editing | implemented |
-| Sleep-safe no-tire patch | implemented and enabled at attach |
-| In-game horse and genome overlay | implemented |
-| Synthetic input surface | partially implemented |
-| Vanilla and extended allele read/write operations | implemented |
-| Extended-gene XML content loading | implemented |
-| Extended-gene evaluation, lifecycle, combinator, and render hooks | partially implemented |
-| Save sidecar hooks | implemented but unsafe to arm on the current build |
-| Scene discovery and horse-transfer automation | research stage |
+| Feature | Description | Status |
+|---|---|---|
+| [Injection](src/bin/inject.rs) | Loads a staged DLL into a fresh game process. | implemented |
+| [Control plane](src/lib.rs) | Serves localhost operations on port 33077 without auth. | implemented |
+| [Targets](src/targets_registry.rs) | Resolves and structurally validates runtime addresses. | implemented; hardening continues |
+| [Game state](src/snapshot.rs) | Reads money, year, sleeps, races, and cheat state. | implemented |
+| [Horses](src/horse.rs) | Discovers the roster and edits horse fields. | implemented |
+| [No tire](src/patches.rs) | Preserves sleeping while disabling fatigue. | implemented and enabled at attach |
+| [Overlay](src/overlay.rs) | Edits horses and genomes in-game. | implemented |
+| [Input](src/input_surface.rs) | Drives synthetic keyboard and mouse operations. | partially implemented |
+| [Alleles](src/genes.rs) | Reads and writes vanilla and extended alleles. | implemented |
+| [Gene content](src/genes_xml.rs) | Loads extended-gene definitions from XML. | implemented |
+| [Gene hooks](src/patches/ext_genes.rs) | Extends evaluation, lifecycle, combination, and rendering paths. | partially implemented |
+| [Save sidecar](src/patches/save_sidecar.rs) | Persists extended alleles outside the vanilla save. | implemented but unsafe to arm on the current build |
+| [Scene automation](src/hk1.rs) | Discovers scene state and researches horse transfers. | research stage |
 
 ## What you get out of the box
 

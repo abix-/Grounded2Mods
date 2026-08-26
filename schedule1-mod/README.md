@@ -34,19 +34,19 @@ Copy both DLLs into the MelonLoader mods directory:
 
 ## Features
 
-| Feature | Rating |
-|---|---:|
-| [Combat kill credit](docs/status.md) (recent-player-hit attribution with downing deduplication) | 10/10 |
-| [Combat XP and levelling](docs/status.md) | 7/10 |
-| [Heavy Hands](docs/status.md) (persistent punch-damage skill with auto-spend) | 7/10 |
-| [Per-save RPG persistence](docs/status.md) | 7/10 |
-| [Toughness-scaled cash drops](docs/status.md) | 6/10 |
-| [Persistent regional garrisons](docs/status.md) | 2/10 |
-| [Rolled mob types](docs/status.md) (tough, armed, and veteran) | 2/10 |
-| [Cartel influence loss](docs/status.md) (garrison deaths weaken the region) | 3/10 |
-| [Region takeover trigger](docs/status.md) | 3/10 |
-| [Combat event tracing](docs/research.md) | 9/10 |
-| HTTP research and control plane on port 17175 | 10/10 |
+| Feature | Description | Rating |
+|---|---|---:|
+| [Kill credit](src/killcredit.rs) | Attributes player hits and deduplicates NPC downs. | 10/10 |
+| [Progression](src/skills.rs) | Converts combat XP into levels and skill points. | 7/10 |
+| [Heavy Hands](src/skills.rs) | Persistently increases punch damage with auto-spend. | 7/10 |
+| [Persistence](src/skills.rs) | Stores RPG state per loaded save. | 7/10 |
+| [Cash drops](src/loot.rs) | Drops toughness-scaled cash at defeated NPCs. | 6/10 |
+| [Garrisons](src/farming.rs) | Keeps regional cartel forces active across the map. | 2/10 |
+| [Mob types](src/farming.rs) | Rolls tough, armed, and veteran variants. | 2/10 |
+| [Influence](src/farming.rs) | Garrison deaths weaken cartel control. | 3/10 |
+| [Takeover](src/farming.rs) | Flips cleared zero-influence regions to the player. | 3/10 |
+| [Combat tracing](src/combat_trace.rs) | Records damage, attack, death, and knockout events. | 9/10 |
+| [Control plane](src/lib.rs) | HTTP research and control on port 17175. | 10/10 |
 
 ## Documentation
 
