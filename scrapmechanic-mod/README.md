@@ -14,14 +14,12 @@ game's built-in mod system.
 
 | Feature | Rating |
 |---|---:|
-| [Survival overhaul](docs/research.md) (Lua + JSON data mod) | 1/10 |
+| [Modding research](docs/research.md) (Lua, JSON, and native options; no implementation yet) | 1/10 |
 
-## Structure
+## Build
 
-The `BetterSurvival/` directory is the mod content root. It
-contains the standard Scrap Mechanic mod layout: `description.json`
-for metadata, `Scripts/` for Lua, and data directories for game
-object definitions.
+There is no build yet. This directory currently contains research
+only and has no loadable mod content.
 
 ## File layout
 
@@ -29,13 +27,5 @@ object definitions.
 scrapmechanic-mod/
   README.md
   docs/
-  BetterSurvival/
-    description.json
-    config.json
-    Scripts/
-    Objects/
-    Characters/
-    Tools/
-    Harvestables/
-    ...
+    research.md
 ```

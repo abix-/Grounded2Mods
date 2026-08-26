@@ -11,22 +11,20 @@ via an injector EXE that `CreateRemoteThread`s a `LoadLibraryW` on
 
 | Component | Status |
 |---|---|
-| `horsey-mod` crate | shipped, builds clean |
-| `horsey.dll` + `horsey-inject.exe` | working artifacts |
-| DLL injection via `CreateRemoteThread(LoadLibraryW)` | working |
-| HTTP control plane on `127.0.0.1:33077` | working, 18 ops registered |
-| Auth via `X-Ueforge-Auth` + token file | working |
-| `_shutdown` op + staged-DLL hot-reload | reload swap works, but causes delayed crash (hardening tracked in [`docs/todo.md`](docs/todo.md)) |
-| `cheats.no_tire = true` by default at attach | working. Confirmed live 2026-05-13 |
-| MinHook trampolines on game functions | not started |
-| SDL3 input hooks for hotkeys | not started |
-| Save-writer hook for sidecar state | not started |
-| Roster UI (web frontend) | not started |
+| `horsey.dll`, `horsey-inject.exe`, and `horsey-play.exe` | implemented |
+| Fresh-launch DLL injection | implemented |
+| HTTP control plane on `127.0.0.1:33077` | implemented, localhost only, no auth |
+| Runtime target registry and structural validation | implemented, hardening continues |
+| Sleep-safe no-tire patch | implemented and enabled at attach |
+| In-game horse and genome overlay | implemented |
+| Synthetic input surface | partially implemented |
+| Extended-gene hooks and XML content | partially implemented |
+| Save sidecar hooks | implemented but unsafe to arm on the current build |
 
 ## What you get out of the box
 
-A localhost HTTP control plane on `127.0.0.1:33077` with auth, powered by
-`modforge::server`. Endpoints:
+A localhost HTTP control plane on `127.0.0.1:33077`, powered by
+`modforge::server`. Selected endpoints:
 
 | Op | Args | Effect |
 |---|---|---|
@@ -52,7 +50,7 @@ A localhost HTTP control plane on `127.0.0.1:33077` with auth, powered by
 ## Setup
 
 1. Build:
-   ```
+   ```powershell
    cargo build -p horsey-mod --release
    ```
    This produces:
@@ -62,28 +60,22 @@ A localhost HTTP control plane on `127.0.0.1:33077` with auth, powered by
 2. Launch `Horsey.exe` normally (via Steam or directly).
 
 3. Inject:
-   ```
-   target\x86_64-pc-windows-msvc\release\horsey-inject.exe \
-     --dll target\x86_64-pc-windows-msvc\release\horsey.dll
+   ```powershell
+   target\x86_64-pc-windows-msvc\release\horsey-inject.exe `
+     --dll target\x86_64-pc-windows-msvc\release\horsey.dll `
+     --fresh
    ```
    The injector finds `Horsey.exe` and `CreateRemoteThread`s
    `LoadLibraryW(horsey.dll)` into it.
 
-4. Check the log:
+4. Check `horsey.log` beside the staged DLL. It should contain:
    ```
-   type "C:\Games\Steam\steamapps\common\Horsey Game\horsey.log"
-   ```
-   You should see `horsey-mod: listening on 127.0.0.1:33077`.
-
-5. Read the auth token:
-   ```
-   type "C:\Games\Steam\steamapps\common\Horsey Game\horsey.auth"
+   horsey-mod: listening on 127.0.0.1:33077 (auth disabled)
    ```
 
-6. Test:
-   ```
-   curl -X POST http://127.0.0.1:33077/op \
-     -H "X-Ueforge-Auth: <token from horsey.auth>" \
+5. Test:
+   ```powershell
+   curl.exe -X POST http://127.0.0.1:33077/op `
      -d '{"op":"ping"}'
    ```
 
@@ -116,7 +108,8 @@ unresolved-symbol errors.
 The injector pattern is:
 
 - **Simpler**: a single `CreateRemoteThread` call.
-- **Hot-reload-friendly**: detach via `FreeLibrary`, rebuild, re-inject.
+- **Development-friendly**: stages each DLL generation without locking
+  Cargo's build output.
 - **No 1,089 forwarders**: only our DllMain is exported.
 - **Game-agnostic**: same code injects into any native-PE Windows game.
 
@@ -125,28 +118,23 @@ step). This is fine for development; for end-user distribution we can
 add a small launcher EXE that combines "start Horsey via Steam" with
 "wait for it to load, then inject".
 
-## Next phases
+## Current work
 
-Currently horsey-mod provides READ + simple WRITE access via the HTTP
-control plane. Phase 2 will add:
-
-- **MinHook trampolines** on the 18 game function addresses (see
-  `src/targets.rs::fn_addr`). With these, mods can hook
-  `apply_gene_to_horse`, `check_horse_eligibility`, `breeding_state_machine`,
-  etc., to inject extension behavior.
-- **SDL3 input hook** for the hotkey system (Shift+Click, R/F/S/B/T,
-  Numpad +/-).
-- **Sidecar save state** so per-horse extension fields persist across
-  game saves.
+Resolver hardening, extended-gene population support, safe sidecar
+persistence, and scene automation are tracked in
+[`docs/todo.md`](docs/todo.md).
 
 ## Files
 
 | File | Purpose |
 |---|---|
 | `src/lib.rs` | DllMain + worker thread + server bootstrap |
-| `src/bin/inject.rs` | The injector EXE |
-| `src/targets.rs` | Hardcoded function + struct addresses from our decompilation |
+| `src/bin/inject.rs` | Fresh-launch DLL injector |
+| `src/bin/play.rs` | Build, launch, inject, and wait helper |
+| `src/targets_registry.rs` | Runtime-resolved function, global, and field targets |
 | `src/gamestate.rs` | Typed accessors for the GameState global |
 | `src/horse.rs` | Typed accessors for the Horse struct |
 | `src/ops.rs` | Horsey-specific op registrations |
 | `src/snapshot.rs` | The `HorseyState` snapshot returned in every response |
+| `src/overlay.rs` | In-game horse and genome editor |
+| `src/genes.rs` | Extended-gene state and evaluation |

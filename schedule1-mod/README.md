@@ -13,7 +13,7 @@ MelonLoader via the `Unityforge.Shim.Melon` C# entry point.
 ## Build
 
 ```sh
-k3sc cargo-lock build --release -p schedule1-mod
+cargo build --release -p schedule1-mod
 ```
 
 Output: `target/x86_64-pc-windows-msvc/release/schedule1_mod.dll`
@@ -21,7 +21,9 @@ Output: `target/x86_64-pc-windows-msvc/release/schedule1_mod.dll`
 The C# shim (`Unityforge.Shim.Melon`) is built separately:
 
 ```sh
-dotnet build -c Release unityforge/cs-shim-melonloader/Unityforge.Shim.Melon.csproj
+dotnet build unityforge/cs-shim-melonloader/Unityforge.Shim.Melon.csproj \
+  -c Release \
+  -p:MelonLoaderDir="<game-root>/MelonLoader"
 ```
 
 ## Deploy
@@ -34,14 +36,19 @@ Copy both DLLs into the MelonLoader mods directory:
 
 | Feature | Rating |
 |---|---:|
-| [NPC behavior](docs/research.md) (combat, retaliation, patrol) | 3/10 |
-| [Combat system](docs/research.md) (damage hooks, attack triggers) | 2/10 |
-| HTTP control plane | 9/10 |
+| [Combat-XP levelling](docs/status.md) (persistence, auto-spend, Heavy Hands) | 7/10 |
+| [Cash loot drops](docs/status.md) (kill credit and toughness scaling) | 6/10 |
+| [Mob farming areas](docs/status.md) (regional garrisons and rolled mob types) | 2/10 |
+| [Faction war](docs/status.md) (influence loss and takeover groundwork) | 3/10 |
+| HTTP research and control plane on port 17175 | 10/10 |
 
-## Research
+## Documentation
 
-Research tests and findings live in `tests/` and `docs/`.
-Set `S1_DEBUG_PORT` and run with `--test-threads=1 --nocapture`.
+- [Current status](docs/status.md)
+- [Research](docs/research.md)
+- [Certainty tracking](docs/certainty-tracking.md)
+- [Open issues](docs/todo.md)
+- [Plan](docs/plan.md)
 
 ## File layout
 

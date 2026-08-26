@@ -1,7 +1,7 @@
 # grounded2-mod
 
-Grounded 2 (UE 5) RPG mod. Adds a skill/leveling system with
-XP from kills and crafting, persistent across saves.
+Grounded 2 RPG mod with kill-driven progression, persistent
+skills, survival tweaks, and expanded inventory.
 
 ## Game
 
@@ -14,18 +14,17 @@ XP from kills and crafting, persistent across saves.
 
 | Feature | Rating |
 |---|---:|
-| [RPG skill system](docs/rpg.md) (13 skills, XP from kills and crafting, sqrt leveling curve) | 7/10 |
-| [Damage pipeline](docs/damage.md) (attack damage, armor, lifesteal, critical chance, evasion, thorns) | 6/10 |
+| [RPG skill system](docs/rpg.md) (14 skills, kill XP, per-slot persistence) | 7/10 |
+| [Damage pipeline](docs/damage.md) (damage, armor, fall, impact, lifesteal) | 6/10 |
 | [Backpack expansion](docs/inventory.md) (slot count, mouse-wheel scroll) | 8/10 |
-| [Gameplay settings](docs/features.md) (hunger, thirst, survival multipliers) | 8/10 |
-| Per-slot save/load (JSON sidecar) | 7/10 |
-| HTTP control plane on port 17171 | 9/10 |
-| ImGui overlay tab | 6/10 |
+| [Gameplay settings](docs/features.md) (hunger and thirst multipliers) | 8/10 |
+| ImGui RPG and engine-inspection tabs | 6/10 |
+| Optional HTTP control plane on port 17171 | 9/10 |
 
 ## Build
 
 ```sh
-k3sc cargo-lock build --release -p grounded2-mod
+cargo build --release -p grounded2-mod
 ```
 
 Output: `target/x86_64-pc-windows-msvc/release/grounded2_mod.dll`,
@@ -39,7 +38,8 @@ mods in this workspace cannot overwrite each other's DLL.
 cargo deploy install -p grounded2-mod
 ```
 
-Installs to `Grounded2\Binaries\Win64\ue4ss\Mods\Grounded2Mod\dlls\main.dll`.
+Installs to
+`Augusta\Binaries\WinGRTS\ue4ss\Mods\Grounded2Mod\dlls\main.dll`.
 
 ## Documentation
 
@@ -63,8 +63,9 @@ grounded2-mod/
   docs/
   src/
     lib.rs
-    skills.rs
-    effects.rs
+    rpg/
+    patch.rs
+    survival.rs
   tests/
     common/mod.rs
     research_probes.rs

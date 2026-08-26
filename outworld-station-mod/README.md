@@ -1,7 +1,7 @@
 # outworld-station-mod
 
-Outworld Station (UE 5) runtime mod. First feature: item stack
-size adjustments via DataTable mutation at runtime.
+Outworld Station runtime mod for live item-stack and data-table
+tweaks.
 
 ## Game
 
@@ -14,13 +14,15 @@ size adjustments via DataTable mutation at runtime.
 
 | Feature | Rating |
 |---|---:|
-| [Stack size adjustments](docs/research.md) (DataTable mutation at runtime) | 4/10 |
-| HTTP control plane | 9/10 |
+| [Stack size adjustments](docs/research.md) (configurable multiplier with vanilla baselines) | 4/10 |
+| Settings-driven dynamic data-table tweaks | 3/10 |
+| ImGui tweak and engine-inspection tabs | 6/10 |
+| HTTP control plane on port 17172 | 9/10 |
 
 ## Build
 
 ```sh
-k3sc cargo-lock build --release -p outworld-station-mod
+cargo build --release -p outworld-station-mod
 ```
 
 Output:
@@ -37,14 +39,19 @@ cargo deploy install -p outworld-station-mod
 
 Installs to `OutworldStation\Binaries\Win64\ue4ss\Mods\OutworldStationMod\dlls\main.dll`.
 
+See [the research notes](docs/research.md) for the runtime
+DataTable caching behavior that determines when tweaks apply.
+
 ## File layout
 
 ```
 outworld-station-mod/
   Cargo.toml
   README.md
+  settings.example.json
   src/
     lib.rs
+    stacks.rs
   tests/
     common/mod.rs
     explore_dt_rows.rs

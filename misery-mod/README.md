@@ -14,16 +14,20 @@ by UE4SS as `main.dll`.
 
 | Feature | Rating |
 |---|---:|
-| [Shining timer control](docs/research.md) (freeze and countdown) | 5/10 |
-| [Vendor modification](docs/research.md) (add items to any vendor's buy/sell list) | 4/10 |
-| [Gameplay settings](docs/research.md) (hunger, thirst, damage, spawn rate) | 4/10 |
+| [Shining timer control](docs/research.md) (inspection and live control) | 5/10 |
+| [Vendor modification](docs/research.md) (per-load inventory changes) | 4/10 |
+| [Gameplay research](docs/research.md) (dispatch, spawning, phenomena, assets) | 4/10 |
 | Movement speed modification | 3/10 |
 | HTTP control plane on port 17176 | 9/10 |
+
+Auto-load, generated rooms, random placement, and 10x stacks are
+currently disabled. See [the open issues](docs/todo.md) for their
+verification gates.
 
 ## Build
 
 ```sh
-k3sc cargo-lock build --release -p misery-mod
+cargo build --release -p misery-mod
 ```
 
 Output: `target/x86_64-pc-windows-msvc/release/misery_mod.dll`,
@@ -39,11 +43,13 @@ cargo deploy install -p misery-mod
 
 Installs to `MISERY\Binaries\Win64\ue4ss\Mods\MiseryMod\dlls\main.dll`.
 
-## Research
+## Documentation
 
-Research tests live in `tests/` and run against the live game.
-Findings are documented in `docs/research.md`. Set
-`MISERY_DEBUG_PORT=17176` and run with `--test-threads=1 --nocapture`.
+- [Research](docs/research.md)
+- [Open issues](docs/todo.md)
+- [Pieces](docs/pieces.md)
+- [World generation](docs/worldgen.md)
+- [RPG direction](docs/rpg.md)
 
 ## File layout
 

@@ -16,29 +16,51 @@ game's official mod loader (`Story.LoadDLLs`), not BepInEx.
 |---|---:|
 | [Faction personality / evolution](docs/faction-war.md) | 4/10 |
 | [Settlement upgrades](docs/plans/2026-07-11-settlement-upgrades.md) | 3/10 |
-| [Quality system](docs/faction-war.md) (tiered loot, craft rolls) | 3/10 |
-| [Act repertoire](docs/faction-war.md) (theft, trade, robbery, murder, extortion) | 3/10 |
+| [Quality system](docs/faction-war.md) (tiered loot and craft rolls) | 3/10 |
+| [Act repertoire](docs/faction-war.md) (trade, theft, robbery, scavenging, murder) | 3/10 |
 | [AI-vs-AI war](docs/faction-war.md) (ignition, sustain, ceasefire) | 3/10 |
 | [Town growth](docs/faction-war.md) (annexes, recruits, builders) | 3/10 |
-| [Storyteller / director](docs/status.md) (Randy Random incursions, dread loop) | 2/10 |
-| [Named uniques](docs/status.md) (one-of-a-kind items from incursions) | 2/10 |
-| [More to do](docs/status.md) (ecosystem-generated work, bounties) | 3/10 |
-| [Chronicle](docs/status.md) (in-game narration of world events) | 3/10 |
-| HTTP control plane | 9/10 |
+| [Storyteller / director](docs/status.md) (incursions, strangers, adaptive pressure) | 2/10 |
+| [Named uniques](docs/status.md) (one-of-a-kind world-owned items) | 2/10 |
+| [Ecosystem work](docs/status.md) (bounties, threats, couriers, work board) | 3/10 |
+| [Chronicle](docs/status.md) (in-game narration of public events) | 3/10 |
+| HTTP control plane on port 17173 | 9/10 |
+
+[Current status](docs/status.md) separates code-landed features
+from behavior verified in the running game.
 
 ## Build
 
 ```sh
-k3sc cargo-lock build --release -p survivalist-mod
+cargo build --release -p survivalist-mod
 ```
 
 Output: `target/x86_64-pc-windows-msvc/release/survivalist_mod.dll`
+
+Build the C# bridge against the game's managed assemblies:
+
+```powershell
+dotnet build unityforge\cs-shim-survivalist\Unityforge.Shim.Survivalist.csproj `
+  -c Release `
+  -p:UnityDir="<game-root>\Survivalist Invisible Strain_Data\Managed"
+```
 
 ## Deploy
 
 ```powershell
 .\survivalist-mod\scripts\build_and_deploy.ps1
 ```
+
+The deploy script builds both components, copies the story XML,
+and accepts `-GameDir`, `-ModName`, `-NoCopy`, and `-Hot`.
+
+## Documentation
+
+- [Current status](docs/status.md)
+- [Faction simulation and design](docs/faction-war.md)
+- [Runtime research](docs/research.md)
+- [Settlement upgrades](docs/plans/2026-07-11-settlement-upgrades.md)
+- [Bounty arc](docs/plans/2026-07-10-bounty-arc.md)
 
 ## File layout
 
@@ -51,4 +73,5 @@ survivalist-mod/
     generate_quality.ps1
   src/
     lib.rs
+  story/
 ```

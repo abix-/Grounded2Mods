@@ -3,6 +3,15 @@
 Wild West Miner Simulator (Demo) RPG mod. Rust cdylib loaded
 into the game by the `Unityforge.Shim.Mono` BepInEx plugin.
 
+## Features
+
+| Feature | Rating |
+|---|---:|
+| Demo boundary removal | 2/10 |
+| Spacebar jump | 2/10 |
+| Experimental six-skill RPG catalog with XP and persistence | 3/10 |
+| HTTP control plane on port 17172 | 9/10 |
+
 ## Status
 
 **Phase 3a complete (declarative).** Six-skill catalog wired
@@ -206,11 +215,11 @@ If that line never appears:
   ```
   Find the actual identifiers via `walk_class` (step 6).
 
-### 6. Verify field names (likely fix-up pass)
+### 6. Re-check identifiers after a game update
 
-I declared the six skill targets as best guesses from the WWM
-research pass. First launch is when reality hits. For each
-declared target, confirm with:
+Quick Pickaxe and the save-slot field are live-verified. The
+other raw-field effects remain experimental and should be
+re-checked after a game update:
 
 ```powershell
 # Get a handle on the live singleton.
@@ -221,23 +230,8 @@ curl.exe -s $op -d '{"op":"inspect_object","args":{"handle":<N>}}'
 ```
 
 Compare the returned field names against
-`wwm-mod/src/skills.rs`. For each mismatch:
-
-```rust
-// Before
-static STRONG_BACK_EFFECT: UnityFieldAdditiveEffect =
-    UnityFieldAdditiveEffect::new(
-        "PlayerCarryingController", "_maxCapacity",
-        50.0, "carry capacity", &STRONG_BACK_VANILLA);
-
-// After (whatever inspect_object actually shows)
-static STRONG_BACK_EFFECT: UnityFieldAdditiveEffect =
-    UnityFieldAdditiveEffect::new(
-        "PlayerCarryingController", "maxCapacity",   // dropped underscore
-        50.0, "carry capacity", &STRONG_BACK_VANILLA);
-```
-
-Re-run `build_and_deploy.ps1`, restart the game.
+`wwm-mod/src/skills.rs`, then rebuild and restart after any
+correction.
 
 The six declared field targets:
 
@@ -266,17 +260,14 @@ fix in `wwm-mod/src/skills.rs::install_hooks`.
 Once the field names are correct + a slot is active:
 
 ```powershell
-# Grant points + level up Strong Back. Watch BepInEx log for
-#   rpg/tracker: spent N on strong_back: level 0 -> 5 (45 points left)
+# Grant points + level up the live-verified Quick Pickaxe effect.
 curl.exe -s $op -d '{"op":"set_skill_points","args":{"count":50}}'
-curl.exe -s $op -d '{"op":"skill_spend","args":{"id":"strong_back","count":5}}'
+curl.exe -s $op -d '{"op":"skill_spend","args":{"id":"quick_pickaxe","count":10}}'
 
 # Confirm via state snapshot.
 curl.exe -s $op -d '{"op":"skill_state"}'
 
-# Open inventory in-game; carry capacity should be the
-# pre-mod vanilla baseline + 25 (sqrt(5/10) * 50 = 35.4
-# rounded to int).
+# DigManager._digRange should move from 3.0 to 4.5.
 
 # Dig some ore -> XP increments; eventually levels up.
 # Tail the BepInEx log for:
