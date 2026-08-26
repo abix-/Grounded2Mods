@@ -103,7 +103,6 @@ See [`unityforge/README.md`](unityforge/README.md) and
 | [Horsey Game](horsey-mod/) | modforge (PE inject) | Provides an injectable research and control layer for Horsey Game state. | 3/10 |
 | [Scrap Mechanic](scrapmechanic-mod/) | Lua (native) | Rebalances survival inventory, fuel use, building limits, and respawn rates. | 3/10 |
 | [Quasimorph](quasimorph-mod/) | C# (native mod API) | Provides a minimal C# scaffold for the game's first-party mod API. | 1/10 |
-| (il2cpp-smoke) | unityforge (IL2CPP) | Exercises the Unity IL2CPP integration end to end. | n/a |
 
 > **Rating scale:** 10/10 = ready for 1000 players, fun, zero bugs.
 
