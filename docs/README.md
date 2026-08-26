@@ -10,6 +10,9 @@
 |---|---|
 | [todo.md](todo.md) | Open work across the workspace, ordered by leverage. |
 | [changelog.md](changelog.md) | Chronological history of milestones, investigations, and design pivots across every crate. |
+| [credits.md](credits.md) | Projects, tools, authors, and game studios credited by the workspace. |
+| [decomp](../decomp/README.md) | Decompiler implementation, build instructions, sample output, and the retired Falcon prototype. |
+| [decomp retrospective](../decomp/docs/retrospective.md) | Assessment of the decompilation work and whether further investment is worthwhile. |
 | [wild-west-miner-research.md](wild-west-miner-research.md) | Research pass on modding Wild West Miner Simulator. ueforge vs Timberbot vs a hypothetical `unityforge`. |
 | [unityforge-plan.md](unityforge-plan.md) | Extraction plan for `unityforge`: the C# sibling to ueforge that Goldbot will build on and Timberbot will port onto. |
 

@@ -52,6 +52,7 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 - Compacted each framework inventory into logical categories while retaining exactly one one-word source link per unique capability file.
 - Shortened the root README's AI disclaimer to one sentence.
 - Replaced the root game table's feature inventories with one-sentence purpose summaries.
+- Moved reverse-engineering navigation into the workspace docs index and moved detailed credits into `docs/credits.md`.
 
 ## Next steps
 
