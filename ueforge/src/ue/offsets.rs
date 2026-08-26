@@ -130,6 +130,12 @@ pub mod uclass {
 
 pub mod ufunction {
     pub const FUNCTION_FLAGS: usize = 0xB0;
+    /// `uint8 NumParms`, straight after FunctionFlags.
+    pub const NUM_PARMS: usize = 0xB4;
+    /// `uint16 ParmsSize`: bytes ProcessEvent expects the parm
+    /// block to be. Undersizing it lets the callee write past
+    /// the buffer.
+    pub const PARMS_SIZE: usize = 0xB6;
     pub const SIZE: usize = 0xE0;
 }
 

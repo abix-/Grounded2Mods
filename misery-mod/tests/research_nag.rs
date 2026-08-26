@@ -17,6 +17,11 @@ use serde_json::json;
 const NAG: &str = "WD_PlaytestNote01_C";
 
 /// The notice's functions: what could a keypress be calling?
+///
+/// Read from the LIVE class, not the discovery cache.
+/// `discover_class_detail` reads the startup GObjects walk, and
+/// this class is absent from it (research.md 26.5). `nag_stats`
+/// walks the live object's `UClass::iter_functions` instead.
 #[test]
 fn nag_class_detail() {
     let Some(api) = api_or_skip() else { return };
@@ -24,12 +29,15 @@ fn nag_class_detail() {
         println!("SKIP: offsets not live");
         return;
     }
-    let r = api.op("discover_class_detail", json!({"name": NAG}));
-    if !r.ok {
-        println!("discover_class_detail failed: {:?}", r.error);
-        return;
+    let r = api.op("nag_stats", json!({}));
+    assert!(r.ok, "nag_stats failed: {:?}", r.error);
+    println!("present: {}", r.result["present"]);
+    println!("hooked:  {}", r.result["hooked"]);
+    let fns = r.result["functions"].as_array().cloned().unwrap_or_default();
+    println!("{} function(s) on {NAG}:", fns.len());
+    for f in &fns {
+        println!("  {}", f.as_str().unwrap_or("?"));
     }
-    println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
 }
 
 /// What else is on screen with it? The thing showing the black

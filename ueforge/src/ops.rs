@@ -71,6 +71,12 @@ pub fn register_builtins() {
             |args| walk_class_chain(args),
         ),
         OpDef::new(
+            "class_functions",
+            "List the functions on a LIVE class, read off an instance (finds what the startup discovery cache misses)",
+            "{class: str}",
+            |args| class_functions(args),
+        ),
+        OpDef::new(
             "fname_to_string",
             "Resolve an FName u64 to its string form",
             "{fname: u64}",
@@ -474,6 +480,52 @@ where
 /// This is the section 22.13 workaround: `is_a` against a cached
 /// UClass returns 0 for reinstanced Blueprint classes; the name
 /// chain always matches live instances.
+/// Functions on a live class, with the parm block size each one
+/// expects.
+///
+/// The startup discovery walk only sees what was loaded at the
+/// time, so anything created later (menus, widgets) is missing
+/// from it and `discover_class_detail` returns nothing. This
+/// reads the class off a live instance instead.
+///
+/// A Blueprint that reacts to a key names its handler after that
+/// key (`InpActEvt_SpaceBar_...`), and a button handler is named
+/// after the button, so this listing is usually enough to find
+/// the function to call. See misery research.md 26.5.
+pub fn class_functions(args: &Json) -> Result<Json, String> {
+    let class_name = arg_str(args, "class")?.to_string();
+    let ptr = crate::ue::actor::find_object(&class_name, None, false)
+        .ok_or_else(|| format!("no live instance of {class_name}"))?;
+    // SAFETY: ptr came from this call's GObjects walk.
+    let obj = unsafe { &*(ptr as *const UObject) };
+    let cls = obj.class().ok_or("instance has no class")?;
+    let addr = obj as *const UObject as usize;
+    let mut fns = Vec::new();
+    for (name, flags) in cls.iter_functions() {
+        let entry = match cls.get_function(&class_name, &name) {
+            Some(f) => serde_json::json!({
+                "name": name,
+                "flags": format!("0x{flags:X}"),
+                "parms_size": f.parms_size(),
+                "num_parms": f.num_parms(),
+            }),
+            None => serde_json::json!({
+                "name": name,
+                "flags": format!("0x{flags:X}"),
+            }),
+        };
+        fns.push(entry);
+    }
+    Ok(serde_json::json!({
+        "class": class_name,
+        "instance": format!("0x{addr:X}"),
+        "instance_selector": format!("addr:0x{addr:X}"),
+        "full_name": obj.full_name(),
+        "count": fns.len(),
+        "functions": fns,
+    }))
+}
+
 pub fn walk_class_chain(args: &Json) -> Result<Json, String> {
     let needle = arg_str(args, "needle")?.to_string();
     let max = arg_u64(args, "max", Some(256))? as usize;

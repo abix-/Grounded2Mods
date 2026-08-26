@@ -433,6 +433,27 @@ impl UFunction {
         }
     }
 
+    /// How many bytes ProcessEvent reads and writes through the
+    /// parm pointer. A caller must hand it a buffer at least
+    /// this large.
+    pub fn parms_size(&self) -> u16 {
+        unsafe {
+            (self as *const UFunction as *const u8)
+                .add(offsets::ufunction::PARMS_SIZE)
+                .cast::<u16>()
+                .read_unaligned()
+        }
+    }
+
+    /// Number of declared parameters, return value included.
+    pub fn num_parms(&self) -> u8 {
+        unsafe {
+            (self as *const UFunction as *const u8)
+                .add(offsets::ufunction::NUM_PARMS)
+                .read_unaligned()
+        }
+    }
+
     pub fn set_function_flags(&self, flags: u32) {
         unsafe {
             (self as *const UFunction as *mut u8)

@@ -12,7 +12,6 @@
 | 8 | `worldgen` | [ ] Build one new square end to end and roll it into a pool | A square that never existed streams in-game, verified live. |
 | 2 | `spawning` | [ ] Record whether the hub spawn point re-reads count/class after the set_spawn_point writes | Observation from the tamed dwarf spot documented in research.md 25.4. |
 | 3 | `vendors` | [ ] Build vendor list config and auto-apply on game load with UI tab | Vendor sell/buy list modifications apply automatically from config on each load. Item list editable from ImGui tab, including SELL_PRICE_PCT and SEWING_KIT_COST. |
-| 5 | `lib.rs` | [ ] Suppress nag screen (WD_PlaytestNote01_C) via game-thread ProcessEvent | Nag screen dismissed automatically on load without manual input. |
 | 10 | `skills` | [ ] Find melee damage address for strength stat | Memory offset for player melee damage documented and verified with a write test. |
 | 10 | `skills` | [ ] Find player max health address for constitution stat | Memory offset for player max health documented and verified with a write test. |
 | 10 | `skills` | [ ] Hook or poll for kill events as XP source | Kill event fires reliably and delivers XP to the tracker. |

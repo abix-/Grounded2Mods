@@ -2108,13 +2108,54 @@ Destroying an object whose vtable we have patched means the
 next virtual call lands in a half-destroyed object. Never
 destroy a hooked object from inside its own hook.
 
-**Where it stands.** The notice is collapsed and disabled, which
-is safe (nothing is destroyed). Whether that alone clears the
-black screen is unconfirmed. The correct fix is to call the
-widget's OWN dismissal function rather than tearing it out;
-`nag_stats` now lists the class's functions, read live via
-`UClass::iter_functions`, so the next step is to pick the right
-one.
+**SOLVED: press the notice's own spacebar handler.** Collapsing
+and disabling was not dismissal either. The widget stayed
+instantiated and kept swallowing input, and the black screen
+stayed. The answer was to stop touching the widget's
+presentation at all and run the same code a real keypress runs.
+
+Reading the live class (`nag_stats`, which walks
+`UClass::iter_functions` on the live object) gives four
+functions and names the answer outright:
+
+```text
+Get_KeyIcon_1_Brush
+InpActEvt_SpaceBar_K2Node_InputKeyEvent_1
+InpActEvt_Gamepad_FaceButton_Bottom_K2Node_InputKeyEvent_0
+ExecuteUbergraph_WD_PlaytestNote01
+```
+
+`InpActEvt_SpaceBar_K2Node_InputKeyEvent_1` IS the spacebar
+handler. The gamepad entry beside it is the same event bound to
+the A button, which confirms the pair is the dismissal. Calling
+it from inside the existing hook (already on the game thread,
+already holding the widget) makes the game tear its own notice
+down, so nothing is hidden and nothing is destroyed.
+
+Read the parm size off the `UFunction`, do not assume it. This
+one declares 1 parm and 24 bytes, an `FKey`. Undersizing the
+block lets the callee write past the buffer. `UFunction` gained
+`parms_size()` and `num_parms()` for this
+(`ueforge/src/ue/offsets.rs::ufunction`).
+
+Live proof, two consecutive cold starts, operator confirmed the
+notice never appeared and no key was pressed:
+
+```text
+[19:07:04] nag: hooked WD_PlaytestNote01_C
+[19:07:04] nag: pressed InpActEvt_SpaceBar_K2Node_InputKeyEvent_1 (24 parm bytes, 1 parms)
+[19:07:06] FieldTweak<i32> applied to 175 rows of ItemList
+```
+
+That last line matters: on the collapse-and-disable build the
+same `ItemList` lookup timed out after 30s and the log went
+silent, because the game never got past the notice.
+
+**The general lesson.** A Blueprint widget that waits for a key
+names its handler after that key. When something must be
+dismissed, list the live class's functions and look for
+`InpActEvt_*` before inventing any way to hide, disable, or
+destroy the widget.
 
 ### 26.4 Hot reload: why it still crashes (2026-08-26)
 
