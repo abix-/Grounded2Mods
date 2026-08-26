@@ -56,6 +56,12 @@ Newest first.
 | `misery` | [x] Harvest pieces out of a live square with transforms and mesh identity, and rebuild them elsewhere | research_harvest::harvest_and_compose: 564 pieces read, 60 rebuilt, operator confirmed solid and real in-game. worldgen.md 9. |
 | `misery` | [x] Capture structures from squares into a library and generate monuments with modforge's arrangement rules | Live: 342-piece Clustered and 194-piece AlongRoad monuments built from structures harvested out of other squares. worldgen.md 9.4. |
 | `misery` | [x] Alternate-reality overlays: per-square phenomena (anomaly fields, teleport nests, black holes, camps, caches) with rewards guarded by dangers | Live in the bunker world: rolls logged per square, 28 props placed, no crash. src/strange.rs. |
+| `modforge` | [x] Shape classifier: a piece's role read from its box proportions (Slab, Panel, Post, Beam, Block, Clutter) | 9 unit tests; engine-agnostic, works from measured extents alone. |
+| `modforge` | [x] shell_slots: decompose a RoomSpec into floor tiles and wall segments with openings assigned, greedy module fill (7 m becomes 4+2+1) | 8 unit tests; 260 modforge lib tests pass (1 pre-existing unrelated input failure). |
+| `misery` | [x] Found and characterised the game's modular building kit: walls, doors, windows, corners, floors, stairs on a 1/2/4 m grid | research_kit: 12 walls, 5 doors, 4 windows, 6 floors loaded; pivot rule proven on 9 walls (names ARE dimensions, pivot at bottom start corner). |
+| `misery` | [x] Build a generated room from the kit: modforge decides the shell, misery binds slots to meshes | Operator confirmed in-game: four walls closing, doorway, windows, floor. worldgen.md 9.6. |
+| `misery` | [x] Fix ground trace reading FHitResult ImpactPoint Y instead of Z | Everything ground-placed was at the wrong altitude; z came back equal to y. worldgen.md 9.6. |
+| `misery` | [x] Fix yaw conversion: the modforge to UE map is a reflection, so angles negate rather than offset | Two of four walls ran backwards before the fix. worldgen.md 9.6. |
 
 ## 2026-08-20
 

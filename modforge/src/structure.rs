@@ -569,6 +569,298 @@ pub struct MonumentDef {
     pub good_for: crate::memory::GoodFor,
 }
 
+/// What a shell slot is for. A builder supplies one piece per
+/// slot from whatever kit its host game has.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SlotKind {
+    Floor,
+    Wall,
+    Ceiling,
+}
+
+/// What a wall slot must contain, if anything.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SlotOpening {
+    Door,
+    Window,
+}
+
+/// One piece of a room's shell that a builder must supply: where
+/// it goes, how big a span it must cover, and what it needs to
+/// contain.
+///
+/// `position` is the slot's own origin in structure-local space
+/// (y up): for a wall, the bottom of its starting edge; for a
+/// floor or ceiling tile, its corner. `yaw` turns the slot about
+/// the up axis, so a wall runs along +x before rotation.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct ShellSlot {
+    pub kind: SlotKind,
+    pub position: Vec3,
+    pub yaw: f32,
+    /// Span the piece must cover: width along the slot's run, and
+    /// height (walls) or depth (floors and ceilings).
+    pub width: f32,
+    pub height: f32,
+    pub opening: Option<SlotOpening>,
+}
+
+/// Greedy fill of a run using the largest modules that fit, so a
+/// 7 m wall becomes 4 + 2 + 1 when the kit has those sizes.
+/// `modules` must be sorted largest first. Returns each piece's
+/// start offset along the run and its width.
+pub fn fill_run(run: f32, modules: &[f32]) -> Vec<(f32, f32)> {
+    let mut out = Vec::new();
+    let mut at = 0.0f32;
+    // A hair of tolerance so float remainders do not spawn a
+    // sliver piece at the end of every wall.
+    const EPS: f32 = 1e-3;
+    'fill: while run - at > EPS {
+        let left = run - at;
+        for &m in modules {
+            if m <= left + EPS {
+                out.push((at, m));
+                at += m;
+                continue 'fill;
+            }
+        }
+        // Nothing fits the remainder; stop rather than overhang.
+        break;
+    }
+    out
+}
+
+/// Decompose a room into the shell pieces a builder must supply:
+/// floor tiles, wall segments on all four sides with openings
+/// assigned, and ceiling tiles.
+///
+/// `modules` are the kit's available widths, largest first (e.g.
+/// `[4.0, 2.0, 1.0]`). Walls are laid on the room's interior
+/// boundary; a segment whose span overlaps an opening's span
+/// carries that opening.
+pub fn shell_slots(room: &RoomSpec, modules: &[f32]) -> Vec<ShellSlot> {
+    let mut out = Vec::new();
+    let (w, h, l) = (room.interior.x, room.interior.y, room.interior.z);
+    let half = Vec3::new(w / 2.0, 0.0, l / 2.0);
+    let corner = room.origin - half;
+
+    if room.floor {
+        for (x, dx) in fill_run(w, modules) {
+            for (z, dz) in fill_run(l, modules) {
+                out.push(ShellSlot {
+                    kind: SlotKind::Floor,
+                    position: corner + Vec3::new(x, 0.0, z),
+                    yaw: 0.0,
+                    width: dx,
+                    height: dz,
+                    opening: None,
+                });
+            }
+        }
+    }
+    if room.ceiling {
+        for (x, dx) in fill_run(w, modules) {
+            for (z, dz) in fill_run(l, modules) {
+                out.push(ShellSlot {
+                    kind: SlotKind::Ceiling,
+                    position: corner + Vec3::new(x, h, z),
+                    yaw: 0.0,
+                    width: dx,
+                    height: dz,
+                    opening: None,
+                });
+            }
+        }
+    }
+
+    // Each side: where its run starts, which way it runs, and the
+    // run's length. Walls run along +x before yaw is applied.
+    let sides = [
+        (Side::South, corner + Vec3::new(0.0, 0.0, l), 0.0f32, w),
+        (Side::North, corner + Vec3::new(w, 0.0, 0.0), std::f32::consts::PI, w),
+        (
+            Side::West,
+            corner,
+            -std::f32::consts::FRAC_PI_2,
+            l,
+        ),
+        (
+            Side::East,
+            corner + Vec3::new(w, 0.0, l),
+            std::f32::consts::FRAC_PI_2,
+            l,
+        ),
+    ];
+
+    for (side, start, yaw, run) in sides {
+        let (s, c) = yaw.sin_cos();
+        for (at, width) in fill_run(run, modules) {
+            // A segment claims the opening whose centre falls in
+            // it. Openings are usually narrower than a module (a
+            // 1.2 m door in a 4 m wall), so comparing spans would
+            // never match; the piece that contains the doorway is
+            // the one that must carry it.
+            let opening = room
+                .openings
+                .iter()
+                .filter(|o| o.side == side)
+                .find(|o| {
+                    let centre = run / 2.0 + o.offset;
+                    centre >= at && centre < at + width
+                })
+                .map(|o| {
+                    if o.door {
+                        SlotOpening::Door
+                    } else {
+                        SlotOpening::Window
+                    }
+                });
+            out.push(ShellSlot {
+                kind: SlotKind::Wall,
+                position: start + Vec3::new(at * c, 0.0, -at * s),
+                yaw,
+                width,
+                height: h,
+                opening,
+            });
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod shell_tests {
+    use super::*;
+
+    fn room(w: f32, h: f32, l: f32, openings: Vec<Opening>) -> RoomSpec {
+        RoomSpec {
+            origin: Vec3::ZERO,
+            interior: Vec3::new(w, h, l),
+            wall_thickness: 0.2,
+            openings,
+            floor: true,
+            ceiling: true,
+        }
+    }
+
+    #[test]
+    fn fill_run_uses_largest_modules_first() {
+        assert_eq!(fill_run(8.0, &[4.0, 2.0, 1.0]), vec![(0.0, 4.0), (4.0, 4.0)]);
+        assert_eq!(
+            fill_run(7.0, &[4.0, 2.0, 1.0]),
+            vec![(0.0, 4.0), (4.0, 2.0), (6.0, 1.0)]
+        );
+    }
+
+    #[test]
+    fn fill_run_stops_rather_than_overhanging() {
+        // 3 m of run with only 4 m modules: nothing fits.
+        assert!(fill_run(3.0, &[4.0]).is_empty());
+    }
+
+    #[test]
+    fn a_plain_room_has_four_walls_of_segments() {
+        let r = room(8.0, 3.0, 8.0, vec![]);
+        let slots = shell_slots(&r, &[4.0, 2.0, 1.0]);
+        let walls: Vec<&ShellSlot> =
+            slots.iter().filter(|s| s.kind == SlotKind::Wall).collect();
+        // 8 m per side at 4 m modules = 2 segments, four sides.
+        assert_eq!(walls.len(), 8, "expected 8 wall segments");
+        assert!(walls.iter().all(|s| (s.height - 3.0).abs() < 1e-4));
+    }
+
+    #[test]
+    fn floor_and_ceiling_tile_the_interior() {
+        let r = room(8.0, 3.0, 4.0, vec![]);
+        let slots = shell_slots(&r, &[4.0]);
+        let floors = slots.iter().filter(|s| s.kind == SlotKind::Floor).count();
+        let ceils = slots.iter().filter(|s| s.kind == SlotKind::Ceiling).count();
+        // 8x4 at 4 m tiles = 2 tiles each.
+        assert_eq!(floors, 2);
+        assert_eq!(ceils, 2);
+    }
+
+    #[test]
+    fn a_door_claims_exactly_one_segment() {
+        let r = room(
+            8.0,
+            3.0,
+            8.0,
+            vec![Opening {
+                side: Side::South,
+                offset: -2.0,
+                width: 1.2,
+                sill: 0.0,
+                door: true,
+            }],
+        );
+        let slots = shell_slots(&r, &[4.0]);
+        let doors: Vec<&ShellSlot> = slots
+            .iter()
+            .filter(|s| s.opening == Some(SlotOpening::Door))
+            .collect();
+        assert_eq!(doors.len(), 1, "one door segment, got {}", doors.len());
+        assert_eq!(doors[0].kind, SlotKind::Wall);
+    }
+
+    #[test]
+    fn a_window_is_distinct_from_a_door() {
+        let r = room(
+            4.0,
+            3.0,
+            4.0,
+            vec![Opening {
+                side: Side::North,
+                offset: 0.0,
+                width: 1.0,
+                sill: 1.0,
+                door: false,
+            }],
+        );
+        let slots = shell_slots(&r, &[4.0]);
+        assert_eq!(
+            slots
+                .iter()
+                .filter(|s| s.opening == Some(SlotOpening::Window))
+                .count(),
+            1
+        );
+        assert_eq!(
+            slots
+                .iter()
+                .filter(|s| s.opening == Some(SlotOpening::Door))
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn a_floorless_roofless_room_is_walls_only() {
+        let mut r = room(4.0, 3.0, 4.0, vec![]);
+        r.floor = false;
+        r.ceiling = false;
+        let slots = shell_slots(&r, &[4.0]);
+        assert!(slots.iter().all(|s| s.kind == SlotKind::Wall));
+        assert_eq!(slots.len(), 4);
+    }
+
+    #[test]
+    fn wall_segments_start_on_the_interior_boundary() {
+        let r = room(4.0, 3.0, 4.0, vec![]);
+        let slots = shell_slots(&r, &[4.0]);
+        for s in slots.iter().filter(|s| s.kind == SlotKind::Wall) {
+            // Every wall start sits on the interior rectangle.
+            let on_x = (s.position.x.abs() - 2.0).abs() < 1e-3;
+            let on_z = (s.position.z.abs() - 2.0).abs() < 1e-3;
+            assert!(
+                on_x || on_z,
+                "wall at {:?} is not on the boundary",
+                s.position
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod shape_tests {
     use super::*;

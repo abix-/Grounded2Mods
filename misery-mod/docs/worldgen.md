@@ -452,6 +452,56 @@ Risk to check when building: kit meshes resolve by name out of
 loaded objects, so a square that uses none of them may not have
 them in memory.
 
+### 9.6 Rooms are built, not copied (confirmed 2026-08-26)
+
+A room generated from a `RoomSpec` and built out of MISERY's own
+kit meshes stands correctly in the world: four walls closing at
+the corners, a doorway, windows, floor tiles. Operator verdict:
+"it works beautifully."
+
+**The split.** modforge owns the geometry, misery owns the
+naming:
+
+- `modforge::structure::shell_slots(room, modules)` decomposes a
+  `RoomSpec` into the pieces a shell needs: floor and ceiling
+  tiles, wall segments per side, each with a span and a yaw, and
+  openings assigned to the segment that CONTAINS them (openings
+  are narrower than a module, so comparing spans never matches).
+- `fill_run` fills a side greedily from the largest module down,
+  so a 7 m wall becomes 4 + 2 + 1 and odd rooms still close.
+- `misery-mod/src/rooms.rs` maps a slot to a mesh name:
+  `SM_Wall_400x300`, `SM_WallDoor_400x300`,
+  `SM_WallWindow_400x300`, `SM_Floor_400x400`. It knows the
+  400x401 alias, and avoids `SM_WallDoor_400x400` (the kit's one
+  malformed part: 458x56x460 with an off-centre pivot).
+- Unavailable opening sizes fall back to a solid wall, so a room
+  never ends up with a hole it cannot fill.
+
+**Two bugs worth remembering**, both silent:
+
+1. *The ground trace read the wrong axis.* `FHitResult::
+   ImpactPoint` sits at OutHit +0x28, so the point starts at
+   0x80 and its Z is at 0x90. Reading 0x88 returns the point's
+   Y. Everything placed by ground trace (rooms, overlays,
+   monuments) was going to the wrong altitude, and the symptom
+   was only visible because the op echoed its coordinates: z
+   came back exactly equal to y.
+2. *Yaw needed negating, not offsetting.* The position map
+   (modforge x,y,z to UE -z,x,y) has determinant -1: it converts
+   right-handed y-up to left-handed z-up. Under a reflection
+   angles REVERSE, so `ue_yaw = 90 - mf_yaw`, not
+   `mf_yaw + 90`. The wrong version is right for two sides and
+   backwards for the other two, and the symptom was exactly
+   that: "two of the walls dont use up the whole gap".
+
+**Ops.** `room_plan` returns the mesh list a room WOULD use
+without spawning (so the binder is checkable, and
+`research_rooms` asserts every chosen mesh is a loaded part);
+`build_room` places one in front of the player.
+
+Known limitation: `build_room` places along world +X, not the
+direction the player faces, because nothing reads camera yaw.
+
 ## 10. Open questions
 
 - Why GenerateCustomBiom(1) does nothing when Factory

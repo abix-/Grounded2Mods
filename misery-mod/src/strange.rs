@@ -191,7 +191,7 @@ fn emission_level() -> i32 {
 }
 
 /// TileSize of the generator that is currently streaming a world.
-fn active_tile_size() -> Option<f64> {
+pub fn active_tile_size() -> Option<f64> {
     for p in ueforge::ue::actor::find_actors_by_chain("BP_WorldGeneration_Base_C") {
         let streaming_num: i32 = unsafe { read_at(p, STREAMING_LEVELS_OFFSET + 8) };
         if streaming_num > 0 {
@@ -219,7 +219,7 @@ fn square_of(full_name: &str) -> Option<(String, i32, i32)> {
 }
 
 /// Live squares, keyed by name, with their grid cells.
-fn census() -> Vec<(String, i32, i32)> {
+pub fn live_squares() -> Vec<(String, i32, i32)> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     for p in ueforge::ue::actor::find_actors_by_chain("BP_MasterAICharacter_C") {
@@ -255,7 +255,7 @@ fn watcher() {
         if SPAWNED_TOTAL.load(Ordering::Relaxed) >= SESSION_CAP {
             continue;
         }
-        let squares = census();
+        let squares = live_squares();
         let live: HashSet<String> = squares.iter().map(|(n, _, _)| n.clone()).collect();
         // A square that unloaded rolls fresh when it returns.
         done.retain(|s| live.contains(s));
@@ -405,6 +405,15 @@ fn place_phenomena(
     Ok(serde_json::json!({"placed": placed}))
 }
 
+/// Ground height at (x, y), using the player as world context.
+/// Game thread only.
+pub fn ground_at(x: f64, y: f64) -> Option<f64> {
+    let player = ueforge::ue::actor::find_actors_by_chain("BP_SGKMasterCharacter_C")
+        .into_iter()
+        .next()?;
+    ground_z(player, x, y)
+}
+
 /// Trace down onto the terrain at (x, y). Returns the ground z.
 fn ground_z(world_ctx: *const u8, x: f64, y: f64) -> Option<f64> {
     let cls = ue::find_class_fast("KismetSystemLibrary")?;
@@ -429,8 +438,11 @@ fn ground_z(world_ctx: *const u8, x: f64, y: f64) -> Option<f64> {
     if parms[0x178] == 0 {
         return None;
     }
-    // OutHit at 0x58; FHitResult::ImpactPoint at +0x28.
-    let z = f64::from_le_bytes(parms[0x88..0x90].try_into().ok()?);
+    // OutHit at 0x58; FHitResult::ImpactPoint at +0x28, so the
+    // point starts at 0x80 and its Z is the third double, 0x90.
+    // Reading 0x88 returns the point's Y, which silently placed
+    // everything at the wrong height.
+    let z = f64::from_le_bytes(parms[0x90..0x98].try_into().ok()?);
     Some(z)
 }
 

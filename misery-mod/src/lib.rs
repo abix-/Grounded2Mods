@@ -12,6 +12,7 @@ pub mod dispatch;
 pub mod gameplay;
 pub mod harvest;
 pub mod places;
+pub mod rooms;
 pub mod shining;
 pub mod spawning;
 pub mod speed;
@@ -90,6 +91,7 @@ fn on_unreal_init() {
         .once("spawning", spawning::install)
         .once("strange", strange::install)
         .once("harvest", harvest::register_ops)
+        .once("rooms", rooms::register_ops)
         .once("places", places::install)
         .once("stack_10x", || {
             STACK_TWEAK.apply_when_ready(
