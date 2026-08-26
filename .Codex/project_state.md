@@ -58,6 +58,7 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 - Reduced the root ownership rule to one sentence covering shared, engine-specific, and game-specific code.
 - Replaced the root architecture-heavy introduction with a one-sentence description of the toolkit.
 - Moved both introductory sentences above a Mermaid dependency graph of Modforge, its engine layers, and current consumers.
+- Removed the redundant framework wrapper and promoted each framework capability table to its own root section.
 
 ## Next steps
 

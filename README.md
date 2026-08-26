@@ -28,12 +28,7 @@ flowchart TD
     UNITY --> WWM["Wild West Miner"]
 ```
 
-## Framework capabilities
-
-Shared systems live in Modforge, engine bindings in Ueforge or
-Unityforge, and game-specific code in each mod.
-
-### modforge
+## modforge
 
 Engine-independent systems usable by a mod or a standalone game.
 
@@ -60,7 +55,7 @@ Engine-independent systems usable by a mod or a standalone game.
 See [`modforge/README.md`](modforge/README.md) and
 [`modforge/docs/`](modforge/docs/).
 
-### ueforge
+## ueforge
 
 The Unreal Engine 5 and UE4SS binding layer.
 
@@ -78,7 +73,7 @@ The Unreal Engine 5 and UE4SS binding layer.
 See [`ueforge/README.md`](ueforge/README.md) and
 [`ueforge/docs/`](ueforge/docs/).
 
-### unityforge
+## unityforge
 
 The Unity Mono and IL2CPP binding layer.
 
