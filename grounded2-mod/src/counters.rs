@@ -39,7 +39,7 @@ counter!(
 
 /// Snapshot all counters as a JSON object. Called by debug::snapshot.
 /// PE-queue and damage-ring counters are owned by their respective
-/// container types (`DrainSite`, `EventRing`) and surfaced through
+/// container types (`GameThread`, `EventRing`) and surfaced through
 /// dedicated keys below.
 pub fn snapshot_json() -> serde_json::Value {
     let mut obj = counter_json! {
@@ -60,7 +60,7 @@ pub fn snapshot_json() -> serde_json::Value {
         TIME_NS_HTTP_HANDLE              => "time_ns_http_handle",
     };
     if let Some(o) = obj.as_object_mut() {
-        // PE queue (DrainSite owns its counters):
+        // PE queue (GameThread owns its counters):
         o.insert("drain_pending_calls".into(),
             crate::debug::PE_QUEUE.drain_calls().into());
         o.insert("drain_pending_drained_cmds".into(),

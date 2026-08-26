@@ -19,7 +19,7 @@ use ueforge::debug::{CatalogEntry, DamageRing, PlayerStateView, ProcessSnapshot}
 pub use ueforge::debug::DamageEvent;
 use ueforge::envelope::handle_request;
 use ueforge::ops::{OP_REGISTRY, OpDef};
-use ueforge::pe_queue::DrainSite;
+use ueforge::pe_queue::GameThread;
 
 use crate::inv_hook;
 use crate::rpg::{apply, fall_hook, skills, tracker, world_loader};
@@ -46,7 +46,7 @@ static HEALTH_CLASS: ClassRef = ClassRef::new("HealthComponent");
 /// `rpg::health::register` + `debug::register_pe_call` enqueue
 /// onto this site; consumers can also enqueue their own jobs via
 /// `ueforge::debug::enqueue_pe(&PE_QUEUE, ...)`.
-pub(crate) static PE_QUEUE: DrainSite = DrainSite::new();
+pub(crate) static PE_QUEUE: GameThread = GameThread::new();
 
 /// Ring buffer of recent damage / multicast events captured by
 /// the `kill_hook` trampoline. Populated via [`record_damage_event`];
@@ -70,7 +70,7 @@ const PE_TIMEOUT_HINT: &str =
 
 /// Called from `kill_hook`'s trampoline (game thread). Drain
 /// counters (calls / drained / peak / time_ns) are owned by
-/// `DrainSite` itself; they appear in the snapshot via
+/// `GameThread` itself; they appear in the snapshot via
 /// `PE_QUEUE.drain_calls()` etc.
 pub fn drain_pending() {
     PE_QUEUE.drain();

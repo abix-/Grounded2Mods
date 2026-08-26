@@ -28,6 +28,12 @@ Newest first.
 | `misery` | [x] Nag screen bypassed for real: call the notice's own spacebar handler, `InpActEvt_SpaceBar_K2Node_InputKeyEvent_1`, instead of hiding the widget | Operator confirmed two cold starts reaching the game with no key pressed. Log shows the handler firing and `ItemList` resolving 2s later, where the previous build timed out after 30s and went silent. |
 | `misery` | [x] Fix research_nag::nag_class_detail: it read the startup discovery cache, which this class is absent from; read the live class via `nag_stats` instead | Test prints the four live functions on `WD_PlaytestNote01_C`. |
 | `ueforge` | [x] Add `UFunction::parms_size` and `UFunction::num_parms` | Callers size a parm block from the function instead of assuming; the notice handler declares 1 parm of 24 bytes (an `FKey`). |
+| `ueforge` | [x] Reach the game thread with no world loaded: `hook::engine_tick` patches the `UEngine::Tick` vtable slot | Live at the main menu: 1756 ticks, 0 panics, and every queue drain came from the tick. This is what UE4SS does for itself (`HookEngineTick = 1`); its C++ mod API exposes no way to share that hook. |
+| `ueforge` | [x] Wire UE4SS's `on_update` per-frame callback (`frame::on_update`), previously an unused virtual in the shim | Fires every frame regardless of world state. Used for polling only. |
+| `misery` | [x] Prove `on_update` is NOT the game thread and stop draining the queue from it | Thread ids measured live: UE4SS 20928, `UEngine::Tick` and ProcessEvent both 21488. Calls made from on_update loaded a save and then crashed the session. research.md 26.6. |
+| `misery` | [x] Load a save from the mod with no clicks: `SGK SetLoadSaveGame(true)` then `LoadLevel()` on the live `BP_HostLoadGameServer` | Operator confirmed Save 1 loaded and played. research.md 26.7, `research_load::load_current_slot`. |
+| `ueforge` | [x] Rename `pe_queue::DrainSite` to `GameThread` | Invented word replaced with Unreal's own (`ENamedThreads::GameThread`, `IsInGameThread`). |
+| `ueforge` | [x] Add `ue::actor::find_objects_by_chain`: class-chain search with no PersistentLevel requirement | Widgets and the game instance are not actors; `find_actors_by_chain` could not see them. |
 
 ## 2026-08-25
 

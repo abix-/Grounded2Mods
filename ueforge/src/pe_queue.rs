@@ -235,7 +235,7 @@ impl Default for Queue {
 /// 20-line `drain_pending` wrapper.
 ///
 /// ```ignore
-/// static SITE: ueforge::pe_queue::DrainSite = ueforge::pe_queue::DrainSite::new();
+/// static SITE: ueforge::pe_queue::GameThread = ueforge::pe_queue::GameThread::new();
 ///
 /// // From a trampoline (game thread):
 /// SITE.drain();
@@ -243,7 +243,7 @@ impl Default for Queue {
 /// // From an HTTP op (worker thread):
 /// SITE.queue().enqueue(|| { /* mutate game state */ }, Duration::from_secs(5))?;
 /// ```
-pub struct DrainSite {
+pub struct GameThread {
     queue: Queue,
     drain_calls: std::sync::atomic::AtomicU64,
     drained_cmds: std::sync::atomic::AtomicU64,
@@ -251,7 +251,7 @@ pub struct DrainSite {
     time_ns: std::sync::atomic::AtomicU64,
 }
 
-impl DrainSite {
+impl GameThread {
     pub const fn new() -> Self {
         Self {
             queue: Queue::new(),
@@ -313,7 +313,7 @@ impl DrainSite {
     }
 }
 
-impl Default for DrainSite {
+impl Default for GameThread {
     fn default() -> Self {
         Self::new()
     }

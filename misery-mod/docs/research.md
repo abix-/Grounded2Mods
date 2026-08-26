@@ -2037,9 +2037,209 @@ Consequences of the wrong 0x4C, now explained:
   has no visible effect" (the old nag screen mystery, section
   on failed attempts in the todo history).
 
-### 26.2 The drain site
+### 26.6 The main menu: UE4SS's on_update is NOT the game thread
 
-`src/dispatch.rs`: a `ueforge::pe_queue::DrainSite` drained from
+Loading a save from the mod needs to call Blueprint functions
+while the player is on the main menu, where no player character
+exists and so the existing ProcessEvent hook never fires.
+
+**What was tried.** `RC::CppUserModBase` declares an
+`on_update()` that UE4SS calls every frame regardless of whether
+a world is loaded (`ueforge/cpp/ueforge_cppusermodbase.hpp:81`).
+Our shim overrode only `on_unreal_init`, so this callback sat
+unused. It is now wired: `ueforge_mod_update` ->
+`ueforge::frame::run_update`, with `frame::on_update(f)` for
+subscribers.
+
+It does fire at the menu. Measured live, sitting on the menu
+with no save loaded:
+
+```text
+{"frames":3153,"fires":0,"drain_calls":3153,...}
+pe_ping -> game_thread: true
+```
+
+`frames` climbing with `fires` at 0 means UE4SS is calling us
+every frame while the ProcessEvent hook has never once fired.
+Queued work now runs at the menu, where it used to fail with
+`timed out after 3s waiting for game-thread drain`.
+
+**But it is the wrong thread.** `frame::current_thread_id()`
+records the OS thread on both sides, and once a save loaded and
+the ProcessEvent hook fired even once, the two disagreed:
+
+```text
+frame_thread: 508      <- UE4SS on_update
+hook_thread: 19556     <- ProcessEvent, which is game-thread only
+```
+
+ProcessEvent only ever runs on the game thread, so 19556 is the
+game thread and UE4SS calls `on_update` from its own thread.
+
+**What that cost.** Blueprint calls issued from `on_update`
+LOOKED like they worked: `SGK SetLoadSaveGame(true)` read back
+as `01`, `LoadLevel` returned ok, and the save loaded. Then the
+session crashed. Calling ProcessEvent off the game thread is
+undefined; a call that appears to succeed proves nothing.
+
+**Where it stands.** `on_update` is good for polling, reading
+counters, and anything that does not enter the engine. It must
+NOT be used to call UFunctions.
+
+**The answer: hook `UEngine::Tick`.** This is settled ground in
+Unreal modding, and UE4SS does it in this very install. From
+`ue4ss/UE4SS-settings.ini`:
+
+```ini
+HookEngineTick = 1
+; Method for resolving GameEngine::Tick address
+; Valid values: Scan, VTable
+; Scan: Use PatternSleuth AOB scan (fallback to VTable if scan fails)
+EngineTickResolveMethod = Scan
+HookGameViewportClientTick = 1
+```
+
+UE4SS offers Lua mods `ExecuteInGameThread`, whose docs say it
+runs "using either the ProcessEvent hook or the EngineTick
+hook". Those are the only two mechanisms. Its C++ mod API
+exposes neither: `ueforge_cppusermodbase.hpp` has only the
+lifecycle virtuals, so a C++ mod resolves Tick itself.
+
+Tick runs once per frame on the game thread for the life of the
+process, with no world and no player required, which is exactly
+what the menu needs.
+
+**Three independent ways to find it, all agreeing live:**
+
+UE4SS logs its own resolution at startup (`ue4ss/UE4SS.log`):
+
+```text
+[PS] Found GameEngineTick: 0x7ff6426c4030
+GameEngine::Tick address (vtable: 0x7ff6426c4030; scan: 0x7ff6426c4030)
+GameViewportClient::Tick address 0x7ff642731300
+```
+
+The patternsleuth scan and the vtable lookup produced the same
+address. Image base is `0x7ff63f0b0000`, so Tick is at
+image-relative `0x3614030`.
+
+And read directly off the live engine object
+(`research_gamethread::engine_vtable`):
+
+```text
+engine: GameEngine /Engine/Transient.GameEngine_2147482621
+vtable: 0x7FF64578CD18
+  [ 95] 0x7FF6426C4030   <== GameEngine::Tick
+```
+
+**`GameEngine::Tick` is vtable slot 95** (UE 5.4). There is
+exactly one live `GameEngine`, findable by class-chain search
+for `GameEngine` under `/Engine/Transient`.
+
+This is the same mechanism the mod already uses:
+`ProcessEventHook` writes one vtable slot at a configured index
+(`process_event_idx`, `0x4D` here). Tick is the same write at
+index 95 on the engine object. Only the signature differs:
+`void Tick(UGameEngine*, float DeltaSeconds, bool bIdleMode)`.
+
+Note UE4SS has already placed a prehook on the Tick FUNCTION
+BODY. Patching the vtable SLOT means the original we capture is
+that function address, which routes through UE4SS's detour, so
+the two chain rather than recurse. This is unlike the widget
+vtable, where a second slot install would capture our own
+trampoline.
+
+**Shipped and confirmed live 2026-08-26.**
+`ueforge::hook::engine_tick` patches the slot;
+`src/dispatch.rs` installs it from `on_update` (a safe use of
+UE4SS's thread: it only polls) and drains the queue from the
+tick handler.
+
+On the main menu, no save loaded:
+
+```text
+tick_installed: true   tick_fires: 1756   tick_panics: 0
+drain_calls: 1756      <- every drain came from the engine tick
+fires: 0               <- ProcessEvent never fired
+frame_thread: 20928    <- UE4SS on_update
+tick_thread: 21488     <- UEngine::Tick
+pe_ping -> game_thread: true
+```
+
+`drain_calls` equalling `tick_fires` is the check that
+`on_update` no longer touches the queue.
+
+After loading a save through it, the thread question is settled
+rather than inferred:
+
+```text
+tick_thread:  21488
+hook_thread:  21488   <- ProcessEvent, game-thread only
+frame_thread: 20928   <- UE4SS on_update
+fires: 110  tick_panics: 0  panics: 0
+```
+
+`research_dispatch::engine_tick_serves_the_main_menu` asserts
+the match, and `on_update_serves_the_main_menu` asserts the
+NON-match, so the wrong assumption cannot come back quietly.
+
+Related hazard: only ONE ProcessEvent hook may sit on the shared
+widget vtable. `install_for_object` records whatever is in the
+slot as "the original", so a second install records our own
+trampoline and recurses forever. Also, installing from the first
+class-chain match in GObjects order produced a hook that fired 3
+times in a session, while installing from the notice fires
+constantly; install from a live instance you can name.
+
+### 26.7 Loading a save from the mod: the recipe
+
+Found by listing LIVE class functions (`class_functions`, added
+to ueforge; menu widgets are created after startup so the
+discovery cache does not have them).
+
+`BP_SGKGameInstance_C` holds the intent, and
+`BP_HostNewGameServer_C` starts the level:
+
+| Function | Class | Parms |
+|---|---|---|
+| `SGK SetSaveGameSlotName` | `BP_SGKGameInstance_C` | FString, 16 bytes |
+| `SGK SetLoadSaveGame` | `BP_SGKGameInstance_C` | bool, 1 byte |
+| `SGK GetSaveGameSlotName` / `SGK GetLoadSaveGame` | same | the readers |
+| `LoadLevel` | `BP_HostNewGameServer_C` | none |
+| `FindExistingSave` | `BP_HostNewGameServer_C` | FString in, bool out |
+| `DeleteExistingSave` | `BP_HostNewGameServer_C` | FString. Never call. |
+
+The slot name is the plain text shown in the menu: reading it
+live returned `"Save 1"`. It is an `FString`, decoded as
+`{ TCHAR* Data; int32 Num; int32 Max; }` with UTF-16 characters
+behind the pointer. Because the game instance already holds the
+name, loading needs no FString construction: set the bool, then
+call `LoadLevel`.
+
+`LoadLevel` is ALSO the New Game path. The bool is the only
+thing that makes it load rather than start fresh, so it must be
+set and read back before `LoadLevel` is called.
+
+**The template trap.** Class-chain searches return the widget
+template inside the `/Game/...WidgetTree` package as well as the
+live widget under `/Engine/Transient`. Calling the template
+returns ok and does nothing. Filter on `/Engine/Transient`.
+Both `BP_HostNewGameServer` and `BP_HostLoadGameServer` are
+instances of the same class; only the name tells them apart.
+
+**Works, live 2026-08-26.** Operator confirmed the save loaded
+and played, with no clicks and no crash, once the calls ran on
+the game thread via the `UEngine::Tick` hook (26.6). The same
+calls made from UE4SS's `on_update` had loaded the save too, and
+then crashed the session; a call that appears to work off the
+game thread proves nothing.
+
+`research_load::load_current_slot` drives it. It is `#[ignore]`d
+because it starts a level load, so run it deliberately.
+
+### 26.2 The game-thread queue
+
+`src/dispatch.rs`: a `ueforge::pe_queue::GameThread` drained from
 a ProcessEventHook on `BP_SGKMasterCharacter_C`, installed with
 retry-backoff from the LIVE player instance's vtable
 (`ProcessEventHook::install_for_object`, added to ueforge; the
@@ -2054,10 +2254,10 @@ thread; drained_cmds 0 -> 1.
 Ops: `pe_ping` (run a no-op job on the game thread), `pe_stats`
 (fires, drain counters, panic count).
 
-Limitation: the drain site only fires while a save is loaded
+Limitation: this hook only fires while a save is loaded
 (the player class has no instances at the main menu), so
-main-menu-time dispatch (the nag screen) still needs a
-pre-menu drain site if ever pursued.
+main-menu-time dispatch needs a ProcessEvent hook on something
+alive at the menu instead. See 26.6.
 
 ### 26.5 The playtest notice, and two ways to crash the game
 

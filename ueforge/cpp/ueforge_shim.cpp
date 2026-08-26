@@ -63,6 +63,7 @@ extern "C" {
     const std::uint8_t* ueforge_mod_get_tab_name(std::uint32_t idx, std::size_t* out_len);
     void                ueforge_mod_dll_attach(void* hmod);
     void                ueforge_mod_unreal_init();
+    void                ueforge_mod_update();
     void                ueforge_mod_shutdown();
     void                ueforge_mod_render_tab(std::uint32_t idx);
 }
@@ -145,6 +146,12 @@ class UespyMod : public RC::CppUserModBase {
 
     auto on_unreal_init() -> void override {
         ueforge_mod_unreal_init();
+    }
+
+    // Called by UE4SS every frame, regardless of whether a world
+    // is loaded. This is how the mod reaches the main menu.
+    auto on_update() -> void override {
+        ueforge_mod_update();
     }
 };
 

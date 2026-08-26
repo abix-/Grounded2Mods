@@ -3,6 +3,7 @@
 
 #![allow(dead_code)]
 
+pub mod engine_tick;
 pub mod function_table;
 pub mod install;
 pub mod lazy_function;

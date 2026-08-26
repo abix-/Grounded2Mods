@@ -11,7 +11,7 @@
 //!
 //! Engine-specific debug helpers (ProcessSnapshot using UE
 //! probes, DamageRing, enqueue_pe / dispatch_call on
-//! DrainSite) stay in `ueforge::debug` because their payloads
+//! GameThread) stay in `ueforge::debug` because their payloads
 //! and dispatch surfaces are UE-shaped.
 
 use serde::Serialize;

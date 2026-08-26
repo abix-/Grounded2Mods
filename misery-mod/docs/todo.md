@@ -2,6 +2,10 @@
 
 | Priority | System | Todo | Done when |
 |---:|---|---|---|
+| 2 | `dispatch` | [ ] Resolve the `UEngine::Tick` vtable index instead of hardcoding 95: read it by patternsleuth scan, or match the slot against the scanned address, so other UE versions and other games work unchanged | The index is derived at runtime; no per-game constant in dispatch.rs. |
+| 3 | `dispatch` | [ ] Resolve `GGameThreadId` so `IsInGameThread` can be asserted directly, instead of comparing the engine tick thread against the ProcessEvent thread (which needs a save loaded first) | A test can assert "this ran on the game thread" cold, at the menu. |
+| 3 | `load` | [ ] Load an arbitrary slot, not just the one the game instance already holds: `SGK SetSaveGameSlotName` takes an FString, which has to be constructed in memory the game owns | Any listed save loads by name from the control plane. |
+| 5 | `load` | [ ] Verify a slot exists before loading it with `FindExistingSave` (FString in, bool out) rather than trusting the name | load refuses a slot the game does not have. |
 | 2 | `rooms` | [ ] Generate multi-room buildings from the kit: several RoomSpecs sharing walls, with a roof | A generated building with more than one room stands and is walkable, verified live. |
 | 2 | `rooms` | [ ] Learn assembly from vanilla buildings: record which pieces the designers place adjacent, at what offsets, and bias generation toward it | Adjacency data captured and documented; generated buildings read as native. |
 | 3 | `dev` | [ ] Make tuned values op parameters instead of constants (yaw convention, offsets, caps) so hypotheses are testable without a redeploy | A wrong constant can be found and fixed in one session without restarting the game. |

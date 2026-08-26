@@ -33,7 +33,7 @@ use serde::Serialize;
 use serde_json::Value as Json;
 
 use crate::args;
-use crate::pe_queue::DrainSite;
+use crate::pe_queue::GameThread;
 use crate::ring::EventRing;
 
 // `PlayerStateView`, `CatalogEntry`, and `catalog_view` lifted
@@ -126,13 +126,13 @@ impl ProcessSnapshot {
     }
 }
 
-/// Enqueue a closure on a game-thread `DrainSite` with the
+/// Enqueue a closure on a game-thread `GameThread` with the
 /// universal "trampoline must be firing" timeout-hint behavior.
 /// `hint` is a short message appended to timeout errors so callers
 /// know which trampoline owns the drain (typically the kill-hook
 /// fn name).
 pub fn enqueue_pe<F>(
-    pe_queue: &DrainSite,
+    pe_queue: &GameThread,
     timeout: Duration,
     hint: &str,
     closure: F,
@@ -162,7 +162,7 @@ where
 /// [`crate::ops::register_builtins`] and
 /// [`crate::ops::register_with_resolver`].
 pub fn register_pe_call<R>(
-    pe_queue: &'static DrainSite,
+    pe_queue: &'static GameThread,
     hint: &'static str,
     resolver: R,
 ) where
@@ -182,7 +182,7 @@ pub fn register_pe_call<R>(
 
 fn dispatch_call<R>(
     args_json: &Json,
-    pe_queue: &'static DrainSite,
+    pe_queue: &'static GameThread,
     hint: &'static str,
     resolver: R,
 ) -> Result<Json, String>

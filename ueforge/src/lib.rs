@@ -81,6 +81,7 @@ pub mod dynamic_tweaks;
 pub mod envelope;
 pub mod features;
 pub mod fall;
+pub mod frame;
 pub mod hook;
 pub mod hot_reload;
 pub mod input;

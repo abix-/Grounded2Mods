@@ -126,6 +126,14 @@ macro_rules! ue4ss_mod {
             $crate::log::set_dll_module(hmod as _);
         }
 
+        /// UE4SS's `CppUserModBase::on_update`, once per frame
+        /// for the life of the process: main menu, loading
+        /// screens, and play alike.
+        #[unsafe(no_mangle)]
+        pub extern "C" fn ueforge_mod_update() {
+            $crate::frame::run_update();
+        }
+
         #[unsafe(no_mangle)]
         pub extern "C" fn ueforge_mod_unreal_init() {
             // Initialize the logger on first unreal_init so its

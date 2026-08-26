@@ -73,7 +73,7 @@ use serde_json::Value as Json;
 
 use crate::args::arg_f64;
 use crate::ops::{OP_REGISTRY, OpDef};
-use crate::pe_queue::DrainSite;
+use crate::pe_queue::GameThread;
 use crate::ue::ClassRef;
 
 /// Game-supplied constants for the health-op family. See module
@@ -111,7 +111,7 @@ pub struct HealthBinding {
 /// know which trampoline owns the drain.
 pub fn register(
     binding: &'static HealthBinding,
-    pe_queue: &'static DrainSite,
+    pe_queue: &'static GameThread,
     pe_timeout_hint: &'static str,
 ) {
     if let Some(func_name) = binding.add_health_function {
@@ -149,7 +149,7 @@ struct SetCurrentHealthParms {
 fn op_add_health(
     args: &Json,
     binding: &'static HealthBinding,
-    pe_queue: &'static DrainSite,
+    pe_queue: &'static GameThread,
     hint: &'static str,
     func_name: &'static str,
 ) -> Result<Json, String> {
@@ -181,7 +181,7 @@ fn op_add_health(
 fn op_set_current_health(
     args: &Json,
     binding: &'static HealthBinding,
-    pe_queue: &'static DrainSite,
+    pe_queue: &'static GameThread,
     hint: &'static str,
     func_name: &'static str,
 ) -> Result<Json, String> {

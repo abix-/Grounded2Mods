@@ -143,3 +143,114 @@ fn game_thread_ping() {
         after.result
     );
 }
+
+/// UE4SS's `on_update` runs every frame whether or not a world
+/// is loaded, so a job queued from the main menu should run
+/// there. The ProcessEvent hook on the player character cannot
+/// serve the menu: no player exists yet.
+///
+/// Run this ON THE MAIN MENU. In play it still passes, but it
+/// proves nothing new.
+#[test]
+fn on_update_serves_the_main_menu() {
+    let Some(api) = api_or_skip() else { return };
+    if !offsets_live(&api) {
+        println!("SKIP: offsets not live");
+        return;
+    }
+
+    let stats = api.op("pe_stats", json!({}));
+    assert!(stats.ok, "pe_stats failed: {:?}", stats.error);
+    println!("stats: {}", stats.result);
+
+    let frames = stats.result["frames"].as_u64().unwrap_or(0);
+    assert!(
+        frames > 0,
+        "UE4SS never called on_update; the shim override is not wired: {:?}",
+        stats.result
+    );
+
+    let ping = api.op("pe_ping", json!({}));
+    assert!(ping.ok, "pe_ping failed: {:?}", ping.error);
+    assert_eq!(ping.result["game_thread"], json!(true), "job did not run");
+
+    // on_update is NOT the game thread. Measured 2026-08-26:
+    // UE4SS calls it on its own thread (508) while ProcessEvent,
+    // which is game-thread only, ran on 19556. Calls made from
+    // it looked fine and then crashed the game. This asserts the
+    // finding so a future change cannot quietly reintroduce the
+    // assumption. research.md 26.6.
+    let frame_thread = stats.result["frame_thread"].as_u64().unwrap_or(0);
+    let hook_thread = stats.result["hook_thread"].as_u64().unwrap_or(0);
+    let tick_thread = stats.result["tick_thread"].as_u64().unwrap_or(0);
+    if hook_thread != 0 {
+        assert_ne!(
+            frame_thread, hook_thread,
+            "on_update now shares a thread with ProcessEvent; \
+             research.md 26.6 says it does not"
+        );
+    }
+    if tick_thread != 0 {
+        assert_ne!(
+            frame_thread, tick_thread,
+            "on_update now shares a thread with UEngine::Tick"
+        );
+    }
+    println!(
+        "on_update thread {frame_thread}, engine tick {tick_thread}, ProcessEvent {hook_thread}"
+    );
+}
+
+/// `UEngine::Tick` is the game thread with no world loaded, so a
+/// job queued from the main menu runs there. This is what makes
+/// menu-time UFunction calls safe, unlike `on_update`.
+///
+/// Run this ON THE MAIN MENU.
+#[test]
+fn engine_tick_serves_the_main_menu() {
+    let Some(api) = api_or_skip() else { return };
+    if !offsets_live(&api) {
+        println!("SKIP: offsets not live");
+        return;
+    }
+
+    let stats = api.op("pe_stats", json!({}));
+    assert!(stats.ok, "pe_stats failed: {:?}", stats.error);
+    println!("stats: {}", stats.result);
+
+    assert_eq!(
+        stats.result["tick_installed"],
+        json!(true),
+        "UEngine::Tick hook not installed: {:?}",
+        stats.result
+    );
+    let tick_fires = stats.result["tick_fires"].as_u64().unwrap_or(0);
+    assert!(tick_fires > 0, "engine tick hook installed but never fired");
+    assert_eq!(
+        stats.result["tick_panics"].as_u64().unwrap_or(0),
+        0,
+        "engine tick handler panicked"
+    );
+
+    let ping = api.op("pe_ping", json!({}));
+    assert!(ping.ok, "pe_ping failed: {:?}", ping.error);
+    assert_eq!(ping.result["game_thread"], json!(true), "job did not run");
+
+    // The proof: the engine ticks on the same thread ProcessEvent
+    // runs on. Only checkable once a save has loaded and the
+    // ProcessEvent hook has fired at least once.
+    let tick_thread = stats.result["tick_thread"].as_u64().unwrap_or(0);
+    let hook_thread = stats.result["hook_thread"].as_u64().unwrap_or(0);
+    if hook_thread == 0 {
+        println!(
+            "engine tick thread {tick_thread}; ProcessEvent has not fired yet, \
+             so the game-thread match is still pending"
+        );
+    } else {
+        assert_eq!(
+            tick_thread, hook_thread,
+            "UEngine::Tick runs on {tick_thread} but ProcessEvent runs on {hook_thread}"
+        );
+        println!("UEngine::Tick and ProcessEvent share thread {tick_thread}: game thread confirmed");
+    }
+}
