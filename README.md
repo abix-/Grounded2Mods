@@ -1,6 +1,6 @@
 # modforge
 
-> **Vibecoded.** This repo is written almost entirely by Claude (Anthropic) under human direction. Architecture, code, tests, docs, decompilation, and the Horsey gene-research all came out of long iterative sessions. If something looks suspiciously well-organised or suspiciously over-engineered, that's why. Read with that context: AI-generated code with human review, not human-authored code with AI assistance.
+> **Vibecoded.** This repository is AI-generated under human direction and review.
 
 A Rust workspace for game mods. One foundation crate
 (**`modforge`**), two engine-binding "forge" crates that adapt
