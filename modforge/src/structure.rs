@@ -843,6 +843,86 @@ pub fn fill_run(run: f32, modules: &[f32]) -> Vec<(f32, f32)> {
     out
 }
 
+/// Build the pieces for one room, given a way to name the mesh
+/// for each slot.
+///
+/// The shell (which tiles, which wall segments, which one carries
+/// the door, and how a 7 m wall breaks into 4 + 2 + 1) is worked
+/// out here. `mesh_for` supplies the one thing only the host game
+/// knows: what its kit calls the part that fills a slot.
+///
+/// `modules` are the kit's available widths, largest first.
+///
+/// Positions and facings come straight from the slots, so the
+/// result is in this crate's space: metres, y up, radians.
+pub fn room_pieces(
+    room: &RoomDef,
+    modules: &[f32],
+    class: &str,
+    mesh_for: impl Fn(&ShellSlot) -> String,
+) -> Vec<PieceDef> {
+    shell_slots(room, modules)
+        .into_iter()
+        .map(|slot| PieceDef {
+            class: class.to_string(),
+            asset: Some(mesh_for(&slot)),
+            offset: slot.position,
+            yaw: slot.yaw,
+            pitch: 0.0,
+            roll: 0.0,
+            scale: 1.0,
+            // The builder needs no measurements; the mesh carries
+            // its own geometry.
+            extent: Vec3::ZERO,
+        })
+        .collect()
+}
+
+/// A room described over the wire: interior size in metres, wall
+/// height, and whether it gets a door and windows.
+///
+/// A door on the south wall and a window on each other side, both
+/// on by default. Missing fields take the defaults, so a caller
+/// can ask for a room with no arguments at all.
+///
+/// Sizes are the INTERIOR: a caller asking for 8 by 8 gets 8 by 8
+/// of floor, with the walls outside that.
+pub fn room_from_json(args: &serde_json::Value) -> RoomDef {
+    let f = |k: &str, d: f32| args.get(k).and_then(|v| v.as_f64()).unwrap_or(d as f64) as f32;
+    let b = |k: &str, d: bool| args.get(k).and_then(|v| v.as_bool()).unwrap_or(d);
+
+    let mut openings = Vec::new();
+    if b("door", true) {
+        openings.push(Opening {
+            side: Side::South,
+            offset: 0.0,
+            width: f("door_width", 1.2),
+            sill: 0.0,
+            door: true,
+        });
+    }
+    if b("windows", true) {
+        for side in [Side::North, Side::East, Side::West] {
+            openings.push(Opening {
+                side,
+                offset: 0.0,
+                width: f("window_width", 1.0),
+                sill: f("window_sill", 1.0),
+                door: false,
+            });
+        }
+    }
+    RoomDef {
+        origin: Vec3::ZERO,
+        interior: Vec3::new(f("width", 8.0), f("height", 3.0), f("length", 8.0)),
+        wall_thickness: f("wall_thickness", 0.2),
+        openings,
+        floor: b("floor", true),
+        // Off by default: a ceiling hides what you built.
+        ceiling: b("ceiling", false),
+    }
+}
+
 /// Decompose a room into the shell pieces a builder must supply:
 /// floor tiles, wall segments on all four sides with openings
 /// assigned, and ceiling tiles.
@@ -1138,6 +1218,29 @@ mod shape_tests {
             extent: e(0.2, 0.15, 0.02),
         };
         assert_eq!(p.shape(), PieceShape::Panel);
+    }
+
+    #[test]
+    fn a_room_from_nothing_takes_the_defaults() {
+        let r = room_from_json(&serde_json::json!({}));
+        assert_eq!(r.interior, Vec3::new(8.0, 3.0, 8.0));
+        assert!(r.floor);
+        assert!(!r.ceiling, "a ceiling would hide what was built");
+        // A door south, a window on each of the other three.
+        assert_eq!(r.openings.len(), 4);
+        assert_eq!(r.openings.iter().filter(|o| o.door).count(), 1);
+    }
+
+    #[test]
+    fn room_json_reads_the_interior_not_the_outside() {
+        let r = room_from_json(&serde_json::json!({"width": 5.0, "length": 12.0, "height": 4.0}));
+        assert_eq!(r.interior, Vec3::new(5.0, 4.0, 12.0));
+    }
+
+    #[test]
+    fn openings_can_be_turned_off() {
+        let r = room_from_json(&serde_json::json!({"door": false, "windows": false}));
+        assert!(r.openings.is_empty());
     }
 
     fn at(x: f32, y: f32, z: f32) -> PieceDef {
