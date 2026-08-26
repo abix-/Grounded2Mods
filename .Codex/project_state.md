@@ -21,6 +21,7 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 - Survivalist retains settlement threshold values, Unity reads, voting, and every response to the classified rung.
 - Adaptive-pressure target selection, tier resolution, deterministic ring placement, global caps, per-target exclusion, tracking, and pruning belong to `modforge::storyteller`.
 - Survivalist retains Unity target observations, threat checks, game handles, zombie spawning, liveness reads, movement commands, content values, logging, and chronicle text.
+- The root README is a concise workspace map with capability tables; detailed framework and decompilation material stays in the owning crate documentation.
 
 ## Last session summary
 
@@ -45,6 +46,7 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 - Added no tests and did not build for the settlement survival extraction, following the direct instruction.
 - Expanded `modforge::storyteller` with the complete engine-independent adaptive-pressure selection, tier, placement, and active-event lifecycle used by Survivalist's horde.
 - Migrated the horde to the Modforge authority while preserving Unity observation and execution, Survivalist's content values, logging, and chronicle text. Added no tests and did not build.
+- Replaced the stale root framework prose with concise capability tables for Modforge, Ueforge, and Unityforge, and moved readers to the existing dedicated decompilation documentation for implementation detail.
 
 ## Next steps
 

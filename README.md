@@ -44,69 +44,66 @@ If a second native-PE game shows up, the
 gets lifted into a shared `modforge::inject` module; until
 then it lives where it's used.
 
-## modforge. The foundation
+## Framework capabilities
 
-Everything game-agnostic lives here: the localhost HTTP control
-plane, the op registry, the selector grammar that lets ops
-address running-process state by name, the RPG module
-(`Effect` / `Trigger` / `Skill`), the scanner (typed memory
-reads / writes / pattern scans), the winproc helpers (module
-base, address-rebase, VirtualProtect), the per-line-flushed
-log, the shutdown registry, and the settings file loader.
+The placement rule is simple: engine-independent code belongs in
+`modforge`; Unreal Engine bindings belong in `ueforge`; Unity
+bindings belong in `unityforge`. Game crates keep only game facts,
+content, offsets, and behavior.
 
-The placement rule (operator, 2026-08-19): anything generic,
-anything that could apply to other games or mods, goes in
-modforge. A consumer repo carries only what is specific to that
-one game.
+### modforge
 
-Decided 2026-08-19: the game systems proven in survivalist-mod
-(storyteller, genome, acts, quality, named uniques, the work
-board, upgrades, chronicle, the edge) will be lifted into this
-crate as modules, like the RPG module, so one dependency serves
-mods OR a standalone game. The first standalone consumer is the
-topside game (private repo; its docs/authority.md carries the
-ownership map). Nothing is lifted yet.
+Engine-independent systems usable by a mod or a standalone game.
 
-## The two engine forges
+| Capability | What it provides |
+|---|---|
+| Control plane | Local HTTP server, request envelope, operation registry, typed arguments, snapshots, and client |
+| Lifecycle and state | Settings, logging, shutdown ordering, hot-reload protocol, counters, bounded rings, and workers |
+| Runtime tooling | Memory access, scanners, pattern sleuthing, safe native calls, Windows process inspection, and research helpers |
+| Input and UI | Native input backends, coordinate handling, and declarative overlay primitives |
+| Items and progression | Item definitions and inventory, unique-item ledger, quality rolls, crafting, upgrades, and the full RPG effect/trigger/skill stack |
+| Simulation systems | Actors, decisions, combat, factions, genomes, survival classification, missions, contracts, storyteller pacing, and adaptive pressure |
+| World building | Biomes, structures, monuments, and deterministic world generation |
+| Verification and delivery | Shared testkit, runtime harness, HTTP client, build helpers, and deploy CLI |
 
-An engine forge is a thin crate that binds modforge into one
-host *engine* runtime and contributes engine-specific
-machinery only. Any game built on that engine sits on top.
+See [`modforge/README.md`](modforge/README.md) and
+[`modforge/docs/`](modforge/docs/).
 
-### ueforge. UE5 / UE4SS
+### ueforge
 
-The first forge. Owns the UE SDK shim (UObject / UClass /
-UFunction / GObjects / TypedField), the `ue4ss_mod!` macro,
-the C++ shim, ProcessEvent vtable hooks with per-hook drain
-on shutdown, ImGui bindings, hot-reload (Phase A + B), and
-five opinionated mod-shape modules:
+The Unreal Engine 5 and UE4SS binding layer.
 
-| Module     | What you write per-game                             |
-|------------|-----------------------------------------------------|
-| RPG        | A catalog of `Skill<E>` rows. 9 of 10 universal shapes covered by `StandardEffect`. |
-| Stacks     | `StackTweak::new(table, offset, default_mult, skip)` |
-| Difficulty | `DifficultyKnob::new(class, offset)` per knob       |
-| Inventory  | `ViewportBinder` trait impl                         |
-| Damage     | `DamageBinder` trait impl                           |
+| Capability | What it provides |
+|---|---|
+| Mod lifecycle | `ue4ss_mod!`, UE4SS entry points, the shared C++ shim, feature installation, shutdown, and hot reload |
+| UE runtime | UObject, UClass, UFunction, GObjects, FName, FString, TArray, reflected fields, parameters, and platform offsets |
+| Hooks and game thread | ProcessEvent and vtable hooks, fall and damage hooks, frame callbacks, and the game-thread queue |
+| Data and assets | DataTable access, typed field tweaks, dynamic tweaks, discovery, asset registry access, and uasset inspection |
+| Gameplay modules | RPG, stack sizes, difficulty knobs, inventory viewport paging, status effects, and damage dispatch |
+| Operator UI | ImGui bindings plus class, struct, DataTable, scanner, and tweak browsers |
+| Control and inspection | UE selectors, standard operations, memory tools, counters, snapshots, and the shared HTTP surface |
+| Testing and builds | Runtime client, scenario helpers, C++ build integration, packaging, and deployment commands |
 
-Test framework: `ueforge::client::{research, diff, scenario}`
-collapses test boilerplate to Pester-style one-liners.
+See [`ueforge/README.md`](ueforge/README.md) and
+[`ueforge/docs/`](ueforge/docs/).
 
-See [`ueforge/README.md`](ueforge/README.md).
+### unityforge
 
-### unityforge. Unity (Mono + IL2CPP)
+The Unity Mono and IL2CPP binding layer.
 
-Binds modforge into Unity games via a BepInEx-loaded
-`Unityforge.Shim.{Mono,Il2Cpp}.dll` C# shim that LoadLibrarys
-the per-game Rust cdylib and dispatches per-frame Update +
-generation-versioned hot reload. Ships a Mono bridge
-(reflection over loaded assemblies, Harmony patching,
-GameObject / Component / field access), an IL2CPP bridge, and
-a Unity-side Input bridge. Generation-versioned hot reload
-(never `FreeLibrary`; each reload is a `LoadLibrary` of a
-freshly-named gen file) avoids the FreeLibrary crash class.
+| Capability | What it provides |
+|---|---|
+| Managed loaders | C# shims for BepInEx Mono, MelonLoader IL2CPP, and Survivalist's built-in loader |
+| Rust lifecycle | Rust cdylib initialization, per-frame dispatch, shutdown, generation activation, rollback, and generation-versioned hot reload |
+| Mono bridge | Assembly and type discovery, singleton lookup, method invocation, field reads/writes, and managed handle ownership |
+| IL2CPP bridge | IL2CPP loader and bridge surface for native Unity builds |
+| Harmony hooks | Prefix and postfix registration, hook contexts, registry ownership, and safe removal through the managed shim |
+| Unity runtime | GameObject and Component access, Unity selectors, input bridge, and main-thread work queue |
+| Gameplay bindings | Unity implementations for Modforge RPG effects, triggers, skills, tracking, and slot identity |
+| Control and testing | Unity operation handlers and selectors with the shared Modforge HTTP client |
 
-See [`unityforge/`](unityforge/) and [`docs/unityforge-plan.md`](docs/unityforge-plan.md).
+See [`unityforge/README.md`](unityforge/README.md) and
+[`docs/unityforge-plan.md`](docs/unityforge-plan.md).
 
 ## Game-side mods
 
@@ -125,69 +122,14 @@ See [`unityforge/`](unityforge/) and [`docs/unityforge-plan.md`](docs/unityforge
 
 > **Rating scale:** 10/10 = ready for 1000 players, fun, zero bugs.
 
-## Research tooling
+## Reverse engineering
 
-### decomp. Binary-to-Rust output backend (exploratory archive)
-
-> **2026-05-14 honest assessment**: this exists but probably
-> shouldn't be a daily driver. Read
-> [`decomp/docs/retrospective.md`](decomp/docs/retrospective.md)
-> before investing further. Ghidra's existing C decomp at
-> [`horsey-mod/research/decompiled/all_functions.c`](horsey-mod/research/decompiled/all_functions.c)
-> covers the actual RE workflow. `decomp` adds Rust syntax
-> as a cosmetic-but-not-pivotal win, at the cost of WSL-only
-> builds, 0.15% coverage relative to Ghidra, and a naming
-> layer that depends on Ghidra anyway.
-
-Built on [r2sleigh](https://github.com/radareorg/r2sleigh) (the
-radare2 org's SLEIGH-based pure-Rust decompiler stack with
-full x86-64, SSA pipeline, real structurer, type
-inference). Walks r2sleigh's public `r2dec::ast::CFunction`
-and emits `unsafe fn`-shaped Rust pseudocode for human
-reading.
-
-CLI: `decomp print --addr 0xADDR` / `batch` / `dump-il`.
-Names recovered from Ghidra's INDEX.md plus key-funcs/
-filename slugs. Sample output:
-
-```rust
-pub unsafe fn price_or_score_formula(arg1: i64, arg2: i64) {
-    rbx = fn_1400285e0();
-    fn_1400ca670();
-    ecx = *(fn_1400285e0() + 596_i64);
-    *(fn_1400285e0() + 596_i64) = *(rcx + 596_i64) + 1_i64;
-    ...
-}
-```
-
-Sample artifacts shipped at
-[`horsey-mod/research/decompiled/rust-r2sleigh/`](horsey-mod/research/decompiled/rust-r2sleigh/):
-13 of 18 documented Horsey key-funcs with friendly names
-recovered.
-
-**Build:** WSL only (libsla-sys' Ghidra C++ source needs
-Windows MSVC compat work; see
-[`decomp/docs/polish-ladder.md`](decomp/docs/polish-ladder.md)
-item 1). Decomp is intentionally NOT a cargo workspace
-member yet for the same reason. Clone r2sleigh as a
-sibling, `cargo build --release` in WSL.
-
-See [`decomp/README.md`](decomp/README.md) for the
-one-page intro and [`decomp/docs/`](decomp/docs/) for the
-ladder.
-
-#### History: falcon-printer (retired 2026-05-14)
-
-`decomp/` replaces [`falcon-printer/`](falcon-printer/),
-the prototype that taught us what passes we needed. The
-retired crate's docs are preserved at
-[`falcon-printer/docs/`](falcon-printer/docs/) (strategy
-migration plan, ecosystem survey, middle-end passes
-walkthrough, architecture). The Cargo.toml + src/ are
-deleted; git history is the archive.
-
-Open work tracked in [`docs/todo.md`](docs/todo.md).
-Milestones in [`docs/changelog.md`](docs/changelog.md).
+Decompiler implementation details, build instructions, sample
+output, the retired Falcon prototype, and the honest assessment of
+whether the work was worthwhile live in the dedicated
+[`decomp documentation`](decomp/README.md). Read the
+[`retrospective`](decomp/docs/retrospective.md) before investing in
+that tooling. The root README keeps only the workspace map.
 
 ## Build prerequisites
 
