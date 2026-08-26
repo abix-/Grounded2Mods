@@ -17,12 +17,13 @@
 //! later squares are built from what earlier ones gave, so the
 //! world composts into places nobody authored.
 
-use std::collections::HashSet;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use modforge::structure::{CONCRETE_FLOOR, CONCRETE_WALL, Library, PieceDef, StructureDef};
+use modforge::monument::Roll;
+use modforge::structure::{CONCRETE_FLOOR, CONCRETE_WALL, Library, StructureDef};
+use modforge::worldgen::{Seen, point_in_cell};
 
 use crate::dispatch;
 
@@ -57,33 +58,6 @@ static PIECES_SPAWNED: AtomicU64 = AtomicU64::new(0);
 static MONUMENTS_BUILT: AtomicU64 = AtomicU64::new(0);
 static STRUCTURES_CAPTURED: AtomicU64 = AtomicU64::new(0);
 
-/// Cut a square's harvested pieces into structures: greedy
-/// spatial grouping, so a building keeps the fence and the junk
-/// pile that stand with it.
-fn structures_from(source: &str, pieces: &[PieceDef]) -> Vec<StructureDef> {
-    // Grouping loose pieces into things that stand together is
-    // modforge's job (`group_nearby`), where it is unit-tested.
-    // What stays here is only naming and colouring the result.
-    modforge::structure::group_nearby(
-        pieces,
-        STRUCTURE_RADIUS_M as f32,
-        STRUCTURE_MIN_PIECES,
-        STRUCTURE_MAX_PIECES,
-    )
-    .into_iter()
-    .map(|group| StructureDef {
-        name: source.to_string(),
-        wall_color: CONCRETE_WALL,
-        floor_color: CONCRETE_FLOOR,
-        rooms: Vec::new(),
-        stairs: Vec::new(),
-        furniture: Vec::new(),
-        lights: Vec::new(),
-        pieces: group,
-    })
-    .collect()
-}
-
 /// Take up to STRUCTURES_PER_SQUARE structures from a square into
 /// the library, preferring the meatier ones.
 fn donate(square: &str) {
@@ -91,18 +65,24 @@ fn donate(square: &str) {
     if pieces.is_empty() {
         return;
     }
-    let mut found = structures_from(square, &pieces);
+    // Grouping, naming and keeping the biggest are all modforge's,
+    // where they are unit-tested. What is MISERY's here is only
+    // the numbers.
+    let found = modforge::structure::capture(
+        square,
+        &pieces,
+        STRUCTURE_RADIUS_M as f32,
+        STRUCTURE_MIN_PIECES,
+        STRUCTURE_MAX_PIECES,
+        CONCRETE_WALL,
+        CONCRETE_FLOOR,
+    );
     if found.is_empty() {
         return;
     }
-    found.sort_by_key(|s| std::cmp::Reverse(s.pieces.len()));
-    found.truncate(STRUCTURES_PER_SQUARE);
-    let taken = found.len();
     let mut guard = LIBRARY.lock().unwrap_or_else(|e| e.into_inner());
     let lib = guard.get_or_insert_with(|| Library::new(LIBRARY_CAP));
-    for s in found {
-        lib.add(s);
-    }
+    let taken = lib.add_best(found, STRUCTURES_PER_SQUARE);
     let total = lib.len();
     drop(guard);
     STRUCTURES_CAPTURED.fetch_add(taken as u64, Ordering::Relaxed);
@@ -115,12 +95,10 @@ fn donate(square: &str) {
 /// same building twice reads as a settlement that grew.
 fn draw_members() -> Vec<StructureDef> {
     let guard = LIBRARY.lock().unwrap_or_else(|e| e.into_inner());
-    let Some(lib) = guard.as_ref() else {
-        return Vec::new();
-    };
-    let n = MEMBERS_PER_MONUMENT.0
-        + fastrand::usize(0..=(MEMBERS_PER_MONUMENT.1 - MEMBERS_PER_MONUMENT.0));
-    lib.draw(n)
+    guard
+        .as_ref()
+        .map(|lib| lib.draw_between(MEMBERS_PER_MONUMENT.0, MEMBERS_PER_MONUMENT.1))
+        .unwrap_or_default()
 }
 
 pub fn install() {
@@ -138,25 +116,25 @@ pub fn install() {
 
 /// Squares already given a chance at a monument. Lives outside
 /// the tick because the worker calls back per interval.
-static SEEN: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+static SEEN: Mutex<Option<Seen>> = Mutex::new(None);
 
 fn watcher() {
     let mut guard = SEEN.lock().unwrap_or_else(|e| e.into_inner());
-    let seen = guard.get_or_insert_with(HashSet::new);
+    let seen = guard.get_or_insert_with(Seen::new);
     {
         if ueforge::ue::try_runtime().is_none() {
             return;
         }
         let squares = crate::strange::live_squares();
-        let live: HashSet<String> = squares.iter().map(|(n, _, _)| n.clone()).collect();
-        seen.retain(|s| live.contains(s));
+        // Forget squares that unloaded, so one that comes back
+        // counts as new again.
+        seen.forget_gone(squares.iter().map(|(n, _, _)| n.as_str()));
 
         let Some(tile) = crate::strange::active_tile_size() else { return };
         for (name, cx, cy) in squares {
-            if seen.contains(&name) {
+            if !seen.is_new(&name) {
                 continue;
             }
-            seen.insert(name.clone());
 
             // Every square first gives, then may receive.
             donate(&name);
@@ -171,11 +149,11 @@ fn watcher() {
             if members.is_empty() {
                 continue;
             }
-            let half = (tile / 2.0 - EDGE_MARGIN_CM).max(0.0);
-            let centre = (
-                cx as f64 * tile + (fastrand::f64() * 2.0 - 1.0) * half,
-                cy as f64 * tile + (fastrand::f64() * 2.0 - 1.0) * half,
-            );
+            let mut roll = Roll::new(modforge::monument::seed_from_position(
+                cx as f64 * tile,
+                cy as f64 * tile,
+            ));
+            let centre = point_in_cell((cx, cy), tile, EDGE_MARGIN_CM, &mut roll);
             let sources: Vec<&str> = members.iter().map(|s| s.name.as_str()).collect();
             ueforge::log::log(format_args!(
                 "places: monument in {name} from {} structure(s) {sources:?}",

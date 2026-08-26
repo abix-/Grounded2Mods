@@ -316,6 +316,35 @@ pub fn group_nearby(
     out
 }
 
+/// Turn a heap of loose pieces into named structures.
+///
+/// [`group_nearby`] with the naming and colouring done, which is
+/// what a caller wants when capturing a place: it has a source
+/// name and a palette, not a pile of groups.
+pub fn capture(
+    source: &str,
+    pieces: &[PieceDef],
+    radius: f32,
+    min: usize,
+    max: usize,
+    wall_color: Rgb,
+    floor_color: Rgb,
+) -> Vec<StructureDef> {
+    group_nearby(pieces, radius, min, max)
+        .into_iter()
+        .map(|group| StructureDef {
+            name: source.to_string(),
+            wall_color,
+            floor_color,
+            rooms: Vec::new(),
+            stairs: Vec::new(),
+            furniture: Vec::new(),
+            lights: Vec::new(),
+            pieces: group,
+        })
+        .collect()
+}
+
 /// A collection of structures to draw from.
 ///
 /// Holds a bounded number and forgets the oldest beyond that, so
@@ -363,6 +392,27 @@ impl Library {
     /// [`draw`]: Library::draw
     pub fn items(&self) -> &[StructureDef] {
         &self.items
+    }
+
+    /// Keep the `n` biggest of `structures` and discard the rest.
+    ///
+    /// Biggest by piece count: a capture of one place yields both
+    /// a building and the litter around it, and the building is
+    /// the part worth keeping.
+    pub fn add_best(&mut self, mut structures: Vec<StructureDef>, n: usize) -> usize {
+        structures.sort_by_key(|s| std::cmp::Reverse(s.pieces.len()));
+        structures.truncate(n);
+        let kept = structures.len();
+        for s in structures {
+            self.add(s);
+        }
+        kept
+    }
+
+    /// Draw somewhere between `lo` and `hi` at random.
+    pub fn draw_between(&self, lo: usize, hi: usize) -> Vec<StructureDef> {
+        let hi = hi.max(lo);
+        self.draw(lo + fastrand::usize(0..=(hi - lo)))
     }
 
     /// Draw `n` at random, with replacement. Empty when the
@@ -1206,6 +1256,51 @@ mod shape_tests {
         let mut none = Library::new(0);
         none.add(structure("s"));
         assert!(none.is_empty());
+    }
+
+    #[test]
+    fn add_best_keeps_the_biggest_and_drops_the_rest() {
+        let mut lib = Library::new(10);
+        let mut small = structure("small");
+        small.pieces = vec![at(0.0, 0.0, 0.0)];
+        let mut big = structure("big");
+        big.pieces = (0..9).map(|i| at(i as f32, 0.0, 0.0)).collect();
+        let mut middling = structure("middling");
+        middling.pieces = (0..4).map(|i| at(i as f32, 0.0, 0.0)).collect();
+
+        let kept = lib.add_best(vec![small, big, middling], 2);
+        assert_eq!(kept, 2);
+        let names: Vec<&str> = lib.items().iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"big") && names.contains(&"middling"));
+        assert!(!names.contains(&"small"), "the litter should be dropped");
+    }
+
+    #[test]
+    fn add_best_with_fewer_than_asked_keeps_them_all() {
+        let mut lib = Library::new(10);
+        assert_eq!(lib.add_best(vec![structure("a")], 5), 1);
+    }
+
+    #[test]
+    fn draw_between_stays_within_its_bounds() {
+        let mut lib = Library::new(10);
+        lib.add(structure("a"));
+        for _ in 0..200 {
+            let n = lib.draw_between(2, 5).len();
+            assert!((2..=5).contains(&n), "drew {n}");
+        }
+        // Reversed bounds must not panic.
+        assert_eq!(lib.draw_between(4, 2).len(), 4);
+    }
+
+    #[test]
+    fn capture_names_and_colours_every_group() {
+        let pieces: Vec<PieceDef> = (0..4).map(|i| at(i as f32 * 0.5, 0.0, 0.0)).collect();
+        let got = capture("a_square", &pieces, 3.0, 2, 100, CONCRETE_WALL, CONCRETE_FLOOR);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].name, "a_square");
+        assert_eq!(got[0].wall_color, CONCRETE_WALL);
+        assert_eq!(got[0].pieces.len(), 4);
     }
 
     #[test]

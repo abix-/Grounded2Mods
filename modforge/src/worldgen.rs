@@ -639,6 +639,80 @@ fn path(world: &World, blocked: &[bool], from: Vec2, to: Vec2) -> Result<Vec<Vec
 /// west. `clearing` marks cells that are open ground before the
 /// walk (the bunker's plaza): they open to each other and the walk
 /// grows out of them. Seeded, so the same seed carves the same maze.
+/// What has been dealt with, in a world that streams.
+///
+/// A streaming world hands you the same places over and over as
+/// you move, and takes them away behind you. This answers "is
+/// this one new?" and forgets anything no longer present, so a
+/// place that unloads and comes back is treated as new again
+/// rather than remembered forever.
+///
+/// Without the forgetting the set grows for the whole session and
+/// nothing can ever happen in a place twice.
+#[derive(Default, Clone)]
+pub struct Seen {
+    names: std::collections::HashSet<String>,
+}
+
+impl Seen {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn len(&self) -> usize {
+        self.names.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.names.is_empty()
+    }
+
+    /// Drop anything not in `live`. Call this before asking what
+    /// is new, so places that went away can come back.
+    pub fn forget_gone<I, S>(&mut self, live: I)
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let present: std::collections::HashSet<String> =
+            live.into_iter().map(|s| s.as_ref().to_string()).collect();
+        self.names.retain(|n| present.contains(n));
+    }
+
+    /// True the FIRST time a name is offered, false after. The
+    /// name is recorded either way, so a caller cannot forget to.
+    pub fn is_new(&mut self, name: &str) -> bool {
+        self.names.insert(name.to_string())
+    }
+}
+
+/// A random point inside a square grid cell, kept `margin` away
+/// from its edges.
+///
+/// `cell` is the cell's index on each axis and `size` its width,
+/// in whatever units the caller uses. The margin stops whatever
+/// is placed from straddling the boundary into the neighbouring
+/// cell, which in a streaming world is the difference between a
+/// thing that belongs here and a thing that half-loads.
+///
+/// A margin wider than the cell collapses to its centre rather
+/// than turning inside out.
+pub fn point_in_cell(cell: (i32, i32), size: f64, margin: f64, roll: &mut Roll) -> (f64, f64) {
+    let half = (size / 2.0 - margin).max(0.0);
+    let jitter = |r: &mut Roll| {
+        if half <= 0.0 {
+            return 0.0;
+        }
+        // 0..2000 over the span, so the step is fine enough that
+        // two things in one cell rarely land on the same spot.
+        (r.next(2001) as f64 / 1000.0 - 1.0) * half
+    };
+    (
+        cell.0 as f64 * size + jitter(roll),
+        cell.1 as f64 * size + jitter(roll),
+    )
+}
+
 pub fn carve_maze(n: usize, clearing: &[bool], roll: &mut Roll) -> Vec<u8> {
     const N: u8 = 1;
     const E: u8 = 2;
@@ -1327,5 +1401,60 @@ mod tests {
         let mut bad = def();
         bad.biome_rules[0].biome = "swamp".to_string();
         assert!(roll_world(&bad, 1, &biomes, &monuments).is_err());
+    }
+
+    #[test]
+    fn a_place_is_new_once_then_not() {
+        let mut seen = Seen::new();
+        assert!(seen.is_new("a"));
+        assert!(!seen.is_new("a"));
+        assert_eq!(seen.len(), 1);
+    }
+
+    /// A place that unloads and comes back must count as new
+    /// again, or nothing can ever happen there twice.
+    #[test]
+    fn a_place_that_went_away_is_new_again() {
+        let mut seen = Seen::new();
+        seen.is_new("a");
+        seen.is_new("b");
+        seen.forget_gone(["b"]);
+        assert!(seen.is_new("a"), "a unloaded, so it should be new again");
+        assert!(!seen.is_new("b"), "b never left");
+    }
+
+    #[test]
+    fn forgetting_everything_empties_it() {
+        let mut seen = Seen::new();
+        seen.is_new("a");
+        seen.forget_gone(Vec::<String>::new());
+        assert!(seen.is_empty());
+    }
+
+    #[test]
+    fn a_point_stays_inside_its_cell_and_off_the_edge() {
+        let mut roll = Roll::new(7);
+        for _ in 0..200 {
+            let (x, y) = point_in_cell((3, -2), 100.0, 10.0, &mut roll);
+            assert!((x - 300.0).abs() <= 40.0, "x was {x}");
+            assert!((y + 200.0).abs() <= 40.0, "y was {y}");
+        }
+    }
+
+    /// A margin wider than the cell must collapse to the centre,
+    /// not turn the range inside out.
+    #[test]
+    fn too_wide_a_margin_gives_the_centre() {
+        let mut roll = Roll::new(7);
+        let (x, y) = point_in_cell((1, 1), 10.0, 999.0, &mut roll);
+        assert_eq!((x, y), (10.0, 10.0));
+    }
+
+    #[test]
+    fn two_points_in_one_cell_usually_differ() {
+        let mut roll = Roll::new(7);
+        let a = point_in_cell((0, 0), 100.0, 5.0, &mut roll);
+        let b = point_in_cell((0, 0), 100.0, 5.0, &mut roll);
+        assert_ne!(a, b);
     }
 }
