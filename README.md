@@ -130,16 +130,6 @@ See [`unityforge/README.md`](unityforge/README.md) and
 
 > **Rating scale:** 10/10 = ready for 1000 players, fun, zero bugs.
 
-## Build prerequisites
-
-- Windows 10/11 x64
-- Rust toolchain (rustup; stable pinned via `rust-toolchain.toml`)
-- Visual Studio Build Tools 2022+ with the C++ workload
-- For ueforge mods: the target game's UE4SS install
-- For unityforge mods: BepInEx (Mono games) or MelonLoader (IL2CPP games)
-- For framework dev: clone with `--recurse-submodules`. Dear
-  ImGui v1.92.1 lives in a submodule.
-
 ## Docs
 
 Workspace-level docs live in [`docs/`](docs/):

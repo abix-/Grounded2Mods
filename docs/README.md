@@ -8,6 +8,7 @@
 
 | File | Authoritative on |
 |---|---|
+| [building.md](building.md) | Workspace build prerequisites. |
 | [todo.md](todo.md) | Open work across the workspace, ordered by leverage. |
 | [changelog.md](changelog.md) | Chronological history of milestones, investigations, and design pivots across every crate. |
 | [credits.md](credits.md) | Projects, tools, authors, and game studios credited by the workspace. |
