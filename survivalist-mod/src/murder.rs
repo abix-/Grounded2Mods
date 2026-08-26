@@ -371,11 +371,14 @@ impl mission::Mission for Mission {
     fn is_agent_alive(&self) -> Result<bool, String> {
         let alive = is_npc_alive(self.operative_h)?;
         if !alive {
-            for &v in &self.voter_ids {
-                genome::reinforce_individual(v, genome::GUILE, false, 2.0);
-                genome::reinforce_individual(v, genome::AGGRESSION, false, 1.0);
-            }
-            genome::reinforce(self.camp_id, genome::GUILE, false, 2.0);
+            genome::reinforce_collective(
+                self.camp_id,
+                &self.voter_ids,
+                &[genome::GUILE],
+                false,
+                2.0,
+            );
+            genome::reinforce_voters(&self.voter_ids, &[genome::AGGRESSION], false, 1.0);
             crate::chronicle::post(&format!(
                 "an assassin from {} was cut down in {}",
                 self.camp_name, self.victim_camp_name
@@ -396,10 +399,13 @@ impl mission::Mission for Mission {
 
         if self.strike_phase {
             if !victim_alive {
-                for &v in &self.voter_ids {
-                    genome::reinforce_individual(v, genome::GUILE, true, 1.5);
-                }
-                genome::reinforce(self.camp_id, genome::GUILE, true, 1.5);
+                genome::reinforce_collective(
+                    self.camp_id,
+                    &self.voter_ids,
+                    &[genome::GUILE],
+                    true,
+                    1.5,
+                );
                 crate::chronicle::post(&format!(
                     "{}, leader of {}, has been assassinated",
                     self.victim_name, self.victim_camp_name
@@ -418,10 +424,13 @@ impl mission::Mission for Mission {
                 return Ok(Step::Transition);
             }
             if now >= self.strike_deadline {
-                for &v in &self.voter_ids {
-                    genome::reinforce_individual(v, genome::GUILE, false, 1.0);
-                }
-                genome::reinforce(self.camp_id, genome::GUILE, false, 1.0);
+                genome::reinforce_collective(
+                    self.camp_id,
+                    &self.voter_ids,
+                    &[genome::GUILE],
+                    false,
+                    1.0,
+                );
                 mono::log(
                     LogLevel::Info,
                     &format!(

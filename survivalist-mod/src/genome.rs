@@ -65,6 +65,10 @@ pub fn reinforce(id: i64, trait_index: usize, direction_up: bool, magnitude: f64
     FACTIONS.reinforce(id, trait_index, direction_up, magnitude);
 }
 
+pub fn reinforce_traits(id: i64, trait_indices: &[usize], direction_up: bool, magnitude: f64) {
+    genome::reinforce_traits(&FACTIONS, id, trait_indices, direction_up, magnitude);
+}
+
 #[allow(dead_code)]
 pub fn blend_into(survivor_id: i64, victor: &[f64], victor_weight: f64) {
     FACTIONS.blend_into(survivor_id, victor, victor_weight);
@@ -80,6 +84,39 @@ pub fn individual(char_id: i64, ctype: &str) -> Vec<f64> {
 
 pub fn reinforce_individual(char_id: i64, trait_index: usize, direction_up: bool, magnitude: f64) {
     INDIVIDUALS.reinforce(char_id, trait_index, direction_up, magnitude);
+}
+
+pub fn reinforce_voters(
+    voter_ids: &[i64],
+    trait_indices: &[usize],
+    direction_up: bool,
+    magnitude: f64,
+) {
+    genome::reinforce_voters(
+        &INDIVIDUALS,
+        voter_ids,
+        trait_indices,
+        direction_up,
+        magnitude,
+    );
+}
+
+pub fn reinforce_collective(
+    faction_id: i64,
+    voter_ids: &[i64],
+    trait_indices: &[usize],
+    direction_up: bool,
+    magnitude: f64,
+) {
+    genome::reinforce_collective(
+        &FACTIONS,
+        &INDIVIDUALS,
+        faction_id,
+        voter_ids,
+        trait_indices,
+        direction_up,
+        magnitude,
+    );
 }
 
 pub fn drop_individual(char_id: i64) {

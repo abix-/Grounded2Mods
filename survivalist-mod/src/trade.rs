@@ -511,10 +511,13 @@ impl mission::Mission for Mission {
     fn is_agent_alive(&self) -> Result<bool, String> {
         let alive = is_npc_alive(self.trader_h)?;
         if !alive {
-            for &v in &self.voter_ids {
-                genome::reinforce_individual(v, genome::DEFENSIVENESS, false, 2.0);
-            }
-            genome::reinforce(self.seller_id, genome::DEFENSIVENESS, false, 2.0);
+            genome::reinforce_collective(
+                self.seller_id,
+                &self.voter_ids,
+                &[genome::DEFENSIVENESS],
+                false,
+                2.0,
+            );
             mono::log(
                 LogLevel::Info,
                 &format!(
@@ -570,10 +573,13 @@ impl mission::Mission for Mission {
             return Ok(Step::Continue);
         }
         if self.delivered > 0 {
-            for &v in &self.voter_ids {
-                genome::reinforce_individual(v, genome::DEFENSIVENESS, true, 1.0);
-            }
-            genome::reinforce(self.seller_id, genome::DEFENSIVENESS, true, 1.0);
+            genome::reinforce_collective(
+                self.seller_id,
+                &self.voter_ids,
+                &[genome::DEFENSIVENESS],
+                true,
+                1.0,
+            );
             mono::log(
                 LogLevel::Info,
                 &format!(

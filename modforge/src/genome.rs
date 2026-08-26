@@ -250,6 +250,56 @@ impl Pool {
     }
 }
 
+/// Reinforce several traits for one entity in a pool.
+pub fn reinforce_traits(
+    pool: &Pool,
+    id: i64,
+    trait_indices: &[usize],
+    direction_up: bool,
+    magnitude: f64,
+) {
+    for &trait_index in trait_indices {
+        pool.reinforce(id, trait_index, direction_up, magnitude);
+    }
+}
+
+/// Reinforce the same traits for every individual that participated
+/// in a decision.
+pub fn reinforce_voters(
+    individuals: &Pool,
+    voter_ids: &[i64],
+    trait_indices: &[usize],
+    direction_up: bool,
+    magnitude: f64,
+) {
+    for &trait_index in trait_indices {
+        for &voter_id in voter_ids {
+            individuals.reinforce(voter_id, trait_index, direction_up, magnitude);
+        }
+    }
+}
+
+/// Reinforce participating individuals and their faction aggregate
+/// from the same outcome.
+pub fn reinforce_collective(
+    factions: &Pool,
+    individuals: &Pool,
+    faction_id: i64,
+    voter_ids: &[i64],
+    trait_indices: &[usize],
+    direction_up: bool,
+    magnitude: f64,
+) {
+    reinforce_voters(
+        individuals,
+        voter_ids,
+        trait_indices,
+        direction_up,
+        magnitude,
+    );
+    reinforce_traits(factions, faction_id, trait_indices, direction_up, magnitude);
+}
+
 // ---- deterministic jitter ---------------------------------------------------
 
 pub fn jitter(id: i64, salt: i64, span: f64) -> f64 {

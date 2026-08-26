@@ -681,9 +681,7 @@ fn collapse_response(camps: &[Camp]) -> Result<bool, String> {
             );
             // Survival by merging: the meek choice paid off, so the
             // voters trust the careful way more.
-            for &v in &vote.voter_ids {
-                genome::reinforce_individual(v, genome::DEFENSIVENESS, true, 1.0);
-            }
+            genome::reinforce_voters(&vote.voter_ids, &[genome::DEFENSIVENESS], true, 1.0);
             return Ok(true); // one collapse-merge per scan
         }
     }
@@ -1090,9 +1088,7 @@ fn evaluate_experiments(now: f32) -> Result<(), String> {
             // The faction died since the raid: the ultimate
             // negative outcome. Its genome dies with it; nothing
             // to reinforce.
-            for &t in &e.traits {
-                genome::reinforce(e.faction_id, t, false, 2.0);
-            }
+            genome::reinforce_traits(e.faction_id, &e.traits, false, 2.0);
             continue;
         };
 
@@ -1108,14 +1104,7 @@ fn evaluate_experiments(now: f32) -> Result<(), String> {
             // how it went: the individuals, not the faction,
             // carry the lesson (and it dies or spreads with them),
             // in every trait that drove the choice.
-            for &t in &e.traits {
-                for &voter in &e.voter_ids {
-                    genome::reinforce_individual(voter, t, up, magnitude);
-                }
-                // Keep the faction-level aggregate roughly in step
-                // for the status display.
-                genome::reinforce(e.faction_id, t, up, magnitude);
-            }
+            genome::reinforce_collective(e.faction_id, &e.voter_ids, &e.traits, up, magnitude);
             mono::log(
                 LogLevel::Info,
                 &format!(

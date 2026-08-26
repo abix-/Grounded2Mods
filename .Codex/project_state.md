@@ -15,7 +15,8 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 - Mission lifecycle advancement, explicit stage transitions, timeout dispatch, collection removal, error routing, and guaranteed cleanup belong to `modforge::mission`.
 - Mission stage data and all Unity checks, intents, outcomes, voting, judgment, chronicle text, logging, and concrete handle cleanup remain in Survivalist.
 - Franchise tallying, strict-majority decisions, mean scores, and voter identity collection belong to `modforge::genome`.
-- Survivalist retains voter eligibility, conscript exclusion, trait projections, thresholds, actions, and reinforcement outcomes.
+- Trait, voter, and collective reinforcement fan-out belongs to `modforge::genome`.
+- Survivalist retains voter eligibility, conscript exclusion, trait projections, thresholds, actions, outcome judgment, trait selection, reinforcement direction, and magnitude.
 
 ## Last session summary
 
@@ -34,6 +35,8 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 - Added no tests and did not build for the mission extraction, following the direct instruction.
 - Expanded `modforge::genome` with a shared ballot accumulator and migrated the duplicated tallies in Survivalist survival, steal, trade, scavenge, murder, and robbery.
 - Added no tests and did not build for the ballot extraction, following the direct instruction.
+- Expanded `modforge::genome` with shared trait, voter, and collective reinforcement dispatch and migrated the duplicated reinforcement loops in Survivalist survival, steal, trade, scavenge, murder, and robbery.
+- Preserved Survivalist's outcome judgment, trait choices, directions, magnitudes, Unity effects, logging, and chronicle text. Added no tests and did not build.
 
 ## Next steps
 
@@ -41,4 +44,4 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 
 ## Open questions
 
-- None for the completed item, upgrade, and mission extractions.
+- None for the completed item, upgrade, mission, ballot, and reinforcement extractions.

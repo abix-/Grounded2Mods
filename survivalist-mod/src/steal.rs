@@ -413,10 +413,13 @@ impl mission::Mission for Mission {
     fn is_agent_alive(&self) -> Result<bool, String> {
         let alive = is_npc_alive(self.thief_h)?;
         if !alive {
-            for &v in &self.voter_ids {
-                genome::reinforce_individual(v, genome::GUILE, false, 2.0);
-            }
-            genome::reinforce(self.faction_id, genome::GUILE, false, 2.0);
+            genome::reinforce_collective(
+                self.faction_id,
+                &self.voter_ids,
+                &[genome::GUILE],
+                false,
+                2.0,
+            );
             mono::log(
                 LogLevel::Info,
                 &format!(
@@ -451,10 +454,13 @@ impl mission::Mission for Mission {
         })? == json!(true);
         self.caught = caught;
         if caught {
-            for &v in &self.voter_ids {
-                genome::reinforce_individual(v, genome::GUILE, false, 1.5);
-            }
-            genome::reinforce(self.faction_id, genome::GUILE, false, 1.5);
+            genome::reinforce_collective(
+                self.faction_id,
+                &self.voter_ids,
+                &[genome::GUILE],
+                false,
+                1.5,
+            );
             crate::chronicle::post(&format!(
                 "a thief from {} was caught in {}'s stores",
                 self.faction_name, self.target_name
@@ -484,10 +490,13 @@ impl mission::Mission for Mission {
             return Ok(Step::Continue);
         }
         if !self.caught && self.stolen > 0 {
-            for &v in &self.voter_ids {
-                genome::reinforce_individual(v, genome::GUILE, true, 1.0);
-            }
-            genome::reinforce(self.faction_id, genome::GUILE, true, 1.0);
+            genome::reinforce_collective(
+                self.faction_id,
+                &self.voter_ids,
+                &[genome::GUILE],
+                true,
+                1.0,
+            );
             mono::log(
                 LogLevel::Info,
                 &format!(

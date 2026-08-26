@@ -537,10 +537,13 @@ impl mission::Mission for Mission {
 }
 
 fn reinforce_all(m: &Mission, up: bool, magnitude: f64) {
-    for &v in &m.voter_ids {
-        genome::reinforce_individual(v, genome::EXPANSIONISM, up, magnitude);
-    }
-    genome::reinforce(m.scav_id, genome::EXPANSIONISM, up, magnitude);
+    genome::reinforce_collective(
+        m.scav_id,
+        &m.voter_ids,
+        &[genome::EXPANSIONISM],
+        up,
+        magnitude,
+    );
 }
 
 /// Move up to the haul budget from the prop's inventory into the

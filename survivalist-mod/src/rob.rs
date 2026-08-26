@@ -494,12 +494,13 @@ impl mission::OneStageMission for Mission {
         } else {
             (false, 0.5, "came home empty; a waste of menace")
         };
-        for &v in &self.voter_ids {
-            genome::reinforce_individual(v, genome::AGGRESSION, up, magnitude);
-            genome::reinforce_individual(v, genome::GUILE, up, magnitude);
-        }
-        genome::reinforce(self.robber_id, genome::AGGRESSION, up, magnitude);
-        genome::reinforce(self.robber_id, genome::GUILE, up, magnitude);
+        genome::reinforce_collective(
+            self.robber_id,
+            &self.voter_ids,
+            &[genome::AGGRESSION, genome::GUILE],
+            up,
+            magnitude,
+        );
         mono::log(
             LogLevel::Info,
             &format!(
