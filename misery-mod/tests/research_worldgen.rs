@@ -189,6 +189,93 @@ fn pool_swap_meadows_into_paneli() {
     println!("FOREIGN SQUARE PLACED: {}", hit.unwrap());
 }
 
+/// Mixed-pool area: fill all nine Paneli slots with a curated
+/// blend of Meadows and Town squares (both 12000-unit tiles)
+/// and generate the world. Sources are collected from both
+/// pools before writing, so reruns work.
+#[test]
+#[ignore = "rebuilds the expedition world"]
+fn mixed_pool_area() {
+    const BLEND: [&str; 9] = [
+        "L_Kolhoz01",
+        "L_VehCemetry_Bridge",
+        "L_River_LoggingCamp",
+        "L_TownSwamp01",
+        "L_Village_Dwarf_Hole",
+        "L_Anomaly_House",
+        "L_BombCrater",
+        "L_Forest02",
+        "L_Town_Anomaly01",
+    ];
+
+    let Some(api) = api_or_skip() else { return };
+    if !offsets_live(&api) {
+        println!("SKIP: offsets not live");
+        return;
+    }
+    let gens = client::walk_class_chain_instances(&api, "BP_WorldGeneration_Base_C", 8);
+    let meadows = gens.iter().find(|g| g.name.contains("Meadows")).expect("no Meadows generator");
+    let paneli = gens.iter().find(|g| g.name.contains("Paneli")).expect("no Paneli generator");
+
+    // Collect source elements from both pools before writing.
+    let (_, m_pool) = pool_entries(&api, meadows.addr).expect("meadows pool unreadable");
+    let (p_ptr, p_pool) = pool_entries(&api, paneli.addr).expect("paneli pool unreadable");
+    let mut sources: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
+    for (n, e) in m_pool.iter().chain(p_pool.iter()) {
+        sources.entry(n.clone()).or_insert_with(|| e.clone());
+    }
+
+    let sel = format!("addr:0x{p_ptr:x}");
+    for (slot, name) in BLEND.iter().enumerate() {
+        let elem = sources
+            .get(*name)
+            .unwrap_or_else(|| panic!("{name} not found in either pool"));
+        assert!(
+            write_bytes_op(&api, &sel, slot as u64 * POOL_STRIDE, elem),
+            "write failed for slot {slot}"
+        );
+    }
+    let (_, p_after) = pool_entries(&api, paneli.addr).expect("paneli pool unreadable");
+    println!("paneli pool is now the blend:");
+    for (i, (n, _)) in p_after.iter().enumerate() {
+        println!("  {i:>2}. {n}");
+        assert_eq!(n, BLEND[i], "slot {i} did not take");
+    }
+
+    let m = manager(&api).expect("no global manager");
+    println!("generating the mixed world (GenerateCustomBiom(3))");
+    api.call_ufunction("BP_GlobalManager_C", "GenerateCustomBiom", &m.addr_selector, &[3u8])
+        .expect("GenerateCustomBiom failed");
+    std::thread::sleep(Duration::from_secs(20));
+
+    let mut board: Vec<String> = Vec::new();
+    for n in client::walk_class_chain_instances(&api, "BP_MasterAICharacter_C", 400) {
+        if let Some(path) = n.full_name.split(' ').nth(1) {
+            if let Some(sq) = path.split(".PersistentLevel").next() {
+                let short = sq.rsplit('/').next().unwrap_or(sq).to_string();
+                if !board.contains(&short) {
+                    board.push(short);
+                }
+            }
+        }
+    }
+    board.sort();
+    println!("the generated board (squares with NPCs):");
+    for s in &board {
+        println!("  {s}");
+    }
+    let meadows_squares = ["L_Kolhoz01", "L_VehCemetry_Bridge", "L_River_LoggingCamp",
+        "L_Village_Dwarf_Hole", "L_BombCrater", "L_Forest02"];
+    let town_squares = ["L_TownSwamp01", "L_Anomaly_House", "L_Town_Anomaly01"];
+    let m_hit = board.iter().filter(|s| meadows_squares.iter().any(|q| s.contains(q))).count();
+    let t_hit = board.iter().filter(|s| town_squares.iter().any(|q| s.contains(q))).count();
+    println!("meadows squares on the board: {m_hit}, town squares: {t_hit}");
+    assert!(
+        m_hit > 0 && t_hit > 0,
+        "board is not mixed (meadows={m_hit}, town={t_hit}); reroll"
+    );
+}
+
 /// Force a world regeneration via GenerateCustomBiom on the
 /// game thread. MISERY_BIOME selects the area number (default:
 /// the manager's current value, so a plain run just regenerates

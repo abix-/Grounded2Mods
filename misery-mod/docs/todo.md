@@ -2,10 +2,8 @@
 
 | Priority | System | Todo | Done when |
 |---:|---|---|---|
-| 1 | `worldgen` | [ ] Forced regeneration: call GenerateCustomBiom / GenerateBiom through the call op and verify a new world generates on demand | A test regenerates the expedition without a shining; the biome number to area mapping is recorded in worldgen.md. |
-| 1 | `worldgen` | [ ] Pool swap experiment: write one Meadows square's FNames into Paneli's pool, regenerate, verify the foreign square streams in | A Meadows square appears in a Paneli world, walkable with its NPCs, verified live. |
-| 2 | `worldgen` | [ ] Mixed-pool area: fill one generator's pool with squares from multiple same-size areas and generate | A world generates whose squares come from at least two areas; recorded in worldgen.md. |
 | 3 | `worldgen` | [ ] Tile-size mismatch probe: put a 12000 square into the 16500 Factory grid and observe | Gap/overlap behavior documented in worldgen.md; verdict on cross-size mixing. |
+| 3 | `worldgen` | [ ] Research why GenerateCustomBiom(1) generates nothing while Factory works under natural shinings | Factory forcible on demand, or the different path documented in worldgen.md. |
 | 3 | `worldgen` | [ ] New-area research: can a spawned fifth generator (or a spare grid region) run RunGenerationFromSeed with a custom grid and pool | Go/no-go with findings documented in worldgen.md. |
 | 5 | `worldgen` | [ ] New-square research: how preset levels are packaged (pak, cooked umap), whether a cloned and renamed square can be loaded | Go/no-go with findings documented in worldgen.md. |
 | 8 | `worldgen` | [ ] Build one new square end to end and roll it into a pool | A square that never existed streams in-game, verified live. |

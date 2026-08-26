@@ -206,6 +206,23 @@ Facts established:
 This is the whole mechanism for the mixed-pool area row: fill
 a pool with entries from any same-size areas and generate.
 
+### 8.1 The mixed-pool area works (confirmed 2026-08-25)
+
+`research_worldgen::mixed_pool_area`, live: all nine Paneli
+slots overwritten with a curated blend (6 Meadows squares:
+Kolhoz01, VehCemetry_Bridge, River_LoggingCamp,
+Village_Dwarf_Hole, BombCrater, Forest02; 3 Town squares:
+TownSwamp01, Anomaly_House, Town_Anomaly01), then one forced
+generation. The board came out mixed: L_Village_Dwarf_Hole
+(Meadows) at cell 3,8 among TownSwamp01 and Anomaly_House
+cells. Rolls repeat entries (Anomaly_House landed three
+times), and the NPC census only proves squares that contain
+NPCs; empty squares (Forest, BombCrater) do not show there.
+
+A whole area assembled from squares of multiple areas is
+therefore a solved problem for same-size pools: write nine
+elements, regenerate.
+
 ## 9. Open questions
 
 - Why GenerateCustomBiom(1) does nothing when Factory

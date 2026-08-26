@@ -46,6 +46,11 @@ Newest first.
 | `misery` | [x] Fix spawner square keys: class prefix in full names made every NPC class its own square, over-spawning | Post-fix log shows one roll per square with true vanilla counts. |
 | `misery` | [x] Fix pe_dispatch install blocking the features chain at main menu: backoff moved to its own thread | Features after pe_dispatch register immediately; log shows all features watching before load. |
 | `misery` | [x] Measure area grids: Factory 2x2 (4 squares), Bunker/Meadows/Paneli 3x3 (9), Meadows has an 18-preset pool | research_spawners::dump_generator_grids, live values in research.md 25.4. |
+| `misery` | [x] Worldgen doc split: worldgen.md is the authority for generators, grids, pools, square catalog | research.md sections 19 and 25.4 are pointers; skill updated. |
+| `misery` | [x] Forced world regeneration on demand via GenerateCustomBiom on the game thread; area mapping swept (0 bunker, 2 meadows, 3 paneli, 1/4 dead) | research_worldgen tests; each forced regen ticks the global shining count. worldgen.md 7. |
+| `misery` | [x] Cross-area square mixing: a Meadows square generated inside a Paneli world via one pool element write | pool_swap_meadows_into_paneli passed live: 4452_4_7.L_VehCemetry_Bridge on the Paneli grid. worldgen.md 8. |
+| `misery` | [x] Mixed-pool area: all nine Paneli slots filled with a 6 Meadows + 3 Town blend, world generated mixed | mixed_pool_area passed live: Village_Dwarf_Hole among swamp towns and anomaly houses. worldgen.md 8.1. |
+| `misery` | [x] Tile sizes measured: Factory 16500, Bunker 4800, Meadows and Paneli 12000; complete 45-square catalog dumped | worldgen.md 3 and 4; Meadows/Paneli squares interchangeable. |
 
 ## 2026-08-20
 
