@@ -22,14 +22,11 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use glam::Vec3;
 use modforge::monument::{Arrangement, Roll, arrange};
-use modforge::structure::{CONCRETE_FLOOR, CONCRETE_WALL, PieceDef, StructureDef};
+use modforge::structure::{CONCRETE_FLOOR, CONCRETE_WALL, Library, PieceDef, StructureDef};
 
 use crate::dispatch;
 
-/// UE works in centimetres and z-up; modforge in metres and y-up
-/// (north = -z). Conversions live here, at the binder edge.
 
 /// Pieces within this radius of a seed piece belong to the same
 /// structure. Metres.
@@ -53,7 +50,10 @@ const EDGE_MARGIN_CM: f64 = 1500.0;
 const SESSION_PIECE_CAP: u64 = 1500;
 const POLL: Duration = Duration::from_secs(5);
 
-static LIBRARY: Mutex<Vec<StructureDef>> = Mutex::new(Vec::new());
+/// What has been captured so far. The bounded store and the
+/// random draw are modforge's (`structure::Library`); this only
+/// holds one.
+static LIBRARY: Mutex<Option<Library>> = Mutex::new(None);
 static PIECES_SPAWNED: AtomicU64 = AtomicU64::new(0);
 static MONUMENTS_BUILT: AtomicU64 = AtomicU64::new(0);
 static STRUCTURES_CAPTURED: AtomicU64 = AtomicU64::new(0);
@@ -62,66 +62,27 @@ static STRUCTURES_CAPTURED: AtomicU64 = AtomicU64::new(0);
 /// spatial grouping, so a building keeps the fence and the junk
 /// pile that stand with it.
 fn structures_from(source: &str, pieces: &[PieceDef]) -> Vec<StructureDef> {
-    // modforge's space: metres, and the ground plane is x and z
-    // because y is up.
-    let radius = STRUCTURE_RADIUS_M as f32;
-    let mut taken = vec![false; pieces.len()];
-    let mut out = Vec::new();
-    for i in 0..pieces.len() {
-        if taken[i] {
-            continue;
-        }
-        let seed = &pieces[i];
-        let mut members: Vec<usize> = Vec::new();
-        for (j, other) in pieces.iter().enumerate() {
-            if taken[j] {
-                continue;
-            }
-            let dx = other.offset.x - seed.offset.x;
-            let dz = other.offset.z - seed.offset.z;
-            if dx * dx + dz * dz <= radius * radius {
-                members.push(j);
-            }
-            if members.len() > STRUCTURE_MAX_PIECES {
-                break;
-            }
-        }
-        if members.len() < STRUCTURE_MIN_PIECES || members.len() > STRUCTURE_MAX_PIECES {
-            taken[i] = true;
-            continue;
-        }
-        // Re-centre on the group's own middle so it can be placed
-        // anywhere and turned about a sane pivot. Ground middle
-        // in x and z; the lowest point in y, which is up.
-        let n = members.len() as f32;
-        let cx = members.iter().map(|&j| pieces[j].offset.x).sum::<f32>() / n;
-        let cz = members.iter().map(|&j| pieces[j].offset.z).sum::<f32>() / n;
-        let base_y = members
-            .iter()
-            .map(|&j| pieces[j].offset.y)
-            .fold(f32::MAX, f32::min);
-        let group: Vec<PieceDef> = members
-            .iter()
-            .map(|&j| PieceDef {
-                offset: pieces[j].offset - Vec3::new(cx, base_y, cz),
-                ..pieces[j].clone()
-            })
-            .collect();
-        for &j in &members {
-            taken[j] = true;
-        }
-        out.push(StructureDef {
-            name: source.to_string(),
-            wall_color: CONCRETE_WALL,
-            floor_color: CONCRETE_FLOOR,
-            rooms: Vec::new(),
-            stairs: Vec::new(),
-            furniture: Vec::new(),
-            lights: Vec::new(),
-            pieces: group,
-        });
-    }
-    out
+    // Grouping loose pieces into things that stand together is
+    // modforge's job (`group_nearby`), where it is unit-tested.
+    // What stays here is only naming and colouring the result.
+    modforge::structure::group_nearby(
+        pieces,
+        STRUCTURE_RADIUS_M as f32,
+        STRUCTURE_MIN_PIECES,
+        STRUCTURE_MAX_PIECES,
+    )
+    .into_iter()
+    .map(|group| StructureDef {
+        name: source.to_string(),
+        wall_color: CONCRETE_WALL,
+        floor_color: CONCRETE_FLOOR,
+        rooms: Vec::new(),
+        stairs: Vec::new(),
+        furniture: Vec::new(),
+        lights: Vec::new(),
+        pieces: group,
+    })
+    .collect()
 }
 
 /// Take up to STRUCTURES_PER_SQUARE structures from a square into
@@ -138,14 +99,13 @@ fn donate(square: &str) {
     found.sort_by_key(|s| std::cmp::Reverse(s.pieces.len()));
     found.truncate(STRUCTURES_PER_SQUARE);
     let taken = found.len();
-    let mut lib = LIBRARY.lock().unwrap_or_else(|e| e.into_inner());
-    lib.extend(found);
-    let overflow = lib.len().saturating_sub(LIBRARY_CAP);
-    if overflow > 0 {
-        lib.drain(0..overflow);
+    let mut guard = LIBRARY.lock().unwrap_or_else(|e| e.into_inner());
+    let lib = guard.get_or_insert_with(|| Library::new(LIBRARY_CAP));
+    for s in found {
+        lib.add(s);
     }
     let total = lib.len();
-    drop(lib);
+    drop(guard);
     STRUCTURES_CAPTURED.fetch_add(taken as u64, Ordering::Relaxed);
     ueforge::log::log(format_args!(
         "places: {square} donated {taken} structure(s), library now {total}"
@@ -155,13 +115,13 @@ fn donate(square: &str) {
 /// Draw the members of one monument. Repeats are allowed: the
 /// same building twice reads as a settlement that grew.
 fn draw_members() -> Vec<StructureDef> {
-    let lib = LIBRARY.lock().unwrap_or_else(|e| e.into_inner());
-    if lib.is_empty() {
+    let guard = LIBRARY.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(lib) = guard.as_ref() else {
         return Vec::new();
-    }
+    };
     let n = MEMBERS_PER_MONUMENT.0
         + fastrand::usize(0..=(MEMBERS_PER_MONUMENT.1 - MEMBERS_PER_MONUMENT.0));
-    (0..n).map(|_| lib[fastrand::usize(0..lib.len())].clone()).collect()
+    lib.draw(n)
 }
 
 pub fn install() {
@@ -302,11 +262,12 @@ fn build_monument(
 fn register_ops() {
     ueforge::ops::OP_REGISTRY.register_many([
         ueforge::ops::OpDef::new("places_stats", "Captured structures and monuments", "{}", |_a| {
-            let lib = LIBRARY.lock().unwrap_or_else(|e| e.into_inner());
+            let guard = LIBRARY.lock().unwrap_or_else(|e| e.into_inner());
+            let held: &[StructureDef] = guard.as_ref().map(|l| l.items()).unwrap_or(&[]);
             Ok(serde_json::json!({
-                "library_structures": lib.len(),
-                "structure_sizes": lib.iter().map(|s| s.pieces.len()).collect::<Vec<_>>(),
-                "sources": lib.iter().map(|s| s.name.clone()).collect::<Vec<_>>(),
+                "library_structures": held.len(),
+                "structure_sizes": held.iter().map(|s| s.pieces.len()).collect::<Vec<_>>(),
+                "sources": held.iter().map(|s| s.name.clone()).collect::<Vec<_>>(),
                 "structures_captured": STRUCTURES_CAPTURED.load(Ordering::Relaxed),
                 "monuments_built": MONUMENTS_BUILT.load(Ordering::Relaxed),
                 "pieces_spawned": PIECES_SPAWNED.load(Ordering::Relaxed),

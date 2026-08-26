@@ -240,6 +240,143 @@ impl PieceDef {
     }
 }
 
+/// Cut a loose heap of pieces into groups that stand together.
+///
+/// A level read as pieces is one flat list: a building, its
+/// fence, the junk pile beside it, and a rock forty metres away,
+/// all mixed. Things that belong together are near each other, so
+/// grouping by distance recovers them without knowing anything
+/// about the game.
+///
+/// `radius` is how far apart two pieces can be and still count as
+/// one thing, in metres on the ground plane. Height is ignored:
+/// an upper floor belongs with the floor beneath it.
+///
+/// Groups smaller than `min` are noise and are dropped. Over
+/// `max` only the seed is dropped and the rest are reconsidered,
+/// so a dense area yields several smaller things rather than
+/// nothing at all.
+///
+/// Each group comes back re-centred on its own middle, with its
+/// lowest point at y = 0, so it can be placed anywhere and turned
+/// about a sensible pivot.
+pub fn group_nearby(
+    pieces: &[PieceDef],
+    radius: f32,
+    min: usize,
+    max: usize,
+) -> Vec<Vec<PieceDef>> {
+    let mut taken = vec![false; pieces.len()];
+    let mut out = Vec::new();
+    for i in 0..pieces.len() {
+        if taken[i] {
+            continue;
+        }
+        let seed = &pieces[i];
+        let mut members: Vec<usize> = Vec::new();
+        for (j, other) in pieces.iter().enumerate() {
+            if taken[j] {
+                continue;
+            }
+            let dx = other.offset.x - seed.offset.x;
+            let dz = other.offset.z - seed.offset.z;
+            if dx * dx + dz * dz <= radius * radius {
+                members.push(j);
+            }
+            if members.len() > max {
+                break;
+            }
+        }
+        if members.len() < min || members.len() > max {
+            // Mark only the seed: the others may still group with
+            // something else.
+            taken[i] = true;
+            continue;
+        }
+        let n = members.len() as f32;
+        let cx = members.iter().map(|&j| pieces[j].offset.x).sum::<f32>() / n;
+        let cz = members.iter().map(|&j| pieces[j].offset.z).sum::<f32>() / n;
+        let base_y = members
+            .iter()
+            .map(|&j| pieces[j].offset.y)
+            .fold(f32::MAX, f32::min);
+        out.push(
+            members
+                .iter()
+                .map(|&j| PieceDef {
+                    offset: pieces[j].offset - Vec3::new(cx, base_y, cz),
+                    ..pieces[j].clone()
+                })
+                .collect(),
+        );
+        for &j in &members {
+            taken[j] = true;
+        }
+    }
+    out
+}
+
+/// A collection of structures to draw from.
+///
+/// Holds a bounded number and forgets the oldest beyond that, so
+/// a long session cannot grow it without limit. Drawing is with
+/// replacement: the same structure can appear twice in one draw,
+/// which is what makes a row of similar buildings possible.
+#[derive(Default, Clone)]
+pub struct Library {
+    items: Vec<StructureDef>,
+    cap: usize,
+}
+
+impl Library {
+    pub fn new(cap: usize) -> Self {
+        Self {
+            items: Vec::new(),
+            cap,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    /// Add a structure, dropping the oldest if that would go over
+    /// the cap.
+    pub fn add(&mut self, s: StructureDef) {
+        if self.cap == 0 {
+            return;
+        }
+        self.items.push(s);
+        while self.items.len() > self.cap {
+            self.items.remove(0);
+        }
+    }
+
+    /// What the library currently holds, oldest first. For
+    /// reporting what has been collected; drawing from it is
+    /// [`draw`].
+    ///
+    /// [`draw`]: Library::draw
+    pub fn items(&self) -> &[StructureDef] {
+        &self.items
+    }
+
+    /// Draw `n` at random, with replacement. Empty when the
+    /// library is empty.
+    pub fn draw(&self, n: usize) -> Vec<StructureDef> {
+        if self.items.is_empty() {
+            return Vec::new();
+        }
+        (0..n)
+            .map(|_| self.items[fastrand::usize(0..self.items.len())].clone())
+            .collect()
+    }
+}
+
 /// A whole building as data. `wall_color` paints walls, ceilings,
 /// and stairs; `floor_color` the floor slabs.
 ///
@@ -951,6 +1088,135 @@ mod shape_tests {
             extent: e(0.2, 0.15, 0.02),
         };
         assert_eq!(p.shape(), PieceShape::Panel);
+    }
+
+    fn at(x: f32, y: f32, z: f32) -> PieceDef {
+        PieceDef {
+            class: "x".into(),
+            asset: None,
+            offset: Vec3::new(x, y, z),
+            yaw: 0.0,
+            pitch: 0.0,
+            roll: 0.0,
+            scale: 1.0,
+            extent: e(0.5, 0.5, 0.5),
+        }
+    }
+
+    /// Two clusters ten metres apart, with a radius of three, are
+    /// two things and not one.
+    #[test]
+    fn nearby_pieces_group_and_distant_ones_do_not() {
+        let mut pieces = Vec::new();
+        for i in 0..4 {
+            pieces.push(at(i as f32 * 0.5, 0.0, 0.0));
+        }
+        for i in 0..4 {
+            pieces.push(at(10.0 + i as f32 * 0.5, 0.0, 0.0));
+        }
+        let groups = group_nearby(&pieces, 3.0, 2, 100);
+        assert_eq!(groups.len(), 2, "got {} group(s)", groups.len());
+        assert_eq!(groups[0].len(), 4);
+        assert_eq!(groups[1].len(), 4);
+    }
+
+    #[test]
+    fn a_group_below_the_minimum_is_dropped() {
+        let pieces: Vec<PieceDef> = (0..3).map(|i| at(i as f32 * 0.1, 0.0, 0.0)).collect();
+        assert!(group_nearby(&pieces, 1.0, 5, 100).is_empty());
+    }
+
+    /// Over the maximum, only the seed is dropped and the rest
+    /// regroup. A dense area yields smaller things rather than
+    /// nothing at all.
+    #[test]
+    fn an_oversized_group_regroups_smaller() {
+        let pieces: Vec<PieceDef> = (0..3).map(|i| at(i as f32 * 0.1, 0.0, 0.0)).collect();
+        let groups = group_nearby(&pieces, 1.0, 1, 2);
+        assert!(!groups.is_empty(), "a dense area should still yield something");
+        assert!(
+            groups.iter().all(|g| g.len() <= 2),
+            "every group must respect the maximum"
+        );
+    }
+
+    /// Height must not split a group, or an upper floor becomes
+    /// its own building.
+    #[test]
+    fn height_does_not_separate_pieces() {
+        let pieces = vec![at(0.0, 0.0, 0.0), at(0.5, 40.0, 0.0)];
+        let groups = group_nearby(&pieces, 3.0, 2, 100);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].len(), 2);
+    }
+
+    /// A group comes back centred on itself, sitting on y = 0, so
+    /// it can be put down anywhere.
+    #[test]
+    fn a_group_is_recentred_on_its_own_middle() {
+        let pieces = vec![at(100.0, 5.0, 100.0), at(102.0, 7.0, 100.0)];
+        let groups = group_nearby(&pieces, 5.0, 2, 100);
+        assert_eq!(groups.len(), 1);
+        let g = &groups[0];
+        let mid_x: f32 = g.iter().map(|p| p.offset.x).sum::<f32>() / g.len() as f32;
+        let mid_z: f32 = g.iter().map(|p| p.offset.z).sum::<f32>() / g.len() as f32;
+        let low_y = g.iter().map(|p| p.offset.y).fold(f32::MAX, f32::min);
+        assert!(mid_x.abs() < 1e-4, "x middle was {mid_x}");
+        assert!(mid_z.abs() < 1e-4, "z middle was {mid_z}");
+        assert!(low_y.abs() < 1e-4, "lowest point was {low_y}");
+    }
+
+    #[test]
+    fn no_piece_lands_in_two_groups() {
+        let pieces: Vec<PieceDef> = (0..12).map(|i| at(i as f32 * 0.4, 0.0, 0.0)).collect();
+        let groups = group_nearby(&pieces, 1.0, 2, 100);
+        let total: usize = groups.iter().map(|g| g.len()).sum();
+        assert!(total <= pieces.len(), "{total} placed from {}", pieces.len());
+    }
+
+    fn structure(name: &str) -> StructureDef {
+        StructureDef {
+            name: name.into(),
+            wall_color: CONCRETE_WALL,
+            floor_color: CONCRETE_FLOOR,
+            rooms: Vec::new(),
+            stairs: Vec::new(),
+            furniture: Vec::new(),
+            lights: Vec::new(),
+            pieces: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_library_forgets_the_oldest_past_its_cap() {
+        let mut lib = Library::new(3);
+        for i in 0..5 {
+            lib.add(structure(&format!("s{i}")));
+        }
+        assert_eq!(lib.len(), 3);
+        // The first two are gone, the last three remain.
+        let drawn = lib.draw(50);
+        assert!(drawn.iter().all(|s| s.name != "s0" && s.name != "s1"));
+    }
+
+    #[test]
+    fn an_empty_library_draws_nothing() {
+        assert!(Library::new(10).draw(5).is_empty());
+        // A cap of zero holds nothing at all.
+        let mut none = Library::new(0);
+        none.add(structure("s"));
+        assert!(none.is_empty());
+    }
+
+    #[test]
+    fn a_draw_returns_what_was_asked_for() {
+        let mut lib = Library::new(10);
+        lib.add(structure("only"));
+        let drawn = lib.draw(4);
+        // With replacement, so one structure can fill a draw of
+        // four; that is what makes a row of similar buildings.
+        assert_eq!(drawn.len(), 4);
+        assert!(drawn.iter().all(|s| s.name == "only"));
     }
 
     #[test]
