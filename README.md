@@ -5,35 +5,28 @@
 A Rust toolkit for building mods across Unreal Engine, Unity,
 and native games.
 
-```
-                ┌────────────────────────────┐
-                │          modforge          │
-                │  HTTP server · op registry │
-                │  selector grammar · RPG    │
-                │  log · scanner · winproc   │
-                │  shutdown · settings       │
-                └─────────────┬──────────────┘
-                              │
-         ┌────────────────────┼────────────────────┐
-         │                    │                    │
-    ┌────▼────┐         ┌─────▼─────┐    (no engine; per-game
-    │ ueforge │         │unityforge │     crate consumes modforge
-    │  UE5    │         │   Unity   │     directly with its own
-    │  UE4SS  │         │  Mono /   │     loader, e.g. PE inject)
-    │         │         │   IL2CPP  │
-    └────┬────┘         └─────┬─────┘
-         │                    │
-   ┌─────┴─────────┐    ┌─────┴─────────┐    ┌──────────────┐
-   │ grounded2-mod │    │ schedule1-mod │    │  horsey-mod  │
-   │ misery-mod    │    │ survivalist-  │    │ (Horsey Game,│
-   │ outworld-     │    │   mod         │    │  PE inject)  │
-   │ station-mod   │    │ wwm-mod       │    │              │
-   │               │    │ il2cpp-smoke  │    │              │
-   └───────────────┘    └───────────────┘    └──────────────┘
-```
-
 Ueforge supports UE5 mods, Unityforge supports Unity mods, and
 native games such as Horsey Game use Modforge directly.
+
+```mermaid
+flowchart TD
+    MF["Modforge<br/>Shared systems"]
+    UE["Ueforge<br/>UE5 and UE4SS"]
+    UNITY["Unityforge<br/>Unity Mono and IL2CPP"]
+    HORSEY["Horsey Game<br/>Native PE"]
+
+    MF --> UE
+    MF --> UNITY
+    MF --> HORSEY
+
+    UE --> G2["Grounded 2"]
+    UE --> MISERY["MISERY"]
+    UE --> OWS["Outworld Station"]
+
+    UNITY --> S1["Schedule 1"]
+    UNITY --> SURVIVALIST["Survivalist"]
+    UNITY --> WWM["Wild West Miner"]
+```
 
 ## Framework capabilities
 
