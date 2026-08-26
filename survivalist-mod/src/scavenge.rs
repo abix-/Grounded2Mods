@@ -28,6 +28,7 @@ use std::sync::atomic::AtomicU32;
 use parking_lot::Mutex;
 use serde_json::{Value as Json, json};
 
+use modforge::genome::Ballot;
 use modforge::mission::{self, Stage, Step};
 use unityforge::mono::{self, LogLevel, MonoObject, MonoType};
 
@@ -89,22 +90,30 @@ static LAST_SCAN_BITS: AtomicU32 = AtomicU32::new(0);
 
 /// The active scavenge a faction is running, for survival_status.
 pub fn active_target(faction_id: i64) -> Option<Json> {
-    MISSIONS.lock().iter().find(|m| m.scav_id == faction_id).map(|m| {
-        json!({ "prop": m.prop_name, "carriers": m.carriers.len() })
-    })
+    MISSIONS
+        .lock()
+        .iter()
+        .find(|m| m.scav_id == faction_id)
+        .map(|m| json!({ "prop": m.prop_name, "carriers": m.carriers.len() }))
 }
 
 pub fn tick(now: f32) {
     mission::advance_all(&MISSIONS, now, |m, e| {
         mono::log(
             LogLevel::Warn,
-            &format!("survivalist-mod: scavenge: mission for {} aborted: {e}", m.scav_name),
+            &format!(
+                "survivalist-mod: scavenge: mission for {} aborted: {e}",
+                m.scav_name
+            ),
         );
     });
     if mission::should_tick(now, SCAV_SCAN_PERIOD_SECS, &LAST_SCAN_BITS) {
         if let Err(e) = launch_scan(now) {
             if !e.contains("not found") {
-                mono::log(LogLevel::Warn, &format!("survivalist-mod: scavenge scan failed: {e}"));
+                mono::log(
+                    LogLevel::Warn,
+                    &format!("survivalist-mod: scavenge scan failed: {e}"),
+                );
             }
         }
     }
@@ -158,12 +167,15 @@ fn launch_scan(now: f32) -> Result<(), String> {
             .ok()
             .as_ref()
             .and_then(handle_of)
-            .map(|lh| own(lh).read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1));
+            .map(|lh| {
+                own(lh)
+                    .read_field("Id")
+                    .ok()
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(-1)
+            });
 
-        let mut votes = 0i64;
-        let mut franchise = 0i64;
-        let mut sum = 0.0f64;
-        let mut voter_ids = Vec::new();
+        let mut ballot = Ballot::new(SCAV_FLOOR);
         let mut candidates: Vec<(i64, f64)> = Vec::new();
         if let Some(m_h) = handle_of(&com.read_field("Members")?) {
             let mlist = own(m_h);
@@ -190,11 +202,7 @@ fn launch_scan(now: f32) -> Result<(), String> {
                 }
                 let g = genome::individual(char_id, &t);
                 let s = g[genome::EXPANSIONISM];
-                franchise += 1;
-                sum += s;
-                voter_ids.push(char_id);
-                if s >= SCAV_FLOOR {
-                    votes += 1;
+                if ballot.cast(char_id, s) {
                     // A sparable member (free, awake, not the leader)
                     // is a carrier candidate: the vote decides who
                     // goes, not just whether.
@@ -211,8 +219,8 @@ fn launch_scan(now: f32) -> Result<(), String> {
                 }
             }
         }
-        if franchise > 0 && votes * 2 > franchise && !candidates.is_empty() {
-            let eff = sum / franchise as f64;
+        if ballot.has_majority() && !candidates.is_empty() {
+            let eff = ballot.mean_score();
             if winner.as_ref().map(|w| eff > w.eff).unwrap_or(true) {
                 if let Some(old) = winner.replace(Winner {
                     handle: com.handle().0,
@@ -220,9 +228,9 @@ fn launch_scan(now: f32) -> Result<(), String> {
                     name: display_name(&com),
                     ctype: t.clone(),
                     members,
-                    votes,
+                    votes: ballot.votes_for,
                     eff,
-                    voter_ids,
+                    voter_ids: ballot.voter_ids,
                     candidates,
                 }) {
                     drop(own(old.handle));
@@ -250,7 +258,8 @@ fn launch_scan(now: f32) -> Result<(), String> {
 
     // Dynamic party: most eager yes-voters, capped by what the camp
     // can spare AND by how much loot is out there.
-    w.candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    w.candidates
+        .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     let capacity_cap = (w.members / DEFENSE_DIVISOR).max(1) as usize;
     let haul_budget = items.min(MAX_HAUL_STACKS);
     let loot_cap = ((haul_budget + STACKS_PER_CARRIER - 1) / STACKS_PER_CARRIER).max(1) as usize;
@@ -265,8 +274,8 @@ fn launch_scan(now: f32) -> Result<(), String> {
     }
 
     let squad_id = with(w.handle, |com| -> Result<i64, String> {
-        let squad_h =
-            handle_of(&com.invoke("AddSquad", &json!(["Trade", 0]))?).ok_or("AddSquad gave no squad")?;
+        let squad_h = handle_of(&com.invoke("AddSquad", &json!(["Trade", 0]))?)
+            .ok_or("AddSquad gave no squad")?;
         for &c in &carriers {
             com.invoke(
                 "AddToSquad",
@@ -411,7 +420,11 @@ fn gather_members(com: &MonoObject, ids: &[i64]) -> Result<Vec<i32>, String> {
             continue;
         };
         let member = own(h);
-        let mid = member.read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1);
+        let mid = member
+            .read_field("Id")
+            .ok()
+            .and_then(|v| v.as_i64())
+            .unwrap_or(-1);
         let alive = member
             .invoke("get_AliveAndNotZombie", &json!([]))
             .map(|v| v == json!(true))
@@ -434,7 +447,10 @@ impl mission::Mission for Mission {
     modforge::mission_accessors!();
 
     fn is_agent_alive(&self) -> Result<bool, String> {
-        let any_alive = self.carriers.iter().any(|&c| is_npc_alive(c).unwrap_or(false));
+        let any_alive = self
+            .carriers
+            .iter()
+            .any(|&c| is_npc_alive(c).unwrap_or(false));
         if !any_alive {
             reinforce_all(self, false, 2.0);
             mono::log(
@@ -449,7 +465,10 @@ impl mission::Mission for Mission {
     }
 
     fn on_going(&mut self, _now: f32) -> Result<Step, String> {
-        let lead = self.carriers.iter().copied()
+        let lead = self
+            .carriers
+            .iter()
+            .copied()
             .find(|&c| is_npc_alive(c).unwrap_or(false))
             .ok_or_else(|| "no living carrier".to_string())?;
         let tile = with(lead, |c| c.invoke("get_Tile", &json!([])))?;
@@ -471,7 +490,10 @@ impl mission::Mission for Mission {
     }
 
     fn on_returning(&mut self, _now: f32) -> Result<Step, String> {
-        let lead = self.carriers.iter().copied()
+        let lead = self
+            .carriers
+            .iter()
+            .copied()
             .find(|&c| is_npc_alive(c).unwrap_or(false))
             .ok_or_else(|| "no living carrier".to_string())?;
         if dist_sq_to_building(lead, self.scav_h)? > HOME_ARRIVE_SQ {
@@ -543,7 +565,11 @@ fn take_loot(m: &Mission) -> Result<i64, String> {
         let cinv = own(cinv_h);
         let mut mine = 0i64;
         while mine < STACKS_PER_CARRIER && hauled < MAX_HAUL_STACKS {
-            let count = inv.invoke("get_Count", &json!([])).ok().and_then(|v| v.as_i64()).unwrap_or(0);
+            let count = inv
+                .invoke("get_Count", &json!([]))
+                .ok()
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
             if count <= 0 {
                 break;
             }

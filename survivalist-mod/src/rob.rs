@@ -23,6 +23,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use parking_lot::Mutex;
 use serde_json::{Value as Json, json};
 
+use modforge::genome::Ballot;
 use modforge::mission::{self, OneStageStep};
 use unityforge::mono::{self, LogLevel};
 
@@ -170,10 +171,7 @@ fn launch_scan(now: f32) -> Result<(), String> {
         }
         // The menace ballot: aggression/guile blend.
         let looter = t == "Looter";
-        let mut votes = 0i64;
-        let mut franchise = 0i64;
-        let mut sum = 0.0f64;
-        let mut voter_ids = Vec::new();
+        let mut ballot = Ballot::new(ROB_FLOOR);
         if let Some(m_h) = handle_of(&com.read_field("Members")?) {
             let mlist = own(m_h);
             let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
@@ -199,16 +197,11 @@ fn launch_scan(now: f32) -> Result<(), String> {
                 }
                 let g = genome::individual(char_id, &t);
                 let s = (g[genome::AGGRESSION] + g[genome::GUILE]) / 2.0;
-                franchise += 1;
-                sum += s;
-                if s >= ROB_FLOOR {
-                    votes += 1;
-                }
-                voter_ids.push(char_id);
+                ballot.cast(char_id, s);
             }
         }
-        if franchise > 0 && votes * 2 > franchise {
-            let eff = sum / franchise as f64;
+        if ballot.has_majority() {
+            let eff = ballot.mean_score();
             if robber.as_ref().map(|r| eff > r.6).unwrap_or(true) {
                 if let Some(old) = robber.replace((
                     com.handle().0,
@@ -216,9 +209,9 @@ fn launch_scan(now: f32) -> Result<(), String> {
                     display_name(&com),
                     t,
                     members,
-                    votes,
+                    ballot.votes_for,
                     eff,
-                    voter_ids,
+                    ballot.voter_ids,
                 )) {
                     drop(own(old.0));
                 }

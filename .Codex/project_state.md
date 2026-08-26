@@ -14,6 +14,8 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 - Survivalist retains upgrade applicability, menus, material consumption, Harmony effects, save-path selection, and game-object access.
 - Mission lifecycle advancement, explicit stage transitions, timeout dispatch, collection removal, error routing, and guaranteed cleanup belong to `modforge::mission`.
 - Mission stage data and all Unity checks, intents, outcomes, voting, judgment, chronicle text, logging, and concrete handle cleanup remain in Survivalist.
+- Franchise tallying, strict-majority decisions, mean scores, and voter identity collection belong to `modforge::genome`.
+- Survivalist retains voter eligibility, conscript exclusion, trait projections, thresholds, actions, and reinforcement outcomes.
 
 ## Last session summary
 
@@ -30,6 +32,8 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 - Expanded `modforge::mission` with caller-defined multi-stage missions, explicit transitions, timeout callbacks, owned advancement, and one-stage observation missions.
 - Migrated Survivalist courier to the existing go-and-return lifecycle and migrated settler, stranger, and robbery to the one-stage collection driver without moving game behavior into Modforge.
 - Added no tests and did not build for the mission extraction, following the direct instruction.
+- Expanded `modforge::genome` with a shared ballot accumulator and migrated the duplicated tallies in Survivalist survival, steal, trade, scavenge, murder, and robbery.
+- Added no tests and did not build for the ballot extraction, following the direct instruction.
 
 ## Next steps
 

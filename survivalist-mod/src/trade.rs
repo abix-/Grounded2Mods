@@ -27,6 +27,7 @@ use std::sync::atomic::AtomicU32;
 use parking_lot::Mutex;
 use serde_json::{Value as Json, json};
 
+use modforge::genome::{Ballot, majority};
 use modforge::mission::{self, Stage, Step};
 use unityforge::mono::{self, LogLevel};
 
@@ -114,13 +115,17 @@ fn should_log_failed_launch(faction_id: i64, now: f32) -> bool {
 
 /// The active trade a faction is running, for survival_status.
 pub fn active_target(faction_id: i64) -> Option<Json> {
-    MISSIONS.lock().iter().find(|m| m.seller_id == faction_id).map(|m| {
-        json!({
-            "host": m.host_name,
-            "trader": m.trader_name,
-            "stage": match m.stage { Stage::Going => "going", Stage::Returning => "returning" },
+    MISSIONS
+        .lock()
+        .iter()
+        .find(|m| m.seller_id == faction_id)
+        .map(|m| {
+            json!({
+                "host": m.host_name,
+                "trader": m.trader_name,
+                "stage": match m.stage { Stage::Going => "going", Stage::Returning => "returning" },
+            })
         })
-    })
 }
 
 pub fn tick(now: f32) {
@@ -128,14 +133,20 @@ pub fn tick(now: f32) {
         mission::advance_all(&MISSIONS, now, |m, e| {
             mono::log(
                 LogLevel::Warn,
-                &format!("survivalist-mod: trade: mission for {} aborted: {e}", m.seller_name),
+                &format!(
+                    "survivalist-mod: trade: mission for {} aborted: {e}",
+                    m.seller_name
+                ),
             );
         });
     }
     if mission::should_tick(now, TRADE_SCAN_PERIOD_SECS, &LAST_SCAN_BITS) {
         if let Err(e) = launch_scan(now) {
             if !e.contains("not found") {
-                mono::log(LogLevel::Warn, &format!("survivalist-mod: trade scan failed: {e}"));
+                mono::log(
+                    LogLevel::Warn,
+                    &format!("survivalist-mod: trade scan failed: {e}"),
+                );
             }
         }
     }
@@ -225,10 +236,7 @@ fn launch_scan(now: f32) -> Result<(), String> {
         let threats = list_len(&com, "Threats");
         let can_sell = members >= 3 && !at_war && threats == 0;
 
-        let mut votes = 0i64;
-        let mut franchise = 0i64;
-        let mut sum_def = 0.0f64;
-        let mut voter_ids = Vec::new();
+        let mut ballot = Ballot::new(TRADE_DEFENSIVENESS_FLOOR);
         if can_sell {
             let looter = t == "Looter";
             if let Some(m_h) = handle_of(&com.read_field("Members")?) {
@@ -255,15 +263,11 @@ fn launch_scan(now: f32) -> Result<(), String> {
                         continue;
                     }
                     let d = genome::individual(char_id, &t)[genome::DEFENSIVENESS];
-                    franchise += 1;
-                    sum_def += d;
-                    if d >= TRADE_DEFENSIVENESS_FLOOR {
-                        votes += 1;
-                    }
-                    voter_ids.push(char_id);
+                    ballot.cast(char_id, d);
                 }
             }
         }
+        let effective_defensiveness = ballot.mean_score();
         camps.push(Camp {
             handle: com.handle().0,
             id,
@@ -271,10 +275,10 @@ fn launch_scan(now: f32) -> Result<(), String> {
             ctype: t,
             nutrition,
             centre,
-            votes,
-            franchise,
-            effective_defensiveness: if franchise > 0 { sum_def / franchise as f64 } else { 0.0 },
-            voter_ids,
+            votes: ballot.votes_for,
+            franchise: ballot.franchise,
+            effective_defensiveness,
+            voter_ids: ballot.voter_ids,
             eligible_seller: can_sell,
         });
         std::mem::forget(com);
@@ -286,12 +290,7 @@ fn launch_scan(now: f32) -> Result<(), String> {
     let active: Vec<i64> = MISSIONS.lock().iter().map(|m| m.seller_id).collect();
     let mut sellers: Vec<&Camp> = camps
         .iter()
-        .filter(|c| {
-            c.eligible_seller
-                && c.franchise > 0
-                && c.votes * 2 > c.franchise
-                && !active.contains(&c.id)
-        })
+        .filter(|c| c.eligible_seller && majority(c.votes, c.franchise) && !active.contains(&c.id))
         .collect();
     sellers.sort_by(|a, b| {
         b.effective_defensiveness
@@ -324,7 +323,10 @@ fn launch_scan(now: f32) -> Result<(), String> {
         if let Err(e) = launch(camp, host, now) {
             mono::log(
                 LogLevel::Warn,
-                &format!("survivalist-mod: trade launch failed for {}: {e}", camp.name),
+                &format!(
+                    "survivalist-mod: trade launch failed for {}: {e}",
+                    camp.name
+                ),
             );
         }
         break; // one new caravan per scan
@@ -348,8 +350,13 @@ fn launch(camp: &Camp, host: &Camp, now: f32) -> Result<(), String> {
     with(camp.handle, |com| {
         // The trader: the most careful free member (highest
         // defensiveness, conscious, not the leader, not squadded).
-        let leader_id = handle_of(&com.read_field("Leader")?)
-            .map(|h| own(h).read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1));
+        let leader_id = handle_of(&com.read_field("Leader")?).map(|h| {
+            own(h)
+                .read_field("Id")
+                .ok()
+                .and_then(|v| v.as_i64())
+                .unwrap_or(-1)
+        });
         let mut trader: Option<(i32, i64, String, f64)> = None;
         if let Some(m_h) = handle_of(&com.read_field("Members")?) {
             let mlist = own(m_h);
@@ -374,7 +381,11 @@ fn launch(camp: &Camp, host: &Camp, now: f32) -> Result<(), String> {
                 let squadded =
                     handle_of(&member.invoke("GetSquad", &json!([])).unwrap_or(Json::Null))
                         .is_some();
-                let id = member.read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1);
+                let id = member
+                    .read_field("Id")
+                    .ok()
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(-1);
                 if !alive || !human || !conscious || squadded || Some(id) == leader_id {
                     continue;
                 }
@@ -410,8 +421,13 @@ fn launch(camp: &Camp, host: &Camp, now: f32) -> Result<(), String> {
         // every donor keeps a stack for themselves). Camps keep
         // most food planted and carried, not warehoused, so the
         // member top-up is usually the real source.
-        let mut loaded =
-            carry_off_stored_goods(com, &[trader_h], TRADE_FOOD_STACKS, GoodsFilter::Food, false)?;
+        let mut loaded = carry_off_stored_goods(
+            com,
+            &[trader_h],
+            TRADE_FOOD_STACKS,
+            GoodsFilter::Food,
+            false,
+        )?;
         if loaded < TRADE_FOOD_STACKS {
             loaded += load_food_from_members(com, trader_h, trader_id, TRADE_FOOD_STACKS - loaded)?;
         }
@@ -431,8 +447,8 @@ fn launch(camp: &Camp, host: &Camp, now: f32) -> Result<(), String> {
 
         // On the road as a real 1-member Trade squad (the game's
         // own machinery; pathing, gates, and reactions all vanilla).
-        let squad_h =
-            handle_of(&com.invoke("AddSquad", &json!(["Trade", 0]))?).ok_or("AddSquad gave no squad")?;
+        let squad_h = handle_of(&com.invoke("AddSquad", &json!(["Trade", 0]))?)
+            .ok_or("AddSquad gave no squad")?;
         let squad = own(squad_h);
         com.invoke(
             "AddToSquad",
@@ -470,7 +486,15 @@ fn launch(camp: &Camp, host: &Camp, now: f32) -> Result<(), String> {
             LogLevel::Info,
             &format!(
                 "survivalist-mod: trade -- {} ({}, fed {:.2}, {} of {} voters careful) sends {} with {} food stack(s) to hungry {} ({:.2})",
-                camp.name, camp.ctype, camp.nutrition, camp.votes, camp.franchise, trader_name, loaded, host.name, host.nutrition,
+                camp.name,
+                camp.ctype,
+                camp.nutrition,
+                camp.votes,
+                camp.franchise,
+                trader_name,
+                loaded,
+                host.name,
+                host.nutrition,
             ),
         );
         Ok(())
@@ -562,7 +586,11 @@ impl mission::Mission for Mission {
     }
 
     fn cleanup(self) {
-        remove_squad_and_drop(self.seller_h, self.squad_id, &[self.seller_h, self.host_h, self.trader_h]);
+        remove_squad_and_drop(
+            self.seller_h,
+            self.squad_id,
+            &[self.seller_h, self.host_h, self.trader_h],
+        );
     }
 
     fn label(&self) -> String {
@@ -595,7 +623,11 @@ fn load_food_from_members(
         let member = own(h);
         // Handles from separate bridge calls never match; the
         // trader is skipped by character Id.
-        let id = member.read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1);
+        let id = member
+            .read_field("Id")
+            .ok()
+            .and_then(|v| v.as_i64())
+            .unwrap_or(-1);
         if id == trader_id
             || member
                 .invoke("get_AliveAndNotZombie", &json!([]))
@@ -642,7 +674,9 @@ fn load_food_from_members(
                 }
             }
             // Leave the donor their last stack.
-            let Some((item_h, amount)) = pick else { continue 'members };
+            let Some((item_h, amount)) = pick else {
+                continue 'members;
+            };
             if food_stacks <= 1 || gained >= need {
                 continue 'members;
             }
@@ -692,7 +726,9 @@ fn deliver_carried_food(trader_h: i32, host_h: i32, max: i64) -> Result<i64, Str
         return Ok(0);
     };
 
-    let trader_inv_h = with(trader_h, |t| handle_of(&t.read_field("Inventory")?).ok_or("trader has no inventory".to_string()))?;
+    let trader_inv_h = with(trader_h, |t| {
+        handle_of(&t.read_field("Inventory")?).ok_or("trader has no inventory".to_string())
+    })?;
     let trader_inv = own(trader_inv_h);
     let store_inv = own(store_inv_h);
     let mut delivered = 0i64;
@@ -730,7 +766,9 @@ fn deliver_carried_food(trader_h: i32, host_h: i32, max: i64) -> Result<i64, Str
             "Take",
             &json!([{ "handle": trader_h }, { "handle": item_h }, amount]),
         )?;
-        let Some(taken_h) = handle_of(&taken) else { break };
+        let Some(taken_h) = handle_of(&taken) else {
+            break;
+        };
         store_inv.invoke(
             "Add",
             &json!([{ "handle": store_bh }, { "handle": taken_h }]),

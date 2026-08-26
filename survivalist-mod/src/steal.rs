@@ -27,6 +27,7 @@ use std::sync::atomic::AtomicU32;
 use parking_lot::Mutex;
 use serde_json::{Value as Json, json};
 
+use modforge::genome::{Ballot, majority};
 use modforge::mission::{self, Stage, Step};
 use unityforge::mono::{self, LogLevel};
 
@@ -90,13 +91,17 @@ static LAST_TICK_BITS: AtomicU32 = AtomicU32::new(0);
 
 /// The active theft a faction is running, for survival_status.
 pub fn active_target(faction_id: i64) -> Option<Json> {
-    MISSIONS.lock().iter().find(|m| m.faction_id == faction_id).map(|m| {
-        json!({
-            "target": m.target_name,
-            "thief": m.thief_name,
-            "stage": match m.stage { Stage::Going => "going", Stage::Returning => "returning" },
+    MISSIONS
+        .lock()
+        .iter()
+        .find(|m| m.faction_id == faction_id)
+        .map(|m| {
+            json!({
+                "target": m.target_name,
+                "thief": m.thief_name,
+                "stage": match m.stage { Stage::Going => "going", Stage::Returning => "returning" },
+            })
         })
-    })
 }
 
 pub fn tick(now: f32) {
@@ -104,14 +109,20 @@ pub fn tick(now: f32) {
         mission::advance_all(&MISSIONS, now, |m, e| {
             mono::log(
                 LogLevel::Warn,
-                &format!("survivalist-mod: steal: mission for {} aborted: {e}", m.faction_name),
+                &format!(
+                    "survivalist-mod: steal: mission for {} aborted: {e}",
+                    m.faction_name
+                ),
             );
         });
     }
     if mission::should_tick(now, STEAL_SCAN_PERIOD_SECS, &LAST_SCAN_BITS) {
         if let Err(e) = launch_scan(now) {
             if !e.contains("not found") {
-                mono::log(LogLevel::Warn, &format!("survivalist-mod: steal scan failed: {e}"));
+                mono::log(
+                    LogLevel::Warn,
+                    &format!("survivalist-mod: steal scan failed: {e}"),
+                );
             }
         }
     }
@@ -171,10 +182,7 @@ fn launch_scan(now: f32) -> Result<(), String> {
         let threats = list_len(&com, "Threats");
         let can_thieve = members >= 3 && !at_war && threats == 0;
 
-        let mut votes = 0i64;
-        let mut franchise = 0i64;
-        let mut sum_guile = 0.0f64;
-        let mut voter_ids = Vec::new();
+        let mut ballot = Ballot::new(STEAL_GUILE_FLOOR);
         if can_thieve {
             let looter = t == "Looter";
             if let Some(m_h) = handle_of(&com.read_field("Members")?) {
@@ -201,15 +209,11 @@ fn launch_scan(now: f32) -> Result<(), String> {
                         continue;
                     }
                     let g = genome::individual(char_id, &t)[genome::GUILE];
-                    franchise += 1;
-                    sum_guile += g;
-                    if g >= STEAL_GUILE_FLOOR {
-                        votes += 1;
-                    }
-                    voter_ids.push(char_id);
+                    ballot.cast(char_id, g);
                 }
             }
         }
+        let effective_guile = ballot.mean_score();
         camps.push(Camp {
             handle: com.handle().0,
             id,
@@ -217,10 +221,10 @@ fn launch_scan(now: f32) -> Result<(), String> {
             ctype: t,
             nutrition,
             centre,
-            votes,
-            franchise,
-            effective_guile: if franchise > 0 { sum_guile / franchise as f64 } else { 0.0 },
-            voter_ids,
+            votes: ballot.votes_for,
+            franchise: ballot.franchise,
+            effective_guile,
+            voter_ids: ballot.voter_ids,
             eligible_thief: can_thieve,
         });
         std::mem::forget(com);
@@ -232,12 +236,7 @@ fn launch_scan(now: f32) -> Result<(), String> {
     let active: Vec<i64> = MISSIONS.lock().iter().map(|m| m.faction_id).collect();
     let mut thieves: Vec<&Camp> = camps
         .iter()
-        .filter(|c| {
-            c.eligible_thief
-                && c.franchise > 0
-                && c.votes * 2 > c.franchise
-                && !active.contains(&c.id)
-        })
+        .filter(|c| c.eligible_thief && majority(c.votes, c.franchise) && !active.contains(&c.id))
         .collect();
     thieves.sort_by(|a, b| b.effective_guile.partial_cmp(&a.effective_guile).unwrap());
 
@@ -266,7 +265,10 @@ fn launch_scan(now: f32) -> Result<(), String> {
         if let Err(e) = launch(camp, target, now) {
             mono::log(
                 LogLevel::Warn,
-                &format!("survivalist-mod: steal launch failed for {}: {e}", camp.name),
+                &format!(
+                    "survivalist-mod: steal launch failed for {}: {e}",
+                    camp.name
+                ),
             );
         }
         break; // one new theft per scan
@@ -290,8 +292,13 @@ fn launch(camp: &Camp, target: &Camp, now: f32) -> Result<(), String> {
     with(camp.handle, |com| {
         // The thief: the highest-guile member that is conscious,
         // not the leader, and not already in a squad.
-        let leader_id = handle_of(&com.read_field("Leader")?)
-            .map(|h| own(h).read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1));
+        let leader_id = handle_of(&com.read_field("Leader")?).map(|h| {
+            own(h)
+                .read_field("Id")
+                .ok()
+                .and_then(|v| v.as_i64())
+                .unwrap_or(-1)
+        });
         let mut thief: Option<(i32, String, f64)> = None;
         if let Some(m_h) = handle_of(&com.read_field("Members")?) {
             let mlist = own(m_h);
@@ -316,7 +323,11 @@ fn launch(camp: &Camp, target: &Camp, now: f32) -> Result<(), String> {
                 let squadded =
                     handle_of(&member.invoke("GetSquad", &json!([])).unwrap_or(Json::Null))
                         .is_some();
-                let id = member.read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1);
+                let id = member
+                    .read_field("Id")
+                    .ok()
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(-1);
                 if !alive || !human || !conscious || squadded || Some(id) == leader_id {
                     continue;
                 }
@@ -342,8 +353,8 @@ fn launch(camp: &Camp, target: &Camp, now: f32) -> Result<(), String> {
         // mission machinery (the roving-trader path): Trade
         // behaviour, so arrival parks them at the mark instead of
         // exiting the map.
-        let squad_h =
-            handle_of(&com.invoke("AddSquad", &json!(["Trade", 0]))?).ok_or("AddSquad gave no squad")?;
+        let squad_h = handle_of(&com.invoke("AddSquad", &json!(["Trade", 0]))?)
+            .ok_or("AddSquad gave no squad")?;
         let squad = own(squad_h);
         com.invoke(
             "AddToSquad",
@@ -379,7 +390,13 @@ fn launch(camp: &Camp, target: &Camp, now: f32) -> Result<(), String> {
             LogLevel::Info,
             &format!(
                 "survivalist-mod: steal -- {} ({}, {} of {} voters guileful) sends {} (guile {:.2}) to steal from {}",
-                camp.name, camp.ctype, camp.votes, camp.franchise, thief_name, thief_guile, target.name,
+                camp.name,
+                camp.ctype,
+                camp.votes,
+                camp.franchise,
+                thief_name,
+                thief_guile,
+                target.name,
             ),
         );
         Ok(())
@@ -483,7 +500,11 @@ impl mission::Mission for Mission {
     }
 
     fn cleanup(self) {
-        remove_squad_and_drop(self.faction_h, self.squad_id, &[self.faction_h, self.target_h, self.thief_h]);
+        remove_squad_and_drop(
+            self.faction_h,
+            self.squad_id,
+            &[self.faction_h, self.target_h, self.thief_h],
+        );
     }
 
     fn label(&self) -> String {

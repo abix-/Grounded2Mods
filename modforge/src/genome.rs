@@ -41,6 +41,59 @@ pub struct PoolConfig {
     pub max: f64,
 }
 
+/// An engine-independent franchise vote over scored individuals.
+/// Consumers decide who may vote and how each voter is scored;
+/// this type owns the tally, majority rule, mean score, and voter
+/// identity collection used for later reinforcement.
+pub struct Ballot {
+    floor: f64,
+    score_sum: f64,
+    pub franchise: i64,
+    pub votes_for: i64,
+    pub voter_ids: Vec<i64>,
+}
+
+impl Ballot {
+    pub const fn new(floor: f64) -> Self {
+        Self {
+            floor,
+            score_sum: 0.0,
+            franchise: 0,
+            votes_for: 0,
+            voter_ids: Vec::new(),
+        }
+    }
+
+    /// Add one enfranchised voter. Returns whether that voter
+    /// voted yes, so consumers can select willing participants.
+    pub fn cast(&mut self, voter_id: i64, score: f64) -> bool {
+        let voted_for = score >= self.floor;
+        self.franchise += 1;
+        self.score_sum += score;
+        self.votes_for += if voted_for { 1 } else { 0 };
+        self.voter_ids.push(voter_id);
+        voted_for
+    }
+
+    pub fn has_majority(&self) -> bool {
+        majority(self.votes_for, self.franchise)
+    }
+
+    pub fn mean_score(&self) -> f64 {
+        if self.franchise > 0 {
+            self.score_sum / self.franchise as f64
+        } else {
+            0.0
+        }
+    }
+}
+
+/// Whether the yes votes form a strict majority of a non-empty
+/// franchise.
+pub fn majority(votes_for: i64, franchise: i64) -> bool {
+    franchise > 0 && votes_for * 2 > franchise
+}
+
 pub struct Pool {
     config: PoolConfig,
     entries: Mutex<Option<HashMap<i64, Vec<f64>>>>,
@@ -85,7 +138,9 @@ impl Pool {
     pub fn reinforce(&self, id: i64, trait_index: usize, direction_up: bool, magnitude: f64) {
         let mut g = self.entries.lock();
         let Some(map) = g.as_mut() else { return };
-        let Some(traits) = map.get_mut(&id) else { return };
+        let Some(traits) = map.get_mut(&id) else {
+            return;
+        };
         if trait_index >= traits.len() {
             return;
         }
@@ -98,7 +153,9 @@ impl Pool {
     pub fn blend_into(&self, survivor_id: i64, victor: &[f64], victor_weight: f64) {
         let mut g = self.entries.lock();
         let Some(map) = g.as_mut() else { return };
-        let Some(s) = map.get_mut(&survivor_id) else { return };
+        let Some(s) = map.get_mut(&survivor_id) else {
+            return;
+        };
         let w = victor_weight.clamp(0.0, 1.0);
         for (i, val) in s.iter_mut().enumerate() {
             if let Some(&v) = victor.get(i) {
@@ -196,7 +253,9 @@ impl Pool {
 // ---- deterministic jitter ---------------------------------------------------
 
 pub fn jitter(id: i64, salt: i64, span: f64) -> f64 {
-    let mut h = (id.wrapping_mul(2654435761).wrapping_add(salt.wrapping_mul(40503))) as u64;
+    let mut h = (id
+        .wrapping_mul(2654435761)
+        .wrapping_add(salt.wrapping_mul(40503))) as u64;
     h ^= h >> 13;
     h = h.wrapping_mul(0x9E3779B97F4A7C15);
     h ^= h >> 7;
@@ -263,8 +322,7 @@ impl GenomeStore {
         if last != 0.0 && now - last < self.write_cooldown_secs {
             return;
         }
-        self.last_write_bits
-            .store(now.to_bits(), Ordering::Relaxed);
+        self.last_write_bits.store(now.to_bits(), Ordering::Relaxed);
         self.write_now(seed, pools, store_path, build_doc);
     }
 

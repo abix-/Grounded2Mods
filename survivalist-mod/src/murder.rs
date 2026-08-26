@@ -22,6 +22,7 @@ use std::sync::atomic::AtomicU32;
 use parking_lot::Mutex;
 use serde_json::{Value as Json, json};
 
+use modforge::genome::Ballot;
 use modforge::mission::{self, Mission as _, Stage, Step};
 use unityforge::mono::{self, LogLevel};
 
@@ -77,16 +78,20 @@ static LAST_TICK_BITS: AtomicU32 = AtomicU32::new(0);
 
 /// The active murder a faction is running, for survival_status.
 pub fn active_target(faction_id: i64) -> Option<Json> {
-    MISSION.lock().as_ref().filter(|m| m.camp_id == faction_id).map(|m| {
-        json!({
-            "victim": m.victim_name,
-            "of": m.victim_camp_name,
-            "operative": m.operative_name,
-            "stage": if m.strike_phase { "striking" } else {
-                match m.stage { Stage::Going => "going", Stage::Returning => "returning" }
-            },
+    MISSION
+        .lock()
+        .as_ref()
+        .filter(|m| m.camp_id == faction_id)
+        .map(|m| {
+            json!({
+                "victim": m.victim_name,
+                "of": m.victim_camp_name,
+                "operative": m.operative_name,
+                "stage": if m.strike_phase { "striking" } else {
+                    match m.stage { Stage::Going => "going", Stage::Returning => "returning" }
+                },
+            })
         })
-    })
 }
 
 pub fn tick(now: f32) {
@@ -99,7 +104,10 @@ pub fn tick(now: f32) {
         }
         if let Err(e) = launch_scan(now) {
             if !e.contains("not found") {
-                mono::log(LogLevel::Warn, &format!("survivalist-mod: murder scan failed: {e}"));
+                mono::log(
+                    LogLevel::Warn,
+                    &format!("survivalist-mod: murder scan failed: {e}"),
+                );
             }
         }
     }
@@ -132,10 +140,7 @@ fn launch_scan(now: f32) -> Result<(), String> {
         };
         let id = com.read_field("Id")?.as_i64().unwrap_or(-1);
         let looter = t == "Looter";
-        let mut votes = 0i64;
-        let mut franchise = 0i64;
-        let mut sum = 0.0f64;
-        let mut voter_ids = Vec::new();
+        let mut ballot = Ballot::new(MURDER_GUILE_FLOOR);
         if let Some(m_h) = handle_of(&com.read_field("Members")?) {
             let mlist = own(m_h);
             let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
@@ -160,16 +165,11 @@ fn launch_scan(now: f32) -> Result<(), String> {
                     continue;
                 }
                 let g = genome::individual(char_id, &t)[genome::GUILE];
-                franchise += 1;
-                sum += g;
-                if g >= MURDER_GUILE_FLOOR {
-                    votes += 1;
-                }
-                voter_ids.push(char_id);
+                ballot.cast(char_id, g);
             }
         }
-        if franchise > 0 && votes * 2 > franchise {
-            let eff = sum / franchise as f64;
+        if ballot.has_majority() {
+            let eff = ballot.mean_score();
             if plotter.as_ref().map(|p| eff > p.6).unwrap_or(true) {
                 if let Some(old) = plotter.replace((
                     com.handle().0,
@@ -177,9 +177,9 @@ fn launch_scan(now: f32) -> Result<(), String> {
                     display_name(&com),
                     t,
                     members,
-                    votes,
+                    ballot.votes_for,
                     eff,
-                    voter_ids,
+                    ballot.voter_ids,
                     enemy_h,
                 )) {
                     drop(own(old.0));
@@ -285,8 +285,13 @@ fn pick_operative(
     com: &unityforge::mono::MonoObject,
     camp_ctype: &str,
 ) -> Result<Option<(i32, String)>, String> {
-    let leader_id = handle_of(&com.read_field("Leader")?)
-        .map(|h| own(h).read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1));
+    let leader_id = handle_of(&com.read_field("Leader")?).map(|h| {
+        own(h)
+            .read_field("Id")
+            .ok()
+            .and_then(|v| v.as_i64())
+            .unwrap_or(-1)
+    });
     let mut best: Option<(i32, String, f64)> = None;
     if let Some(m_h) = handle_of(&com.read_field("Members")?) {
         let mlist = own(m_h);
@@ -310,7 +315,11 @@ fn pick_operative(
                 .unwrap_or(false);
             let squadded =
                 handle_of(&member.invoke("GetSquad", &json!([])).unwrap_or(Json::Null)).is_some();
-            let id = member.read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1);
+            let id = member
+                .read_field("Id")
+                .ok()
+                .and_then(|v| v.as_i64())
+                .unwrap_or(-1);
             if !alive || !human || !conscious || squadded || Some(id) == leader_id {
                 continue;
             }
@@ -399,7 +408,10 @@ impl mission::Mission for Mission {
                     LogLevel::Info,
                     &format!(
                         "survivalist-mod: murder: {} of {} is dead by {}'s hand; {} is leaderless",
-                        self.victim_name, self.victim_camp_name, self.operative_name, self.victim_camp_name,
+                        self.victim_name,
+                        self.victim_camp_name,
+                        self.operative_name,
+                        self.victim_camp_name,
                     ),
                 );
                 send_home_squadless(self)?;
@@ -472,7 +484,11 @@ impl mission::Mission for Mission {
     }
 
     fn cleanup(self) {
-        remove_squad_and_drop(self.camp_h, self.squad_id, &[self.camp_h, self.victim_h, self.operative_h]);
+        remove_squad_and_drop(
+            self.camp_h,
+            self.squad_id,
+            &[self.camp_h, self.victim_h, self.operative_h],
+        );
     }
 
     fn label(&self) -> String {

@@ -31,6 +31,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use parking_lot::Mutex;
 use serde_json::{Value as Json, json};
 
+use modforge::genome::Ballot;
 use modforge::ops::{OP_REGISTRY, OpDef};
 use unityforge::mono::{self, LogLevel, MonoObject};
 
@@ -121,16 +122,6 @@ struct Experiment {
     eval_at: f32,
 }
 
-/// The result of a settlement's franchise voting on whether to
-/// raid: the collective decision emerges from its enfranchised
-/// survivors' individual genomes.
-struct Vote {
-    franchise: i64,
-    for_raid: i64,
-    effective_aggression: f64,
-    voter_ids: Vec<i64>,
-}
-
 /// Tally a settlement's franchise vote. Franchise = who may vote:
 /// NORMAL camps enfranchise everyone (fluid identity); LOOTER
 /// camps enfranchise only the core (non-conscript) survivors, so
@@ -143,12 +134,9 @@ fn tally_vote(
     ctype: &str,
     floor: f64,
     score: impl Fn(&[f64]) -> f64,
-) -> Result<Vote, String> {
+) -> Result<Ballot, String> {
     let looter = ctype == "Looter";
-    let mut franchise = 0i64;
-    let mut for_raid = 0i64;
-    let mut sum_score = 0.0f64;
-    let mut voter_ids = Vec::new();
+    let mut ballot = Ballot::new(floor);
 
     if let Some(m_h) = handle_of(&com.read_field("Members")?) {
         let mlist = own(m_h);
@@ -176,21 +164,10 @@ fn tally_vote(
             }
             let g = genome::individual(char_id, ctype);
             let s = score(&g);
-            franchise += 1;
-            sum_score += s;
-            if s >= floor {
-                for_raid += 1;
-            }
-            voter_ids.push(char_id);
+            ballot.cast(char_id, s);
         }
     }
-    let effective = if franchise > 0 { sum_score / franchise as f64 } else { 0.0 };
-    Ok(Vote {
-        franchise,
-        for_raid,
-        effective_aggression: effective,
-        voter_ids,
-    })
+    Ok(ballot)
 }
 
 static EXPERIMENTS: Mutex<Vec<Experiment>> = Mutex::new(Vec::new());
@@ -233,8 +210,14 @@ fn assess(com: &MonoObject) -> Result<Survival, String> {
         .invoke("GetLivingNonZombieMemberCount", &json!([]))?
         .as_i64()
         .unwrap_or(0);
-    let initial = com.read_field("InitialMemberCount")?.as_i64().unwrap_or(members);
-    let beds = com.invoke("GetAccommodation", &json!([]))?.as_i64().unwrap_or(0);
+    let initial = com
+        .read_field("InitialMemberCount")?
+        .as_i64()
+        .unwrap_or(members);
+    let beds = com
+        .invoke("GetAccommodation", &json!([]))?
+        .as_i64()
+        .unwrap_or(0);
     let threats = list_len(com, "Threats");
 
     // Desperation from the worst survival axis.
@@ -248,7 +231,8 @@ fn assess(com: &MonoObject) -> Result<Survival, String> {
         Rung::Terminal
     } else if starving || shrunk || threats >= 2 {
         Rung::Desperate
-    } else if nutrition < TARGET_MIN_NUTRITION || threats >= 1 || (initial > 0 && members < initial) {
+    } else if nutrition < TARGET_MIN_NUTRITION || threats >= 1 || (initial > 0 && members < initial)
+    {
         Rung::Strained
     } else {
         Rung::Comfortable
@@ -421,11 +405,13 @@ fn desperation_scan(now: f32) -> Result<(), String> {
         // ballots per scan: the hunger raid (raw aggression) and
         // the ambition war (aggression/expansionism blend).
         let vote = tally_vote(&com, &t, RAID_AGGRESSION_FLOOR, |g| g[genome::AGGRESSION])?;
-        let voted_to_raid = vote.franchise > 0 && vote.for_raid * 2 > vote.franchise;
+        let voted_to_raid = vote.has_majority();
         let ambition = tally_vote(&com, &t, AMBITION_FLOOR, |g| {
             (g[genome::AGGRESSION] + g[genome::EXPANSIONISM]) / 2.0
         })?;
-        let voted_ambition = ambition.franchise > 0 && ambition.for_raid * 2 > ambition.franchise;
+        let voted_ambition = ambition.has_majority();
+        let effective_aggression = vote.mean_score();
+        let effective_ambition = ambition.mean_score();
         let already_at_war = handle_of(&com.read_field("InvasionTarget")?).is_some();
         camps.push(Camp {
             handle: com.handle().0,
@@ -440,12 +426,12 @@ fn desperation_scan(now: f32) -> Result<(), String> {
             centre: base_centre(&com),
             already_at_war,
             voted_to_raid,
-            for_raid: vote.for_raid,
-            effective_aggression: vote.effective_aggression,
+            for_raid: vote.votes_for,
+            effective_aggression,
             voter_ids: vote.voter_ids,
             voted_ambition,
-            ambition_for: ambition.for_raid,
-            effective_ambition: ambition.effective_aggression,
+            ambition_for: ambition.votes_for,
+            effective_ambition,
             ambition_voter_ids: ambition.voter_ids,
         });
         std::mem::forget(com); // handles reused across the two passes below
@@ -498,7 +484,7 @@ fn extortion_by_vote(camps: &[Camp]) -> Result<(), String> {
         if vote.franchise == 0 {
             continue;
         }
-        let menacing = vote.for_raid * 2 > vote.franchise;
+        let menacing = vote.has_majority();
         let current = crate::common::with(c.handle, |com| com.read_field("ExtortAISettlements"))
             .unwrap_or(json!(true))
             == json!(true);
@@ -512,7 +498,7 @@ fn extortion_by_vote(camps: &[Camp]) -> Result<(), String> {
                     "survivalist-mod: survival -- {}'s franchise {} the shakedown racket ({} of {} menacing)",
                     c.name,
                     if menacing { "resumes" } else { "calls off" },
-                    vote.for_raid,
+                    vote.votes_for,
                     vote.franchise,
                 ),
             );
@@ -570,7 +556,7 @@ fn sue_for_peace(camps: &[Camp]) -> Result<bool, String> {
                 1.0 - g[genome::AGGRESSION]
             })
         })?;
-        if vote.franchise == 0 || vote.for_raid * 2 <= vote.franchise {
+        if !vote.has_majority() {
             continue; // too proud; they fight on
         }
 
@@ -593,7 +579,7 @@ fn sue_for_peace(camps: &[Camp]) -> Result<bool, String> {
                 loser.members,
                 loser.initial,
                 winner.name,
-                vote.for_raid,
+                vote.votes_for,
                 vote.franchise,
             ),
         );
@@ -636,17 +622,14 @@ fn collapse_response(camps: &[Camp]) -> Result<bool, String> {
                 g[genome::DEFENSIVENESS]
             })
         })?;
-        if vote.franchise == 0 || vote.for_raid * 2 <= vote.franchise {
+        if !vote.has_majority() {
             continue; // the proud hold on
         }
         // The nearest STRONGER non-hostile neighbor with room.
         let (cx, cy) = c.centre.unwrap();
         let mut refuge: Option<(&Camp, i64)> = None;
         for other in camps {
-            if other.handle == c.handle
-                || other.ctype == "Player"
-                || other.members <= c.members
-            {
+            if other.handle == c.handle || other.ctype == "Player" || other.members <= c.members {
                 continue;
             }
             let Some((ox, oy)) = other.centre else {
@@ -826,7 +809,11 @@ fn defect(doomed: &Camp, refuge: &Camp) -> Result<i64, String> {
                         .invoke("get_AliveAndNotZombie", &json!([]))
                         .map(|v| v == json!(true))
                         .unwrap_or(false);
-                    let id = member.read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1);
+                    let id = member
+                        .read_field("Id")
+                        .ok()
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(-1);
                     if alive && Some(id) != leader_id {
                         out.push(member.handle().0);
                         std::mem::forget(member);
@@ -902,7 +889,13 @@ fn hunger_raid(camps: &[Camp], now: f32) -> Result<bool, String> {
         return Ok(false);
     };
 
-    ignite(raider, target, vec![genome::AGGRESSION], &raider.voter_ids, now)?;
+    ignite(
+        raider,
+        target,
+        vec![genome::AGGRESSION],
+        &raider.voter_ids,
+        now,
+    )?;
     crate::chronicle::post(&format!(
         "{}, starving, has declared war on {}",
         raider.name, target.name
@@ -1185,8 +1178,8 @@ fn survival_status(_args: &Json) -> Result<Json, String> {
                 "threats": sv.threats,
                 "franchise": vote.franchise,
                 "silenced": silenced,
-                "votes_to_raid": vote.for_raid,
-                "effective_aggression": (vote.effective_aggression * 100.0).round() / 100.0,
+                "votes_to_raid": vote.votes_for,
+                "effective_aggression": (vote.mean_score() * 100.0).round() / 100.0,
                 "raiding": invasion_target,
                 "stealing": crate::steal::active_target(id).unwrap_or(Json::Null),
                 "trading": crate::trade::active_target(id).unwrap_or(Json::Null),
