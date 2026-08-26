@@ -809,7 +809,7 @@ mod tests {
     use crate::biome::{BiomeDef, BiomeRegistry};
     use crate::monument::{
         Arrangement, BuildingRegistry, BuildingSize, BuildingSlot, BuildingTypeDef, MonumentRegistry,
-        MonumentTypeDef, PropSpec,
+        MonumentTypeDef, PropDef,
     };
     use glam::Vec3;
 
@@ -887,7 +887,7 @@ mod tests {
                     gated: false,
                     suffix: "wreck".to_string(),
                     spacing: 40.0,
-                    props: vec![PropSpec {
+                    props: vec![PropDef {
                         size: Vec3::new(4.0, 1.4, 1.8),
                         color: [0.4, 0.2, 0.15],
                         count: (1, 2),

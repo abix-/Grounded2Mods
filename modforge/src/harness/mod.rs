@@ -6,7 +6,7 @@
 //! that exposes the HTTP API. On `Drop` or explicit `stop()` the
 //! game process is taskkilled.
 //!
-//! Per-game tests wire this up via a `GameSpec` constant and a
+//! Per-game tests wire this up via a `GameDef` constant and a
 //! `tests/common/mod.rs` helper. See `horsey-mod/tests/common/mod.rs`
 //! for the reference consumer.
 //!
@@ -32,7 +32,7 @@ use std::time::Duration;
 /// Description of one moddable Steam game and the HTTP plane its
 /// mod exposes. Construct once per game in `tests/common/mod.rs`.
 #[derive(Debug, Clone)]
-pub struct GameSpec {
+pub struct GameDef {
     /// Steam AppID. Used for `steam -applaunch <id>` and the
     /// `steam://rungameid/<id>` fallback.
     pub app_id: u32,
@@ -44,7 +44,7 @@ pub struct GameSpec {
     /// Optional injector: present for native-PE games where the mod
     /// is a DLL loaded post-launch. UE / Unity games that load their
     /// mod at startup leave this `None`.
-    pub injector: Option<InjectorSpec>,
+    pub injector: Option<InjectorDef>,
     /// How long to wait between (a) launching the game and (b) the
     /// HTTP endpoint responding ok. Default 120s.
     pub launch_timeout: Duration,
@@ -52,10 +52,10 @@ pub struct GameSpec {
     pub shutdown_grace: Duration,
     /// Optional `cargo build -p <name>` to run before launching.
     /// `None` means skip the build step entirely.
-    pub build: Option<BuildSpec>,
+    pub build: Option<BuildDef>,
 }
 
-impl GameSpec {
+impl GameDef {
     pub fn defaults(
         app_id: u32,
         process_name: &'static str,
@@ -103,7 +103,7 @@ impl HttpProbe {
 /// a separate `*-inject.exe` after the game starts to load the
 /// mod DLL via `CreateRemoteThread(LoadLibraryW)`.
 #[derive(Debug, Clone)]
-pub struct InjectorSpec {
+pub struct InjectorDef {
     /// Path to the injector binary. Typically built alongside the
     /// mod DLL by the same workspace.
     pub injector_exe: PathBuf,
@@ -117,7 +117,7 @@ pub struct InjectorSpec {
     pub post_inject_settle: Duration,
 }
 
-impl InjectorSpec {
+impl InjectorDef {
     pub fn new(injector_exe: PathBuf) -> Self {
         Self {
             injector_exe,
@@ -131,7 +131,7 @@ impl InjectorSpec {
 /// `--release`) before launching the game so the injected DLL
 /// matches the test code.
 #[derive(Debug, Clone)]
-pub struct BuildSpec {
+pub struct BuildDef {
     /// Workspace package name passed as `cargo build -p <name>`.
     pub package: &'static str,
     /// If true, `cargo build --release`. Default false.

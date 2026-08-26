@@ -1,11 +1,11 @@
 //! Run the per-game injector binary after the game process is up.
 
-use super::InjectorSpec;
+use super::InjectorDef;
 use std::process::Command;
 
 /// Invoke the injector binary. Inherits stdio so the test runner
 /// shows the injector's progress. Bails on non-zero exit.
-pub fn run(spec: &InjectorSpec) -> anyhow::Result<()> {
+pub fn run(spec: &InjectorDef) -> anyhow::Result<()> {
     if !spec.injector_exe.is_file() {
         anyhow::bail!(
             "injector exe not found at {}",

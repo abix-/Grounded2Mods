@@ -15,7 +15,7 @@
 //!   MODFORGE_STEAM_EXE=...  override steam.exe path
 
 use modforge::harness::{
-    BuildSpec, GameHarness, GameSpec, HttpProbe, InjectorSpec,
+    BuildDef, GameHarness, GameDef, HttpProbe, InjectorDef,
 };
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -45,15 +45,15 @@ fn injector_exe(release: bool) -> PathBuf {
 fn main() -> anyhow::Result<()> {
     let release = cfg!(not(debug_assertions));
 
-    let mut spec = GameSpec::defaults(
+    let mut spec = GameDef::defaults(
         STEAM_APP_ID,
         PROCESS_NAME,
         HttpProbe::new(HTTP_PORT, HTTP_ENDPOINT),
     );
-    let mut inj = InjectorSpec::new(injector_exe(release));
+    let mut inj = InjectorDef::new(injector_exe(release));
     inj.args.push("--fresh".into());
     spec.injector = Some(inj);
-    spec.build = Some(BuildSpec {
+    spec.build = Some(BuildDef {
         package: "horsey-mod",
         release,
         workspace_dir: workspace_root(),

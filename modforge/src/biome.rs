@@ -15,7 +15,7 @@ use glam::Vec3;
 /// One kind of thing nature strews across a biome (trees, rocks,
 /// wrecks), with how densely.
 #[derive(Clone)]
-pub struct ScatterSpec {
+pub struct ScatterDef {
     pub size: Vec3,
     pub color: Rgb,
     pub density: f32,
@@ -28,7 +28,7 @@ pub struct ScatterSpec {
 pub struct BiomeDef {
     pub name: String,
     pub ground: Rgb,
-    pub scatter: Vec<ScatterSpec>,
+    pub scatter: Vec<ScatterDef>,
     pub weather: Vec<String>,
     pub monuments: Vec<String>,
     pub npcs: Vec<String>,
@@ -73,7 +73,7 @@ mod tests {
         BiomeDef {
             name: name.to_string(),
             ground: [0.2, 0.4, 0.2],
-            scatter: vec![ScatterSpec {
+            scatter: vec![ScatterDef {
                 size: Vec3::new(0.5, 3.0, 0.5),
                 color: [0.3, 0.25, 0.15],
                 density: 0.02,

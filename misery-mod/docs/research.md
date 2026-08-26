@@ -2037,6 +2037,82 @@ Consequences of the wrong 0x4C, now explained:
   has no visible effect" (the old nag screen mystery, section
   on failed attempts in the todo history).
 
+### 26.8 Memory the engine will free must come from the engine
+
+**The crash.** Disconnecting from a session killed the game:
+
+```text
+LowLevelFatalError [MallocBinned2.cpp] [Line: 1322]
+FMallocBinned2 Attempt to realloc an unrecognized block
+000001F6FA450000  canary == 0x65 != 0xe3
+```
+
+**The cause.** `ueforge::ue::tarray::grow_raw` allocated the
+bigger buffer with Rust's allocator and wrote that pointer into
+the engine's `TArray` header:
+
+```rust
+let new_ptr = unsafe { std::alloc::alloc_zeroed(layout) };
+*(header_ptr as *mut *mut u8) = new_ptr;
+```
+
+From then on the engine owned an array whose memory Rust
+allocated. When the engine reallocs it, `FMallocBinned2` reads
+the canary bytes that sit before one of its own blocks, finds
+Rust's data there, and aborts.
+
+The delay is what makes this nasty: the vendor pass grows those
+arrays on every load, and the crash lands minutes later at
+teardown, which looks like a disconnect bug rather than an
+allocation bug. Timing that proved it, live:
+
+```text
+[21:16:19] vendor_mirror: added 15 items ...   7 vendors grown
+[21:16:47] vendors: gone (main menu?)          crash
+```
+
+**The rule.** Anything the engine will later grow or free must be
+allocated by the engine. `GMalloc` is a global pointer to an
+`FMalloc` object; `Malloc` is a virtual method on it, so nothing
+needs resolving beyond the global, which patternsleuth already
+gives us and which `resolve_and_init` now stashes via
+`ue::gmalloc::set_global`.
+
+**Two mistakes made fixing it, both worth keeping.**
+
+*Resolving lazily.* The first version resolved `GMalloc` on first
+use, which fired a fresh patternsleuth scan from inside the
+vendor pass, on the game thread. The game died at that exact
+second. patternsleuth scans in a rayon pool, and 26.4 already
+records what that costs at a bad moment. Resolve at init, inside
+the scan that already runs.
+
+*Inferring the vtable slot.* `FMalloc::Malloc` was taken to be
+slot 2, reasoned from patternsleuth's own GMalloc patterns, which
+match inside `FMemory::Malloc` and contain
+`48 8B 01 FF 50 10`, a call through `[rax+0x10]`. That reasoning
+looks sound and was wrong for this build: the call returned null
+and the process died the same second.
+
+An unverified vtable slot is a call to an arbitrary engine
+function with arbitrary arguments. `MALLOC_SLOT` is therefore
+`None` until it is MEASURED out of the running image, and
+`alloc_zeroed` refuses rather than calling. `grow_raw` fails
+loudly and never falls back to Rust's heap, because growing with
+the wrong allocator is worse than not growing:
+
+```text
+[21:28:13] vendor_mirror: grow failed: TArray grow: engine allocator (GMalloc) unavailable
+```
+
+The cost of that safe state is vendors losing their added items.
+Nothing else is affected.
+
+**How to measure it.** Read the displacement rather than reason
+about it: find `mov rax,[rcx]; call [rax+imm8]` inside
+`FMemory::Malloc` in the live image. The `imm8` is the byte
+offset; the slot is that over eight.
+
 ### 26.6 The main menu: UE4SS's on_update is NOT the game thread
 
 Loading a save from the mod needs to call Blueprint functions

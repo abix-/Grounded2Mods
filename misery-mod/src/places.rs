@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use glam::Vec3;
 use modforge::monument::{Arrangement, Roll, arrange};
-use modforge::structure::{CONCRETE_FLOOR, CONCRETE_WALL, PieceSpec, StructureDef};
+use modforge::structure::{CONCRETE_FLOOR, CONCRETE_WALL, PieceDef, StructureDef};
 
 use crate::dispatch;
 use crate::harvest::{self, Composition, Piece};
@@ -98,7 +98,7 @@ fn structures_from(comp: &Composition) -> Vec<StructureDef> {
             .iter()
             .map(|&j| comp.pieces[j].dz)
             .fold(f64::MAX, f64::min);
-        let pieces: Vec<PieceSpec> = members
+        let pieces: Vec<PieceDef> = members
             .iter()
             .map(|&j| to_piece_spec(&comp.pieces[j], cx, cy, base_z))
             .collect();
@@ -119,10 +119,10 @@ fn structures_from(comp: &Composition) -> Vec<StructureDef> {
     out
 }
 
-/// UE piece (cm, z-up) to modforge PieceSpec (m, y-up, north -z).
+/// UE piece (cm, z-up) to modforge PieceDef (m, y-up, north -z).
 /// Extents are half-sizes, so only the axes swap, not the signs.
-fn to_piece_spec(p: &Piece, cx: f64, cy: f64, base_z: f64) -> PieceSpec {
-    PieceSpec {
+fn to_piece_spec(p: &Piece, cx: f64, cy: f64, base_z: f64) -> PieceDef {
+    PieceDef {
         class: p.class.clone(),
         asset: p.mesh.clone(),
         offset: Vec3::new(
@@ -142,8 +142,8 @@ fn to_piece_spec(p: &Piece, cx: f64, cy: f64, base_z: f64) -> PieceSpec {
     }
 }
 
-/// modforge PieceSpec back to a UE-space Piece for spawning.
-fn to_piece(spec: &PieceSpec, member_offset: Vec3) -> Piece {
+/// modforge PieceDef back to a UE-space Piece for spawning.
+fn to_piece(spec: &PieceDef, member_offset: Vec3) -> Piece {
     let o = spec.offset + member_offset;
     Piece {
         class: spec.class.clone(),

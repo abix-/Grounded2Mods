@@ -17,7 +17,7 @@
 
 use glam::Vec3;
 use modforge::structure::{
-    Opening, RoomSpec, ShellSlot, Side, SlotKind, SlotOpening, shell_slots,
+    Opening, RoomDef, ShellSlot, Side, SlotKind, SlotOpening, shell_slots,
 };
 
 use crate::harvest::Piece;
@@ -80,7 +80,7 @@ fn cm(v: f32) -> i32 {
 /// modforge works y-up with walls running +x before yaw; UE works
 /// z-up with wall meshes running +x. The quarter turn between the
 /// two conventions is applied once, here.
-pub fn room_pieces(room: &RoomSpec) -> Vec<Piece> {
+pub fn room_pieces(room: &RoomDef) -> Vec<Piece> {
     let mut out = Vec::new();
     for slot in shell_slots(room, MODULES) {
         let mesh = match slot.kind {
@@ -94,7 +94,7 @@ pub fn room_pieces(room: &RoomSpec) -> Vec<Piece> {
 
 /// A room described over the wire: interior size in metres, wall
 /// height, and which sides get a door or a window.
-fn room_from_args(args: &serde_json::Value) -> RoomSpec {
+fn room_from_args(args: &serde_json::Value) -> RoomDef {
     let f = |k: &str, d: f64| args.get(k).and_then(|v| v.as_f64()).unwrap_or(d) as f32;
     let width = f("width", 8.0);
     let length = f("length", 8.0);
@@ -122,7 +122,7 @@ fn room_from_args(args: &serde_json::Value) -> RoomSpec {
             });
         }
     }
-    RoomSpec {
+    RoomDef {
         origin: Vec3::ZERO,
         interior: Vec3::new(width, height, length),
         wall_thickness: 0.2,

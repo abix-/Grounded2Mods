@@ -3,7 +3,7 @@
 
 use super::log::TestLog;
 use super::{
-    GameSpec, build, http_probe, injector, process, should_skip_build, steam,
+    GameDef, build, http_probe, injector, process, should_skip_build, steam,
 };
 use serde_json::Value;
 use std::path::Path;
@@ -17,7 +17,7 @@ impl GameHarness {
     /// (optional), poll HTTP plane until ready. Returns a
     /// `RunningGame` whose Drop tears down the process. Writes a
     /// timestamped log to `target/test-runs/<test_name>-<ts>.log`.
-    pub fn launch(spec: &GameSpec, test_name: &str) -> anyhow::Result<RunningGame> {
+    pub fn launch(spec: &GameDef, test_name: &str) -> anyhow::Result<RunningGame> {
         let log = TestLog::open(&workspace_root(spec), test_name)?;
         log.event("SPEC", &format!("{spec:?}"));
 
@@ -66,13 +66,13 @@ impl GameHarness {
     /// is injected. Verify HTTP plane and hand back a `RunningGame`
     /// whose Drop is a no-op (so we don't kill a session the user
     /// wanted to keep).
-    pub fn attach_existing(spec: &GameSpec, test_name: &str) -> anyhow::Result<RunningGame> {
+    pub fn attach_existing(spec: &GameDef, test_name: &str) -> anyhow::Result<RunningGame> {
         let log = TestLog::open(&workspace_root(spec), test_name)?;
         log.event("ATTACH", &format!("verifying HTTP plane on port {}", spec.http.port));
         http_probe::wait_for_ready(&spec.http, Duration::from_secs(5))?;
         log.event("ATTACH", "HTTP ready; attached without launch");
         Ok(RunningGame {
-            spec: GameSpec {
+            spec: GameDef {
                 process_name: "",
                 ..spec.clone()
             },
@@ -81,7 +81,7 @@ impl GameHarness {
     }
 }
 
-fn workspace_root(spec: &GameSpec) -> std::path::PathBuf {
+fn workspace_root(spec: &GameDef) -> std::path::PathBuf {
     spec.build
         .as_ref()
         .map(|b| b.workspace_dir.clone())
@@ -90,7 +90,7 @@ fn workspace_root(spec: &GameSpec) -> std::path::PathBuf {
 
 /// Live, modded game instance. Drop kills the process.
 pub struct RunningGame {
-    spec: GameSpec,
+    spec: GameDef,
     log: TestLog,
 }
 
@@ -128,7 +128,7 @@ impl RunningGame {
         Ok(v)
     }
 
-    pub fn spec(&self) -> &GameSpec {
+    pub fn spec(&self) -> &GameDef {
         &self.spec
     }
 

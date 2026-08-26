@@ -61,7 +61,7 @@ pub struct Opening {
 /// `ceiling` are skipped when another room's slab already covers
 /// that face (a stacked room's floor is the room-below's ceiling).
 #[derive(Clone)]
-pub struct RoomSpec {
+pub struct RoomDef {
     pub origin: Vec3,
     pub interior: Vec3,
     pub wall_thickness: f32,
@@ -76,7 +76,7 @@ pub struct RoomSpec {
 /// approach room in front of the base; stairs must never end at a
 /// wall.
 #[derive(Clone)]
-pub struct StairSpec {
+pub struct StairDef {
     pub base: Vec3,
     pub side: Side,
     pub width: f32,
@@ -86,14 +86,14 @@ pub struct StairSpec {
 
 /// A solid block: furniture, a crate, any obstacle. Collides.
 #[derive(Clone)]
-pub struct SolidSpec {
+pub struct SolidDef {
     pub center: Vec3,
     pub size: Vec3,
     pub color: Rgb,
 }
 
 #[derive(Clone)]
-pub struct LightSpec {
+pub struct LightDef {
     pub position: Vec3,
     pub color: Rgb,
     pub intensity: f32,
@@ -113,7 +113,7 @@ pub struct LightSpec {
 /// Offsets follow the structure convention: y up, north = -z.
 /// Consumers on z-up engines convert in their binder.
 #[derive(Clone, Debug, PartialEq)]
-pub struct PieceSpec {
+pub struct PieceDef {
     /// What to spawn, in the host game's naming.
     pub class: String,
     /// A second identity for classes that are a shell around an
@@ -196,7 +196,7 @@ pub fn classify(extent: Vec3) -> PieceShape {
     PieceShape::Block
 }
 
-impl PieceSpec {
+impl PieceDef {
     /// This piece's shape, from its measured extent.
     pub fn shape(&self) -> PieceShape {
         classify(self.extent * self.scale.abs())
@@ -227,12 +227,12 @@ pub struct StructureDef {
     pub name: String,
     pub wall_color: Rgb,
     pub floor_color: Rgb,
-    pub rooms: Vec<RoomSpec>,
-    pub stairs: Vec<StairSpec>,
-    pub furniture: Vec<SolidSpec>,
-    pub lights: Vec<LightSpec>,
+    pub rooms: Vec<RoomDef>,
+    pub stairs: Vec<StairDef>,
+    pub furniture: Vec<SolidDef>,
+    pub lights: Vec<LightDef>,
     /// Captured pieces. Empty for authored structures.
-    pub pieces: Vec<PieceSpec>,
+    pub pieces: Vec<PieceDef>,
 }
 
 /// The bare concrete every hand-authored building used before
@@ -266,7 +266,7 @@ impl Aabb {
     }
 }
 
-pub fn room_interior_aabb(room: &RoomSpec) -> Aabb {
+pub fn room_interior_aabb(room: &RoomDef) -> Aabb {
     Aabb {
         min: room.origin - Vec3::new(room.interior.x / 2.0, 0.0, room.interior.z / 2.0),
         max: room.origin
@@ -283,7 +283,7 @@ pub fn validate(def: &StructureDef) -> Result<(), String> {
     // differ by rounding; shrink each interior by a hair so touching
     // never reads as overlapping.
     const HAIR: f32 = 1e-3;
-    let interior = |room: &RoomSpec| {
+    let interior = |room: &RoomDef| {
         let a = room_interior_aabb(room);
         Aabb {
             min: a.min + Vec3::splat(HAIR),
@@ -638,7 +638,7 @@ pub fn fill_run(run: f32, modules: &[f32]) -> Vec<(f32, f32)> {
 /// `[4.0, 2.0, 1.0]`). Walls are laid on the room's interior
 /// boundary; a segment whose span overlaps an opening's span
 /// carries that opening.
-pub fn shell_slots(room: &RoomSpec, modules: &[f32]) -> Vec<ShellSlot> {
+pub fn shell_slots(room: &RoomDef, modules: &[f32]) -> Vec<ShellSlot> {
     let mut out = Vec::new();
     let (w, h, l) = (room.interior.x, room.interior.y, room.interior.z);
     let half = Vec3::new(w / 2.0, 0.0, l / 2.0);
@@ -732,8 +732,8 @@ pub fn shell_slots(room: &RoomSpec, modules: &[f32]) -> Vec<ShellSlot> {
 mod shell_tests {
     use super::*;
 
-    fn room(w: f32, h: f32, l: f32, openings: Vec<Opening>) -> RoomSpec {
-        RoomSpec {
+    fn room(w: f32, h: f32, l: f32, openings: Vec<Opening>) -> RoomDef {
+        RoomDef {
             origin: Vec3::ZERO,
             interior: Vec3::new(w, h, l),
             wall_thickness: 0.2,
@@ -914,7 +914,7 @@ mod shape_tests {
     #[test]
     fn scale_is_applied_before_classifying() {
         // A clutter-sized box scaled up ten times is architecture.
-        let p = PieceSpec {
+        let p = PieceDef {
             class: "x".into(),
             asset: None,
             offset: Vec3::ZERO,
@@ -929,7 +929,7 @@ mod shape_tests {
 
     #[test]
     fn ground_half_size_turns_with_yaw() {
-        let p = PieceSpec {
+        let p = PieceDef {
             class: "x".into(),
             asset: None,
             offset: Vec3::ZERO,
@@ -950,8 +950,8 @@ mod shape_tests {
 mod tests {
     use super::*;
 
-    fn room(origin: Vec3) -> RoomSpec {
-        RoomSpec {
+    fn room(origin: Vec3) -> RoomDef {
+        RoomDef {
             origin,
             interior: Vec3::new(6.0, 3.0, 8.0),
             wall_thickness: 0.2,
@@ -961,7 +961,7 @@ mod tests {
         }
     }
 
-    fn def(rooms: Vec<RoomSpec>) -> StructureDef {
+    fn def(rooms: Vec<RoomDef>) -> StructureDef {
         StructureDef {
             name: "test".to_string(),
             wall_color: CONCRETE_WALL,

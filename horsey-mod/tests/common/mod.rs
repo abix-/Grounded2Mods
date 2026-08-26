@@ -14,7 +14,7 @@
 #![allow(dead_code)]
 
 use modforge::harness::{
-    BuildSpec, GameHarness, GameSpec, HttpProbe, InjectorSpec, RunningGame,
+    BuildDef, GameHarness, GameDef, HttpProbe, InjectorDef, RunningGame,
 };
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -45,19 +45,19 @@ fn injector_exe() -> PathBuf {
         .join("horsey-inject.exe")
 }
 
-pub fn spec() -> GameSpec {
-    let mut spec = GameSpec::defaults(
+pub fn spec() -> GameDef {
+    let mut spec = GameDef::defaults(
         STEAM_APP_ID,
         PROCESS_NAME,
         HttpProbe::new(HTTP_PORT, HTTP_ENDPOINT),
     );
-    let mut inj = InjectorSpec::new(injector_exe());
+    let mut inj = InjectorDef::new(injector_exe());
     // Always start from a clean injector state for tests. Without
     // this, horsey-inject sees the previous run's `.injstate` and
     // refuses with "use --reload to swap, or --fresh to ignore".
     inj.args.push("--fresh".into());
     spec.injector = Some(inj);
-    spec.build = Some(BuildSpec {
+    spec.build = Some(BuildDef {
         package: "horsey-mod",
         release: false,
         workspace_dir: workspace_root(),

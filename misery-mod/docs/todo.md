@@ -2,6 +2,8 @@
 
 | Priority | System | Todo | Done when |
 |---:|---|---|---|
+| 1 | `ueforge` | [ ] Measure `FMalloc::Malloc`'s vtable slot out of the running image and set `ue::gmalloc::MALLOC_SLOT`: find `mov rax,[rcx]; call [rax+imm8]` inside `FMemory::Malloc` (the function patternsleuth already anchors in to locate the GMalloc global) and read the `imm8`. Slot 2 was INFERRED from the pattern bytes and was wrong: null return, then a crash | Vendor lists grow again, and a disconnect after a vendor pass does not crash. |
+| 1 | `autoload` | [ ] Load the SINGLEPLAYER save, not a hosted server: it calls `LoadLevel` on `BP_HostLoadGameServer`, chosen because it had "Load" in the name. Read what the rows under `BP_SinglePlayerLoadSaveMenu` actually call | Auto-load starts a singleplayer game, confirmed live. |
 | 1 | `strange` | [ ] Run the game and confirm phenomena, monuments and rooms still land ON the ground: everything that places anything now goes through the lifted `ue::spawn` and `ue::trace`, and none of it has run since | A world generates with props at the right height, verified live. |
 | 3 | `dev` | [ ] Lift the two helpers now duplicated in autoload.rs and nag.rs into ueforge: find the LIVE object (not the `/Game/...` template) and call a UFunction with a parm block checked against `parms_size` | Both lessons are in one place instead of copied per module. |
 | 5 | `strange` | [ ] `live_squares` and `active_tile_size` are MISERY facts but sit in a module about phenomena; places.rs reaches into `strange` for them. Consider a home named for what they are | No module reaches into another for something unrelated to its subject. |

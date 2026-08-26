@@ -1,12 +1,12 @@
 //! Wrap `cargo build -p <package>` for the autobuild step.
 
-use super::BuildSpec;
+use super::BuildDef;
 use std::process::Command;
 
 /// Run `cargo build -p <package> [--release]` from
 /// `spec.workspace_dir`. Stdout/stderr are inherited so the test
 /// runner shows compile errors. Bails on non-zero exit.
-pub fn run(spec: &BuildSpec) -> anyhow::Result<()> {
+pub fn run(spec: &BuildDef) -> anyhow::Result<()> {
     let mut cmd = Command::new("cargo");
     cmd.current_dir(&spec.workspace_dir);
     cmd.args(["build", "-p", spec.package]);

@@ -134,6 +134,14 @@ pub fn resolve_and_init(
         resolved.g_names,
         resolved.append_string
     );
+    // Stash the engine allocator now, while we are already in the
+    // one scan and off the game thread. Resolving it later, on
+    // demand, means firing a fresh patternsleuth scan at whatever
+    // moment a mod happens to grow an array, and patternsleuth
+    // scans in a rayon pool. See misery research.md 26.4 for what
+    // that costs.
+    crate::ue::gmalloc::set_global(image_base + resolved.gmalloc);
+
     let offsets: &'static PlatformOffsets = Box::leak(Box::new(PlatformOffsets {
         g_objects: resolved.g_objects,
         append_string: resolved.append_string,

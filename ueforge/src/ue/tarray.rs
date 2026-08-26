@@ -51,8 +51,18 @@ impl<T> TArray<T> {
 
 /// Grow a TArray at `header_ptr` (16 bytes: pointer + num + max)
 /// to `new_max` capacity with the given element `stride`.
-/// Allocates a new zeroed buffer, copies existing entries, and
-/// updates pointer and max. The old buffer is leaked.
+///
+/// Allocates a new zeroed buffer FROM THE ENGINE'S ALLOCATOR,
+/// copies existing entries, and updates pointer and max.
+///
+/// The old buffer is leaked rather than freed: the engine may
+/// still hold a pointer into it, and freeing memory the engine
+/// thinks it owns is the same class of bug as allocating memory
+/// it does not. The leak is bounded by how often a mod grows an
+/// array, which is a handful of times per load.
+///
+/// Fails when the engine allocator cannot be reached. It does NOT
+/// fall back to Rust's heap; see `ue::gmalloc`.
 ///
 /// # Safety
 /// `header_ptr` must point at a valid TArray header (16 bytes).
@@ -71,12 +81,23 @@ pub unsafe fn grow_raw(header_ptr: *mut u8, stride: usize, new_max: i32) -> Resu
     }
 
     let new_size = (new_max as usize) * stride;
-    let layout = std::alloc::Layout::from_size_align(new_size, 16)
-        .map_err(|e| format!("bad layout: {e}"))?;
-    let new_ptr = unsafe { std::alloc::alloc_zeroed(layout) };
-    if new_ptr.is_null() {
-        return Err("allocation failed".into());
-    }
+    // The ENGINE's allocator, never Rust's. This buffer is handed
+    // to an engine TArray, so the engine will realloc and free it
+    // later. A Rust-heap pointer survives until that moment and
+    // then kills the process:
+    //
+    //   FMallocBinned2 Attempt to realloc an unrecognized block
+    //   canary == 0x65 != 0xe3
+    //
+    // which surfaced as a crash on disconnect, long after the
+    // growth that caused it. There is deliberately no fallback to
+    // std::alloc: growing with the wrong allocator is worse than
+    // not growing.
+    let new_ptr = crate::ue::gmalloc::alloc_zeroed(
+        new_size,
+        crate::ue::gmalloc::DEFAULT_ALIGNMENT,
+    )
+    .ok_or("TArray grow: engine allocator (GMalloc) unavailable")?;
 
     let old_bytes = (old_num as usize) * stride;
     if !old_ptr.is_null() && old_bytes > 0 {

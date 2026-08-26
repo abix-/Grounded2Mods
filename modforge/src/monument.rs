@@ -18,8 +18,8 @@
 use glam::Vec3;
 
 use crate::structure::{
-    Aabb, Gate, LightSpec, LootSpot, MonumentDef, MonumentMember, NpcSpot, Opening, Rgb,
-    RoomSpec, SLAB, STEP_DEPTH, STEP_RISE_MAX, Side, SolidSpec, StairSpec, StructureDef,
+    Aabb, Gate, LightDef, LootSpot, MonumentDef, MonumentMember, NpcSpot, Opening, Rgb,
+    RoomDef, SLAB, STEP_DEPTH, STEP_RISE_MAX, Side, SolidDef, StairDef, StructureDef,
     room_interior_aabb, validate,
 };
 use crate::unknown::rng;
@@ -327,7 +327,7 @@ pub fn generate_building(def: &BuildingTypeDef, roll: &mut Roll) -> StructureDef
                     }
                 }
                 let origin = Vec3::new(x, y, z);
-                rooms.push(RoomSpec {
+                rooms.push(RoomDef {
                     origin,
                     interior: Vec3::new(w, height, l),
                     wall_thickness: WALL,
@@ -350,14 +350,14 @@ pub fn generate_building(def: &BuildingTypeDef, roll: &mut Roll) -> StructureDef
                     let sz = (l / 2.0 - size.z / 2.0 - 0.2).max(0.0);
                     let dx = sx * if roll.chance(500) { 1.0 } else { -1.0 } * roll.measure(0.6, 1.0);
                     let dz = sz * if roll.chance(500) { 1.0 } else { -1.0 } * roll.measure(0.6, 1.0);
-                    furniture.push(SolidSpec {
+                    furniture.push(SolidDef {
                         center: origin + Vec3::new(dx, size.y / 2.0, dz),
                         size,
                         color: *roll.pick(&p.palette),
                     });
                 }
                 if (front && floor == 0) || roll.chance(p.lights) {
-                    lights.push(LightSpec {
+                    lights.push(LightDef {
                         position: origin + Vec3::new(0.0, height - 0.4, 0.0),
                         color: [1.0, 0.9, 0.7],
                         intensity: 400_000.0,
@@ -399,7 +399,7 @@ pub fn generate_building(def: &BuildingTypeDef, roll: &mut Roll) -> StructureDef
                 door: false,
             });
         }
-        rooms.push(RoomSpec {
+        rooms.push(RoomDef {
             origin: Vec3::new(stairwell_x, bottom, tower_z),
             interior: Vec3::new(STAIRWELL_WIDTH, total, length),
             wall_thickness: WALL,
@@ -412,7 +412,7 @@ pub fn generate_building(def: &BuildingTypeDef, roll: &mut Roll) -> StructureDef
             // The landing slab every level stands on at its doorway
             // (the bottom level has the tower's own floor).
             if level > -basements {
-                furniture.push(SolidSpec {
+                furniture.push(SolidDef {
                     center: Vec3::new(stairwell_x, y - SLAB / 2.0, tower_z + slab_centre_local),
                     size: Vec3::new(STAIRWELL_WIDTH, SLAB, slab_depth),
                     color: floor_color,
@@ -422,7 +422,7 @@ pub fn generate_building(def: &BuildingTypeDef, roll: &mut Roll) -> StructureDef
                 // Up flight: east lane, from the slab's north edge to
                 // the half landing.
                 let up_base_z = tower_z + south_wall - slab_depth;
-                stairs.push(StairSpec {
+                stairs.push(StairDef {
                     base: Vec3::new(east_lane, y, up_base_z),
                     side: Side::North,
                     width: STAIR_WIDTH,
@@ -432,7 +432,7 @@ pub fn generate_building(def: &BuildingTypeDef, roll: &mut Roll) -> StructureDef
                 // The half landing spans both lanes so the turn is
                 // walkable.
                 let half_top = up_base_z - run;
-                furniture.push(SolidSpec {
+                furniture.push(SolidDef {
                     center: Vec3::new(
                         stairwell_x,
                         y + height / 2.0 - SLAB / 2.0,
@@ -443,7 +443,7 @@ pub fn generate_building(def: &BuildingTypeDef, roll: &mut Roll) -> StructureDef
                 });
                 // Return flight: west lane, from the half landing's
                 // south edge back south to the next level's slab.
-                stairs.push(StairSpec {
+                stairs.push(StairDef {
                     base: Vec3::new(west_lane, y + height / 2.0, half_top),
                     side: Side::South,
                     width: STAIR_WIDTH,
@@ -451,7 +451,7 @@ pub fn generate_building(def: &BuildingTypeDef, roll: &mut Roll) -> StructureDef
                     landing: 0.1,
                 });
             }
-            lights.push(LightSpec {
+            lights.push(LightDef {
                 position: Vec3::new(stairwell_x, y + height - 0.4, tower_z),
                 color: [1.0, 0.9, 0.7],
                 intensity: 300_000.0,
@@ -564,7 +564,7 @@ pub struct BuildingSlot {
 /// A prop a monument type scatters around its origin on every roll:
 /// size, colour, how many of them, and how far out they stand.
 #[derive(Clone, Debug, PartialEq)]
-pub struct PropSpec {
+pub struct PropDef {
     pub size: Vec3,
     pub color: Rgb,
     pub count: (u32, u32),
@@ -589,7 +589,7 @@ pub struct MonumentTypeDef {
     /// Least distance from another site of any type when worldgen
     /// places it; and how much ground is pressed flat under it.
     pub spacing: f32,
-    pub props: Vec<PropSpec>,
+    pub props: Vec<PropDef>,
     /// What the site is good for to a person who knows it (life.md):
     /// a camp for rest and safety. Its boxes are good for food on
     /// their own.
@@ -785,7 +785,7 @@ impl MonumentRegistry {
 
 /// The back room of a building: the last ground-floor room of its
 /// grid (the far corner from the front door), never the stairwell.
-pub fn back_room(structure: &StructureDef) -> &RoomSpec {
+pub fn back_room(structure: &StructureDef) -> &RoomDef {
     let height = structure.rooms[0].interior.y;
     structure
         .rooms
@@ -798,7 +798,7 @@ pub fn back_room(structure: &StructureDef) -> &RoomSpec {
 /// Where the back room's gate goes: the centre of its west wall if
 /// a neighbour's door is there, else its south wall's, else none
 /// (a one-room building has no back room to gate).
-fn gate_wall(back: &RoomSpec) -> Option<Vec3> {
+fn gate_wall(back: &RoomDef) -> Option<Vec3> {
     let t = back.wall_thickness;
     let doorway = |side| {
         back.openings
@@ -1079,7 +1079,7 @@ mod tests {
                 gated: false,
                 suffix: "Wreck".into(),
                 spacing: 60.0,
-                props: vec![PropSpec {
+                props: vec![PropDef {
                     size: Vec3::new(4.0, 1.4, 1.8),
                     color: [0.4, 0.2, 0.15],
                     count: (1, 3),
@@ -1173,7 +1173,7 @@ mod tests {
                 // Every room reaches every neighbour: a doorway east
                 // to the room beside it, north to the room behind it,
                 // each authored on both sides.
-                let touching = |a: &RoomSpec, b: &RoomSpec, side: Side| {
+                let touching = |a: &RoomDef, b: &RoomDef, side: Side| {
                     let d = b.origin - a.origin;
                     match side {
                         Side::East => d.z.abs() < 1e-3 && d.x > 0.0 && d.x < a.interior.x + b.interior.x,
