@@ -18,12 +18,9 @@
 //! world composts into places nobody authored.
 
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use modforge::monument::Roll;
-use modforge::structure::{CONCRETE_FLOOR, CONCRETE_WALL, Library, StructureDef};
-use modforge::worldgen::{Seen, point_in_cell};
+use modforge::monument::{PiecePlacer, PlaceSource, TakeAndBuild};
 
 use crate::dispatch;
 
@@ -50,55 +47,67 @@ const EDGE_MARGIN_CM: f64 = 1500.0;
 const SESSION_PIECE_CAP: u64 = 1500;
 const POLL: Duration = Duration::from_secs(5);
 
-/// What has been captured so far. The bounded store and the
-/// random draw are modforge's (`structure::Library`); this only
-/// holds one.
-static LIBRARY: Mutex<Option<Library>> = Mutex::new(None);
-static PIECES_SPAWNED: AtomicU64 = AtomicU64::new(0);
-static MONUMENTS_BUILT: AtomicU64 = AtomicU64::new(0);
-static STRUCTURES_CAPTURED: AtomicU64 = AtomicU64::new(0);
+/// MISERY's answers to what `TakeAndBuild` asks: which squares
+/// are loaded, how big a square is, what is in one, how high the
+/// ground is, and put these pieces in the world.
+///
+/// The last two are Unreal's and come from `UePlacer`; the first
+/// three are this game's. Everything decided FROM the answers
+/// lives in modforge.
+struct MiserySquares(ueforge::ue::pieces::UePlacer);
 
-/// Take up to STRUCTURES_PER_SQUARE structures from a square into
-/// the library, preferring the meatier ones.
-fn donate(square: &str) {
-    let pieces = ueforge::ue::pieces::read_level(square, &[]);
-    if pieces.is_empty() {
-        return;
+impl PiecePlacer for MiserySquares {
+    fn ground_at(&self, x: f64, y: f64) -> Option<f64> {
+        self.0.ground_at(x, y)
     }
-    // Grouping, naming and keeping the biggest are all modforge's,
-    // where they are unit-tested. What is MISERY's here is only
-    // the numbers.
-    let found = modforge::structure::capture(
-        square,
-        &pieces,
-        STRUCTURE_RADIUS_M as f32,
-        STRUCTURE_MIN_PIECES,
-        STRUCTURE_MAX_PIECES,
-        CONCRETE_WALL,
-        CONCRETE_FLOOR,
-    );
-    if found.is_empty() {
-        return;
+    fn spawn(
+        &self,
+        pieces: &[modforge::structure::PieceDef],
+        at: (f64, f64, f64),
+        turn_deg: f64,
+        limit: usize,
+    ) -> modforge::monument::Placed {
+        self.0.spawn(pieces, at, turn_deg, limit)
     }
-    let mut guard = LIBRARY.lock().unwrap_or_else(|e| e.into_inner());
-    let lib = guard.get_or_insert_with(|| Library::new(LIBRARY_CAP));
-    let taken = lib.add_best(found, STRUCTURES_PER_SQUARE);
-    let total = lib.len();
-    drop(guard);
-    STRUCTURES_CAPTURED.fetch_add(taken as u64, Ordering::Relaxed);
-    ueforge::log::log(format_args!(
-        "places: {square} donated {taken} structure(s), library now {total}"
-    ));
 }
 
-/// Draw the members of one monument. Repeats are allowed: the
-/// same building twice reads as a settlement that grew.
-fn draw_members() -> Vec<StructureDef> {
-    let guard = LIBRARY.lock().unwrap_or_else(|e| e.into_inner());
-    guard
-        .as_ref()
-        .map(|lib| lib.draw_between(MEMBERS_PER_MONUMENT.0, MEMBERS_PER_MONUMENT.1))
-        .unwrap_or_default()
+impl PlaceSource for MiserySquares {
+    fn live_places(&self) -> Vec<(String, i32, i32)> {
+        crate::strange::live_squares()
+    }
+    fn cell_size(&self) -> Option<f64> {
+        crate::strange::active_tile_size()
+    }
+    fn read_pieces(&self, place: &str) -> Vec<modforge::structure::PieceDef> {
+        ueforge::ue::pieces::read_level(place, &[])
+    }
+}
+
+fn squares() -> MiserySquares {
+    MiserySquares(ueforge::ue::pieces::UePlacer {
+        up: crate::TRACE_UP,
+        down: crate::TRACE_DOWN,
+    })
+}
+
+/// The one instance. Its numbers are MISERY's; everything it
+/// does with them is modforge's.
+static TAKER: Mutex<Option<TakeAndBuild>> = Mutex::new(None);
+
+fn with_taker<T>(f: impl FnOnce(&mut TakeAndBuild) -> T) -> T {
+    let mut guard = TAKER.lock().unwrap_or_else(|e| e.into_inner());
+    let taker = guard.get_or_insert_with(|| {
+        let mut t = TakeAndBuild::new(LIBRARY_CAP);
+        t.radius = STRUCTURE_RADIUS_M as f32;
+        t.piece_range = (STRUCTURE_MIN_PIECES, STRUCTURE_MAX_PIECES);
+        t.per_place = STRUCTURES_PER_SQUARE;
+        t.build_chance = BUILD_CHANCE;
+        t.members = MEMBERS_PER_MONUMENT;
+        t.margin = EDGE_MARGIN_CM;
+        t.piece_budget = SESSION_PIECE_CAP;
+        t
+    });
+    f(taker)
 }
 
 pub fn install() {
@@ -114,127 +123,43 @@ pub fn install() {
     ));
 }
 
-/// Squares already given a chance at a monument. Lives outside
-/// the tick because the worker calls back per interval.
-static SEEN: Mutex<Option<Seen>> = Mutex::new(None);
-
 fn watcher() {
-    let mut guard = SEEN.lock().unwrap_or_else(|e| e.into_inner());
-    let seen = guard.get_or_insert_with(Seen::new);
-    {
-        if ueforge::ue::try_runtime().is_none() {
-            return;
-        }
-        let squares = crate::strange::live_squares();
-        // Forget squares that unloaded, so one that comes back
-        // counts as new again.
-        seen.forget_gone(squares.iter().map(|(n, _, _)| n.as_str()));
-
-        let Some(tile) = crate::strange::active_tile_size() else { return };
-        for (name, cx, cy) in squares {
-            if !seen.is_new(&name) {
-                continue;
-            }
-
-            // Every square first gives, then may receive.
-            donate(&name);
-
-            if PIECES_SPAWNED.load(Ordering::Relaxed) >= SESSION_PIECE_CAP {
-                continue;
-            }
-            if fastrand::f64() >= BUILD_CHANCE {
-                continue;
-            }
-            let members = draw_members();
-            if members.is_empty() {
-                continue;
-            }
-            let mut roll = Roll::new(modforge::monument::seed_from_position(
-                cx as f64 * tile,
-                cy as f64 * tile,
-            ));
-            let centre = point_in_cell((cx, cy), tile, EDGE_MARGIN_CM, &mut roll);
-            let sources: Vec<&str> = members.iter().map(|s| s.name.as_str()).collect();
-            ueforge::log::log(format_args!(
-                "places: monument in {name} from {} structure(s) {sources:?}",
-                members.len()
-            ));
-            // `run`, not `enqueue`: this watcher already runs ON
-            // the game thread, and queueing from there waits for
-            // a drain that cannot start until we return.
-            let r = ueforge::game_thread::run(
-                move || build_monument(members, centre),
-                Duration::from_secs(30),
-            );
-            if let Err(e) = r {
-                ueforge::log::log(format_args!("places: monument failed: {e}"));
-            }
-        }
+    if ueforge::ue::try_runtime().is_none() {
+        return;
     }
-}
-
-/// Game thread. Put one monument in the world.
-///
-/// Finding the ground, laying the buildings out and spawning the
-/// pieces is `ueforge::ue::pieces::place_monument`. What is
-/// MISERY's here is the session budget, this game's trace range,
-/// and the counters.
-fn build_monument(
-    members: Vec<StructureDef>,
-    centre: (f64, f64),
-) -> Result<serde_json::Value, String> {
-    let remaining = SESSION_PIECE_CAP.saturating_sub(PIECES_SPAWNED.load(Ordering::Relaxed));
-    if remaining == 0 {
-        return Err("session piece cap reached".into());
+    let source = squares();
+    let report = with_taker(|t| t.tick(&source));
+    if report.monuments_built > 0 || report.structures_taken > 0 {
+        ueforge::log::log(format_args!(
+            "places: {} place(s), took {} structure(s), built {} monument(s), {} piece(s)",
+            report.places_considered,
+            report.structures_taken,
+            report.monuments_built,
+            report.pieces_placed,
+        ));
     }
-    let placer = ueforge::ue::pieces::UePlacer {
-        up: crate::TRACE_UP,
-        down: crate::TRACE_DOWN,
-    };
-    let out = modforge::monument::place_monument(
-        &placer,
-        members,
-        centre.0,
-        centre.1,
-        fastrand::f64() * 360.0,
-        remaining as usize,
-    )?;
-    PIECES_SPAWNED.fetch_add(out.placed as u64, Ordering::Relaxed);
-    MONUMENTS_BUILT.fetch_add(1, Ordering::Relaxed);
-    ueforge::log::log(format_args!(
-        "places: monument placed {} piece(s), {:?}",
-        out.placed, out.arrangement
-    ));
-    Ok(serde_json::json!({
-        "placed": out.placed,
-        "failed": out.failed,
-        "arrangement": format!("{:?}", out.arrangement),
-    }))
 }
 
 fn register_ops() {
     ueforge::ops::OP_REGISTRY.register_many([
         ueforge::ops::OpDef::new("places_stats", "Captured structures and monuments", "{}", |_a| {
-            let guard = LIBRARY.lock().unwrap_or_else(|e| e.into_inner());
-            let held: &[StructureDef] = guard.as_ref().map(|l| l.items()).unwrap_or(&[]);
-            Ok(serde_json::json!({
-                "library_structures": held.len(),
-                "structure_sizes": held.iter().map(|s| s.pieces.len()).collect::<Vec<_>>(),
-                "sources": held.iter().map(|s| s.name.clone()).collect::<Vec<_>>(),
-                "structures_captured": STRUCTURES_CAPTURED.load(Ordering::Relaxed),
-                "monuments_built": MONUMENTS_BUILT.load(Ordering::Relaxed),
-                "pieces_spawned": PIECES_SPAWNED.load(Ordering::Relaxed),
-            }))
+            with_taker(|t| {
+                let held = t.library().items();
+                Ok(serde_json::json!({
+                    "library_structures": held.len(),
+                    "structure_sizes": held.iter().map(|s| s.pieces.len()).collect::<Vec<_>>(),
+                    "sources": held.iter().map(|s| s.name.clone()).collect::<Vec<_>>(),
+                    "structures_captured": t.structures_captured(),
+                    "monuments_built": t.monuments_built(),
+                    "pieces_spawned": t.pieces_placed(),
+                }))
+            })
         }),
         ueforge::ops::OpDef::new(
             "build_monument_here",
             "Build one generated monument at the player (testing)",
             "{}",
             |_a| {
-                let members = draw_members();
-                if members.is_empty() {
-                    return Err("library is empty; walk a square first".into());
-                }
                 dispatch::DRAIN.queue().enqueue(
                     move || {
                         let player = ueforge::ue::actor::find_actors_by_chain(
@@ -248,7 +173,15 @@ fn register_ops() {
                             ueforge::ue::transform::world_location(player)
                         }
                         .ok_or("no location")?;
-                        build_monument(members, (here.0, here.1))
+                        let source = squares();
+                        let out = with_taker(|t| {
+                            t.build_one(&source, here.0, here.1, fastrand::f64() * 360.0)
+                        })?;
+                        Ok(serde_json::json!({
+                            "placed": out.placed,
+                            "failed": out.failed,
+                            "arrangement": format!("{:?}", out.arrangement),
+                        }))
                     },
                     Duration::from_secs(30),
                 )
