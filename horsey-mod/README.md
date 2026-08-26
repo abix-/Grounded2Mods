@@ -15,11 +15,16 @@ via an injector EXE that `CreateRemoteThread`s a `LoadLibraryW` on
 | Fresh-launch DLL injection | implemented |
 | HTTP control plane on `127.0.0.1:33077` | implemented, localhost only, no auth |
 | Runtime target registry and structural validation | implemented, hardening continues |
+| Game-state snapshot, money, year, sleep, and cheat controls | implemented |
+| Horse roster discovery and field editing | implemented |
 | Sleep-safe no-tire patch | implemented and enabled at attach |
 | In-game horse and genome overlay | implemented |
 | Synthetic input surface | partially implemented |
-| Extended-gene hooks and XML content | partially implemented |
+| Vanilla and extended allele read/write operations | implemented |
+| Extended-gene XML content loading | implemented |
+| Extended-gene evaluation, lifecycle, combinator, and render hooks | partially implemented |
 | Save sidecar hooks | implemented but unsafe to arm on the current build |
+| Scene discovery and horse-transfer automation | research stage |
 
 ## What you get out of the box
 

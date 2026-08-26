@@ -14,11 +14,24 @@ skills, survival tweaks, and expanded inventory.
 
 | Feature | Rating |
 |---|---:|
-| [RPG skill system](docs/rpg.md) (14 skills, kill XP, per-slot persistence) | 7/10 |
-| [Damage pipeline](docs/damage.md) (damage, armor, fall, impact, lifesteal) | 6/10 |
-| [Backpack expansion](docs/inventory.md) (slot count, mouse-wheel scroll) | 8/10 |
-| [Gameplay settings](docs/features.md) (hunger and thirst multipliers) | 8/10 |
-| ImGui RPG and engine-inspection tabs | 6/10 |
+| [Backpack skill](docs/inventory.md) (expanded capacity and mouse-wheel scrolling) | 8/10 |
+| [Hunger skill](docs/rpg.md) (reduced hunger drain) | 8/10 |
+| [Thirst skill](docs/rpg.md) (reduced thirst drain) | 8/10 |
+| [Attack Damage skill](docs/rpg.md) | 7/10 |
+| [Armor skill](docs/damage.md) | 7/10 |
+| [Move Speed skill](docs/rpg.md) | 7/10 |
+| [Jump Height skill](docs/rpg.md) | 7/10 |
+| [Leap Distance skill](docs/rpg.md) | 6/10 |
+| [Glide Speed skill](docs/rpg.md) | 6/10 |
+| [Fall Resistance skill](docs/damage.md) | 6/10 |
+| [Impact Resistance skill](docs/damage.md) | 4/10 |
+| [Lifesteal skill](docs/damage.md) | 4/10 |
+| [Max Health skill](docs/rpg.md) | 6/10 |
+| [Health Regeneration skill](docs/rpg.md) | 6/10 |
+| [Kill XP and levelling](docs/rpg.md) | 7/10 |
+| [Per-playthrough persistence](docs/rpg.md) | 7/10 |
+| [Runtime hunger, thirst, and inventory settings](docs/features.md) | 8/10 |
+| ImGui RPG, table, class, and struct tabs | 6/10 |
 | Optional HTTP control plane on port 17171 | 9/10 |
 
 ## Build

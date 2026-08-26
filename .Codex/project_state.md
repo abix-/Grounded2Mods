@@ -59,7 +59,9 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 - Replaced the root architecture-heavy introduction with a one-sentence description of the toolkit.
 - Moved both introductory sentences above a Mermaid dependency graph of Modforge, its engine layers, and current consumers.
 - Removed the redundant framework wrapper and promoted each framework capability table to its own root section.
-- Audited all nine game-mod READMEs against current source and status documents, preserved the feature/rating tables, corrected stale feature claims, and replaced private `k3sc` build examples with public `cargo`, `dotnet`, script, or no-build guidance.
+- Replaced private `k3sc` build examples in all nine game-mod READMEs with public `cargo`, `dotnet`, script, or no-build guidance.
+- Corrected the game-mod feature inventories after the first README pass summarized systems too aggressively. Expanded Grounded 2, MISERY, Schedule 1, Survivalist, WWM, Horsey, and Scrap Mechanic against their current source while preserving each existing table format.
+- Corrected Scrap Mechanic's README to describe its loadable `BetterSurvival` custom game instead of incorrectly calling the directory research-only.
 
 ## Next steps
 

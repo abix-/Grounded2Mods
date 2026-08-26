@@ -36,10 +36,16 @@ Copy both DLLs into the MelonLoader mods directory:
 
 | Feature | Rating |
 |---|---:|
-| [Combat-XP levelling](docs/status.md) (persistence, auto-spend, Heavy Hands) | 7/10 |
-| [Cash loot drops](docs/status.md) (kill credit and toughness scaling) | 6/10 |
-| [Mob farming areas](docs/status.md) (regional garrisons and rolled mob types) | 2/10 |
-| [Faction war](docs/status.md) (influence loss and takeover groundwork) | 3/10 |
+| [Combat kill credit](docs/status.md) (recent-player-hit attribution with downing deduplication) | 10/10 |
+| [Combat XP and levelling](docs/status.md) | 7/10 |
+| [Heavy Hands](docs/status.md) (persistent punch-damage skill with auto-spend) | 7/10 |
+| [Per-save RPG persistence](docs/status.md) | 7/10 |
+| [Toughness-scaled cash drops](docs/status.md) | 6/10 |
+| [Persistent regional garrisons](docs/status.md) | 2/10 |
+| [Rolled mob types](docs/status.md) (tough, armed, and veteran) | 2/10 |
+| [Cartel influence loss](docs/status.md) (garrison deaths weaken the region) | 3/10 |
+| [Region takeover trigger](docs/status.md) | 3/10 |
+| [Combat event tracing](docs/research.md) | 9/10 |
 | HTTP research and control plane on port 17175 | 10/10 |
 
 ## Documentation

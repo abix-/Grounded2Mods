@@ -9,7 +9,16 @@ into the game by the `Unityforge.Shim.Mono` BepInEx plugin.
 |---|---:|
 | Demo boundary removal | 2/10 |
 | Spacebar jump | 2/10 |
-| Experimental six-skill RPG catalog with XP and persistence | 3/10 |
+| Quick Pickaxe skill (live-verified dig-range increase) | 5/10 |
+| Strong Back skill (catalogued, awaiting game-skill proxy) | 2/10 |
+| Greedy Miner skill (catalogued, target needs in-save verification) | 2/10 |
+| Charisma skill (catalogued, target under research) | 1/10 |
+| Resilient skill (catalogued, target under research) | 1/10 |
+| Lucky skill (catalogued placeholder) | 1/10 |
+| Digging and currency XP hooks | 3/10 |
+| Per-save RPG persistence | 5/10 |
+| Skill spend, refund, toggle, and point controls | 5/10 |
+| Declarative RPG tab | 3/10 |
 | HTTP control plane on port 17172 | 9/10 |
 
 ## Status
