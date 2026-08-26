@@ -20,7 +20,7 @@ use glam::Vec3;
 use crate::structure::{
     Aabb, Gate, LightDef, LootSpot, MonumentDef, MonumentMember, NpcSpot, Opening, Rgb,
     RoomDef, SLAB, STEP_DEPTH, STEP_RISE_MAX, Side, SolidDef, StairDef, StructureDef,
-    room_interior_aabb, validate,
+    PieceDef, room_interior_aabb, validate,
 };
 use crate::unknown::rng;
 
@@ -814,6 +814,67 @@ fn gate_wall(back: &RoomDef) -> Option<Vec3> {
     }
 }
 
+/// A laid-out monument: which rule was used, and every piece of
+/// every building already shifted to where it belongs.
+///
+/// One flat list, because a consumer places pieces, not
+/// buildings. Offsets are relative to the monument's own middle,
+/// so the whole thing can be put down anywhere.
+#[derive(Clone, Debug)]
+pub struct BuiltMonument {
+    pub arrangement: Arrangement,
+    pub pieces: Vec<PieceDef>,
+}
+
+/// Lay out buildings into one piece list, choosing the
+/// arrangement from where the monument stands.
+///
+/// The same spot always produces the same layout and a different
+/// spot a different one, because the roll is seeded from the
+/// position. That matters for a world that streams: a place has
+/// to look the same when you come back to it, and nothing is
+/// stored to make that true.
+///
+/// `x` and `z` are the monument's position on the ground plane,
+/// in whatever units the caller thinks in; they are only used to
+/// seed the roll.
+pub fn build_at(buildings: Vec<StructureDef>, x: f64, z: f64) -> BuiltMonument {
+    let mut roll = Roll::new(seed_from_position(x, z));
+    let arrangement = *roll.pick(&[
+        Arrangement::Clustered,
+        Arrangement::AroundYard,
+        Arrangement::AlongRoad,
+    ]);
+    let members = arrange(buildings, arrangement, &mut roll);
+
+    // Flatten: every building's pieces shifted by where the
+    // arrangement put that building.
+    let mut pieces = Vec::new();
+    for m in &members {
+        for p in &m.structure.pieces {
+            pieces.push(PieceDef {
+                offset: p.offset + m.offset,
+                ..p.clone()
+            });
+        }
+    }
+    BuiltMonument {
+        arrangement,
+        pieces,
+    }
+}
+
+/// A seed from a place, so the same place rolls the same layout.
+///
+/// Positions are signed and often large, so the halves are mixed
+/// rather than added: `(1000, 2000)` and `(2000, 1000)` must not
+/// seed the same world.
+pub fn seed_from_position(x: f64, z: f64) -> u64 {
+    let a = (x.abs() as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    let b = (z.abs() as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F);
+    a ^ b.rotate_left(32)
+}
+
 /// Place buildings by the rule on city-block cells sized to the
 /// largest footprint plus a gap, so no two can overlap at any count.
 /// Clustered: a compact grid of blocks around the origin. Around a
@@ -914,6 +975,100 @@ pub fn validate_monument(def: &MonumentDef) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A structure made only of loose pieces, as a captured one
+    /// is: no rooms, no stairs, just parts at offsets.
+    fn pieced(name: &str, n: usize) -> StructureDef {
+        StructureDef {
+            name: name.into(),
+            wall_color: [0.5, 0.5, 0.5],
+            floor_color: [0.3, 0.3, 0.3],
+            rooms: Vec::new(),
+            stairs: Vec::new(),
+            furniture: Vec::new(),
+            lights: Vec::new(),
+            pieces: (0..n)
+                .map(|i| PieceDef {
+                    class: "part".into(),
+                    asset: None,
+                    offset: Vec3::new(i as f32, 0.0, 0.0),
+                    yaw: 0.0,
+                    pitch: 0.0,
+                    roll: 0.0,
+                    scale: 1.0,
+                    extent: Vec3::new(0.5, 1.0, 0.5),
+                })
+                .collect(),
+        }
+    }
+
+    /// A place must look the same when you come back to it, and
+    /// nothing is stored to make that true.
+    #[test]
+    fn the_same_spot_builds_the_same_monument() {
+        let a = build_at(vec![pieced("a", 3), pieced("b", 4)], 1200.0, -800.0);
+        let b = build_at(vec![pieced("a", 3), pieced("b", 4)], 1200.0, -800.0);
+        assert_eq!(a.arrangement, b.arrangement);
+        assert_eq!(a.pieces.len(), b.pieces.len());
+        for (p, q) in a.pieces.iter().zip(b.pieces.iter()) {
+            assert_eq!(p.offset, q.offset);
+        }
+    }
+
+    #[test]
+    fn a_different_spot_builds_a_different_monument() {
+        let a = build_at(vec![pieced("a", 3), pieced("b", 4)], 1200.0, -800.0);
+        let b = build_at(vec![pieced("a", 3), pieced("b", 4)], 9000.0, 4000.0);
+        let same = a.arrangement == b.arrangement
+            && a.pieces
+                .iter()
+                .zip(b.pieces.iter())
+                .all(|(p, q)| p.offset == q.offset);
+        assert!(!same, "two distant places produced the same layout");
+    }
+
+    /// Mirrored coordinates must not seed the same world, which a
+    /// naive add or xor of the halves would do.
+    #[test]
+    fn swapped_coordinates_seed_differently() {
+        assert_ne!(
+            seed_from_position(1000.0, 2000.0),
+            seed_from_position(2000.0, 1000.0)
+        );
+    }
+
+    #[test]
+    fn every_piece_of_every_building_comes_out() {
+        let built = build_at(vec![pieced("a", 3), pieced("b", 4), pieced("c", 5)], 0.0, 0.0);
+        assert_eq!(built.pieces.len(), 12);
+    }
+
+    /// Buildings are moved apart by the arrangement, so they
+    /// cannot all still sit on top of each other.
+    ///
+    /// Across the whole ground plane, not one axis: `AlongRoad`
+    /// separates pairs across a street running east, so two
+    /// buildings under that rule differ in z and not in x.
+    #[test]
+    fn buildings_are_spread_not_stacked() {
+        let built = build_at(vec![pieced("a", 2), pieced("b", 2)], 0.0, 0.0);
+        let span = |f: fn(&PieceDef) -> f32| {
+            let v: Vec<f32> = built.pieces.iter().map(f).collect();
+            v.iter().cloned().fold(f32::MIN, f32::max) - v.iter().cloned().fold(f32::MAX, f32::min)
+        };
+        let ground = span(|p| p.offset.x).max(span(|p| p.offset.z));
+        assert!(
+            ground > 1.0,
+            "{:?} spread the pieces only {ground} across the ground",
+            built.arrangement
+        );
+    }
+
+    #[test]
+    fn nothing_in_builds_nothing_out() {
+        let built = build_at(Vec::new(), 0.0, 0.0);
+        assert!(built.pieces.is_empty());
+    }
 
     fn building(
         name: &str,

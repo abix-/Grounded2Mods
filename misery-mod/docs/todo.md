@@ -23,13 +23,20 @@ changelog, all marked done:
 - `ueforge::ue::transform`: `loaded_meshes` (every loaded mesh by
   name), `mesh_bounds` (a mesh's marker offset and half-size),
   `set_actor_mesh`, and reading an actor's transform
-- `modforge::structure::PieceDef::placed_at`: where a piece lands
-  when its set is placed somewhere and turned
+- `ueforge::ue::pieces`: read a level's actors as pieces, measure
+  meshes, put pieces back, and the ONE conversion between
+  Unreal's numbers and modforge's. Endpoints included
+- `modforge::structure`: `PieceDef::placed_at`, `group_nearby`
+  (cut a loose heap of pieces into things that stand together),
+  `Library` (a bounded collection to draw from)
+- `modforge::monument::build_at`: choose an arrangement seeded by
+  WHERE it stands, lay the buildings out, flatten them into one
+  piece list. The same spot always builds the same monument
 
-`mesh_info` and harvest were misery's; their engine and maths
-halves are now in ueforge and modforge (2026-08-26). Harvest
-itself is OFF: reading a live square and rebuilding it elsewhere
-copies the designers' work, which is not the goal.
+`harvest.rs` is DELETED (2026-08-26): every part of it was
+generic and is now in ueforge, endpoints included. `places.rs` is
+344 to 286 lines with its reusable halves extracted; what remains
+is its own numbers and the take-and-scatter loop, which is off.
 
 The asset registry answers an HTTP request and the answer is
 thrown away: nothing in the mod calls `assets_of_class`. The

@@ -22,7 +22,6 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use modforge::monument::{Arrangement, Roll, arrange};
 use modforge::structure::{CONCRETE_FLOOR, CONCRETE_WALL, Library, PieceDef, StructureDef};
 
 use crate::dispatch;
@@ -207,56 +206,38 @@ fn build_monument(
     else {
         return Err("no ground under the monument".into());
     };
-    // A seed from the spot itself: the same place rolls the same
-    // layout, different places differ.
-    let seed = (centre.0.abs() as u64) << 20 ^ (centre.1.abs() as u64);
-    let mut roll = Roll::new(seed);
-    let arrangement = *roll.pick(&[
-        Arrangement::Clustered,
-        Arrangement::AroundYard,
-        Arrangement::AlongRoad,
-    ]);
-    let turn = fastrand::f64() * 360.0;
-    let placed_members = arrange(members, arrangement, &mut roll);
-
-    let mut placed = 0usize;
-    for member in &placed_members {
-        if PIECES_SPAWNED.load(Ordering::Relaxed) >= SESSION_PIECE_CAP {
-            break;
-        }
-        // Shift each piece by where the arrangement put its
-        // member, staying in modforge's space throughout.
-        let pieces: Vec<PieceDef> = member
-            .structure
-            .pieces
-            .iter()
-            .map(|p| PieceDef {
-                offset: p.offset + member.offset,
-                ..p.clone()
-            })
-            .collect();
-        let player = ueforge::ue::actor::find_actors_by_chain("BP_SGKMasterCharacter_C")
-            .into_iter()
-            .next()
-            .ok_or("no player")?;
-        // SAFETY: player is a live actor, game thread.
-        let out = unsafe {
-            ueforge::ue::pieces::spawn(
-                player,
-                &pieces,
-                (centre.0, centre.1, z),
-                turn,
-                usize::MAX,
-            )
-        };
-        PIECES_SPAWNED.fetch_add(out.placed as u64, Ordering::Relaxed);
-        placed += out.placed;
+    // Choosing the rule, laying the buildings out, and flattening
+    // them into one piece list is modforge's (`build_at`), seeded
+    // by the spot so the same place always looks the same.
+    let built = modforge::monument::build_at(members, centre.0, centre.1);
+    let remaining = SESSION_PIECE_CAP.saturating_sub(PIECES_SPAWNED.load(Ordering::Relaxed));
+    if remaining == 0 {
+        return Err("session piece cap reached".into());
     }
+
+    let turn = fastrand::f64() * 360.0;
+    let world = ueforge::ue::actor::any_world_actor().ok_or("no level loaded")?;
+    // SAFETY: world came from the search above; game thread.
+    let out = unsafe {
+        ueforge::ue::pieces::spawn(
+            world,
+            &built.pieces,
+            (centre.0, centre.1, z),
+            turn,
+            remaining as usize,
+        )
+    };
+    PIECES_SPAWNED.fetch_add(out.placed as u64, Ordering::Relaxed);
     MONUMENTS_BUILT.fetch_add(1, Ordering::Relaxed);
     ueforge::log::log(format_args!(
-        "places: monument placed {placed} piece(s), {arrangement:?}"
+        "places: monument placed {} piece(s), {:?}",
+        out.placed, built.arrangement
     ));
-    Ok(serde_json::json!({"placed": placed, "arrangement": format!("{arrangement:?}")}))
+    Ok(serde_json::json!({
+        "placed": out.placed,
+        "failed": out.failed,
+        "arrangement": format!("{:?}", built.arrangement),
+    }))
 }
 
 fn register_ops() {
