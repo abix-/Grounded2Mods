@@ -101,6 +101,16 @@ struct CargoPackage {
     name: String,
     version: String,
     metadata: Option<serde_json::Value>,
+    #[serde(default)]
+    targets: Vec<CargoTarget>,
+}
+
+#[derive(Deserialize)]
+struct CargoTarget {
+    /// The `[lib] name`, which is what cargo writes the artifact
+    /// under. Never assume it matches the deployed filename.
+    name: String,
+    kind: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -155,10 +165,24 @@ fn read_mod_cfg(package: &str) -> Result<ModCfg> {
         .target_dir
         .map(|p| workspace_root.join(p))
         .unwrap_or_else(|| workspace_root.join("target").join(package));
+    // Cargo writes the artifact under the crate's `[lib] name`,
+    // which is NOT the deployed filename. UE4SS requires
+    // `main.dll` in the mod's dlls folder, but every mod in this
+    // workspace naming its lib `main` made them all write one
+    // file in a shared target dir, overwriting each other. Cargo
+    // then treated the losers as fresh and never rewrote it, so a
+    // deploy could ship a different game's mod. That crashed
+    // MISERY on 2026-08-26.
+    let lib_name = pkg
+        .targets
+        .iter()
+        .find(|t| t.kind.iter().any(|k| k == "cdylib"))
+        .map(|t| t.name.replace('-', "_"))
+        .unwrap_or_else(|| "main".to_string());
     let built_dll = target_dir
         .join("x86_64-pc-windows-msvc")
         .join("release")
-        .join("main.dll");
+        .join(format!("{lib_name}.dll"));
     let example_settings = u.example_settings.map(|p| workspace_root.join(p));
 
     let game_name_regex = Regex::new(&u.game_name_regex)

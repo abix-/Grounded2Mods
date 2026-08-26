@@ -13,9 +13,18 @@ publish.workspace = true
 # in docs/research.md.
 
 [lib]
-# Output is `main.dll`, dropped at
-# MISERY\MISERY\Binaries\Win64\ue4ss\Mods\MiseryMod\dlls\main.dll.
-name = "main"
+# Built as `misery_mod.dll`, DEPLOYED as
+# MISERY\MISERY\Binaries\Win64\ue4ss\Mods\MiseryMod\dlls\main.dll
+# (UE4SS requires that filename in the dlls folder).
+#
+# The build artifact must NOT be called `main`: grounded2-mod and
+# outworld-station-mod also build cdylibs, and when several crates
+# share one output name they overwrite each other in
+# target\<triple>\release. Cargo then treats this crate as fresh
+# and never rewrites the file, so a deploy ships whichever mod
+# happened to build last. That put the Grounded 2 mod into MISERY
+# on 2026-08-26 and crashed the game.
+name = "misery_mod"
 crate-type = ["cdylib", "rlib"]
 
 # Consumed by ueforge's ueforge-deploy bin.

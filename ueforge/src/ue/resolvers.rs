@@ -15,6 +15,7 @@
 
 use patternsleuth::resolvers::impl_try_collector;
 use patternsleuth::resolvers::unreal::fname::{FNamePool, FNameToString};
+use patternsleuth::resolvers::unreal::game_loop::UGameEngineTick;
 use patternsleuth::resolvers::unreal::gmalloc::GMalloc;
 use patternsleuth::resolvers::unreal::guobject_array::GUObjectArray;
 
@@ -30,6 +31,36 @@ impl_try_collector! {
         fname_to_string: FNameToString,
         gmalloc: GMalloc,
     }
+}
+
+impl_try_collector! {
+    /// `UGameEngine::Tick`, resolved on its own rather than as
+    /// part of [`UeResolution`]: the base offsets are required
+    /// for the mod to work at all, while this one is optional
+    /// and must be allowed to fail without taking init with it.
+    #[derive(Debug, PartialEq, Clone)]
+    struct TickResolution {
+        game_engine_tick: UGameEngineTick,
+    }
+}
+
+/// Absolute address of `UGameEngine::Tick`.
+///
+/// This is the same resolver UE4SS drives for its own EngineTick
+/// hook (`HookEngineTick = 1`, `EngineTickResolveMethod = Scan`).
+/// The address is what turns the engine's vtable into a slot
+/// index: find the slot holding it and that index is Tick's,
+/// with no per-game constant.
+///
+/// Absolute, not image-relative, because callers compare it
+/// against live vtable entries.
+pub fn resolve_game_engine_tick() -> Result<usize, String> {
+    let exe = patternsleuth::process::internal::read_image()
+        .map_err(|e| format!("patternsleuth: read_image failed: {e}"))?;
+    let resolution = exe
+        .resolve(TickResolution::resolver())
+        .map_err(|e| format!("patternsleuth: UGameEngine::Tick not found: {e}"))?;
+    Ok(resolution.game_engine_tick.0 as usize)
 }
 
 /// Image-relative offsets resolved via patternsleuth. Subtract

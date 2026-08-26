@@ -66,15 +66,7 @@ pub(crate) fn damage_ring_peak() -> usize {
 }
 
 const PE_TIMEOUT_HINT: &str =
-    "Is kill_hook firing? (Move around / take damage to drive multicast events.)";
-
-/// Called from `kill_hook`'s trampoline (game thread). Drain
-/// counters (calls / drained / peak / time_ns) are owned by
-/// `GameThread` itself; they appear in the snapshot via
-/// `PE_QUEUE.drain_calls()` etc.
-pub fn drain_pending() {
-    PE_QUEUE.drain();
-}
+    "Is the UEngine::Tick hook installed? (ueforge::game_thread::status)";
 
 /// Register every g2rpg op + selector into the workspace
 /// registries. Called once from `worker()` at init, BEFORE the
@@ -139,6 +131,12 @@ static HEALTH_BINDING: ueforge::rpg::health::HealthBinding =
 
 pub fn spawn(port: u16) {
     register_ops();
+    // Serve the queue from UEngine::Tick, every frame, world or
+    // no world. `drain_pending` from kill_hook / fall_hook stays
+    // as a lower-latency path, but it only fires on gameplay
+    // events: with the impact_resistance mask on, multicast drops
+    // to near zero and call ops used to time out waiting for it.
+    ueforge::game_thread::serve(&PE_QUEUE);
     ueforge::spawn(
         ueforge::Config {
             port,

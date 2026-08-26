@@ -12,6 +12,7 @@ pub mod debug;
 pub mod dispatch;
 pub mod gameplay;
 pub mod harvest;
+pub mod autoload;
 pub mod nag;
 pub mod places;
 pub mod rooms;
@@ -116,6 +117,9 @@ fn on_unreal_init() {
         // The notice is hidden properly now (nag.rs collapses the
         // widget on the game thread); no synthesised keypress.
         .once("nag", nag::install)
+        // Straight into the saved game on launch. Does nothing if
+        // no slot is set or the save is missing.
+        .once("autoload", autoload::install)
         .on_each_load("speed_default", Duration::from_secs(2),
             || ueforge::ue::actor::find_actor("BP_SGKMasterCharacter_C", None),
             |_| {

@@ -2227,6 +2227,36 @@ returns ok and does nothing. Filter on `/Engine/Transient`.
 Both `BP_HostNewGameServer` and `BP_HostLoadGameServer` are
 instances of the same class; only the name tells them apart.
 
+**Auto-load, live 2026-08-26.** `src/autoload.rs` does the whole
+thing on launch, so a restart lands in the saved game with no
+keys and no clicks:
+
+```text
+[20:17:57] feature autoload: applying
+[20:17:58] nag: pressed InpActEvt_SpaceBar_K2Node_InputKeyEvent_1
+[20:18:00] autoload: loading the saved game
+```
+
+It runs exactly once per launch (one log line; a `SETTLED` flag
+stops the poller). Ticks before the load menu widget exists
+return `waiting` and are silent. Quitting to the menu later does
+NOT re-trigger it.
+
+Every step is guarded, because `LoadLevel` is also the New Game
+path and a wrong turn would start a fresh game over the player's
+save. It aborts before `LoadLevel` if no slot name is held, if
+`FindExistingSave` says the save is missing, or if the load flag
+does not read back as set.
+
+`FindExistingSave` takes 2 parms in 17 bytes: an FString in and
+the answer in BYTE 16, measured rather than assumed
+(`research_load::find_existing_save_layout`):
+
+```text
+existing slot "Save 1": 500f05c420020000070000000800000001
+empty slot:             0000000000000000000000000000000000
+```
+
 **Works, live 2026-08-26.** Operator confirmed the save loaded
 and played, with no clicks and no crash, once the calls ran on
 the game thread via the `UEngine::Tick` hook (26.6). The same

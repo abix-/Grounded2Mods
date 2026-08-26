@@ -32,7 +32,11 @@ $ErrorActionPreference = "Stop"
 $Repo = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $GameDir = "C:\Games\Steam\steamapps\common\MISERY"
 $ModDir = Join-Path $GameDir "MISERY\Binaries\Win64\ue4ss\Mods\MiseryMod\dlls"
-$BuildDll = Join-Path $Repo "target\x86_64-pc-windows-msvc\release\main.dll"
+# Built under this crate's own lib name, then deployed as
+# main.dll. Never read target\...\main.dll here: several mods in
+# this workspace build cdylibs, and a shared output name means the
+# file can belong to a different game's mod.
+$BuildDll = Join-Path $Repo "target\x86_64-pc-windows-msvc\release\misery_mod.dll"
 $TargetDll = Join-Path $ModDir "main.dll"
 $StaleDll = Join-Path $ModDir "main-new.dll"
 $AppId = "2119830"
@@ -55,6 +59,18 @@ if (-not (Test-Path $BuildDll)) {
 }
 $buildInfo = Get-Item $BuildDll
 Write-Host "[build] output: $($buildInfo.Length) bytes, $($buildInfo.LastWriteTime)" -ForegroundColor Gray
+
+# Prove this DLL is misery-mod's before it goes anywhere near the
+# game. Size and timestamp cannot tell two mods apart; the log
+# file name each mod compiles in can. Deploying another game's
+# mod crashes MISERY on load with no mod log line to explain it.
+$marker = "misery_mod.log"
+$bytes = [System.IO.File]::ReadAllBytes($BuildDll)
+$ascii = [System.Text.Encoding]::ASCII.GetString($bytes)
+if ($ascii -notmatch [regex]::Escape($marker)) {
+    throw "[build] IDENTITY FAILED: $BuildDll does not contain '$marker'; this is not the misery mod"
+}
+Write-Host "[build] identity ok: contains '$marker'" -ForegroundColor Green
 
 # --- step 2: stop game ---
 foreach ($pname in $ProcessNames) {

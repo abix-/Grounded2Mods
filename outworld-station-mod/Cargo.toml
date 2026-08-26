@@ -14,9 +14,13 @@ publish.workspace = true
 # writes.
 
 [lib]
-# Output is `main.dll`, dropped at
+# Built as `outworld_station_mod.dll`, DEPLOYED as
 # OutworldStation\Binaries\Win64\ue4ss\Mods\OutworldStationMod\dlls\main.dll.
-name = "main"
+# The build artifact must not be called `main`: several mods in
+# this workspace build cdylibs, and a shared output name lets them
+# overwrite each other in target, after which cargo treats the
+# loser as fresh and never rewrites it. See misery-mod/Cargo.toml.
+name = "outworld_station_mod"
 crate-type = ["cdylib", "rlib"]
 
 # Consumed by ueforge's ueforge-deploy bin.

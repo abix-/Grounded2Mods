@@ -230,9 +230,25 @@ game_sub_path   = "Augusta\\Binaries\\WinGRTS"
 target_dir      = "target/grounded2-mod"
 ```
 
-`target_dir` keeps two cdylibs in the same workspace from
-colliding on `target/release/main.dll`. Per-package target dirs
-are required when more than one mod ships from one workspace.
+`target_dir` gives the mod its own build tree.
+
+It is NOT what stops two cdylibs colliding, and relying on it for
+that bit hard on 2026-08-26. `target_dir` only applies when
+building through `cargo deploy`, which passes `--target-dir`. A
+plain `cargo build -p <mod>` writes to the shared workspace
+target, so when every mod declared `[lib] name = "main"` they all
+produced `target/<triple>/release/main.dll` and overwrote each
+other. Cargo then considered the losing crate fresh and never
+rewrote the file, so a deploy shipped whichever mod built last.
+The Grounded 2 mod went into MISERY and crashed it on load, with
+no mod log line to explain why.
+
+**Give every cdylib its own `[lib] name`** (`misery_mod`,
+`grounded2_mod`, `outworld_station_mod`). UE4SS still wants
+`main.dll` in the mod's dlls folder, so that is the DEPLOYED
+name, applied at copy time by `cargo deploy` and the per-mod
+restart scripts. `cargo deploy` reads the crate's cdylib target
+name from `cargo metadata` rather than assuming `main.dll`.
 
 ## Deploy
 

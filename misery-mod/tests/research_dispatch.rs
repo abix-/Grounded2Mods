@@ -119,9 +119,9 @@ fn game_thread_ping() {
     assert!(stats.ok, "pe_stats failed: {:?}", stats.error);
     println!("stats before: {}", stats.result);
 
-    let fires = stats.result["fires"].as_u64().unwrap_or(0);
+    let fires = stats.result["game_thread"]["fires"].as_u64().unwrap_or(0);
     if fires == 0 {
-        println!("SKIP: PE hook not firing (main menu, or hook not installed yet)");
+        println!("SKIP: engine tick hook not firing yet");
         return;
     }
 
@@ -175,30 +175,21 @@ fn on_update_serves_the_main_menu() {
     assert_eq!(ping.result["game_thread"], json!(true), "job did not run");
 
     // on_update is NOT the game thread. Measured 2026-08-26:
-    // UE4SS calls it on its own thread (508) while ProcessEvent,
-    // which is game-thread only, ran on 19556. Calls made from
-    // it looked fine and then crashed the game. This asserts the
-    // finding so a future change cannot quietly reintroduce the
-    // assumption. research.md 26.6.
+    // UE4SS calls it on its own thread while UEngine::Tick and
+    // ProcessEvent, which is game-thread only, shared another.
+    // Calls made from on_update looked fine and then crashed the
+    // game. This asserts the finding so a future change cannot
+    // quietly reintroduce the assumption. research.md 26.6.
     let frame_thread = stats.result["frame_thread"].as_u64().unwrap_or(0);
-    let hook_thread = stats.result["hook_thread"].as_u64().unwrap_or(0);
-    let tick_thread = stats.result["tick_thread"].as_u64().unwrap_or(0);
-    if hook_thread != 0 {
-        assert_ne!(
-            frame_thread, hook_thread,
-            "on_update now shares a thread with ProcessEvent; \
-             research.md 26.6 says it does not"
-        );
-    }
+    let tick_thread = stats.result["game_thread"]["thread"].as_u64().unwrap_or(0);
     if tick_thread != 0 {
         assert_ne!(
             frame_thread, tick_thread,
-            "on_update now shares a thread with UEngine::Tick"
+            "on_update now shares a thread with UEngine::Tick; \
+             research.md 26.6 says it does not"
         );
     }
-    println!(
-        "on_update thread {frame_thread}, engine tick {tick_thread}, ProcessEvent {hook_thread}"
-    );
+    println!("on_update thread {frame_thread}, engine tick {tick_thread}");
 }
 
 /// `UEngine::Tick` is the game thread with no world loaded, so a
@@ -218,39 +209,43 @@ fn engine_tick_serves_the_main_menu() {
     assert!(stats.ok, "pe_stats failed: {:?}", stats.error);
     println!("stats: {}", stats.result);
 
+    let gt = &stats.result["game_thread"];
     assert_eq!(
-        stats.result["tick_installed"],
+        gt["installed"],
         json!(true),
-        "UEngine::Tick hook not installed: {:?}",
-        stats.result
+        "UEngine::Tick hook not installed: {gt:?}"
     );
-    let tick_fires = stats.result["tick_fires"].as_u64().unwrap_or(0);
-    assert!(tick_fires > 0, "engine tick hook installed but never fired");
     assert_eq!(
-        stats.result["tick_panics"].as_u64().unwrap_or(0),
+        gt["resolve_failed"],
+        json!(false),
+        "patternsleuth could not resolve UEngine::Tick: {gt:?}"
+    );
+    assert!(
+        gt["fires"].as_u64().unwrap_or(0) > 0,
+        "engine tick hook installed but never fired"
+    );
+    assert_eq!(
+        gt["panics"].as_u64().unwrap_or(0),
         0,
         "engine tick handler panicked"
+    );
+    // The slot is derived, not hardcoded: patternsleuth resolves
+    // Tick's address and the slot holding it is the index.
+    println!(
+        "UEngine::Tick at {} in vtable slot {}",
+        gt["tick_addr"].as_str().unwrap_or("?"),
+        gt["tick_slot"]
     );
 
     let ping = api.op("pe_ping", json!({}));
     assert!(ping.ok, "pe_ping failed: {:?}", ping.error);
     assert_eq!(ping.result["game_thread"], json!(true), "job did not run");
 
-    // The proof: the engine ticks on the same thread ProcessEvent
-    // runs on. Only checkable once a save has loaded and the
-    // ProcessEvent hook has fired at least once.
-    let tick_thread = stats.result["tick_thread"].as_u64().unwrap_or(0);
-    let hook_thread = stats.result["hook_thread"].as_u64().unwrap_or(0);
-    if hook_thread == 0 {
-        println!(
-            "engine tick thread {tick_thread}; ProcessEvent has not fired yet, \
-             so the game-thread match is still pending"
-        );
-    } else {
-        assert_eq!(
-            tick_thread, hook_thread,
-            "UEngine::Tick runs on {tick_thread} but ProcessEvent runs on {hook_thread}"
-        );
-        println!("UEngine::Tick and ProcessEvent share thread {tick_thread}: game thread confirmed");
-    }
+    let after = api.op("pe_stats", json!({}));
+    assert!(after.ok);
+    assert!(
+        after.result["drained_cmds"].as_u64().unwrap_or(0) >= 1,
+        "the tick drained no jobs: {:?}",
+        after.result
+    );
 }

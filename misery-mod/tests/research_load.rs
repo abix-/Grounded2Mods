@@ -191,6 +191,64 @@ fn read_current_slot() {
     println!("slot name: {:?}", read_fstring(&api, hex));
 }
 
+/// Where does `FindExistingSave` put its answer?
+///
+/// 2 parms, 17 bytes: an FString in and a bool out. Auto-load
+/// needs that bool to skip cleanly when the save is missing, so
+/// the byte it lands in has to be measured, not assumed. Ask it
+/// about a slot that exists and a slot that cannot, and see which
+/// byte differs.
+#[test]
+fn find_existing_save_layout() {
+    let Some(api) = api_or_skip() else { return };
+    let selector = game_instance_selector(&api);
+
+    let name = api.op(
+        "call",
+        json!({
+            "class": GAME_INSTANCE,
+            "function": "SGK GetSaveGameSlotName",
+            "instance_selector": selector,
+            "parms_hex": "0".repeat(32),
+        }),
+    );
+    assert!(name.ok, "SGK GetSaveGameSlotName failed: {:?}", name.error);
+    let slot_fstring = name.result["parms_hex_after"].as_str().unwrap_or("").to_string();
+    println!("slot {:?} -> FString {slot_fstring}", read_fstring(&api, &slot_fstring));
+
+    let hosts = modforge::client::walk_class_chain_instances(&api, "BP_HostNewGameServer_C", 8);
+    let host = hosts
+        .iter()
+        .find(|h| {
+            h.full_name.contains("BP_HostLoadGameServer")
+                && h.full_name.contains("/Engine/Transient")
+        })
+        .expect("no live BP_HostLoadGameServer");
+
+    // Real slot: the FString the game just handed us.
+    let real = format!("{slot_fstring}00");
+    // Impossible slot: a null FString, which no save can be
+    // stored under.
+    let empty = "0".repeat(34);
+
+    for (label, parms) in [("existing slot", real), ("empty slot", empty)] {
+        let r = api.op(
+            "call",
+            json!({
+                "class": "BP_HostNewGameServer_C",
+                "function": "FindExistingSave",
+                "instance_selector": host.addr_selector,
+                "parms_hex": parms,
+            }),
+        );
+        if !r.ok {
+            println!("{label}: FAILED {:?}", r.error);
+            continue;
+        }
+        println!("{label}: {}", r.result["parms_hex_after"].as_str().unwrap_or(""));
+    }
+}
+
 /// Load the save the game instance already points at.
 ///
 /// Three steps, all of them the game's own functions:

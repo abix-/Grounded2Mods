@@ -40,11 +40,6 @@ impl FallBinder for G2FallBinder {
         let _t = ueforge::counters::time_scope(&crate::counters::TIME_NS_FALL_HOOK);
         ueforge::counters::bump(&crate::counters::FALL_HOOK_FIRES);
 
-        // Drain the debug PE queue. drain_pending fast-paths on
-        // an empty queue (one atomic load), so this is sub-ns when
-        // nothing is queued.
-        crate::debug::drain_pending();
-
         // Fall Resistance velocity stomp. The framework already
         // resolved `event.cmc` for us; we just compute the scale
         // and write Velocity.Z back. OnLanded fires before native

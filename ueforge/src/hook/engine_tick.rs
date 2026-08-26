@@ -88,6 +88,41 @@ pub fn is_installed() -> bool {
     INSTALLED.lock().is_some()
 }
 
+/// Find which vtable slot on `engine` holds `target`.
+///
+/// This is what removes the per-game constant: patternsleuth
+/// resolves `UGameEngine::Tick` to an address, and the slot
+/// holding that address is Tick's index, whatever the engine
+/// version. If the address is not in the table, the caller must
+/// NOT install; patching a guessed index replaces an unrelated
+/// virtual.
+///
+/// # Safety
+/// `engine` must be a live `UEngine`. `max_slots` bounds the
+/// read; a vtable has no length, so an over-long scan walks off
+/// the end of the table into whatever follows it.
+pub unsafe fn find_slot(engine: &UObject, target: usize, max_slots: usize) -> Option<usize> {
+    // SAFETY: every UE class on x86-64 starts with its vtable
+    // pointer; offsets::uobject::VTABLE is 0.
+    let vtable_ptr: *mut *mut c_void = unsafe {
+        (engine as *const UObject as *const u8)
+            .cast::<*mut *mut c_void>()
+            .read_unaligned()
+    };
+    if vtable_ptr.is_null() {
+        return None;
+    }
+    for i in 0..max_slots {
+        // SAFETY: bounded by max_slots, which the caller sizes
+        // to the class's vtable.
+        let entry = unsafe { *vtable_ptr.add(i) };
+        if entry as usize == target {
+            return Some(i);
+        }
+    }
+    None
+}
+
 /// Read the Tick pointer out of `engine`'s vtable without
 /// patching anything, so a caller can check the index against a
 /// known address before installing.

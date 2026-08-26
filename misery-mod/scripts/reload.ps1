@@ -41,7 +41,10 @@ $ErrorActionPreference = "Stop"
 $Repo = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $GameDir = "C:\Games\Steam\steamapps\common\MISERY"
 $ModDir = Join-Path $GameDir "MISERY\Binaries\Win64\ue4ss\Mods\MiseryMod\dlls"
-$BuildDll = Join-Path $Repo "target\x86_64-pc-windows-msvc\release\main.dll"
+# This crate's own artifact name, not main.dll: several mods here
+# build cdylibs and a shared output name lets one overwrite
+# another. See misery-mod/Cargo.toml.
+$BuildDll = Join-Path $Repo "target\x86_64-pc-windows-msvc\release\misery_mod.dll"
 $LiveDll = Join-Path $ModDir "main.dll"
 $NewDll = Join-Path $ModDir "main-new.dll"
 $Port = 17176

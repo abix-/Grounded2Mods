@@ -82,6 +82,7 @@ pub mod envelope;
 pub mod features;
 pub mod fall;
 pub mod frame;
+pub mod game_thread;
 pub mod hook;
 pub mod hot_reload;
 pub mod input;

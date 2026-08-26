@@ -23,7 +23,11 @@ size adjustments via DataTable mutation at runtime.
 k3sc cargo-lock build --release -p outworld-station-mod
 ```
 
-Output: `target/x86_64-pc-windows-msvc/release/main.dll`
+Output:
+`target/x86_64-pc-windows-msvc/release/outworld_station_mod.dll`,
+deployed as `main.dll` (the name UE4SS requires in the dlls
+folder). The build artifact carries the crate's own name so two
+mods in this workspace cannot overwrite each other's DLL.
 
 ## Deploy
 

@@ -1,0 +1,165 @@
+//! Keep a [`GameThread`] queue served, world or no world.
+//!
+//! A [`crate::pe_queue::GameThread`] queue only runs work when
+//! something drains it, and mods have historically drained from
+//! whatever gameplay hook they already had: a player character's
+//! ProcessEvent, a kill multicast, a fall event. Those all stop
+//! firing when the gameplay stops, so queued work starves at the
+//! main menu, during loading, and any time the chosen event goes
+//! quiet.
+//!
+//! `UEngine::Tick` runs once per frame on the game thread for the
+//! entire life of the process and does not care whether a world
+//! exists. Serving the queue from there removes the whole class
+//! of problem. UE4SS does the same for itself
+//! (`HookEngineTick = 1` in UE4SS-settings.ini) but exposes it
+//! only to Lua mods, so a Rust mod installs its own.
+//!
+//! ```ignore
+//! static PE_QUEUE: GameThread = GameThread::new();
+//! ueforge::game_thread::serve(&PE_QUEUE);
+//! ```
+//!
+//! Nothing here is game-specific: the engine object is found by
+//! class-chain search, and Tick's vtable slot is derived by
+//! resolving the function with patternsleuth and finding the slot
+//! that holds it. If the scan fails, no hook is installed. A
+//! guessed slot index would patch an unrelated virtual, which is
+//! far worse than having no hook.
+
+use std::ffi::c_void;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+use parking_lot::Mutex;
+
+use crate::hook::engine_tick::{self, OriginalTick};
+use crate::pe_queue::GameThread;
+
+/// The engine object carrying `Tick`. `UGameEngine` in a packaged
+/// game, matched by class chain so subclasses count.
+const ENGINE_CLASS: &str = "GameEngine";
+
+/// How far into the engine's vtable to look. A vtable carries no
+/// length, so the search must be bounded rather than run until it
+/// finds something. Tick sits at 95 on UE 5.4; the cap leaves
+/// room for other versions without presuming the answer.
+const VTABLE_MAX: usize = 400;
+
+static QUEUE: Mutex<Option<&'static GameThread>> = Mutex::new(None);
+static RESOLVE_FAILED: AtomicBool = AtomicBool::new(false);
+static TICK_ADDR: AtomicUsize = AtomicUsize::new(0);
+static TICK_SLOT: AtomicUsize = AtomicUsize::new(usize::MAX);
+
+/// Drain `queue` from `UEngine::Tick`, every frame, forever.
+///
+/// Safe to call before the engine exists: installation is retried
+/// from UE4SS's per-frame callback until it succeeds. Call once,
+/// at mod init.
+pub fn serve(queue: &'static GameThread) {
+    *QUEUE.lock() = Some(queue);
+    crate::frame::on_update(try_install);
+}
+
+/// Absolute address patternsleuth resolved `UEngine::Tick` to, or
+/// 0 before it has run.
+pub fn tick_addr() -> usize {
+    TICK_ADDR.load(Ordering::Relaxed)
+}
+
+/// Vtable slot the hook was installed into, or `None` before
+/// install.
+pub fn tick_slot() -> Option<usize> {
+    match TICK_SLOT.load(Ordering::Relaxed) {
+        usize::MAX => None,
+        n => Some(n),
+    }
+}
+
+/// True once the scan has failed and installation was abandoned.
+pub fn resolve_failed() -> bool {
+    RESOLVE_FAILED.load(Ordering::Relaxed)
+}
+
+/// Everything a snapshot or debug op wants to know about the
+/// game-thread hook.
+pub fn status() -> serde_json::Value {
+    serde_json::json!({
+        "installed": engine_tick::is_installed(),
+        "fires": engine_tick::fires(),
+        "thread": engine_tick::thread_id(),
+        "panics": engine_tick::panics(),
+        "tick_addr": format!("0x{:X}", tick_addr()),
+        "tick_slot": tick_slot(),
+        "resolve_failed": resolve_failed(),
+    })
+}
+
+/// One install attempt.
+///
+/// Runs every frame until it succeeds, so both expensive steps
+/// are guarded: the patternsleuth scan is a full pass over the
+/// exe's `.text`, and a scan that fails once will fail again.
+fn try_install() {
+    if engine_tick::is_installed() || RESOLVE_FAILED.load(Ordering::Acquire) {
+        return;
+    }
+    let Some(ptr) = crate::ue::actor::find_objects_by_chain(ENGINE_CLASS)
+        .into_iter()
+        .find(|p| {
+            // SAFETY: p came from that call's GObjects iteration.
+            let obj = unsafe { &*(*p as *const crate::ue::UObject) };
+            obj.full_name().contains("/Engine/Transient")
+        })
+    else {
+        // The engine object is not up yet. Not a failure; try
+        // again next frame.
+        return;
+    };
+    // SAFETY: ptr came from the GObjects iteration above.
+    let engine = unsafe { &*(ptr as *const crate::ue::UObject) };
+
+    let addr = match crate::ue::resolvers::resolve_game_engine_tick() {
+        Ok(a) => a,
+        Err(e) => {
+            crate::log::log(format_args!("game_thread: {e}; engine tick hook skipped"));
+            RESOLVE_FAILED.store(true, Ordering::Release);
+            return;
+        }
+    };
+    TICK_ADDR.store(addr, Ordering::Relaxed);
+
+    // SAFETY: engine is the live UEngine; the search is bounded
+    // by VTABLE_MAX.
+    let Some(slot) = (unsafe { engine_tick::find_slot(engine, addr, VTABLE_MAX) }) else {
+        crate::log::log(format_args!(
+            "game_thread: {ENGINE_CLASS}::Tick at 0x{addr:X} is not in the first \
+             {VTABLE_MAX} vtable slots; engine tick hook skipped"
+        ));
+        RESOLVE_FAILED.store(true, Ordering::Release);
+        return;
+    };
+
+    // SAFETY: engine is the live UEngine, and slot was found by
+    // matching the resolved Tick address in its own vtable.
+    match unsafe { engine_tick::install(engine, slot, on_tick) } {
+        Ok(()) => {
+            TICK_SLOT.store(slot, Ordering::Relaxed);
+            crate::log::log(format_args!(
+                "game_thread: serving from {ENGINE_CLASS}::Tick at 0x{addr:X} (vtable slot {slot})"
+            ));
+        }
+        Err(e) => {
+            crate::log::log(format_args!("game_thread: engine tick install failed ({e})"));
+            RESOLVE_FAILED.store(true, Ordering::Release);
+        }
+    }
+}
+
+/// Game thread, once per frame.
+fn on_tick(this: *mut c_void, delta: f32, idle: bool, original: OriginalTick) {
+    if let Some(q) = *QUEUE.lock() {
+        q.drain();
+    }
+    // SAFETY: engine-supplied arguments forwarded unchanged.
+    unsafe { original.call(this, delta, idle) };
+}

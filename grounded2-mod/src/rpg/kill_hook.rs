@@ -101,11 +101,6 @@ impl DamageBinder for G2DamageBinder {
     fn before(&self, event: &DamageEvent) -> Option<f32> {
         ueforge::counters::bump(&crate::counters::KILL_HOOK_FIRES);
 
-        // Drain the debug PE queue. Re-entrance guard inside
-        // `drain_pending` prevents recursive draining if a queued
-        // op fans out PE work.
-        crate::debug::drain_pending();
-
         // Player-component diagnostic record (damage_ring + log).
         if event.victim_is_player {
             ueforge::counters::bump(&crate::counters::KILL_HOOK_PLAYER_FIRES);

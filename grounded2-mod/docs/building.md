@@ -60,11 +60,15 @@ cargo build --release
 
 Output:
 
-- `target/grounded2-mod/x86_64-pc-windows-msvc/release/main.dll`,
-  the mod, named `main.dll` because UE4SS expects CPPMods at
-  `Mods/<ModName>/dlls/main.dll`. (Per-package `target_dir` is
-  set in `Cargo.toml`'s `[package.metadata.ueforge]` block so two
-  cdylibs in the workspace don't collide.)
+- `target/grounded2-mod/x86_64-pc-windows-msvc/release/grounded2_mod.dll`,
+  the mod. It is DEPLOYED as `main.dll` because UE4SS expects
+  CPPMods at `Mods/<ModName>/dlls/main.dll`, but the build
+  artifact carries the crate's own name so two cdylibs in this
+  workspace cannot overwrite each other. Naming them all `main`
+  put this mod inside MISERY once; see ueforge/docs/lifecycle.md.
+  (Per-package `target_dir` in `[package.metadata.ueforge]` gives
+  the crate its own build tree, but only applies to
+  `cargo deploy`, not to a plain `cargo build -p`.)
 
 The build target dir is locked via `.cargo/config.toml`.
 
