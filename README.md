@@ -152,7 +152,3 @@ Per-mod docs are linked in the table above. Framework docs:
 Research tooling:
 [`decomp/`](decomp/README.md) (r2sleigh-based, WSL-only),
 [`falcon-printer/`](falcon-printer/) (retired prototype, docs only).
-
-## Credits
-
-See the workspace [`credits`](docs/credits.md).
