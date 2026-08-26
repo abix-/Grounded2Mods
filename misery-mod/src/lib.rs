@@ -14,7 +14,6 @@ pub mod gameplay;
 
 pub mod autoload;
 pub mod nag;
-pub mod places;
 pub mod rooms;
 pub mod shining;
 pub mod spawning;
@@ -136,18 +135,6 @@ fn on_unreal_init() {
         .once("pieces", ueforge::ue::pieces::register_ops)
         // .once("rooms", rooms::register_ops)
         .once("assets", assets::register_ops)
-        // OFF. Harvesting squares and building monuments from
-        // them was not asked for: it re-read squares every
-        // session, kept the library in memory only, and placed
-        // the results at random while you played.
-        // .once("places", places::install)
-        // .once("stack_10x", || {
-        //     STACK_TWEAK.apply_when_ready(
-        //         Duration::from_secs(30),
-        //         |v: i32| v.saturating_mul(10),
-        //         |v: i32| v <= 1,
-        //     );
-        // })
         .once("nag", nag::install)
         // Auto-load is OFF. It called LoadLevel on
         // BP_HostLoadGameServer, the host-a-server path, and
