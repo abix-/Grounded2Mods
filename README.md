@@ -57,25 +57,54 @@ Engine-independent systems usable by a mod or a standalone game.
 
 | Capability | What it provides |
 |---|---|
-| [Arguments](modforge/src/args.rs), [Envelope](modforge/src/envelope.rs), [Operations](modforge/src/ops.rs), [Server](modforge/src/server.rs), [Client](modforge/src/client/mod.rs), [Debug](modforge/src/debug.rs) | Typed JSON arguments, uniform requests and responses, registered operations, local HTTP transport, a blocking client, and RPG debug views |
+| [Arguments](modforge/src/args.rs) | Typed JSON argument helpers for operation handlers |
+| [Envelope](modforge/src/envelope.rs) | Uniform operation requests and responses |
+| [Operations](modforge/src/ops.rs) | Registered operations, dispatch, discovery, and metrics |
+| [Server](modforge/src/server.rs) | Local HTTP transport for a mod's control plane |
+| [Client](modforge/src/client/mod.rs) | Blocking HTTP client for runtime tests and tools |
+| [Debug](modforge/src/debug.rs) | Engine-independent RPG state and catalog views |
 | [Snapshots](modforge/src/snapshots/mod.rs) | Reserved projection snapshot API; no concrete snapshot type exists yet |
-| [Settings](modforge/src/settings.rs), [Logging](modforge/src/log.rs), [Shutdown](modforge/src/shutdown.rs), [Reload](modforge/src/hot_reload.rs), [Workers](modforge/src/worker.rs) | Persistent configuration, logs, ordered teardown, UE4SS hot reload, and guarded worker threads |
-| [Counters](modforge/src/counters.rs), [Rings](modforge/src/ring.rs) | Hot-path telemetry and bounded event capture |
-| [Hooks](modforge/src/hook.rs), [Vanilla](modforge/src/vanilla/mod.rs), [SEH](modforge/src/seh.rs) | Function detours, arbitrary native calls by address, and structured-exception guards |
-| [Patterns](modforge/src/patterns/mod.rs), [Scanning](modforge/src/scanner.rs), [Processes](modforge/src/winproc.rs), [Research](modforge/src/research.rs), [Minidumps](modforge/src/bin/minidump.rs) | Byte patterns, value scanning and freezing, Windows process inspection, binary-research recipes, and crash-dump inspection |
-| [Input](modforge/src/input/mod.rs), [Actions](modforge/src/actions.rs) | Synthetic input, bindings, action queues, and replay journals |
-| [UI](modforge/src/ui/mod.rs), [HUD](modforge/src/hud.rs) | Declarative UI and player-facing HUD state |
-| [Items](modforge/src/item.rs), [Quality](modforge/src/quality.rs), [Crafting](modforge/src/crafting.rs) | Item definitions, inventory, unique-item ledger, quality tiers, and recipes |
-| [Upgrades](modforge/src/upgrade.rs), [RPG](modforge/src/rpg/mod.rs) | Upgrade persistence plus effects, triggers, skills, XP, and RPG state |
-| [Actors](modforge/src/actor.rs), [Decisions](modforge/src/brain.rs), [Memory](modforge/src/memory.rs) | Actor definitions and spawning data, AI decisions, knowledge, and threat memory |
+| [Settings](modforge/src/settings.rs) | Persistent JSON configuration with atomic saves |
+| [Logging](modforge/src/log.rs) | File and console logging for Windows DLL mods |
+| [Shutdown](modforge/src/shutdown.rs) | Ordered teardown through a shared handler registry |
+| [Reload](modforge/src/hot_reload.rs) | Automatic UE4SS hot reload after deployment |
+| [Workers](modforge/src/worker.rs) | Named worker threads with panic guards |
+| [Counters](modforge/src/counters.rs) | Lock-free hot-path counts, peaks, and timings |
+| [Rings](modforge/src/ring.rs) | Bounded event capture with oldest-entry eviction |
+| [Hooks](modforge/src/hook.rs) | Native function detours with original-call support |
+| [Vanilla](modforge/src/vanilla/mod.rs) | Arbitrary native function calls by resolved address |
+| [SEH](modforge/src/seh.rs) | Structured-exception guards around foreign calls |
+| [Patterns](modforge/src/patterns/mod.rs) | IDA-style byte patterns and patternsleuth resolution |
+| [Scanning](modforge/src/scanner.rs) | In-process value scans, rescans, and freezes |
+| [Processes](modforge/src/winproc.rs) | Windows thread, CPU, memory, and region inspection |
+| [Research](modforge/src/research.rs) | Reusable binary-research recipes driven over HTTP |
+| [Minidumps](modforge/src/bin/minidump.rs) | Crash exception and owning-module inspection |
+| [Input](modforge/src/input/mod.rs) | Synthetic keyboard and mouse input backends |
+| [Actions](modforge/src/actions.rs) | Bindings, action queues, fixed-tick stamps, and replay journals |
+| [UI](modforge/src/ui/mod.rs) | Engine-independent declarative UI definitions |
+| [HUD](modforge/src/hud.rs) | Player-facing panels, prompts, and inventory decisions |
+| [Items](modforge/src/item.rs) | Item definitions, inventory, creation, and unique-item ledger |
+| [Quality](modforge/src/quality.rs) | Quality tiers, odds, siblings, and stat jitter |
+| [Crafting](modforge/src/crafting.rs) | Recipe definitions, registry, and execution |
+| [Upgrades](modforge/src/upgrade.rs) | Upgrade levels, requirements, policy math, and persistence |
+| [RPG](modforge/src/rpg/mod.rs) | Effects, triggers, skills, XP, state, and persistence |
+| [Actors](modforge/src/actor.rs) | Actor definitions, registries, records, and personalities |
+| [Decisions](modforge/src/brain.rs) | Pure AI decisions from perception and retained state |
+| [Memory](modforge/src/memory.rs) | Actor knowledge, injuries, and last-seen threats |
 | [Combat](modforge/src/combat.rs) | Damage, health, protection, hit resolution, firing, and weapon timing |
 | [Factions](modforge/src/faction.rs) | Faction definitions, registries, and relationships |
 | [Genomes](modforge/src/genome.rs) | Traits, reinforcement, heredity, voting, and persistence |
 | [Survival](modforge/src/survival.rs) | Needs, rates, conditions, and settlement classification |
 | [Missions](modforge/src/mission.rs) | Multi-stage, go-and-return, one-stage, and contract lifecycles |
-| [Storytelling](modforge/src/storyteller.rs), [Dread](modforge/src/unknown.rs) | Event pacing, adaptive pressure, and the unknown dread loop |
-| [Biomes](modforge/src/biome.rs), [Structures](modforge/src/structure.rs), [Monuments](modforge/src/monument.rs), [Worlds](modforge/src/worldgen.rs), [Rolls](modforge/src/roll.rs) | Biomes, structures, monuments, deterministic worlds, population budgets, and weighted selection |
-| [Testkit](modforge/src/testkit/mod.rs), [Harness](modforge/src/harness/mod.rs) | Cross-game assertions and a Steam-game runtime harness |
+| [Storytelling](modforge/src/storyteller.rs) | Event pacing, adaptive pressure, and active-event tracking |
+| [Dread](modforge/src/unknown.rs) | Vague signs, delayed payoffs, escalation, and foreshadowing |
+| [Biomes](modforge/src/biome.rs) | Biome definitions and allowed world content |
+| [Structures](modforge/src/structure.rs) | Engine-independent buildings, rooms, furniture, and validation |
+| [Monuments](modforge/src/monument.rs) | Deterministic monument types, arrangements, loot, and gates |
+| [Worlds](modforge/src/worldgen.rs) | Deterministic terrain, biomes, monument sites, and roads |
+| [Rolls](modforge/src/roll.rs) | Progress-scaled budgets and weighted selection |
+| [Testkit](modforge/src/testkit/mod.rs) | Cross-game research and assertion primitives |
+| [Harness](modforge/src/harness/mod.rs) | Build, launch, inject, probe, and stop Steam games |
 | [Deploy](modforge/src/bin/modforge_deploy.rs) | CLI for building, installing, uninstalling, and packaging |
 
 See [`modforge/README.md`](modforge/README.md) and
@@ -87,14 +116,50 @@ The Unreal Engine 5 and UE4SS binding layer.
 
 | Capability | What it provides |
 |---|---|
-| [Lifecycle](ueforge/src/mod_main.rs), [Shim](ueforge/cpp/ueforge_shim.cpp), [Features](ueforge/src/features.rs), [Shutdown](ueforge/src/shutdown.rs), [Reload](ueforge/src/hot_reload.rs) | `ue4ss_mod!`, UE4SS entry points, the shared C++ shim, feature installation, teardown, and hot reload |
-| [Objects](ueforge/src/ue/uobject.rs), [Functions](ueforge/src/ue/pe_call.rs), [GObjects](ueforge/src/ue/core_types.rs), [Names](ueforge/src/ue/fname.rs), [Strings](ueforge/src/ue/fstring.rs), [Arrays](ueforge/src/ue/tarray.rs), [Fields](ueforge/src/ue/field.rs), [Parameters](ueforge/src/parms.rs), [Offsets](ueforge/src/ue/offsets.rs) | UObject, UClass, UFunction, GObjects, FName, FString, TArray, reflected fields, parameters, and platform offsets |
-| [ProcessEvent](ueforge/src/hook/process_event.rs), [Vtables](ueforge/src/hook/vtable.rs), [Falls](ueforge/src/fall.rs), [Damage](ueforge/src/damage/mod.rs), [Frames](ueforge/src/frame.rs), [Queue](ueforge/src/game_thread.rs) | ProcessEvent and vtable hooks, fall and damage hooks, frame callbacks, and the game-thread queue |
-| [DataTables](ueforge/src/data_table.rs), [Tweaks](ueforge/src/tweak.rs), [Dynamic](ueforge/src/dynamic_tweaks.rs), [Discovery](ueforge/src/discovery.rs), [Assets](ueforge/src/assets.rs), [Uassets](ueforge/src/uasset.rs) | DataTable access, typed and dynamic tweaks, discovery, asset registry access, and uasset inspection |
-| [RPG](ueforge/src/rpg/mod.rs), [Stacks](ueforge/src/tweak.rs), [Inventory](ueforge/src/inventory/viewport.rs), [Statuses](ueforge/src/ue/status_effect.rs), [Damage](ueforge/src/damage/mod.rs) | RPG, stack-size and difficulty knobs, inventory viewport paging, status effects, and damage dispatch |
-| [ImGui](ueforge/src/ui.rs), [Classes](ueforge/src/ui_class_browser.rs), [Structs](ueforge/src/ui_struct_browser.rs), [DataTables](ueforge/src/ui_data_table_browser.rs), [Scanner](ueforge/src/ui_scanner.rs), [Tweaks](ueforge/src/ui_tweaks.rs) | ImGui bindings plus class, struct, DataTable, scanner, and tweak browsers |
-| [Selectors](ueforge/src/selector.rs), [Operations](ueforge/src/ops.rs), [Scanning](ueforge/src/scanner.rs), [Counters](ueforge/src/counters.rs), [Snapshots](ueforge/src/debug/mod.rs), [HTTP](ueforge/src/server.rs) | UE selectors, standard operations, memory tools, counters, snapshots, and HTTP control |
-| [Client](ueforge/src/client/mod.rs), [Scenarios](modforge/src/client/scenario.rs), [Builds](ueforge/src/build.rs) | Runtime client, scenario helpers, C++ build integration, packaging, and deployment |
+| [Lifecycle](ueforge/src/mod_main.rs) | `ue4ss_mod!`, UE4SS entry points, mod definitions, tabs, and shutdown orchestration |
+| [Shim](ueforge/cpp/ueforge_shim.cpp) | Shared C++ UE4SS loader and ImGui bridge |
+| [Features](ueforge/src/features.rs) | Registered feature installation |
+| [Shutdown](ueforge/src/shutdown.rs) | UE-aware teardown through the shared registry |
+| [Reload](ueforge/src/hot_reload.rs) | UE4SS generation swap and hot reload |
+| [Objects](ueforge/src/ue/uobject.rs) | UObject and UClass access |
+| [Functions](ueforge/src/ue/pe_call.rs) | Reflected UFunction invocation |
+| [GObjects](ueforge/src/ue/core_types.rs) | Global object array layouts and traversal |
+| [Names](ueforge/src/ue/fname.rs) | FName resolution and caching |
+| [Strings](ueforge/src/ue/fstring.rs) | FString access and conversion |
+| [Arrays](ueforge/src/ue/tarray.rs) | TArray layout and safe walking |
+| [Fields](ueforge/src/ue/field.rs) | Reflected and offset-based field access |
+| [Parameters](ueforge/src/parms.rs) | Typed UFunction parameter buffers |
+| [Offsets](ueforge/src/ue/offsets.rs) | Platform-specific UE runtime offsets |
+| [ProcessEvent](ueforge/src/hook/process_event.rs) | ProcessEvent hook installation and dispatch |
+| [Vtables](ueforge/src/hook/vtable.rs) | Vtable slot inspection and patching |
+| [Falls](ueforge/src/fall.rs) | Reusable fall-event hooks |
+| [Damage](ueforge/src/damage/mod.rs) | Damage hooks, decoding, classification, and dispatch |
+| [Frames](ueforge/src/frame.rs) | Per-frame callback registration |
+| [Queue](ueforge/src/game_thread.rs) | Game-thread work scheduling |
+| [DataTables](ueforge/src/data_table.rs) | DataTable definitions, schemas, and access |
+| [Tweaks](ueforge/src/tweak.rs) | Typed field, stack-size, and difficulty tweaks |
+| [Dynamic](ueforge/src/dynamic_tweaks.rs) | Runtime-defined tweak registry |
+| [Discovery](ueforge/src/discovery.rs) | Runtime UE data discovery |
+| [Assets](ueforge/src/assets.rs) | Asset registry access |
+| [Uassets](ueforge/src/uasset.rs) | Unreal asset inspection |
+| [RPG](ueforge/src/rpg/mod.rs) | UE implementations for Modforge RPG systems |
+| [Inventory](ueforge/src/inventory/viewport.rs) | Inventory viewport paging and rebinding |
+| [Statuses](ueforge/src/ue/status_effect.rs) | Status-effect lookup and application |
+| [ImGui](ueforge/src/ui.rs) | Rust bindings for the shared ImGui surface |
+| [Classes](ueforge/src/ui_class_browser.rs) | Runtime class browser |
+| [Structs](ueforge/src/ui_struct_browser.rs) | Runtime struct browser |
+| [Tables](ueforge/src/ui_data_table_browser.rs) | Runtime DataTable browser |
+| [Scanner](ueforge/src/ui_scanner.rs) | Interactive memory-scanner UI |
+| [TweakUI](ueforge/src/ui_tweaks.rs) | Interactive tweak controls |
+| [Selectors](ueforge/src/selector.rs) | UE object selector registry |
+| [Operations](ueforge/src/ops.rs) | UE operation handlers and registration |
+| [Scanning](ueforge/src/scanner.rs) | UE memory scan operations |
+| [Counters](ueforge/src/counters.rs) | UE runtime counter integration |
+| [Snapshots](ueforge/src/debug/mod.rs) | UE process and gameplay debug snapshots |
+| [HTTP](ueforge/src/server.rs) | UE control-plane server integration |
+| [Client](ueforge/src/client/mod.rs) | UE runtime test client |
+| [Scenarios](modforge/src/client/scenario.rs) | Shared scenario helpers for runtime tests |
+| [Builds](ueforge/src/build.rs) | C++ integration, packaging, and deployment |
 
 See [`ueforge/README.md`](ueforge/README.md) and
 [`ueforge/docs/`](ueforge/docs/).
@@ -105,14 +170,25 @@ The Unity Mono and IL2CPP binding layer.
 
 | Capability | What it provides |
 |---|---|
-| [BepInEx](unityforge/cs-shim-mono/Plugin.cs), [MelonLoader](unityforge/cs-shim-melonloader/Mod.cs), [Survivalist](unityforge/cs-shim-survivalist/Main.cs) | C# shims for BepInEx Mono, MelonLoader IL2CPP, and Survivalist's built-in loader |
+| [BepInEx](unityforge/cs-shim-mono/Plugin.cs) | C# loader shim for BepInEx Mono |
+| [MelonLoader](unityforge/cs-shim-melonloader/Mod.cs) | C# loader shim for MelonLoader IL2CPP |
+| [Survivalist](unityforge/cs-shim-survivalist/Main.cs) | C# shim for Survivalist's built-in loader |
 | [Lifecycle](unityforge/src/mod_main.rs) | Rust cdylib initialization, per-frame dispatch, shutdown, generation activation, rollback, and hot reload |
 | [Mono](unityforge/src/mono.rs) | Assembly and type discovery, singleton lookup, invocation, field access, and managed handles |
 | [IL2CPP](unityforge/src/il2cpp.rs) | Loader and bridge for native Unity builds |
-| [Hooks](unityforge/src/hook.rs), [Shim](unityforge/cs-shim-common/HarmonyBridge.cs) | Harmony prefixes, postfixes, contexts, ownership, and safe removal through the managed shim |
-| [Objects](unityforge/src/unity.rs), [Selectors](unityforge/src/selector.rs), [Input](unityforge/src/input.rs), [Queue](unityforge/src/main_thread_queue.rs) | GameObject and Component access, Unity selectors, input, and main-thread work |
-| [Effects](unityforge/src/rpg/std_effect.rs), [Triggers](unityforge/src/rpg/trigger_harmony.rs), [Skills](unityforge/src/rpg/skill.rs), [Tracking](unityforge/src/rpg/tracker.rs), [Identity](unityforge/src/rpg/slot_key.rs) | Unity implementations for Modforge RPG effects, triggers, skills, tracking, and slot identity |
-| [Operations](unityforge/src/ops.rs), [Selectors](unityforge/src/selector.rs), [Client](unityforge/src/client.rs) | Unity operations and selectors with the shared Modforge HTTP client |
+| [Hooks](unityforge/src/hook.rs) | Harmony prefixes, postfixes, contexts, ownership, and safe removal |
+| [Shim](unityforge/cs-shim-common/HarmonyBridge.cs) | Managed Harmony bridge used by Rust hooks |
+| [Objects](unityforge/src/unity.rs) | GameObject and Component access |
+| [Selectors](unityforge/src/selector.rs) | Unity object selector registry and resolution |
+| [Input](unityforge/src/input.rs) | Unity input bridge |
+| [Queue](unityforge/src/main_thread_queue.rs) | Main-thread work scheduling |
+| [Effects](unityforge/src/rpg/std_effect.rs) | Unity implementations of standard Modforge RPG effects |
+| [Triggers](unityforge/src/rpg/trigger_harmony.rs) | Harmony-backed RPG triggers |
+| [Skills](unityforge/src/rpg/skill.rs) | Unity skill bindings |
+| [Tracking](unityforge/src/rpg/tracker.rs) | Unity RPG tracker integration |
+| [Identity](unityforge/src/rpg/slot_key.rs) | Unity save-slot identity resolution |
+| [Operations](unityforge/src/ops.rs) | Unity operation handlers |
+| [Client](unityforge/src/client.rs) | Shared Modforge HTTP client integration |
 
 See [`unityforge/README.md`](unityforge/README.md) and
 [`docs/unityforge-plan.md`](docs/unityforge-plan.md).
