@@ -2059,6 +2059,64 @@ Limitation: the drain site only fires while a save is loaded
 main-menu-time dispatch (the nag screen) still needs a
 pre-menu drain site if ever pursued.
 
+### 26.4 Hot reload: why it still crashes (2026-08-26)
+
+Attempted, failed, diagnosed. The skill's "never hot reload"
+rule stands, but the reason is now known and partly fixed.
+
+**What was fixed.** All four of this mod's watchers were raw
+`thread::spawn(loop { sleep; work })` with no stop path. A DLL
+unload leaves those threads executing freed code, which is
+fatal on its own. They are now
+`modforge::rpg::poller::spawn_interval` workers: stop flag,
+condvar wake, joined at shutdown, panic-counted. misery
+registers `poller::shutdown_all` at shutdown order 50 so they
+stop BEFORE hooks tear down at 100; otherwise they tick on,
+queueing into a drain nobody serves. This is worth keeping
+regardless of hot reload.
+
+**What still kills it.** With the pollers fixed, the reload
+sequence gets further than before and the swap itself succeeds:
+
+```
+11:47:46 UE4SS: Stopping C++ mod 'MiseryMod' for uninstall
+11:47:51 UE4SS: Setting up mods...          (5.4s later)
+11:47:51 UE4SS: Starting C++ mod 'MiseryMod'
+11:47:51 mod:   cleaned up main-old.dll from previous hot-reload
+11:47:51 mod:   image_base = 0x7ff63f0b0000
+         (nothing further; the game dies here)
+```
+
+The NEW image dies during startup, right where
+`resolve_and_init` runs patternsleuth's scan: `image_base` is
+logged, `patternsleuth resolved: ...` never is.
+
+**Leading hypothesis: rayon.** patternsleuth scans in parallel
+via rayon, which creates a process-global thread pool that is
+never shut down. Those threads hold code addresses in the FIRST
+image; after the unload that memory is gone, so the second
+scan's dispatch into the pool jumps into freed code. Nothing in
+the mod can stop rayon's pool, which is why this is deeper than
+the poller bug. Unconfirmed: the evidence is the crash point
+plus rayon being in the dependency tree, not a stack trace.
+
+**Also noted.** Shutdown blocked for 5.4 seconds, about one poll
+interval, so a watcher was mid-tick in a full GObjects walk when
+stop() tried to join it. Long ticks make shutdown slow even when
+they are stoppable.
+
+**If pursued later**, the cheapest experiment is to skip the
+second scan entirely: the resolved offsets are image-relative
+and stable for a given exe, so they could be cached to disk on
+first run and reused on reload, avoiding any call into rayon in
+the new image. That tests the hypothesis and would be the fix if
+it holds. Other unstoppable threads (the tiny_http server pool)
+may surface next.
+
+Until then: `restart.ps1` remains the only supported path.
+`reload.ps1` exists and correctly verifies the swap, but the
+game does not survive it.
+
 ### 26.3 Spawning an NPC works (confirmed 2026-08-25)
 
 `research_spawn::spawn_one_npc`, live: copied the class of a

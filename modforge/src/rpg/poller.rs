@@ -106,6 +106,81 @@ pub fn shutdown_all() {
     }
 }
 
+/// Spawn a plain interval worker: run `tick` every `interval`
+/// until stopped. Returns the same [`PollerHandle`] as
+/// [`SlotPoller`] and joins the same registry, so
+/// [`shutdown_all`] stops it with everything else.
+///
+/// Use this for ANY background loop in a mod. A raw
+/// `thread::spawn(loop { sleep; work })` cannot be stopped, so
+/// the thread keeps executing after the DLL unloads: that is
+/// what makes hot reload fatal. A worker spawned here is woken
+/// out of its sleep and joined during shutdown, so the image can
+/// unload safely.
+///
+/// Panics inside `tick` are caught, counted, and logged; one bad
+/// tick does not kill the loop.
+pub fn spawn_interval<F>(name: &'static str, interval: Duration, tick: F) -> PollerHandle
+where
+    F: Fn() + Send + 'static,
+{
+    let inner = Arc::new(HandleInner {
+        stop: AtomicBool::new(false),
+        wake: Condvar::new(),
+        wake_mu: Mutex::new(()),
+        panics: AtomicU64::new(0),
+        last_panic: Mutex::new(None),
+        join: Mutex::new(None),
+    });
+
+    let thread_inner = inner.clone();
+    let join = std::thread::Builder::new()
+        .name(name.to_string())
+        .spawn(move || {
+            loop {
+                // Sleep first so a tick never runs before the
+                // caller has finished wiring things up, and wake
+                // immediately when shutdown signals.
+                {
+                    let mut guard = thread_inner.wake_mu.lock();
+                    thread_inner.wake.wait_for(&mut guard, interval);
+                }
+                if thread_inner.stop.load(Ordering::Acquire) {
+                    break;
+                }
+                if let Err(e) = std::panic::catch_unwind(AssertUnwindSafe(&tick)) {
+                    thread_inner.panics.fetch_add(1, Ordering::Relaxed);
+                    let msg = panic_message(&e);
+                    crate::log!("{name}: tick panicked: {msg}");
+                    *thread_inner.last_panic.lock() = Some(msg);
+                }
+            }
+            crate::log!("{name}: stopped");
+        });
+
+    match join {
+        Ok(j) => {
+            inner.join.lock().replace(j);
+        }
+        Err(e) => {
+            crate::log!("{name}: spawn failed: {e}");
+        }
+    }
+
+    POLLER_REGISTRY.lock().push(inner.clone());
+    PollerHandle { inner }
+}
+
+fn panic_message(e: &Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = e.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = e.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic".to_string()
+    }
+}
+
 pub struct SlotPoller;
 
 impl SlotPoller {

@@ -159,8 +159,10 @@ fn build_room(args: &serde_json::Value) -> Result<serde_json::Value, String> {
                 .next()
                 .ok_or("no player")?;
             let here = crate::strange::actor_location(player).ok_or("no location")?;
-            // Put it in front of the player rather than on them.
-            let (x, y) = (here.0 + away, here.1);
+            // In front of the player, not along a fixed compass
+            // direction: UE yaw 0 faces +x, and yaw grows toward +y.
+            let yaw = crate::strange::actor_yaw(player).unwrap_or(0.0).to_radians();
+            let (x, y) = (here.0 + yaw.cos() * away, here.1 + yaw.sin() * away);
             let z = crate::strange::ground_at(x, y).unwrap_or(here.2);
             let comp = crate::harvest::Composition {
                 source: "generated room".to_string(),
@@ -174,8 +176,46 @@ fn build_room(args: &serde_json::Value) -> Result<serde_json::Value, String> {
     )
 }
 
+/// Every kit piece placed in a level, with where it sits and
+/// which way it faces. The raw material for understanding how
+/// the level designers actually build rooms.
+fn kit_layout(args: &serde_json::Value) -> Result<serde_json::Value, String> {
+    let level = args
+        .get("level")
+        .and_then(|v| v.as_str())
+        .ok_or("need {level: str}")?;
+    let comp = crate::harvest::harvest_level(level)?;
+    let mut rows = Vec::new();
+    for p in &comp.pieces {
+        let Some(mesh) = &p.mesh else { continue };
+        // Kit parts only: the modular walls, floors and openings.
+        if !(mesh.starts_with("SM_Wall") || mesh.starts_with("SM_Floor")) {
+            continue;
+        }
+        rows.push(serde_json::json!({
+            "mesh": mesh,
+            "x": p.dx,
+            "y": p.dy,
+            "z": p.dz,
+            "yaw": p.yaw,
+        }));
+    }
+    Ok(serde_json::json!({
+        "level": level,
+        "kit_pieces": rows.len(),
+        "total_pieces": comp.pieces.len(),
+        "pieces": rows,
+    }))
+}
+
 pub fn register_ops() {
     ueforge::ops::OP_REGISTRY.register_many([
+        ueforge::ops::OpDef::new(
+            "kit_layout",
+            "Every modular kit piece placed in a level, with position and yaw",
+            "{level: str}",
+            kit_layout,
+        ),
         ueforge::ops::OpDef::new(
             "room_plan",
             "The mesh list a room would be built from, without spawning",

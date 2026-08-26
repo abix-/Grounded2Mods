@@ -200,23 +200,32 @@ fn draw_members() -> Vec<StructureDef> {
 
 pub fn install() {
     register_ops();
-    let _ = std::thread::Builder::new()
-        .name("misery-places".into())
-        .spawn(watcher);
+    // A stoppable worker, not a raw thread: shutdown wakes and
+    // joins it so the DLL can unload without the loop still
+    // executing freed code.
+    std::mem::forget(modforge::rpg::poller::spawn_interval(
+        "misery-places",
+        POLL,
+        watcher,
+    ));
 }
 
+/// Squares already given a chance at a monument. Lives outside
+/// the tick because the worker calls back per interval.
+static SEEN: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+
 fn watcher() {
-    let mut seen: HashSet<String> = HashSet::new();
-    loop {
-        std::thread::sleep(POLL);
+    let mut guard = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    let seen = guard.get_or_insert_with(HashSet::new);
+    {
         if ueforge::ue::try_runtime().is_none() {
-            continue;
+            return;
         }
         let squares = crate::strange::live_squares();
         let live: HashSet<String> = squares.iter().map(|(n, _, _)| n.clone()).collect();
         seen.retain(|s| live.contains(s));
 
-        let Some(tile) = crate::strange::active_tile_size() else { continue };
+        let Some(tile) = crate::strange::active_tile_size() else { return };
         for (name, cx, cy) in squares {
             if seen.contains(&name) {
                 continue;

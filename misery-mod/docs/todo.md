@@ -5,7 +5,7 @@
 | 2 | `rooms` | [ ] Generate multi-room buildings from the kit: several RoomSpecs sharing walls, with a roof | A generated building with more than one room stands and is walkable, verified live. |
 | 2 | `rooms` | [ ] Learn assembly from vanilla buildings: record which pieces the designers place adjacent, at what offsets, and bias generation toward it | Adjacency data captured and documented; generated buildings read as native. |
 | 3 | `dev` | [ ] Make tuned values op parameters instead of constants (yaw convention, offsets, caps) so hypotheses are testable without a redeploy | A wrong constant can be found and fixed in one session without restarting the game. |
-| 3 | `dev` | [ ] Make hot reload safe: stoppable pollers + verified hook teardown, so the DLL can unload without crashing | Ctrl+R reload works twice in a row with no crash. |
+| 3 | `dev` | [ ] Hot reload: cache patternsleuth offsets to disk so the reloaded image never calls into rayon's stale thread pool | A reload survives and the control plane answers without a restart. See research.md 26.4. |
 | 3 | `worldgen` | [ ] Research why GenerateCustomBiom(1) generates nothing while Factory works under natural shinings | Factory forcible on demand, or the different path documented in worldgen.md. |
 | 3 | `worldgen` | [ ] New-area research: can a spawned fifth generator (or a spare grid region) run RunGenerationFromSeed with a custom grid and pool | Go/no-go with findings documented in worldgen.md. |
 | 5 | `worldgen` | [ ] New-square research: how preset levels are packaged (pak, cooked umap), whether a cloned and renamed square can be loaded | Go/no-go with findings documented in worldgen.md. |

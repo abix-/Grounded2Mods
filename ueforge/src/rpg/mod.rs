@@ -50,7 +50,7 @@ pub use effect::{
     SubcomponentMultiplyEffect, SubcomponentU32MaskEffect,
 };
 pub use format::PercentFormat;
-pub use poller::{PollerHandle, SlotPoller};
+pub use poller::{PollerHandle, SlotPoller, spawn_interval};
 pub use skill::{SkillDef, SkillRegistry};
 pub use slot_key::SlotKeyResolver;
 pub use state::SkillsState;

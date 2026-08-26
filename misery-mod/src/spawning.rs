@@ -143,24 +143,32 @@ fn roll_plan(square: &str, vanilla: usize, emissions: i32) -> Plan {
 /// square and executes it on the game thread.
 pub fn install() {
     register_ops();
-    let _ = std::thread::Builder::new()
-        .name("misery-spawning".into())
-        .spawn(watcher);
+    // Stoppable so the DLL can unload; a raw thread would keep
+    // running in freed code and crash a hot reload.
+    std::mem::forget(modforge::rpg::poller::spawn_interval(
+        "misery-spawning",
+        POLL,
+        watcher,
+    ));
 }
 
+/// Squares already rolled. Outside the tick because the worker
+/// re-enters per interval.
+static PROCESSED: std::sync::Mutex<Option<HashSet<String>>> = std::sync::Mutex::new(None);
+
 fn watcher() {
-    let mut processed: HashSet<String> = HashSet::new();
-    loop {
-        std::thread::sleep(POLL);
+    let mut guard = PROCESSED.lock().unwrap_or_else(|e| e.into_inner());
+    let processed = guard.get_or_insert_with(HashSet::new);
+    {
         if ue::try_runtime().is_none() {
-            continue;
+            return;
         }
         let squares = census();
         // A square that unloaded rolls fresh next time it streams in.
         processed.retain(|s| squares.contains_key(s));
 
         if SPAWNED_TOTAL.load(Ordering::Relaxed) >= SESSION_CAP {
-            continue;
+            return;
         }
         let emissions = emission_level();
         LAST_EMISSIONS.store(emissions, Ordering::Relaxed);

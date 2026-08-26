@@ -35,42 +35,51 @@ const JOB_TIMEOUT: Duration = Duration::from_secs(3);
 /// 10 minute default).
 pub fn install() {
     register_ops();
-    // The backoff blocks until the player class loads (a save is
-    // loaded), and features().once actions run inline and
-    // sequentially, so the wait MUST live on its own thread or
-    // every feature after this one stalls at the main menu.
-    let _ = std::thread::Builder::new()
-        .name("misery-pe-dispatch".into())
-        .spawn(|| {
-            let policy = ueforge::hook::RetryPolicy::new(
-                Duration::from_millis(500),
-                Duration::from_secs(5),
-                Duration::from_secs(86400),
-            );
-            // find_class_fast resolves a stale reinstanced class
-            // for this game (research.md 22.13): its CDO vtable
-            // never fires. Read the vtable from the LIVE player
-            // instance instead, which only exists once a save is
-            // loaded; the backoff waits for it.
-            let Some(h) = ueforge::hook::install_with_backoff("pe_dispatch", policy, || {
-                let ptr = ueforge::ue::actor::find_actors_by_chain(HOOK_CLASS)
-                    .into_iter()
-                    .next()
-                    .ok_or("player not loaded")?;
-                // SAFETY: ptr came from the GObjects iteration
-                // inside find_actors_by_chain this attempt; it is
-                // a live UObject.
-                let obj = unsafe { &*(ptr as *const ueforge::ue::UObject) };
-                ueforge::hook::ProcessEventHook::install_for_object(HOOK_CLASS, obj, pe_handler)
-            }) else {
-                return;
-            };
-            ueforge::log::log(format_args!(
-                "pe_dispatch: hook installed on {HOOK_CLASS}"
-            ));
-            ueforge::hook::register(h);
-        });
+    // The player class only exists once a save is loaded, and
+    // features().once actions run inline and sequentially, so
+    // this wait must not block the chain. A stoppable worker
+    // retries every few seconds and stops itself once installed,
+    // which also means shutdown can join it: a raw thread parked
+    // in a day-long backoff would keep running after the DLL
+    // unloaded and crash a hot reload.
+    std::mem::forget(modforge::rpg::poller::spawn_interval(
+        "misery-pe-dispatch",
+        Duration::from_secs(2),
+        try_install_hook,
+    ));
 }
+
+/// One install attempt. Silent until it succeeds; once the hook
+/// is in, later ticks do nothing.
+fn try_install_hook() {
+    if HOOK_INSTALLED.load(Ordering::Acquire) {
+        return;
+    }
+    // find_class_fast resolves a stale reinstanced class for this
+    // game (research.md 22.13): its CDO vtable never fires. Read
+    // the vtable from the LIVE player instance instead.
+    let Some(ptr) = ueforge::ue::actor::find_actors_by_chain(HOOK_CLASS)
+        .into_iter()
+        .next()
+    else {
+        return;
+    };
+    // SAFETY: ptr came from this call's GObjects iteration; it is
+    // a live UObject.
+    let obj = unsafe { &*(ptr as *const ueforge::ue::UObject) };
+    match ueforge::hook::ProcessEventHook::install_for_object(HOOK_CLASS, obj, pe_handler) {
+        Ok(h) => {
+            HOOK_INSTALLED.store(true, Ordering::Release);
+            ueforge::log::log(format_args!("pe_dispatch: hook installed on {HOOK_CLASS}"));
+            ueforge::hook::register(h);
+        }
+        Err(e) => {
+            ueforge::log::log(format_args!("pe_dispatch: install failed ({e}), will retry"));
+        }
+    }
+}
+
+static HOOK_INSTALLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn pe_handler(
     this: &ueforge::ue::UObject,

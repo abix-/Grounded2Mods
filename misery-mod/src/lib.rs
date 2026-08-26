@@ -84,6 +84,16 @@ ueforge::ue4ss_mod!(MOD_INFO);
 fn on_unreal_init() {
     let _rt = ueforge::ue::platform::resolve_and_init(PROCESS_EVENT_IDX, G_OBJECTS_LAYOUT);
 
+    // Our watchers enqueue onto the game-thread drain, which the
+    // ProcessEvent hook serves. Hooks tear down at order 100, so
+    // the watchers must be stopped before that or they tick on
+    // into a drain nobody is draining and hold the DLL open.
+    ueforge::shutdown::SHUTDOWN_REGISTRY.register(ueforge::shutdown::ShutdownHandlerDef {
+        name: "misery::pollers",
+        order: 50,
+        run: || modforge::rpg::poller::shutdown_all(),
+    });
+
     debug::spawn(DEBUG_PORT);
 
     ueforge::features()

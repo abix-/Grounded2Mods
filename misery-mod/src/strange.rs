@@ -240,27 +240,33 @@ pub fn live_squares() -> Vec<(String, i32, i32)> {
 
 pub fn install() {
     register_ops();
-    let _ = std::thread::Builder::new()
-        .name("misery-strange".into())
-        .spawn(watcher);
+    // Stoppable so the DLL can unload cleanly on a hot reload.
+    std::mem::forget(modforge::rpg::poller::spawn_interval(
+        "misery-strange",
+        POLL,
+        watcher,
+    ));
 }
 
+/// Squares already rolled for phenomena.
+static DONE: std::sync::Mutex<Option<HashSet<String>>> = std::sync::Mutex::new(None);
+
 fn watcher() {
-    let mut done: HashSet<String> = HashSet::new();
-    loop {
-        std::thread::sleep(POLL);
+    let mut guard = DONE.lock().unwrap_or_else(|e| e.into_inner());
+    let done = guard.get_or_insert_with(HashSet::new);
+    {
         if ue::try_runtime().is_none() {
-            continue;
+            return;
         }
         if SPAWNED_TOTAL.load(Ordering::Relaxed) >= SESSION_CAP {
-            continue;
+            return;
         }
         let squares = live_squares();
         let live: HashSet<String> = squares.iter().map(|(n, _, _)| n.clone()).collect();
         // A square that unloaded rolls fresh when it returns.
         done.retain(|s| live.contains(s));
 
-        let Some(tile) = active_tile_size() else { continue };
+        let Some(tile) = active_tile_size() else { return };
         let emissions = emission_level();
 
         for (name, cx, cy) in squares {
@@ -556,6 +562,21 @@ fn register_ops() {
             },
         ),
     ]);
+}
+
+/// An actor's facing, degrees, from its root component's
+/// rotation (USceneComponent::RelativeRotation +0x140, stored
+/// pitch, yaw, roll).
+pub fn actor_yaw(actor: *const u8) -> Option<f64> {
+    // SAFETY: actor is a live UObject; RootComponent +0x1A0 and
+    // RelativeRotation +0x140 are documented engine fields.
+    unsafe {
+        let root: *const u8 = read_at(actor, 0x1A0);
+        if root.is_null() {
+            return None;
+        }
+        Some(read_at::<f64>(root, 0x140 + 8))
+    }
 }
 
 pub fn actor_location(actor: *const u8) -> Option<(f64, f64, f64)> {
