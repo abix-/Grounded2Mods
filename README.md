@@ -39,10 +39,8 @@ native games such as Horsey Game use Modforge directly.
 
 ## Framework capabilities
 
-The placement rule is simple: engine-independent code belongs in
-`modforge`; Unreal Engine bindings belong in `ueforge`; Unity
-bindings belong in `unityforge`. Game crates keep only game facts,
-content, offsets, and behavior.
+Shared systems live in Modforge, engine bindings in Ueforge or
+Unityforge, and game-specific code in each mod.
 
 ### modforge
 
