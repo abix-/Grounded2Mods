@@ -169,6 +169,34 @@ pub fn is_level_actor(full_name: &str) -> bool {
     }
 }
 
+/// Any live actor in a loaded level.
+///
+/// Engine functions that take a `WorldContextObject` only use it
+/// to find which world they are acting on, so for anything
+/// world-wide (a trace, a spawn) ANY actor will do and there is
+/// no reason for a caller to name a game's player class.
+///
+/// Returns `None` when no level is loaded, which is the honest
+/// answer at a main menu.
+pub fn any_world_actor() -> Option<*const u8> {
+    let rt = ue::try_runtime()?;
+    // SAFETY: rt came from try_runtime; the view is built from
+    // the validated image base + offsets.
+    let view = unsafe { ue::GObjectsView::from_image(rt.image_base, rt.platform_offsets) };
+    if !view.is_valid() {
+        return None;
+    }
+    for obj in view.iter() {
+        if obj.is_default_object() {
+            continue;
+        }
+        if is_level_actor(&obj.full_name()) {
+            return Some(obj.as_ptr());
+        }
+    }
+    None
+}
+
 /// Every actor (not component) in a level whose path contains
 /// `path_needle`, as (class name, pointer).
 ///

@@ -272,7 +272,9 @@ fn build_monument(
     members: Vec<StructureDef>,
     centre: (f64, f64),
 ) -> Result<serde_json::Value, String> {
-    let Some(z) = crate::strange::ground_at(centre.0, centre.1) else {
+    let Some(z) =
+        ueforge::ue::trace::ground_at(centre.0, centre.1, crate::TRACE_UP, crate::TRACE_DOWN)
+    else {
         return Err("no ground under the monument".into());
     };
     // A seed from the spot itself: the same place rolls the same
@@ -342,8 +344,11 @@ fn register_ops() {
                         .into_iter()
                         .next()
                         .ok_or("no player")?;
-                        let here =
-                            crate::strange::actor_location(player).ok_or("no location")?;
+                        // SAFETY: live player actor, game thread.
+                        let here = unsafe {
+                            ueforge::ue::transform::world_location(player)
+                        }
+                        .ok_or("no location")?;
                         build_monument(members, (here.0, here.1))
                     },
                     Duration::from_secs(30),

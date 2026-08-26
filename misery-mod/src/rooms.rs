@@ -158,12 +158,19 @@ fn build_room(args: &serde_json::Value) -> Result<serde_json::Value, String> {
                 .into_iter()
                 .next()
                 .ok_or("no player")?;
-            let here = crate::strange::actor_location(player).ok_or("no location")?;
+            // SAFETY: live player actor, game thread.
+            let here = unsafe { ueforge::ue::transform::world_location(player) }
+                .ok_or("no location")?;
             // In front of the player, not along a fixed compass
             // direction: UE yaw 0 faces +x, and yaw grows toward +y.
-            let yaw = crate::strange::actor_yaw(player).unwrap_or(0.0).to_radians();
+            // SAFETY: as above.
+            let yaw = unsafe { ueforge::ue::transform::read(player) }
+                .map(|t| t.yaw)
+                .unwrap_or(0.0)
+                .to_radians();
             let (x, y) = (here.0 + yaw.cos() * away, here.1 + yaw.sin() * away);
-            let z = crate::strange::ground_at(x, y).unwrap_or(here.2);
+            let z = ueforge::ue::trace::ground_at(x, y, crate::TRACE_UP, crate::TRACE_DOWN)
+                .unwrap_or(here.2);
             let comp = crate::harvest::Composition {
                 source: "generated room".to_string(),
                 pieces,

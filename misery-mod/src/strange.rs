@@ -30,10 +30,6 @@ const PHENOMENA_PER_EMISSION: f64 = 0.03;
 const PHENOMENA_CAP: usize = 4;
 /// Session cap on spawned props.
 const SESSION_CAP: u64 = 400;
-/// How far above a candidate point the ground trace starts, and
-/// how far down it reaches.
-const TRACE_UP: f64 = 4000.0;
-const TRACE_DOWN: f64 = 8000.0;
 /// Keep phenomena off the square's very edge (units).
 const EDGE_MARGIN: f64 = 1200.0;
 const POLL: Duration = Duration::from_secs(5);
@@ -386,12 +382,28 @@ fn place_phenomena(
             let dist = fastrand::f64() * phenomenon.spread;
             let x = px + ang.cos() * dist;
             let y = py + ang.sin() * dist;
-            let Some(z) = ground_z(world_ctx, x, y) else { continue };
+            // SAFETY: world_ctx is a live actor, game thread.
+            let Some(z) = (unsafe {
+                ueforge::ue::trace::ground_z(world_ctx, x, y, crate::TRACE_UP, crate::TRACE_DOWN)
+            }) else {
+                continue;
+            };
             let class_name =
                 phenomenon.classes[fastrand::usize(0..phenomenon.classes.len())];
             let Some(class) = ue::find_class_fast(class_name) else { continue };
             let yaw = fastrand::f64() * std::f64::consts::TAU;
-            if spawn_actor(world_ctx, class.as_object().as_ptr() as u64, x, y, z, yaw) != 0 {
+            // SAFETY: world_ctx is a live actor and the class came
+            // from this frame's lookup; game thread.
+            let actor = unsafe {
+                ueforge::ue::spawn::spawn_actor(
+                    world_ctx,
+                    class.as_object().as_ptr() as u64,
+                    (x, y, z),
+                    yaw,
+                    1.0,
+                )
+            };
+            if actor != 0 {
                 SPAWNED_TOTAL.fetch_add(1, Ordering::Relaxed);
                 placed += 1;
             }
@@ -402,55 +414,6 @@ fn place_phenomena(
     Ok(serde_json::json!({"placed": placed}))
 }
 
-/// Ground height at (x, y), using the player as world context.
-/// Game thread only.
-pub fn ground_at(x: f64, y: f64) -> Option<f64> {
-    let player = ueforge::ue::actor::find_actors_by_chain("BP_SGKMasterCharacter_C")
-        .into_iter()
-        .next()?;
-    ground_z(player, x, y)
-}
-
-/// Trace down onto the terrain at (x, y). Returns the ground z.
-///
-/// TRACE_UP and TRACE_DOWN are MISERY's: they have to span the
-/// height range this game's worlds actually use.
-fn ground_z(world_ctx: *const u8, x: f64, y: f64) -> Option<f64> {
-    // SAFETY: world_ctx is a live actor on the game thread.
-    unsafe { ueforge::ue::trace::ground_z(world_ctx, x, y, TRACE_UP, TRACE_DOWN) }
-}
-
-/// Place an actor. Game thread only. Returns the actor or 0.
-pub fn spawn_actor(world_ctx: *const u8, class_ptr: u64, x: f64, y: f64, z: f64, yaw: f64) -> u64 {
-    // SAFETY: world_ctx is a live actor and class_ptr a live
-    // UClass, on the game thread.
-    unsafe { ueforge::ue::spawn::spawn_actor(world_ctx, class_ptr, (x, y, z), yaw, 1.0) }
-}
-
-/// FTransform in a parm block: quat rotation (4 doubles),
-/// translation (3), scale (3), 0x20-aligned members, 0x60 total.
-/// Start a deferred spawn. The actor exists but has not run its
-/// construction yet, so components can be configured (mesh,
-/// mobility) before [`finish_spawn`].
-pub fn begin_spawn(
-    world_ctx: *const u8,
-    class_ptr: u64,
-    x: f64,
-    y: f64,
-    z: f64,
-    yaw: f64,
-    scale: f64,
-) -> u64 {
-    // SAFETY: world_ctx is a live actor and class_ptr a live
-    // UClass, on the game thread.
-    unsafe { ueforge::ue::spawn::begin_spawn(world_ctx, class_ptr, (x, y, z), yaw, scale) }
-}
-
-/// Complete a deferred spawn.
-pub fn finish_spawn(actor: u64, x: f64, y: f64, z: f64, yaw: f64, scale: f64) -> u64 {
-    // SAFETY: actor came from begin_spawn, on the game thread.
-    unsafe { ueforge::ue::spawn::finish_spawn(actor, (x, y, z), yaw, scale) }
-}
 
 fn register_ops() {
     ueforge::ops::OP_REGISTRY.register_many([
@@ -479,7 +442,9 @@ fn register_ops() {
                                 .into_iter()
                                 .next()
                                 .ok_or("no player")?;
-                        let loc = actor_location(player).ok_or("no player location")?;
+                        // SAFETY: live player actor, game thread.
+                        let loc = unsafe { ueforge::ue::transform::world_location(player) }
+                            .ok_or("no player location")?;
                         place_phenomena(&[p], (loc.0, loc.1), 400.0)
                     },
                     Duration::from_secs(15),
@@ -489,14 +454,3 @@ fn register_ops() {
     ]);
 }
 
-/// An actor's facing, in degrees.
-pub fn actor_yaw(actor: *const u8) -> Option<f64> {
-    // SAFETY: actor is a live UObject from a GObjects walk.
-    unsafe { ueforge::ue::transform::read(actor) }.map(|t| t.yaw)
-}
-
-/// Where an actor is, in world space. Game thread only.
-pub fn actor_location(actor: *const u8) -> Option<(f64, f64, f64)> {
-    // SAFETY: actor is a live UObject on the game thread.
-    unsafe { ueforge::ue::transform::world_location(actor) }
-}

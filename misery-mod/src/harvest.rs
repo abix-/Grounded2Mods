@@ -247,7 +247,10 @@ fn place_composition(
         .into_iter()
         .next()
         .ok_or("no player")?;
-    let here = crate::strange::actor_location(player).ok_or("no player location")?;
+    // SAFETY: player is a live actor from the walk above, and
+    // this runs on the game thread.
+    let here = unsafe { ueforge::ue::transform::world_location(player) }
+        .ok_or("no player location")?;
     let placed = place_composition_at(
         comp,
         at_x.unwrap_or(here.0),
@@ -293,15 +296,17 @@ pub fn place_composition_at(
         let yaw = piece.yaw.to_radians() + turn;
         let (px, py, pz) = (cx + rx, cy + ry, cz + piece.dz);
 
-        let actor = crate::strange::begin_spawn(
-            player,
-            class.as_object().as_ptr() as u64,
-            px,
-            py,
-            pz,
-            yaw,
-            piece.scale.max(0.01),
-        );
+        // SAFETY: player is a live actor and the class came from
+        // this frame's lookup; game thread.
+        let actor = unsafe {
+            ueforge::ue::spawn::begin_spawn(
+                player,
+                class.as_object().as_ptr() as u64,
+                (px, py, pz),
+                yaw,
+                piece.scale.max(0.01),
+            )
+        };
         if actor == 0 {
             failed += 1;
             continue;
@@ -314,7 +319,11 @@ pub fn place_composition_at(
                 apply_mesh(actor, *mesh_ptr);
             }
         }
-        if crate::strange::finish_spawn(actor, px, py, pz, yaw, piece.scale.max(0.01)) == 0 {
+        // SAFETY: actor came from begin_spawn above.
+        let done = unsafe {
+            ueforge::ue::spawn::finish_spawn(actor, (px, py, pz), yaw, piece.scale.max(0.01))
+        };
+        if done == 0 {
             failed += 1;
         } else {
             placed += 1;

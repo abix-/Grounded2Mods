@@ -106,6 +106,25 @@ pub unsafe fn line_trace(
     })
 }
 
+/// The ground height at an X and Y, finding the world context
+/// itself.
+///
+/// `up` and `down` are the caller's, and they are a real
+/// decision rather than a detail: too short and a point on a hill
+/// returns nothing, too tall and the trace hits a roof and calls
+/// it the ground.
+///
+/// Returns `None` when nothing is under the point, or when no
+/// level is loaded.
+///
+/// Game thread only.
+pub fn ground_at(x: f64, y: f64, up: f64, down: f64) -> Option<f64> {
+    let ctx = super::actor::any_world_actor()?;
+    // SAFETY: ctx is a live actor from the walk above; the
+    // caller's contract puts us on the game thread.
+    unsafe { ground_z(ctx, x, y, up, down) }
+}
+
 /// The ground height at an X and Y: trace straight down through
 /// the point and report where it lands.
 ///

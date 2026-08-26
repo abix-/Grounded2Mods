@@ -26,6 +26,17 @@ use std::time::Duration;
 use ueforge::ue::GObjectsLayout;
 use ueforge::ue::datatable::FieldTweak;
 
+/// How far above a point a ground trace starts, and how far down
+/// it reaches, in engine units.
+///
+/// These are MISERY's, not the engine's: 40 m up is high enough
+/// to clear this game's terrain and low enough that the trace
+/// hits the ground rather than a building's roof, and 80 m down
+/// reaches the bottom of its pits. The trace itself is
+/// `ueforge::ue::trace::ground_at`.
+pub const TRACE_UP: f64 = 4000.0;
+pub const TRACE_DOWN: f64 = 8000.0;
+
 // MaxStack is Int (i32) at offset 0x44 within S_ItemDetails rows.
 // See docs/research.md section 23.
 static STACK_TWEAK: FieldTweak<i32> = FieldTweak::new("ItemList", 0x44);
