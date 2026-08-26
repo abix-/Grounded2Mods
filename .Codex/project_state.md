@@ -47,6 +47,7 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 - Expanded `modforge::storyteller` with the complete engine-independent adaptive-pressure selection, tier, placement, and active-event lifecycle used by Survivalist's horde.
 - Migrated the horde to the Modforge authority while preserving Unity observation and execution, Survivalist's content values, logging, and chronicle text. Added no tests and did not build.
 - Replaced the stale root framework prose with concise capability tables for Modforge, Ueforge, and Unityforge, and moved readers to the existing dedicated decompilation documentation for implementation detail.
+- Linked every named framework capability directly to its owning source and normalized the Modforge table so each public system module appears exactly once.
 
 ## Next steps
 
