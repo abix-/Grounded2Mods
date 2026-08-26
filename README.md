@@ -34,15 +34,8 @@ crates that consume modforge directly or through a forge.
    └───────────────┘    └───────────────┘    └──────────────┘
 ```
 
-An "engine forge" is reusable: any UE5 game sits on ueforge,
-any Unity game sits on unityforge. A native-PE game has no
-managed loader to lean on, so its per-game crate carries its
-own injector + game-specific accessors and consumes modforge
-directly. The first such crate is `horsey-mod` (Horsey Game).
-If a second native-PE game shows up, the
-`inject + HTTP-bind + binary-patch` pattern in horsey-mod
-gets lifted into a shared `modforge::inject` module; until
-then it lives where it's used.
+Ueforge supports UE5 mods, Unityforge supports Unity mods, and
+native games such as Horsey Game use Modforge directly.
 
 ## Framework capabilities
 

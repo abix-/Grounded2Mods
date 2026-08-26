@@ -54,6 +54,7 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 - Replaced the root game table's feature inventories with one-sentence purpose summaries.
 - Moved reverse-engineering navigation into the workspace docs index and moved detailed credits into `docs/credits.md`.
 - Moved workspace build prerequisites from the root README into `docs/building.md`.
+- Reduced the root framework explanation to one sentence covering UE5, Unity, and native games.
 
 ## Next steps
 
