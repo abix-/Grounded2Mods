@@ -85,32 +85,7 @@ fn actor_mesh(actor: *const u8) -> Option<(String, f64, f64, f64)> {
 /// Every actor owned by a level whose path contains `needle`,
 /// as (class name, actor pointer).
 fn level_actors(needle: &str) -> Vec<(String, *const u8)> {
-    let mut out = Vec::new();
-    let Some(rt) = ue::try_runtime() else { return out };
-    // SAFETY: runtime came from try_runtime; the view is built
-    // from the validated image base + offsets.
-    let view = unsafe { ue::GObjectsView::from_image(rt.image_base, rt.platform_offsets) };
-    if !view.is_valid() {
-        return out;
-    }
-    for obj in view.iter() {
-        if obj.is_default_object() {
-            continue;
-        }
-        let full = obj.full_name();
-        if !full.contains(needle) || !full.contains(".PersistentLevel.") {
-            continue;
-        }
-        // Components live under the actor and carry a further dot
-        // in the tail; keep only the actor itself.
-        let Some(tail) = full.split(".PersistentLevel.").nth(1) else { continue };
-        if tail.contains('.') {
-            continue;
-        }
-        let class = obj.class().map(|c| c.as_object().name()).unwrap_or_default();
-        out.push((class, obj.as_ptr()));
-    }
-    out
+    ue::actor::actors_in_levels(needle)
 }
 
 /// Class histogram of a square: what a place is actually made of.

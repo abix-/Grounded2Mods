@@ -34,6 +34,7 @@ pub mod patterns;
 pub mod quality;
 pub mod research;
 pub mod ring;
+pub mod roll;
 pub mod rpg;
 pub mod scanner;
 pub mod seh;

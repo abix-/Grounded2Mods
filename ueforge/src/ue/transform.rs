@@ -101,6 +101,31 @@ pub unsafe fn read(actor: *const u8) -> Option<Transform> {
     }
 }
 
+/// The actor's WORLD location, via `Actor:K2_GetActorLocation`.
+///
+/// Different from [`read`], which returns the root component's
+/// RELATIVE transform: relative to its parent, which for an actor
+/// attached to something else is not where it is in the world.
+/// Use this when the answer has to be a world position; use
+/// [`read`] when copying a placement, since that is what a
+/// harvest wants to reproduce.
+///
+/// Goes through ProcessEvent, so game thread only.
+///
+/// # Safety
+/// `actor` must be a live `AActor`.
+pub unsafe fn world_location(actor: *const u8) -> Option<(f64, f64, f64)> {
+    let cls = super::find_class_fast("Actor")?;
+    let func = cls.get_function("Actor", "K2_GetActorLocation")?;
+    let mut parms = [0f64; 3];
+    // SAFETY: caller guarantees a live actor on the game thread;
+    // the function returns one FVector, which is this buffer.
+    unsafe {
+        (*(actor as *const UObject)).process_event(func, parms.as_mut_ptr() as *mut c_void);
+    }
+    Some((parms[0], parms[1], parms[2]))
+}
+
 /// A static mesh's name and the HALF-size of its own geometry.
 ///
 /// Read off the asset, not the actor, so it is the mesh's

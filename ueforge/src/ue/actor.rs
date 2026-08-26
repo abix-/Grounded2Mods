@@ -137,6 +137,69 @@ pub fn find_actors_by_chain(class_needle: &str) -> Vec<*const u8> {
         .collect()
 }
 
+/// The object path out of a full name.
+///
+/// A UE full name is `"ClassName /Game/path/Level.PersistentLevel.Actor"`.
+/// The class prefix MUST be stripped before the path is used as a
+/// key, or every class becomes its own entry. That exact bug
+/// over-spawned NPCs in MISERY until it was found.
+pub fn path_of(full_name: &str) -> Option<&str> {
+    full_name.split(' ').nth(1)
+}
+
+/// The level that owns an actor, from its full name: everything
+/// before `.PersistentLevel`.
+///
+/// This is how streamed levels are told apart at runtime. In a
+/// world built from streamed tiles it is the tile the actor
+/// belongs to.
+pub fn level_of(full_name: &str) -> Option<&str> {
+    path_of(full_name)?.split(".PersistentLevel").next()
+}
+
+/// True when a full name names an ACTOR in a level rather than
+/// one of its components.
+///
+/// Components live under the actor and so carry a further dot in
+/// the tail after `.PersistentLevel.`.
+pub fn is_level_actor(full_name: &str) -> bool {
+    match full_name.split(".PersistentLevel.").nth(1) {
+        Some(tail) => !tail.contains('.'),
+        None => false,
+    }
+}
+
+/// Every actor (not component) in a level whose path contains
+/// `path_needle`, as (class name, pointer).
+///
+/// Use this to sweep one streamed level or one group of them,
+/// where [`find_actors_by_chain`] answers "every actor of a
+/// kind" instead.
+pub fn actors_in_levels(path_needle: &str) -> Vec<(String, *const u8)> {
+    let mut out = Vec::new();
+    let Some(rt) = ue::try_runtime() else {
+        return out;
+    };
+    // SAFETY: rt came from try_runtime; the view is built from
+    // the validated image base + offsets.
+    let view = unsafe { ue::GObjectsView::from_image(rt.image_base, rt.platform_offsets) };
+    if !view.is_valid() {
+        return out;
+    }
+    for obj in view.iter() {
+        if obj.is_default_object() {
+            continue;
+        }
+        let full = obj.full_name();
+        if !full.contains(path_needle) || !is_level_actor(&full) {
+            continue;
+        }
+        let class = obj.class().map(|c| c.as_object().name()).unwrap_or_default();
+        out.push((class, obj.as_ptr()));
+    }
+    out
+}
+
 /// Every live object whose class chain contains `class_needle`,
 /// with no level requirement. Widgets and the game instance are
 /// not actors and live outside any PersistentLevel, so

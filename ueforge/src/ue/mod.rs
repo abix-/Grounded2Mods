@@ -24,6 +24,7 @@ pub mod probe;
 pub mod resolvers;
 pub mod status_effect;
 pub mod struct_fields;
+pub mod spawn;
 pub mod tarray;
 pub mod tmap;
 pub mod transform;

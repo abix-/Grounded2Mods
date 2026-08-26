@@ -298,40 +298,32 @@ fn watcher() {
 
 /// Roll which phenomena a square gets. Weighted draw without
 /// replacement so one square rarely doubles a phenomenon.
+/// How many phenomena a square gets. The curve, the quiet
+/// chance, the cap and the weighted picking are
+/// `modforge::roll`, which is unit-tested; what stays here is
+/// the phenomena themselves and the reward-needs-a-danger rule.
+const BUDGET: modforge::roll::Budget = modforge::roll::Budget {
+    quiet_chance: QUIET_CHANCE,
+    at_zero: PHENOMENA_AT_ZERO,
+    per_level: PHENOMENA_PER_EMISSION,
+    intensity: INTENSITY,
+    max: PHENOMENA_CAP,
+};
+
 fn roll_square(emissions: i32) -> Vec<&'static Phenomenon> {
-    if fastrand::f64() < QUIET_CHANCE {
+    if BUDGET.is_quiet() {
         return Vec::new();
     }
-    let mean = INTENSITY * (PHENOMENA_AT_ZERO + PHENOMENA_PER_EMISSION * emissions as f64);
-    // Random count in 1..=ceil(2*mean), capped: the doubling keeps
-    // the spread wide so the mean is not a predictable outcome.
-    let span = ((2.0 * mean).ceil() as usize).clamp(1, PHENOMENA_CAP);
-    let count = 1 + fastrand::usize(0..span);
-
-    let mut chosen: Vec<&'static Phenomenon> = Vec::new();
-    for _ in 0..count {
-        let weights: Vec<f64> = PHENOMENA
-            .iter()
-            .map(|p| {
-                if chosen.iter().any(|c| std::ptr::eq(*c, p)) {
-                    return 0.0;
-                }
-                (p.weight_base + p.weight_per_emission * emissions as f64).max(0.0)
-            })
-            .collect();
-        let total: f64 = weights.iter().sum();
-        if total <= 0.0 {
-            break;
-        }
-        let mut roll = fastrand::f64() * total;
-        for (i, w) in weights.iter().enumerate() {
-            roll -= w;
-            if roll <= 0.0 {
-                chosen.push(&PHENOMENA[i]);
-                break;
-            }
-        }
-    }
+    let level = emissions as f64;
+    let count = BUDGET.roll_count(level);
+    let weights: Vec<modforge::roll::Weight> = PHENOMENA
+        .iter()
+        .map(|p| modforge::roll::Weight::new(p.weight_base, p.weight_per_emission))
+        .collect();
+    let mut chosen: Vec<&'static Phenomenon> = modforge::roll::pick_distinct(&weights, level, count)
+        .into_iter()
+        .map(|i| &PHENOMENA[i])
+        .collect();
 
     // A reward with nothing guarding it is just a gift. If the
     // square rolled something worth taking but nothing worth

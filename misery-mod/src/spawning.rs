@@ -13,7 +13,6 @@
 //! doubling) at DOUBLE_AT_EMISSIONS.
 
 use std::collections::{HashMap, HashSet};
-use std::ffi::c_void;
 use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
 use std::time::Duration;
 
@@ -96,16 +95,30 @@ fn census() -> HashMap<String, usize> {
 }
 
 /// The map square that owns an actor, from its full name.
-/// Full names are "ClassName /Game/path/Grid.Level.PersistentLevel.Actor";
-/// the class prefix MUST be stripped or every class becomes its
-/// own square key.
+///
+/// A square IS the streamed level that owns the actor
+/// (`ue::actor::level_of`); MISERY's part is only that squares
+/// live under WorldPresets, which excludes the hub.
 fn square_of(full_name: &str) -> Option<String> {
-    let path = full_name.split(' ').nth(1)?;
-    if !path.contains("WorldPresets") {
+    let level = ueforge::ue::actor::level_of(full_name)?;
+    if !level.contains("WorldPresets") {
         return None;
     }
-    Some(path.split(".PersistentLevel").next()?.to_string())
+    Some(level.to_string())
 }
+
+/// Extras per square, as a share of what the square already has:
+/// the mean reaches the square's own vanilla count (a doubling)
+/// at DOUBLE_AT_EMISSIONS. The curve, the quiet chance and the
+/// cap are `modforge::roll`, which is unit-tested; what stays
+/// here is only what MISERY spends the budget on.
+const BUDGET: modforge::roll::Budget = modforge::roll::Budget {
+    quiet_chance: QUIET_CHANCE,
+    at_zero: 0.0,
+    per_level: 1.0 / DOUBLE_AT_EMISSIONS,
+    intensity: INTENSITY,
+    max: PER_SQUARE_CAP,
+};
 
 fn roll_plan(square: &str, vanilla: usize, emissions: i32) -> Plan {
     let mut plan = Plan {
@@ -114,13 +127,11 @@ fn roll_plan(square: &str, vanilla: usize, emissions: i32) -> Plan {
         escalations: 0,
         pack: 0,
     };
-    if fastrand::f64() < QUIET_CHANCE {
+    // A quiet square gets nothing, packs included.
+    if BUDGET.is_quiet() {
         return plan;
     }
-    let f = INTENSITY * (emissions as f64) / DOUBLE_AT_EMISSIONS;
-    let r = fastrand::f64() * 2.0 * f;
-    let extras = ((vanilla as f64) * r).round() as usize;
-    let extras = extras.min(PER_SQUARE_CAP);
+    let extras = BUDGET.roll_scaled(emissions as f64, vanilla as f64);
 
     let p_escalate =
         (ESCALATE_BASE + ESCALATE_PER_EMISSION * emissions as f64).min(ESCALATE_CAP);
@@ -282,60 +293,20 @@ fn execute_plan(plan: &Plan) -> Result<serde_json::Value, String> {
 
 /// Actor:K2_GetActorLocation via ProcessEvent. Game thread only.
 fn actor_location(actor: *const u8) -> Option<(f64, f64, f64)> {
-    let cls = ue::find_class_fast("Actor")?;
-    let func = cls.get_function("Actor", "K2_GetActorLocation")?;
-    let mut parms = [0f64; 3];
-    // SAFETY: actor is a live UObject on the game thread; parms
-    // matches the UFunction's 0x18-byte return layout.
-    unsafe {
-        (*(actor as *const UObject)).process_event(func, parms.as_mut_ptr() as *mut c_void);
-    }
-    Some((parms[0], parms[1], parms[2]))
+    // SAFETY: actor is a live UObject on the game thread.
+    unsafe { ueforge::ue::transform::world_location(actor) }
 }
 
-/// AIBlueprintHelperLibrary:SpawnAIFromClass via ProcessEvent.
-/// Parm layout from the object dump (research.md 26.3). Game
-/// thread only. Returns the spawned pawn address or 0.
+/// Spawn one NPC. The engine call lives in
+/// `ueforge::ue::spawn`; what is MISERY's here is only that
+/// extras are spawned with collision checking off, so a blocked
+/// spot does not silently swallow the spawn.
 fn spawn_class(world_ctx: *const u8, class_ptr: u64, x: f64, y: f64, z: f64) -> u64 {
-    #[repr(C)]
-    struct Parms {
-        world_context: u64,
-        pawn_class: u64,
-        behavior_tree: u64,
-        location: [f64; 3],
-        rotation: [f64; 3],
-        b_no_collision_fail: u8,
-        _pad: [u8; 7],
-        owner: u64,
-        return_value: u64,
-    }
-    let Some(cls) = ue::find_class_fast("AIBlueprintHelperLibrary") else {
-        return 0;
-    };
-    let Some(func) = cls.get_function("AIBlueprintHelperLibrary", "SpawnAIFromClass") else {
-        return 0;
-    };
-    let Some(cdo) = cls.class_default_object() else {
-        return 0;
-    };
-    let mut parms = Parms {
-        world_context: world_ctx as u64,
-        pawn_class: class_ptr,
-        behavior_tree: 0,
-        location: [x, y, z],
-        rotation: [0.0; 3],
-        b_no_collision_fail: 1,
-        _pad: [0; 7],
-        owner: 0,
-        return_value: 0,
-    };
-    // SAFETY: cdo and func are live; parms matches the 0x60-byte
-    // parm block measured from the object dump and proven by
-    // research_spawn::spawn_one_npc.
+    // SAFETY: world_ctx is a live actor and class_ptr a live
+    // UClass, both from this frame's GObjects walk; game thread.
     unsafe {
-        cdo.process_event(func, &mut parms as *mut Parms as *mut c_void);
+        ueforge::ue::spawn::spawn_ai_from_class(world_ctx, class_ptr, (x, y, z), 0.0, true)
     }
-    parms.return_value
 }
 
 fn register_ops() {
