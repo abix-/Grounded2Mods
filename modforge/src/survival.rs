@@ -99,6 +99,63 @@ pub enum SurvivalError {
     Unregistered(String),
 }
 
+/// A settlement's survival pressure, from stable to collapse.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SettlementRung {
+    Comfortable,
+    Strained,
+    Desperate,
+    Terminal,
+}
+
+impl SettlementRung {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Comfortable => "comfortable",
+            Self::Strained => "strained",
+            Self::Desperate => "desperate",
+            Self::Terminal => "terminal",
+        }
+    }
+}
+
+/// Consumer-owned policy thresholds for settlement survival.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SettlementThresholds {
+    pub target_min_nutrition: f64,
+    pub desperate_nutrition: f64,
+    pub collapse_population_ratio: f64,
+    pub tiny_population: i64,
+    pub desperate_threats: i64,
+}
+
+/// Classify a settlement from engine-independent survival facts.
+pub fn settlement_rung(
+    nutrition: f64,
+    members: i64,
+    initial_members: i64,
+    threats: i64,
+    thresholds: SettlementThresholds,
+) -> SettlementRung {
+    let shrunk = initial_members > 0
+        && (members as f64) < (initial_members as f64) * thresholds.collapse_population_ratio;
+    let starving = nutrition <= thresholds.desperate_nutrition;
+    let tiny = members > 0 && members <= thresholds.tiny_population;
+
+    if members == 0 || (starving && (shrunk || tiny)) || (tiny && threats > 0) {
+        SettlementRung::Terminal
+    } else if starving || shrunk || threats >= thresholds.desperate_threats {
+        SettlementRung::Desperate
+    } else if nutrition < thresholds.target_min_nutrition
+        || threats >= 1
+        || (initial_members > 0 && members < initial_members)
+    {
+        SettlementRung::Strained
+    } else {
+        SettlementRung::Comfortable
+    }
+}
+
 impl SurvivalStats {
     /// Move every need for `dt` seconds under `condition`: hunger and
     /// thirst drain; rest drains awake and refills asleep; safety

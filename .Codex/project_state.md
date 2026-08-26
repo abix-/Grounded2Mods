@@ -17,6 +17,8 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 - Franchise tallying, strict-majority decisions, mean scores, and voter identity collection belong to `modforge::genome`.
 - Trait, voter, and collective reinforcement fan-out belongs to `modforge::genome`.
 - Survivalist retains voter eligibility, conscript exclusion, trait projections, thresholds, actions, outcome judgment, trait selection, reinforcement direction, and magnitude.
+- Settlement survival rungs and classification from nutrition, population loss, and threat pressure belong to `modforge::survival`.
+- Survivalist retains settlement threshold values, Unity reads, voting, and every response to the classified rung.
 
 ## Last session summary
 
@@ -37,6 +39,8 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 - Added no tests and did not build for the ballot extraction, following the direct instruction.
 - Expanded `modforge::genome` with shared trait, voter, and collective reinforcement dispatch and migrated the duplicated reinforcement loops in Survivalist survival, steal, trade, scavenge, murder, and robbery.
 - Preserved Survivalist's outcome judgment, trait choices, directions, magnitudes, Unity effects, logging, and chronicle text. Added no tests and did not build.
+- Moved Survivalist's settlement survival rungs and pressure classification into `modforge::survival` while preserving its threshold values and all Unity-driven responses.
+- Added no tests and did not build for the settlement survival extraction, following the direct instruction.
 
 ## Next steps
 
@@ -44,4 +48,4 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 
 ## Open questions
 
-- None for the completed item, upgrade, mission, ballot, and reinforcement extractions.
+- None for the completed item, upgrade, mission, ballot, reinforcement, and settlement survival extractions.

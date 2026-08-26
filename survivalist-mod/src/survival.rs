@@ -33,6 +33,7 @@ use serde_json::{Value as Json, json};
 
 use modforge::genome::Ballot;
 use modforge::ops::{OP_REGISTRY, OpDef};
+use modforge::survival::{SettlementRung as Rung, SettlementThresholds, settlement_rung};
 use unityforge::mono::{self, LogLevel, MonoObject};
 
 use crate::common::{
@@ -52,6 +53,24 @@ const DESPERATE_NUTRITION: f64 = 0.5;
 /// A raid target must have meaningfully MORE food than the
 /// raider, so hunger drives them toward the well-fed.
 const TARGET_MIN_NUTRITION: f64 = 1.0;
+
+/// A camp below this share of its worldgen population has
+/// suffered population collapse.
+const COLLAPSE_POPULATION_RATIO: f64 = 0.5;
+
+/// One or two survivors count as a tiny camp.
+const TINY_POPULATION: i64 = 2;
+
+/// This many simultaneous threats make a camp desperate.
+const DESPERATE_THREATS: i64 = 2;
+
+const SETTLEMENT_THRESHOLDS: SettlementThresholds = SettlementThresholds {
+    target_min_nutrition: TARGET_MIN_NUTRITION,
+    desperate_nutrition: DESPERATE_NUTRITION,
+    collapse_population_ratio: COLLAPSE_POPULATION_RATIO,
+    tiny_population: TINY_POPULATION,
+    desperate_threats: DESPERATE_THREATS,
+};
 
 /// A faction must be at least this aggressive to choose raiding
 /// over enduring the hunger. Low-aggression camps hold out (and
@@ -172,25 +191,6 @@ fn tally_vote(
 
 static EXPERIMENTS: Mutex<Vec<Experiment>> = Mutex::new(Vec::new());
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Rung {
-    Comfortable,
-    Strained,
-    Desperate,
-    Terminal,
-}
-
-impl Rung {
-    fn name(self) -> &'static str {
-        match self {
-            Rung::Comfortable => "comfortable",
-            Rung::Strained => "strained",
-            Rung::Desperate => "desperate",
-            Rung::Terminal => "terminal",
-        }
-    }
-}
-
 /// A settlement's assessed survival state.
 struct Survival {
     nutrition: f64,
@@ -220,23 +220,7 @@ fn assess(com: &MonoObject) -> Result<Survival, String> {
         .unwrap_or(0);
     let threats = list_len(com, "Threats");
 
-    // Desperation from the worst survival axis.
-    let shrunk = initial > 0 && (members as f64) < (initial as f64) * 0.5;
-    let starving = nutrition <= DESPERATE_NUTRITION;
-    let tiny = members > 0 && members <= 2;
-
-    let rung = if members == 0 {
-        Rung::Terminal
-    } else if (starving && (shrunk || tiny)) || (tiny && threats > 0) {
-        Rung::Terminal
-    } else if starving || shrunk || threats >= 2 {
-        Rung::Desperate
-    } else if nutrition < TARGET_MIN_NUTRITION || threats >= 1 || (initial > 0 && members < initial)
-    {
-        Rung::Strained
-    } else {
-        Rung::Comfortable
-    };
+    let rung = settlement_rung(nutrition, members, initial, threats, SETTLEMENT_THRESHOLDS);
 
     Ok(Survival {
         nutrition,
@@ -605,7 +589,8 @@ fn sue_for_peace(camps: &[Camp]) -> Result<bool, String> {
 /// keeps the bleed gradual and legible.
 fn collapse_response(camps: &[Camp]) -> Result<bool, String> {
     for c in camps {
-        let shrunk = c.initial > 0 && (c.members as f64) < (c.initial as f64) * 0.5;
+        let shrunk =
+            c.initial > 0 && (c.members as f64) < (c.initial as f64) * COLLAPSE_POPULATION_RATIO;
         if c.ctype == "Player"
             || c.rung != Rung::Desperate
             || !shrunk
