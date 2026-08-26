@@ -120,6 +120,7 @@ fn structures_from(comp: &Composition) -> Vec<StructureDef> {
 }
 
 /// UE piece (cm, z-up) to modforge PieceSpec (m, y-up, north -z).
+/// Extents are half-sizes, so only the axes swap, not the signs.
 fn to_piece_spec(p: &Piece, cx: f64, cy: f64, base_z: f64) -> PieceSpec {
     PieceSpec {
         class: p.class.clone(),
@@ -130,7 +131,14 @@ fn to_piece_spec(p: &Piece, cx: f64, cy: f64, base_z: f64) -> PieceSpec {
             (-(p.dx - cx) / CM_PER_M) as f32,
         ),
         yaw: p.yaw.to_radians() as f32,
+        pitch: p.pitch.to_radians() as f32,
+        roll: p.roll.to_radians() as f32,
         scale: p.scale as f32,
+        extent: Vec3::new(
+            (p.ey / CM_PER_M) as f32,
+            (p.ez / CM_PER_M) as f32,
+            (p.ex / CM_PER_M) as f32,
+        ),
     }
 }
 
@@ -143,8 +151,13 @@ fn to_piece(spec: &PieceSpec, member_offset: Vec3) -> Piece {
         dy: o.x as f64 * CM_PER_M,
         dz: o.y as f64 * CM_PER_M,
         yaw: (spec.yaw as f64).to_degrees(),
+        pitch: (spec.pitch as f64).to_degrees(),
+        roll: (spec.roll as f64).to_degrees(),
         scale: spec.scale as f64,
         mesh: spec.asset.clone(),
+        ex: (spec.extent.z as f64) * CM_PER_M,
+        ey: (spec.extent.x as f64) * CM_PER_M,
+        ez: (spec.extent.y as f64) * CM_PER_M,
     }
 }
 

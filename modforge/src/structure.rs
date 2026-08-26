@@ -122,7 +122,96 @@ pub struct PieceSpec {
     pub offset: Vec3,
     /// Turn about the up axis, radians.
     pub yaw: f32,
+    /// Tilt, radians. Roofs and ramps need it; most scenery is 0.
+    pub pitch: f32,
+    pub roll: f32,
     pub scale: f32,
+    /// Half-size of the piece's own geometry in its local axes,
+    /// metres. `Vec3::ZERO` when the host could not measure it.
+    /// This is what makes a piece more than a name: with it, a
+    /// piece is a box in space and its role can be read off its
+    /// proportions.
+    pub extent: Vec3,
+}
+
+/// What a piece is, judged by its proportions alone. No names, no
+/// per-game knowledge: a thin tall wide box is a wall whatever
+/// the game calls it.
+///
+/// Read in the structure convention (y up), so "flat" means small
+/// in y and "thin" means small in one horizontal axis.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PieceShape {
+    /// Flat and wide: floors, ceilings, road slabs, platforms.
+    Slab,
+    /// Thin in one horizontal axis, long and tall: walls, fences.
+    Panel,
+    /// Narrow in both horizontal axes, tall: posts, pillars, poles.
+    Post,
+    /// Long in one horizontal axis, small in the other two: beams,
+    /// pipes, rails.
+    Beam,
+    /// Roughly equal in all three: crates, rocks, machinery.
+    Block,
+    /// Too small to be architecture: clutter and props.
+    Clutter,
+    /// No measurement available.
+    Unknown,
+}
+
+/// Anything smaller than this in every axis is clutter, not
+/// architecture. Metres (half-extent).
+const CLUTTER_HALF_SIZE: f32 = 0.35;
+
+/// Classify a piece by the proportions of its box.
+///
+/// The thresholds are ratios, not sizes, so the same rules read a
+/// garden fence and a factory wall the same way.
+pub fn classify(extent: Vec3) -> PieceShape {
+    let (x, y, z) = (extent.x.abs(), extent.y.abs(), extent.z.abs());
+    if x <= 0.0 && y <= 0.0 && z <= 0.0 {
+        return PieceShape::Unknown;
+    }
+    if x < CLUTTER_HALF_SIZE && y < CLUTTER_HALF_SIZE && z < CLUTTER_HALF_SIZE {
+        return PieceShape::Clutter;
+    }
+    let horizontal_max = x.max(z);
+    let horizontal_min = x.min(z);
+    // Flat: height is a small fraction of the ground span.
+    if y * 4.0 < horizontal_max && horizontal_min * 3.0 > horizontal_max {
+        return PieceShape::Slab;
+    }
+    // Thin in one horizontal axis but tall and long: a panel.
+    if horizontal_min * 4.0 < horizontal_max && y * 2.0 > horizontal_max {
+        return PieceShape::Panel;
+    }
+    // Narrow footprint, tall: a post.
+    if y > horizontal_max * 2.0 {
+        return PieceShape::Post;
+    }
+    // Long and slender horizontally: a beam.
+    if horizontal_max > horizontal_min * 4.0 && horizontal_max > y * 2.0 {
+        return PieceShape::Beam;
+    }
+    PieceShape::Block
+}
+
+impl PieceSpec {
+    /// This piece's shape, from its measured extent.
+    pub fn shape(&self) -> PieceShape {
+        classify(self.extent * self.scale.abs())
+    }
+
+    /// World-space half-extent ignoring tilt: the box a piece
+    /// occupies on the ground, with yaw applied.
+    pub fn ground_half_size(&self) -> (f32, f32) {
+        let e = self.extent * self.scale.abs();
+        let (s, c) = self.yaw.sin_cos();
+        (
+            (e.x * c).abs() + (e.z * s).abs(),
+            (e.x * s).abs() + (e.z * c).abs(),
+        )
+    }
 }
 
 /// A whole building as data. `wall_color` paints walls, ceilings,
@@ -478,6 +567,91 @@ pub struct MonumentDef {
     /// What the place is good for to someone who knows it, from its
     /// type (life.md).
     pub good_for: crate::memory::GoodFor,
+}
+
+#[cfg(test)]
+mod shape_tests {
+    use super::*;
+
+    /// Half-extents in metres, structure convention (y up).
+    fn e(x: f32, y: f32, z: f32) -> Vec3 {
+        Vec3::new(x, y, z)
+    }
+
+    #[test]
+    fn floor_slab_is_a_slab() {
+        // 8m x 8m floor, 20cm thick.
+        assert_eq!(classify(e(4.0, 0.1, 4.0)), PieceShape::Slab);
+    }
+
+    #[test]
+    fn wall_panel_is_a_panel() {
+        // 4m long, 20cm thick, 3m tall.
+        assert_eq!(classify(e(2.0, 1.5, 0.1)), PieceShape::Panel);
+        // Same wall turned the other way.
+        assert_eq!(classify(e(0.1, 1.5, 2.0)), PieceShape::Panel);
+    }
+
+    #[test]
+    fn pillar_is_a_post() {
+        // 40cm square, 3m tall.
+        assert_eq!(classify(e(0.2, 1.5, 0.2)), PieceShape::Post);
+    }
+
+    #[test]
+    fn pipe_is_a_beam() {
+        // 6m long, 30cm through.
+        assert_eq!(classify(e(3.0, 0.15, 0.15)), PieceShape::Beam);
+    }
+
+    #[test]
+    fn crate_is_a_block() {
+        assert_eq!(classify(e(0.6, 0.6, 0.6)), PieceShape::Block);
+    }
+
+    #[test]
+    fn small_prop_is_clutter() {
+        assert_eq!(classify(e(0.1, 0.2, 0.15)), PieceShape::Clutter);
+    }
+
+    #[test]
+    fn unmeasured_is_unknown() {
+        assert_eq!(classify(Vec3::ZERO), PieceShape::Unknown);
+    }
+
+    #[test]
+    fn scale_is_applied_before_classifying() {
+        // A clutter-sized box scaled up ten times is architecture.
+        let p = PieceSpec {
+            class: "x".into(),
+            asset: None,
+            offset: Vec3::ZERO,
+            yaw: 0.0,
+            pitch: 0.0,
+            roll: 0.0,
+            scale: 10.0,
+            extent: e(0.2, 0.15, 0.02),
+        };
+        assert_eq!(p.shape(), PieceShape::Panel);
+    }
+
+    #[test]
+    fn ground_half_size_turns_with_yaw() {
+        let p = PieceSpec {
+            class: "x".into(),
+            asset: None,
+            offset: Vec3::ZERO,
+            yaw: std::f32::consts::FRAC_PI_2,
+            pitch: 0.0,
+            roll: 0.0,
+            scale: 1.0,
+            extent: e(2.0, 1.5, 0.1),
+        };
+        let (hx, hz) = p.ground_half_size();
+        // Turned 90 degrees, the long axis now runs the other way.
+        assert!((hx - 0.1).abs() < 1e-4, "hx was {hx}");
+        assert!((hz - 2.0).abs() < 1e-4, "hz was {hz}");
+    }
 }
 
 #[cfg(test)]

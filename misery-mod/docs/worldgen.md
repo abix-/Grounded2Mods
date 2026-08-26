@@ -399,6 +399,59 @@ Known rough edges, not yet judged in-game:
   at their own offsets, so sloped ground will float or sink
   members.
 
+### 9.5 The piece vocabulary: MISERY ships a modular kit
+
+Measured live 2026-08-26 (`research_harvest::piece_shapes` and
+`piece_vocabulary`), plus the object dump for the full asset
+list. Pieces now carry their mesh's half-extent
+(`UStaticMesh::ExtendedBounds` +0x1F0, `BoxExtent` +0x18) and
+full rotation, so every piece is a measurable box.
+
+The game uses BOTH approaches:
+
+**Monolithic prefabs.** Whole buildings as one mesh:
+`SM_WoodenCabit_02` measures 6.3 x 6.6 x 8.3 m,
+`SM_WatchTower_SM_ContainerHouse1` likewise. These can only be
+placed, never assembled.
+
+**A modular kit on a 100/200/400 cm grid.** The parts a room
+needs all exist as separate meshes:
+
+| Part | Examples |
+|---|---|
+| Wall | `SM_Wall_100x100`, `_200x300`, `_400x300`, `_400x401` |
+| Door wall | `SM_WallDoor_200x300`, `_400x400`, `SM_WallDoorDouble_400x400`, `SM_WallDoorGarage_400x400` |
+| Window wall | `SM_WallWindow_200x400`, `_400x300`, `SM_WallWindowDouble_400x400`, `SM_WallWindowSmall_200x400` |
+| Corner | `SM_WallRoundedCorner_400x400_90d` |
+| Ruined wall | `SM_Wall_400x400Broken`, `SM_Wall_400x400BrokenCrouch` |
+| Floor | `SM_Floor_100x100`, `_200x400`, `_400x400`, `_1000x1000` |
+| Ceiling | `SM_Concrete_LongCeiling`, `SM_Concrete_BrokenLongCeiling` |
+| Stair | `SM_Stair_100`, `SM_StairPlane_200`, `SM_CatwalkStair_01` |
+| Pillar | `SM_Pillar` |
+
+Names carry the dimensions (`400x300` is 4 m wide, 3 m tall),
+so the grid is explicit and pieces are guaranteed to line up.
+
+Kits also exist per building type: the garage ships as
+`SM_BrikGarage_Garage`, `_GarageClosed`, `_DoorL`, `_DoorR`,
+`_tarp1`, `_tarp2` (65 + 51 + 23 + 9 + 9 + 9 instances across
+three squares). A shared name prefix marks a family.
+
+**What this means.** Rooms are constructible, not merely
+copyable. A room is a floor of tiles, a perimeter of walls with
+one segment swapped for a door and some for windows, corners at
+the turns, a ceiling, and stairs between storeys. modforge
+already models exactly that as `RoomSpec` (origin, interior
+size, wall thickness, openings), which topside builds from
+primitives; misery would build the same RoomSpec from kit
+meshes. The generic room logic stays in modforge, and the
+binder maps "4 m wall segment with a door" to
+`SM_WallDoor_400x400`.
+
+Risk to check when building: kit meshes resolve by name out of
+loaded objects, so a square that uses none of them may not have
+them in memory.
+
 ## 10. Open questions
 
 - Why GenerateCustomBiom(1) does nothing when Factory

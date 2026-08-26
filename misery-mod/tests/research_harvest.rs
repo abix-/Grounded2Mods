@@ -111,6 +111,117 @@ fn harvest_and_compose() {
     assert!(placed > 0, "nothing was placed: {}", r.result);
 }
 
+/// The piece vocabulary: which MESHES a square is built from,
+/// most used first. Decides whether new structures can be
+/// assembled from parts (walls, roofs, floors) or only from
+/// whole captured buildings.
+#[test]
+fn piece_vocabulary() {
+    let Some(api) = api_or_skip() else { return };
+    if !offsets_live(&api) {
+        println!("SKIP: offsets not live");
+        return;
+    }
+    let squares = live_squares(&api);
+    let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut squares_read = 0;
+    for square in squares.iter().take(4) {
+        let r = api.op("harvest_square", json!({"level": square}));
+        if !r.ok {
+            continue;
+        }
+        squares_read += 1;
+        for p in r.result["pieces"].as_array().cloned().unwrap_or_default() {
+            let name = match p["mesh"].as_str() {
+                Some(m) => m.to_string(),
+                None => format!("(bp) {}", p["class"].as_str().unwrap_or("?")),
+            };
+            *counts.entry(name).or_default() += 1;
+        }
+    }
+    let mut rows: Vec<(String, usize)> = counts.into_iter().collect();
+    rows.sort_by(|a, b| b.1.cmp(&a.1));
+    println!(
+        "{} distinct piece(s) across {squares_read} square(s)",
+        rows.len()
+    );
+    for (name, n) in rows.iter().take(45) {
+        println!("  {n:>4} x {name}");
+    }
+}
+
+/// The same squares read by SHAPE rather than name: how many
+/// walls, floors, posts a place is built from, and their real
+/// dimensions. This is the data that makes new structures
+/// assemblable rather than only copyable.
+#[test]
+fn piece_shapes() {
+    let Some(api) = api_or_skip() else { return };
+    if !offsets_live(&api) {
+        println!("SKIP: offsets not live");
+        return;
+    }
+    let squares = live_squares(&api);
+    let mut by_shape: std::collections::HashMap<String, Vec<(String, f64, f64, f64)>> =
+        std::collections::HashMap::new();
+    let mut unmeasured = 0usize;
+
+    for square in squares.iter().take(3) {
+        let r = api.op("harvest_square", json!({"level": square}));
+        if !r.ok {
+            continue;
+        }
+        for p in r.result["pieces"].as_array().cloned().unwrap_or_default() {
+            // Half-extents, UE cm, converted to metre full sizes.
+            let ex = p["ex"].as_f64().unwrap_or(0.0) / 50.0;
+            let ey = p["ey"].as_f64().unwrap_or(0.0) / 50.0;
+            let ez = p["ez"].as_f64().unwrap_or(0.0) / 50.0;
+            if ex <= 0.0 && ey <= 0.0 && ez <= 0.0 {
+                unmeasured += 1;
+                continue;
+            }
+            // Classify with the same rules as modforge::structure,
+            // reading UE axes (z is up here).
+            let hmax = ex.max(ey);
+            let hmin = ex.min(ey);
+            let shape = if ex < 0.7 && ey < 0.7 && ez < 0.7 {
+                "clutter"
+            } else if ez * 4.0 < hmax && hmin * 3.0 > hmax {
+                "slab"
+            } else if hmin * 4.0 < hmax && ez * 2.0 > hmax {
+                "panel"
+            } else if ez > hmax * 2.0 {
+                "post"
+            } else if hmax > hmin * 4.0 && hmax > ez * 2.0 {
+                "beam"
+            } else {
+                "block"
+            };
+            let name = p["mesh"].as_str().unwrap_or("(bp)").to_string();
+            by_shape
+                .entry(shape.to_string())
+                .or_default()
+                .push((name, ex, ey, ez));
+        }
+    }
+
+    let mut shapes: Vec<(&String, &Vec<(String, f64, f64, f64)>)> = by_shape.iter().collect();
+    shapes.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+    println!("{unmeasured} piece(s) had no measurable mesh");
+    for (shape, items) in shapes {
+        println!("=== {shape}: {} piece(s) ===", items.len());
+        let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for (name, x, y, z) in items.iter() {
+            if seen.insert(name.as_str()) {
+                println!("  {name:<44} {x:.1} x {y:.1} x {z:.1} m");
+            }
+            if seen.len() >= 12 {
+                break;
+            }
+        }
+    }
+}
+
 /// Harvest one square into a composition and report its shape.
 #[test]
 fn harvest_one_square() {

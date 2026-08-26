@@ -28,6 +28,10 @@ const RELATIVE_SCALE_OFFSET: usize = 0x158;
 /// StaticMeshActor::StaticMeshComponent, and the mesh asset on it.
 const STATIC_MESH_COMPONENT_OFFSET: usize = 0x290;
 const STATIC_MESH_OFFSET: usize = 0x560;
+/// UStaticMesh::ExtendedBounds (FBoxSphereBounds), and BoxExtent
+/// within it: the half-size of the mesh's own geometry.
+const EXTENDED_BOUNDS_OFFSET: usize = 0x1F0;
+const BOX_EXTENT_OFFSET: usize = 0x18;
 /// USceneComponent::Mobility. 0 Static, 1 Stationary, 2 Movable.
 const MOBILITY_MOVABLE: u8 = 2;
 
@@ -40,10 +44,22 @@ pub struct Piece {
     pub dx: f64,
     pub dy: f64,
     pub dz: f64,
-    /// Yaw only; pitch and roll are rarely non-zero on placed
-    /// scenery and complicate the spawn transform.
+    /// Degrees, UE convention.
     pub yaw: f64,
+    #[serde(default)]
+    pub pitch: f64,
+    #[serde(default)]
+    pub roll: f64,
     pub scale: f64,
+    /// Half-size of the piece's own geometry, UE centimetres, from
+    /// the mesh asset's bounds. Zero when unmeasurable. This is
+    /// what lets a piece be classified as wall, floor, or post.
+    #[serde(default)]
+    pub ex: f64,
+    #[serde(default)]
+    pub ey: f64,
+    #[serde(default)]
+    pub ez: f64,
     /// For StaticMeshActor pieces: the mesh asset's name. The
     /// class alone spawns an empty actor, so the mesh has to be
     /// re-resolved and set on the copy. Names (not pointers) so a
@@ -59,8 +75,10 @@ pub struct Composition {
     pub pieces: Vec<Piece>,
 }
 
-/// World-space transform of an actor, via its root component.
-fn actor_transform(actor: *const u8) -> Option<(f64, f64, f64, f64, f64)> {
+/// World-space transform of an actor, via its root component:
+/// position, full rotation (pitch, yaw, roll), and scale.
+/// FRotator is stored pitch, yaw, roll.
+fn actor_transform(actor: *const u8) -> Option<(f64, f64, f64, f64, f64, f64, f64)> {
     // SAFETY: actor is a live UObject from a GObjects walk; the
     // RootComponent slot is a UE-stable AActor field.
     let root: *const u8 = unsafe { read_at(actor, ROOT_COMPONENT_OFFSET) };
@@ -73,23 +91,35 @@ fn actor_transform(actor: *const u8) -> Option<(f64, f64, f64, f64, f64)> {
         let x: f64 = read_at(root, RELATIVE_LOCATION_OFFSET);
         let y: f64 = read_at(root, RELATIVE_LOCATION_OFFSET + 8);
         let z: f64 = read_at(root, RELATIVE_LOCATION_OFFSET + 16);
+        let pitch: f64 = read_at(root, RELATIVE_ROTATION_OFFSET);
         let yaw: f64 = read_at(root, RELATIVE_ROTATION_OFFSET + 8);
+        let roll: f64 = read_at(root, RELATIVE_ROTATION_OFFSET + 16);
         let sx: f64 = read_at(root, RELATIVE_SCALE_OFFSET);
-        Some((x, y, z, yaw, sx))
+        Some((x, y, z, pitch, yaw, roll, sx))
     }
 }
 
-/// The mesh asset name on a StaticMeshActor, if it has one.
-fn actor_mesh_name(actor: *const u8) -> Option<String> {
-    // SAFETY: actor is live; both offsets are documented engine
-    // fields (StaticMeshActor -> its component -> the asset).
+/// The mesh asset name and its local half-extent (UE cm) on a
+/// StaticMeshActor, if it has one.
+fn actor_mesh(actor: *const u8) -> Option<(String, f64, f64, f64)> {
+    // SAFETY: actor is live; the offsets are documented engine
+    // fields (StaticMeshActor -> its component -> the asset), and
+    // ExtendedBounds is FBoxSphereBounds { Origin, BoxExtent,
+    // SphereRadius } with BoxExtent at +0x18.
     unsafe {
         let comp: *const u8 = read_at(actor, STATIC_MESH_COMPONENT_OFFSET);
         if comp.is_null() {
             return None;
         }
-        let mesh: *const UObject = read_at(comp, STATIC_MESH_OFFSET);
-        mesh.as_ref().map(|m| m.name())
+        let mesh: *const u8 = read_at(comp, STATIC_MESH_OFFSET);
+        let name = (mesh as *const UObject).as_ref()?.name();
+        let at = EXTENDED_BOUNDS_OFFSET + BOX_EXTENT_OFFSET;
+        Some((
+            name,
+            read_at::<f64>(mesh, at),
+            read_at::<f64>(mesh, at + 8),
+            read_at::<f64>(mesh, at + 16),
+        ))
     }
 }
 
@@ -163,53 +193,89 @@ fn harvest_square(args: &serde_json::Value) -> Result<serde_json::Value, String>
                 .collect()
         })
         .unwrap_or_default();
+    let centre = match (
+        args.get("centre_x").and_then(|v| v.as_f64()),
+        args.get("centre_y").and_then(|v| v.as_f64()),
+    ) {
+        (Some(x), Some(y)) => Some((x, y)),
+        _ => None,
+    };
+    let comp = harvest_with(needle, &only, centre)?;
+    serde_json::to_value(&comp).map_err(|e| e.to_string())
+}
 
-    let mut raw: Vec<(String, f64, f64, f64, f64, f64, Option<String>)> = Vec::new();
+/// Harvest every piece of a level, centred on the pieces' own
+/// midpoint. The library path (`places.rs`) uses this.
+pub fn harvest_level(needle: &str) -> Result<Composition, String> {
+    harvest_with(needle, &[], None)
+}
+
+fn harvest_with(
+    needle: &str,
+    only: &[String],
+    centre: Option<(f64, f64)>,
+) -> Result<Composition, String> {
+    struct Raw {
+        class: String,
+        x: f64,
+        y: f64,
+        z: f64,
+        pitch: f64,
+        yaw: f64,
+        roll: f64,
+        scale: f64,
+        mesh: Option<(String, f64, f64, f64)>,
+    }
+    let mut raw: Vec<Raw> = Vec::new();
     for (class, ptr) in level_actors(needle) {
         if !only.is_empty() && !only.iter().any(|c| class.contains(c.as_str())) {
             continue;
         }
-        if let Some((x, y, z, yaw, scale)) = actor_transform(ptr) {
+        if let Some((x, y, z, pitch, yaw, roll, scale)) = actor_transform(ptr) {
             let mesh = if class == "StaticMeshActor" {
-                actor_mesh_name(ptr)
+                actor_mesh(ptr)
             } else {
                 None
             };
-            raw.push((class, x, y, z, yaw, scale, mesh));
+            raw.push(Raw { class, x, y, z, pitch, yaw, roll, scale, mesh });
         }
     }
     if raw.is_empty() {
         return Err(format!("no actors harvested from '{needle}'"));
     }
 
-    let (cx, cy) = match (
-        args.get("centre_x").and_then(|v| v.as_f64()),
-        args.get("centre_y").and_then(|v| v.as_f64()),
-    ) {
-        (Some(x), Some(y)) => (x, y),
-        _ => (
-            raw.iter().map(|r| r.1).sum::<f64>() / raw.len() as f64,
-            raw.iter().map(|r| r.2).sum::<f64>() / raw.len() as f64,
-        ),
-    };
-    let base_z = raw.iter().map(|r| r.3).fold(f64::MAX, f64::min);
+    let (cx, cy) = centre.unwrap_or((
+        raw.iter().map(|r| r.x).sum::<f64>() / raw.len() as f64,
+        raw.iter().map(|r| r.y).sum::<f64>() / raw.len() as f64,
+    ));
+    let base_z = raw.iter().map(|r| r.z).fold(f64::MAX, f64::min);
 
-    let comp = Composition {
+    Ok(Composition {
         source: needle.to_string(),
         pieces: raw
             .into_iter()
-            .map(|(class, x, y, z, yaw, scale, mesh)| Piece {
-                class,
-                dx: x - cx,
-                dy: y - cy,
-                dz: z - base_z,
-                yaw,
-                scale,
-                mesh,
+            .map(|r| {
+                let (mesh, ex, ey, ez) = match r.mesh {
+                    Some((name, ex, ey, ez)) => (Some(name), ex, ey, ez),
+                    None => (None, 0.0, 0.0, 0.0),
+                };
+                Piece {
+                    class: r.class,
+                    dx: r.x - cx,
+                    dy: r.y - cy,
+                    dz: r.z - base_z,
+                    yaw: r.yaw,
+                    pitch: r.pitch,
+                    roll: r.roll,
+                    scale: r.scale,
+                    mesh,
+                    ex,
+                    ey,
+                    ez,
+                }
             })
             .collect(),
-    };
-    Ok(serde_json::to_value(&comp).map_err(|e| e.to_string())?)
+    })
 }
 
 /// Spawn a saved Composition at a world position, optionally
@@ -248,11 +314,31 @@ fn place_composition(
         .next()
         .ok_or("no player")?;
     let here = crate::strange::actor_location(player).ok_or("no player location")?;
-    let (cx, cy, cz) = (
+    let placed = place_composition_at(
+        comp,
         at_x.unwrap_or(here.0),
         at_y.unwrap_or(here.1),
         at_z.unwrap_or(here.2),
-    );
+        turn_deg,
+        limit,
+    )?;
+    Ok(serde_json::json!({"placed": placed}))
+}
+
+/// Game thread. Spawn a composition centred on a world point,
+/// turned by `turn_deg`. Returns how many pieces landed.
+pub fn place_composition_at(
+    comp: &Composition,
+    cx: f64,
+    cy: f64,
+    cz: f64,
+    turn_deg: f64,
+    limit: usize,
+) -> Result<usize, String> {
+    let player = ueforge::ue::actor::find_actors_by_chain("BP_SGKMasterCharacter_C")
+        .into_iter()
+        .next()
+        .ok_or("no player")?;
     let turn = turn_deg.to_radians();
     let (ts, tc) = turn.sin_cos();
 
@@ -304,7 +390,7 @@ fn place_composition(
         "harvest: composed {placed} piece(s) from {} ({failed} failed)",
         comp.source
     ));
-    Ok(serde_json::json!({"placed": placed, "failed": failed}))
+    Ok(placed)
 }
 
 /// Name to pointer for every loaded UStaticMesh. Built once per
