@@ -223,6 +223,19 @@ A whole area assembled from squares of multiple areas is
 therefore a solved problem for same-size pools: write nine
 elements, regenerate.
 
+### 8.2 Size-mismatch verdict: generates, unplayable (2026-08-25)
+
+`research_worldgen::size_mismatch_probe`: L_CementFactory_Art
+(16500) written into the Paneli (12000) grid streamed on the
+first roll with its NPCs, no crash, no engine complaint. But
+the operator's walk-through found the path out of the
+expedition physically blocked: the square's extra 4500 units
+of geometry plow into the neighboring cells. **Verdict:
+cross-size mixing generates but produces untraversable worlds;
+mixing stays restricted to matching tile sizes (Meadows <->
+Paneli) unless a future idea handles the overlap.** The probe
+restores the pool slot automatically after placement.
+
 ## 9. Open questions
 
 - Why GenerateCustomBiom(1) does nothing when Factory

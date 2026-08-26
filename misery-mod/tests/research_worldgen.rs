@@ -276,6 +276,72 @@ fn mixed_pool_area() {
     );
 }
 
+/// Tile-size mismatch probe, oversized direction: a 16500-unit
+/// Factory square written into the 12000-unit Paneli grid.
+/// Expected: the square streams but overlaps its neighbors by
+/// 4500 units. Auto-rerolls until the square is placed, then
+/// restores the pool slot (the generated world keeps the
+/// oversized square for inspection).
+#[test]
+#[ignore = "rebuilds the expedition world"]
+fn size_mismatch_probe() {
+    const DONOR: &str = "L_CementFactory_Art";
+
+    let Some(api) = api_or_skip() else { return };
+    if !offsets_live(&api) {
+        println!("SKIP: offsets not live");
+        return;
+    }
+    let gens = client::walk_class_chain_instances(&api, "BP_WorldGeneration_Base_C", 8);
+    let factory = gens.iter().find(|g| g.name.contains("Factory")).expect("no Factory generator");
+    let paneli = gens.iter().find(|g| g.name.contains("Paneli")).expect("no Paneli generator");
+
+    let (_, f_pool) = pool_entries(&api, factory.addr).expect("factory pool unreadable");
+    let donor = f_pool
+        .iter()
+        .find(|(n, _)| n == DONOR)
+        .expect("donor square not in Factory pool");
+    let (p_ptr, p_pool) = pool_entries(&api, paneli.addr).expect("paneli pool unreadable");
+    let original = p_pool[0].1.clone();
+    println!("writing {DONOR} (16500) over Paneli slot 0 ({})", p_pool[0].0);
+    let sel = format!("addr:0x{p_ptr:x}");
+    assert!(write_bytes_op(&api, &sel, 0, &donor.1));
+
+    let m = manager(&api).expect("no global manager");
+    let mut placed: Option<String> = None;
+    for attempt in 1..=4 {
+        println!("attempt {attempt}: generating Paneli world");
+        api.call_ufunction("BP_GlobalManager_C", "GenerateCustomBiom", &m.addr_selector, &[3u8])
+            .expect("GenerateCustomBiom failed");
+        std::thread::sleep(Duration::from_secs(20));
+        for n in client::walk_class_chain_instances(&api, "BP_MasterAICharacter_C", 400) {
+            if n.full_name.contains(DONOR) {
+                if let Some(path) = n.full_name.split(' ').nth(1) {
+                    if let Some(sq) = path.split(".PersistentLevel").next() {
+                        placed = Some(sq.rsplit('/').next().unwrap_or(sq).to_string());
+                    }
+                }
+            }
+        }
+        if placed.is_some() {
+            break;
+        }
+    }
+
+    // Restore the pool slot regardless of outcome.
+    assert!(write_bytes_op(&api, &sel, 0, &original), "slot restore failed");
+    println!("pool slot 0 restored");
+
+    match &placed {
+        Some(sq) => println!(
+            "OVERSIZED SQUARE PLACED: {sq}. Inspect in-game: expect \
+             4500 units of overlap into the neighboring cells."
+        ),
+        None => println!("square never rolled in 4 attempts; rerun for more rolls"),
+    }
+    assert!(placed.is_some(), "no placement in 4 attempts");
+}
+
 /// Force a world regeneration via GenerateCustomBiom on the
 /// game thread. MISERY_BIOME selects the area number (default:
 /// the manager's current value, so a plain run just regenerates

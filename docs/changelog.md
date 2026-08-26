@@ -51,6 +51,7 @@ Newest first.
 | `misery` | [x] Cross-area square mixing: a Meadows square generated inside a Paneli world via one pool element write | pool_swap_meadows_into_paneli passed live: 4452_4_7.L_VehCemetry_Bridge on the Paneli grid. worldgen.md 8. |
 | `misery` | [x] Mixed-pool area: all nine Paneli slots filled with a 6 Meadows + 3 Town blend, world generated mixed | mixed_pool_area passed live: Village_Dwarf_Hole among swamp towns and anomaly houses. worldgen.md 8.1. |
 | `misery` | [x] Tile sizes measured: Factory 16500, Bunker 4800, Meadows and Paneli 12000; complete 45-square catalog dumped | worldgen.md 3 and 4; Meadows/Paneli squares interchangeable. |
+| `misery` | [x] Size-mismatch probe: an oversized Factory square in the town grid streams fine but blocks traversal | Operator-confirmed blocked path; cross-size mixing ruled out. worldgen.md 8.2. |
 
 ## 2026-08-20
 

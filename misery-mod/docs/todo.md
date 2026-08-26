@@ -2,7 +2,6 @@
 
 | Priority | System | Todo | Done when |
 |---:|---|---|---|
-| 3 | `worldgen` | [ ] Tile-size mismatch probe: put a 12000 square into the 16500 Factory grid and observe | Gap/overlap behavior documented in worldgen.md; verdict on cross-size mixing. |
 | 3 | `worldgen` | [ ] Research why GenerateCustomBiom(1) generates nothing while Factory works under natural shinings | Factory forcible on demand, or the different path documented in worldgen.md. |
 | 3 | `worldgen` | [ ] New-area research: can a spawned fifth generator (or a spare grid region) run RunGenerationFromSeed with a custom grid and pool | Go/no-go with findings documented in worldgen.md. |
 | 5 | `worldgen` | [ ] New-square research: how preset levels are packaged (pak, cooked umap), whether a cloned and renamed square can be loaded | Go/no-go with findings documented in worldgen.md. |
