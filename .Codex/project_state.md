@@ -48,6 +48,7 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 - Migrated the horde to the Modforge authority while preserving Unity observation and execution, Survivalist's content values, logging, and chronicle text. Added no tests and did not build.
 - Replaced the stale root framework prose with concise capability tables for Modforge, Ueforge, and Unityforge, and moved readers to the existing dedicated decompilation documentation for implementation detail.
 - Linked every named framework capability directly to its owning source and normalized the Modforge table so each public system module appears exactly once.
+- Reviewed the Modforge capability inventory against every exported module and both binaries, corrected actor knowledge that had been mislabeled as native memory access, and replaced the broad simulation bucket with narrower system groups.
 
 ## Next steps
 

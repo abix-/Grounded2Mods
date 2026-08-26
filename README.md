@@ -57,16 +57,26 @@ Engine-independent systems usable by a mod or a standalone game.
 
 | Capability | What it provides |
 |---|---|
-| Control plane | [Local HTTP server](modforge/src/server.rs), [request envelope](modforge/src/envelope.rs), [operation registry](modforge/src/ops.rs), [typed arguments](modforge/src/args.rs), [snapshots](modforge/src/snapshots/mod.rs), [debug views](modforge/src/debug.rs), and [HTTP client](modforge/src/client/mod.rs) |
-| Lifecycle and state | [Settings](modforge/src/settings.rs), [logging](modforge/src/log.rs), [shutdown ordering](modforge/src/shutdown.rs), [hot-reload protocol](modforge/src/hot_reload.rs), [counters](modforge/src/counters.rs), [bounded rings](modforge/src/ring.rs), and [workers](modforge/src/worker.rs) |
-| Runtime tooling | [Memory access](modforge/src/memory.rs), [scanners](modforge/src/scanner.rs), [pattern sleuthing](modforge/src/patterns/mod.rs), [safe native calls](modforge/src/vanilla/mod.rs), [function hooks](modforge/src/hook.rs), [structured-exception guards](modforge/src/seh.rs), [Windows process inspection](modforge/src/winproc.rs), and [research helpers](modforge/src/research.rs) |
-| Input | [Native input and coordinate handling](modforge/src/input/mod.rs), plus [actions, bindings, queues, and replay journals](modforge/src/actions.rs) |
+| HTTP control plane | [Typed arguments](modforge/src/args.rs), [request and response envelope](modforge/src/envelope.rs), [operation registry](modforge/src/ops.rs), [local server](modforge/src/server.rs), [HTTP client](modforge/src/client/mod.rs), and [RPG debug views](modforge/src/debug.rs) |
+| Snapshot API | [Projection snapshots](modforge/src/snapshots/mod.rs) are reserved; no concrete snapshot type exists yet |
+| Configuration and lifecycle | [Settings](modforge/src/settings.rs), [logging](modforge/src/log.rs), [shutdown ordering](modforge/src/shutdown.rs), [UE4SS hot reload](modforge/src/hot_reload.rs), and [guarded worker threads](modforge/src/worker.rs) |
+| Telemetry | [Hot-path counters](modforge/src/counters.rs) and [bounded event rings](modforge/src/ring.rs) |
+| Native calls and hooks | [Function detours](modforge/src/hook.rs), [arbitrary vanilla function calls](modforge/src/vanilla/mod.rs), and [structured-exception guards](modforge/src/seh.rs) |
+| Inspection and research | [Byte-pattern scanning](modforge/src/patterns/mod.rs), [value scanning and freezing](modforge/src/scanner.rs), [Windows process inspection](modforge/src/winproc.rs), [binary-research recipes](modforge/src/research.rs), and a [minidump reader](modforge/src/bin/minidump.rs) |
+| Input | [Synthetic input](modforge/src/input/mod.rs), plus [actions, bindings, queues, and replay journals](modforge/src/actions.rs) |
 | UI | [Declarative UI](modforge/src/ui/mod.rs) and [player HUD state](modforge/src/hud.rs) |
-| Items | [Item definitions, inventory, and unique-item ledger](modforge/src/item.rs), [quality](modforge/src/quality.rs), [weighted rolls](modforge/src/roll.rs), and [crafting](modforge/src/crafting.rs) |
-| Progression | [Upgrades](modforge/src/upgrade.rs) and the full [RPG effect, trigger, and skill stack](modforge/src/rpg/mod.rs) |
-| Simulation systems | [Actors](modforge/src/actor.rs), [decisions](modforge/src/brain.rs), [combat](modforge/src/combat.rs), [factions](modforge/src/faction.rs), [genomes](modforge/src/genome.rs), [survival classification](modforge/src/survival.rs), [missions and contracts](modforge/src/mission.rs), [storyteller pacing and adaptive pressure](modforge/src/storyteller.rs), and the [unknown dread loop](modforge/src/unknown.rs) |
-| World building | [Biomes](modforge/src/biome.rs), [structures](modforge/src/structure.rs), [monuments](modforge/src/monument.rs), and [deterministic world generation](modforge/src/worldgen.rs) |
-| Verification and delivery | [Shared testkit](modforge/src/testkit/mod.rs), [runtime harness and build helpers](modforge/src/harness/mod.rs), and [deploy CLI](modforge/src/bin/modforge_deploy.rs) |
+| Items | [Item definitions, inventory, and unique-item ledger](modforge/src/item.rs), [quality tiers](modforge/src/quality.rs), and [crafting recipes](modforge/src/crafting.rs) |
+| Progression | [Upgrade levels and persistence](modforge/src/upgrade.rs), plus [RPG effects, triggers, skills, XP, state, and persistence](modforge/src/rpg/mod.rs) |
+| Actors and AI | [Actor definitions and spawning data](modforge/src/actor.rs), [decision logic](modforge/src/brain.rs), and [actor knowledge and threat memory](modforge/src/memory.rs) |
+| Combat | [Damage, health, protection, hit resolution, firing, and weapon timing](modforge/src/combat.rs) |
+| Factions | [Faction definitions, registries, and relationships](modforge/src/faction.rs) |
+| Genomes | [Traits, reinforcement, heredity, voting, and persistence](modforge/src/genome.rs) |
+| Survival | [Needs, rates, conditions, and settlement survival classification](modforge/src/survival.rs) |
+| Missions | [Multi-stage, go-and-return, one-stage, and contract lifecycles](modforge/src/mission.rs) |
+| Storytelling | [Event pacing and adaptive pressure](modforge/src/storyteller.rs), plus the [unknown dread loop](modforge/src/unknown.rs) |
+| World generation | [Biomes](modforge/src/biome.rs), [structures](modforge/src/structure.rs), [monuments](modforge/src/monument.rs), [deterministic worlds](modforge/src/worldgen.rs), and [population budgets and weighted selection](modforge/src/roll.rs) |
+| Testing | [Cross-game testkit](modforge/src/testkit/mod.rs) and [Steam-game runtime harness](modforge/src/harness/mod.rs) |
+| Delivery | [Build, install, uninstall, and package CLI](modforge/src/bin/modforge_deploy.rs) |
 
 See [`modforge/README.md`](modforge/README.md) and
 [`modforge/docs/`](modforge/docs/).
