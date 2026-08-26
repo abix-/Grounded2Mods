@@ -20,10 +20,16 @@ changelog, all marked done:
   engine-agnostic, 9 unit tests
 - `misery` asset registry: every shipped mesh whether loaded or
   not. 2398 static meshes, 55 wall pieces
-- `misery` `mesh_info`: a mesh's measured size and where its
-  position marker sits
-- `misery` harvest: pieces read out of a live square with
-  transforms and mesh identity
+- `ueforge::ue::transform`: `loaded_meshes` (every loaded mesh by
+  name), `mesh_bounds` (a mesh's marker offset and half-size),
+  `set_actor_mesh`, and reading an actor's transform
+- `modforge::structure::PieceDef::placed_at`: where a piece lands
+  when its set is placed somewhere and turned
+
+`mesh_info` and harvest were misery's; their engine and maths
+halves are now in ueforge and modforge (2026-08-26). Harvest
+itself is OFF: reading a live square and rebuilding it elsewhere
+copies the designers' work, which is not the goal.
 
 The asset registry answers an HTTP request and the answer is
 thrown away: nothing in the mod calls `assets_of_class`. The
@@ -37,9 +43,8 @@ what the game actually has.
 | 1 | `pieces` | [ ] Turn the asset registry into pieces: every shipped mesh becomes a `PieceDef` with its measured size and marker offset, and the shape classifier names its role | The mod holds a parts list of all 2398 meshes as pieces, each with a role, built from what the game ships. |
 | 1 | `pieces` | [ ] Measure the ones that are not loaded: `mesh_info` only reads meshes in memory, so `load_asset` has to pull each one in first. That path is recorded as not yet confirmed working | Every shipped mesh has real measurements, not just the third of them that happen to be loaded. |
 | 2 | `rooms` | [ ] Build from the parts list instead of hand-written names: `rooms.rs` picks a piece that fits the slot from the pieces we hold, rather than `format!("SM_Wall_{w}x{h}")` and its special cases | No hardcoded mesh names in rooms.rs. Rooms can use the 55 walls, including the 45-degree corners, not the handful currently named. |
-| 1 | `misery` | [ ] Re-enable the features ONE at a time and find which one breaks the game. Baseline established 2026-08-26: with only `pe_dispatch` (offsets, discovery, control plane, game-thread queue) the game works perfectly. Everything else is commented out in `lib.rs`. Start with harvest, rooms and assets, which only register endpoints and are inert until called | The feature that breaks the game is named, with a log line proving it. |
-| 1 | `misery` | [ ] Fix the nested queue wait `each_tick` introduced: a check now runs ON the game thread and its body enqueues again, waiting for a drain that cannot start until it returns. `spawning: plan failed: timed out after 10s waiting for game-thread drain`. Inner enqueues must go through `game_thread::run`, which runs in place when already on the game thread | No timeout lines; the spawner completes its plan. |
-| 1 | `ueforge` | [ ] Stop reading the game's object list from background threads: do it on the game thread instead. Every watcher (vendors, speed, the NPC census, map squares) reads that list every few seconds, and when a level unloads the game deletes those objects while we are reading them | Quitting to the main menu does not crash. Proven by the dump: fault inside `ue::actor::find_objects_by_chain`, one second after "gone (main menu?)". |
+| 2 | `misery` | [ ] Finish the feature bisect. Working so far, each confirmed live: `pe_dispatch`, `nag`, `speed_default`, `vendors`, `spawning`, `strange`. Still off: `rooms`, `assets`, `stack_10x`. OFF deliberately and not to be re-enabled: `harvest`, `places`, `autoload` | Every remaining feature is either confirmed working or named as broken. |
+| 3 | `strange` | [ ] A rolled phenomenon placed nothing: `teleport_nest` logged `rolls [...]` then `placed 0 prop(s)`. Either the ground trace found nothing at the points chosen, or that phenomenon's classes did not resolve | A rolled phenomenon always places something, or says why it could not. |
 | 1 | `ueforge` | [ ] Measure `FMalloc::Malloc`'s vtable slot out of the running image and set `ue::gmalloc::MALLOC_SLOT`: find `mov rax,[rcx]; call [rax+imm8]` inside `FMemory::Malloc` (the function patternsleuth already anchors in to locate the GMalloc global) and read the `imm8`. Slot 2 was INFERRED from the pattern bytes and was wrong: null return, then a crash | Vendor lists grow again, and a disconnect after a vendor pass does not crash. |
 | 1 | `autoload` | [ ] Load the SINGLEPLAYER save, not a hosted server: it calls `LoadLevel` on `BP_HostLoadGameServer`, chosen because it had "Load" in the name. Read what the rows under `BP_SinglePlayerLoadSaveMenu` actually call | Auto-load starts a singleplayer game, confirmed live. |
 | 1 | `strange` | [ ] Run the game and confirm phenomena, monuments and rooms still land ON the ground: everything that places anything now goes through the lifted `ue::spawn` and `ue::trace`, and none of it has run since | A world generates with props at the right height, verified live. |
