@@ -2059,6 +2059,63 @@ Limitation: the drain site only fires while a save is loaded
 main-menu-time dispatch (the nag screen) still needs a
 pre-menu drain site if ever pursued.
 
+### 26.5 The playtest notice, and two ways to crash the game
+
+The notice (`WD_PlaytestNote01_C`) needed a spacebar press. The
+old workaround synthesised one; this replaces it with real
+suppression. Three lessons came out of it, two of them from
+crashes.
+
+**Finding it.** The class is ABSENT from the object dump (it was
+not loaded when that was written) but is live at startup, so it
+must be read from the running game. `find_object` with
+`require_level = false` finds it: widgets are not actors.
+
+**Reaching the game thread at the main menu.** UMG widgets may
+only be touched from the game thread, and this mod's usual drain
+site is the player character, which does not exist at the menu.
+The way through is to hook the widget's OWN class: when the
+engine calls anything on it, we are on the game thread holding
+the widget.
+
+**CRASH 1: Blueprint widget classes share a vtable.** They add
+no C++ virtuals, so they all use the base `UUserWidget` vtable.
+Hooking "the notice's class" therefore hooks EVERY widget, and
+the handler ran for all of them. It collapsed the main menu.
+Any handler installed this way MUST check what it has been
+handed:
+
+```rust
+let is_nag = this.class().map(|c| c.as_object().name() == NAG_CLASS)
+```
+
+**CRASH 2: RemoveFromParent destroys a hooked object.** Hiding
+the widget is not dismissing it. Live reading at the black
+screen showed only three widgets instantiated: the cursor, the
+notice, and a `BP_RadiationLoadCircle` INSIDE the notice. So
+the notice is the loading screen, and collapsing it leaves it
+present and still taking input, which is what the black screen
+is.
+
+Calling `RemoveFromParent` on it killed the game:
+
+```
+LowLevelFatalError: Pure virtual function being called
+(stack full of repeated frames)
+```
+
+Destroying an object whose vtable we have patched means the
+next virtual call lands in a half-destroyed object. Never
+destroy a hooked object from inside its own hook.
+
+**Where it stands.** The notice is collapsed and disabled, which
+is safe (nothing is destroyed). Whether that alone clears the
+black screen is unconfirmed. The correct fix is to call the
+widget's OWN dismissal function rather than tearing it out;
+`nag_stats` now lists the class's functions, read live via
+`UClass::iter_functions`, so the next step is to pick the right
+one.
+
 ### 26.4 Hot reload: why it still crashes (2026-08-26)
 
 Attempted, failed, diagnosed. The skill's "never hot reload"

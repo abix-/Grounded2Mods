@@ -7,10 +7,12 @@
 //! init / shutdown hooks, the game's `PlatformOffsets`, and the
 //! control plane. Everything else is `use ueforge::*`.
 
+pub mod assets;
 pub mod debug;
 pub mod dispatch;
 pub mod gameplay;
 pub mod harvest;
+pub mod nag;
 pub mod places;
 pub mod rooms;
 pub mod shining;
@@ -102,6 +104,7 @@ fn on_unreal_init() {
         .once("strange", strange::install)
         .once("harvest", harvest::register_ops)
         .once("rooms", rooms::register_ops)
+        .once("assets", assets::register_ops)
         .once("places", places::install)
         .once("stack_10x", || {
             STACK_TWEAK.apply_when_ready(
@@ -110,12 +113,9 @@ fn on_unreal_init() {
                 |v: i32| v <= 1,
             );
         })
-        .on_each_load("suppress_nag", Duration::from_millis(500),
-            || ueforge::ue::actor::find_object("WD_PlaytestNote01_C", None, false),
-            |_| {
-                std::thread::sleep(Duration::from_secs(2));
-                ueforge::input::send_key(0x20);
-            })
+        // The notice is hidden properly now (nag.rs collapses the
+        // widget on the game thread); no synthesised keypress.
+        .once("nag", nag::install)
         .on_each_load("speed_default", Duration::from_secs(2),
             || ueforge::ue::actor::find_actor("BP_SGKMasterCharacter_C", None),
             |_| {

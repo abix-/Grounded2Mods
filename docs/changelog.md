@@ -66,6 +66,9 @@ Newest first.
 | `misery` | [x] Convert all four watchers (dispatch, spawning, strange, places) from raw threads to stoppable workers, stopped at shutdown order 50 before hooks tear down at 100 | Raw threads keep executing freed code after a DLL unload; they also queued into a drain nobody served once hooks died. |
 | `misery` | [x] Attempt hot reload, diagnose the remaining crash | Swap now completes cleanly and UE4SS restarts the mod, but the reloaded image dies in patternsleuth's scan (rayon's global pool holds first-image code). restart.ps1 stays the supported path. research.md 26.4. |
 | `misery` | [x] Add reload.ps1 with real verification (staged file consumed, main.dll actually changed, control plane back, game alive) | Fails loudly rather than reporting a reload that did not happen. Currently the game does not survive it. |
+| `misery` | [x] Query the game's asset registry: every shipped asset, loaded or not, plus load-on-demand | Live: 2398 static meshes exist where 869 were loaded; 55 wall pieces where a memory walk saw 12, including 45-degree corners. src/assets.rs, pieces.md. |
+| `misery` | [x] Suppress the playtest notice without synthesising a keypress | Hooks the widget's own class to reach the game thread at the main menu, where the usual drain site does not exist. research.md 26.5. |
+| `misery` | [x] Document two crash causes found doing it: Blueprint widget classes share one vtable, and destroying a hooked object calls a pure virtual | Handlers must check what they are handed; never RemoveFromParent a hooked widget. research.md 26.5. |
 
 ## 2026-08-20
 

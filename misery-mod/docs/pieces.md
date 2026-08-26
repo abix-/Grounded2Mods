@@ -5,6 +5,34 @@
 > covers how areas and squares are generated and how pieces get
 > assembled into rooms; this file is the parts list.
 
+**The game's own asset index is the real inventory.** Unreal
+keeps a registry of every shipped asset, queryable without
+loading anything: `AssetRegistryHelpers:GetAssetRegistry` then
+`AssetRegistry:GetAssetsByClass`. Live 2026-08-26 it reported
+**2,398 static meshes in the game while only 869 were loaded**,
+so any memory walk sees roughly a third of what exists.
+
+For walls specifically the registry lists **55 pieces** where a
+memory walk saw 12, including parts we had not seen at all:
+eight corner variants (`SM_WallRoundedCorner_100x300_45d`,
+`_100x400_90d`, `_200x300_90d`, `_200x400_90d`, `_300x300_90d`,
+`_300x400_90d`, `_400x300_90d`, `_400x400_90d`, so corners exist
+at 45 degrees as well as 90, meaning rooms need not be
+rectangular), `SM_WallDoorGarage_400x300`,
+`SM_WallWindow_200x300`, `SM_WallWindow_400x400`,
+`SM_WallWindowSmall_200x300`, `SM_Wall_100x301`,
+`SM_Wall_200x101`, `SM_Wall_400x300_1`, `SM_Wall_01Half02`.
+
+`KismetSystemLibrary:LoadAsset_Blocking` pulls an unloaded piece
+into memory, so generation is not limited to what an area
+happens to have. Both go through the game-thread drain
+(`asset_inventory` and `load_asset` ops, `src/assets.rs`); the
+load path is not yet confirmed working.
+
+The tables below came from measuring what was loaded, so they
+carry sizes and markers. Names the registry knows but that were
+not loaded at measuring time have no measurements yet.
+
 Two sources, because neither alone is complete:
 
 - **The object dump** (`UE4SS_ObjectDump.txt`) lists every asset
