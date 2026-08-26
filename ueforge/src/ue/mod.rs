@@ -27,6 +27,7 @@ pub mod struct_fields;
 pub mod spawn;
 pub mod tarray;
 pub mod tmap;
+pub mod trace;
 pub mod transform;
 pub mod typed_field;
 pub mod uobject;

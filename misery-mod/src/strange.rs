@@ -13,7 +13,6 @@
 //! phenomena are rare enough to stay stories.
 
 use std::collections::HashSet;
-use std::ffi::c_void;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
@@ -413,63 +412,23 @@ pub fn ground_at(x: f64, y: f64) -> Option<f64> {
 }
 
 /// Trace down onto the terrain at (x, y). Returns the ground z.
+///
+/// TRACE_UP and TRACE_DOWN are MISERY's: they have to span the
+/// height range this game's worlds actually use.
 fn ground_z(world_ctx: *const u8, x: f64, y: f64) -> Option<f64> {
-    let cls = ue::find_class_fast("KismetSystemLibrary")?;
-    let func = cls.get_function("KismetSystemLibrary", "LineTraceSingle")?;
-    let cdo = cls.class_default_object()?;
-    let mut parms = [0u8; 0x180];
-    parms[0x00..0x08].copy_from_slice(&(world_ctx as u64).to_le_bytes());
-    // Start well above, end well below, so any terrain height hits.
-    parms[0x08..0x10].copy_from_slice(&x.to_le_bytes());
-    parms[0x10..0x18].copy_from_slice(&y.to_le_bytes());
-    parms[0x18..0x20].copy_from_slice(&TRACE_UP.to_le_bytes());
-    parms[0x20..0x28].copy_from_slice(&x.to_le_bytes());
-    parms[0x28..0x30].copy_from_slice(&y.to_le_bytes());
-    parms[0x30..0x38].copy_from_slice(&(-TRACE_DOWN).to_le_bytes());
-    parms[0x38] = 0; // TraceChannel: visibility
-    parms[0x150] = 1; // bIgnoreSelf
-    // SAFETY: cdo and func are live; the parm block matches the
-    // dumped LineTraceSingle layout (0x180, ReturnValue at 0x178).
-    unsafe {
-        cdo.process_event(func, parms.as_mut_ptr() as *mut c_void);
-    }
-    if parms[0x178] == 0 {
-        return None;
-    }
-    // OutHit at 0x58; FHitResult::ImpactPoint at +0x28, so the
-    // point starts at 0x80 and its Z is the third double, 0x90.
-    // Reading 0x88 returns the point's Y, which silently placed
-    // everything at the wrong height.
-    let z = f64::from_le_bytes(parms[0x90..0x98].try_into().ok()?);
-    Some(z)
+    // SAFETY: world_ctx is a live actor on the game thread.
+    unsafe { ueforge::ue::trace::ground_z(world_ctx, x, y, TRACE_UP, TRACE_DOWN) }
 }
 
-/// GameplayStatics BeginDeferredActorSpawnFromClass +
-/// FinishSpawningActor. Game thread only. Returns the actor or 0.
+/// Place an actor. Game thread only. Returns the actor or 0.
 pub fn spawn_actor(world_ctx: *const u8, class_ptr: u64, x: f64, y: f64, z: f64, yaw: f64) -> u64 {
-    let actor = begin_spawn(world_ctx, class_ptr, x, y, z, yaw, 1.0);
-    if actor == 0 {
-        return 0;
-    }
-    finish_spawn(actor, x, y, z, yaw, 1.0)
+    // SAFETY: world_ctx is a live actor and class_ptr a live
+    // UClass, on the game thread.
+    unsafe { ueforge::ue::spawn::spawn_actor(world_ctx, class_ptr, (x, y, z), yaw, 1.0) }
 }
 
 /// FTransform in a parm block: quat rotation (4 doubles),
 /// translation (3), scale (3), 0x20-aligned members, 0x60 total.
-fn write_transform(buf: &mut [u8], at: usize, x: f64, y: f64, z: f64, yaw: f64, scale: f64) {
-    let (s, c) = (yaw / 2.0).sin_cos();
-    buf[at..at + 8].copy_from_slice(&0f64.to_le_bytes()); // quat x
-    buf[at + 8..at + 16].copy_from_slice(&0f64.to_le_bytes()); // quat y
-    buf[at + 16..at + 24].copy_from_slice(&s.to_le_bytes()); // quat z
-    buf[at + 24..at + 32].copy_from_slice(&c.to_le_bytes()); // quat w
-    buf[at + 32..at + 40].copy_from_slice(&x.to_le_bytes());
-    buf[at + 40..at + 48].copy_from_slice(&y.to_le_bytes());
-    buf[at + 48..at + 56].copy_from_slice(&z.to_le_bytes());
-    buf[at + 64..at + 72].copy_from_slice(&scale.to_le_bytes());
-    buf[at + 72..at + 80].copy_from_slice(&scale.to_le_bytes());
-    buf[at + 80..at + 88].copy_from_slice(&scale.to_le_bytes());
-}
-
 /// Start a deferred spawn. The actor exists but has not run its
 /// construction yet, so components can be configured (mesh,
 /// mobility) before [`finish_spawn`].
@@ -482,41 +441,15 @@ pub fn begin_spawn(
     yaw: f64,
     scale: f64,
 ) -> u64 {
-    let Some(cls) = ue::find_class_fast("GameplayStatics") else { return 0 };
-    let Some(begin) = cls.get_function("GameplayStatics", "BeginDeferredActorSpawnFromClass")
-    else {
-        return 0;
-    };
-    let Some(cdo) = cls.class_default_object() else { return 0 };
-    let mut parms = [0u8; 0x90];
-    parms[0x00..0x08].copy_from_slice(&(world_ctx as u64).to_le_bytes());
-    parms[0x08..0x10].copy_from_slice(&class_ptr.to_le_bytes());
-    write_transform(&mut parms, 0x10, x, y, z, yaw, scale);
-    parms[0x70] = 1; // AlwaysSpawn
-    // SAFETY: live cdo + function; parm block matches the dumped
-    // BeginDeferredActorSpawnFromClass layout (0x90).
-    unsafe {
-        cdo.process_event(begin, parms.as_mut_ptr() as *mut c_void);
-    }
-    u64::from_le_bytes(parms[0x88..0x90].try_into().unwrap_or_default())
+    // SAFETY: world_ctx is a live actor and class_ptr a live
+    // UClass, on the game thread.
+    unsafe { ueforge::ue::spawn::begin_spawn(world_ctx, class_ptr, (x, y, z), yaw, scale) }
 }
 
 /// Complete a deferred spawn.
 pub fn finish_spawn(actor: u64, x: f64, y: f64, z: f64, yaw: f64, scale: f64) -> u64 {
-    let Some(cls) = ue::find_class_fast("GameplayStatics") else { return 0 };
-    let Some(finish) = cls.get_function("GameplayStatics", "FinishSpawningActor") else {
-        return 0;
-    };
-    let Some(cdo) = cls.class_default_object() else { return 0 };
-    let mut parms = [0u8; 0x80];
-    parms[0x00..0x08].copy_from_slice(&actor.to_le_bytes());
-    write_transform(&mut parms, 0x10, x, y, z, yaw, scale);
-    // SAFETY: as above; FinishSpawningActor layout is 0x80 with
-    // ReturnValue at 0x78.
-    unsafe {
-        cdo.process_event(finish, parms.as_mut_ptr() as *mut c_void);
-    }
-    u64::from_le_bytes(parms[0x78..0x80].try_into().unwrap_or_default())
+    // SAFETY: actor came from begin_spawn, on the game thread.
+    unsafe { ueforge::ue::spawn::finish_spawn(actor, (x, y, z), yaw, scale) }
 }
 
 fn register_ops() {
@@ -556,29 +489,14 @@ fn register_ops() {
     ]);
 }
 
-/// An actor's facing, degrees, from its root component's
-/// rotation (USceneComponent::RelativeRotation +0x140, stored
-/// pitch, yaw, roll).
+/// An actor's facing, in degrees.
 pub fn actor_yaw(actor: *const u8) -> Option<f64> {
-    // SAFETY: actor is a live UObject; RootComponent +0x1A0 and
-    // RelativeRotation +0x140 are documented engine fields.
-    unsafe {
-        let root: *const u8 = read_at(actor, 0x1A0);
-        if root.is_null() {
-            return None;
-        }
-        Some(read_at::<f64>(root, 0x140 + 8))
-    }
+    // SAFETY: actor is a live UObject from a GObjects walk.
+    unsafe { ueforge::ue::transform::read(actor) }.map(|t| t.yaw)
 }
 
+/// Where an actor is, in world space. Game thread only.
 pub fn actor_location(actor: *const u8) -> Option<(f64, f64, f64)> {
-    let cls = ue::find_class_fast("Actor")?;
-    let func = cls.get_function("Actor", "K2_GetActorLocation")?;
-    let mut parms = [0f64; 3];
-    // SAFETY: live actor on the game thread; parms matches the
-    // 0x18-byte FVector return.
-    unsafe {
-        (*(actor as *const UObject)).process_event(func, parms.as_mut_ptr() as *mut c_void);
-    }
-    Some((parms[0], parms[1], parms[2]))
+    // SAFETY: actor is a live UObject on the game thread.
+    unsafe { ueforge::ue::transform::world_location(actor) }
 }
