@@ -10,9 +10,11 @@
 pub mod debug;
 pub mod dispatch;
 pub mod gameplay;
+pub mod harvest;
 pub mod shining;
 pub mod spawning;
 pub mod speed;
+pub mod strange;
 pub mod vendors;
 
 use std::time::Duration;
@@ -85,6 +87,8 @@ fn on_unreal_init() {
     ueforge::features()
         .once("pe_dispatch", dispatch::install)
         .once("spawning", spawning::install)
+        .once("strange", strange::install)
+        .once("harvest", harvest::register_ops)
         .once("stack_10x", || {
             STACK_TWEAK.apply_when_ready(
                 Duration::from_secs(30),

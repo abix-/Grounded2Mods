@@ -282,7 +282,64 @@ mixing stays restricted to matching tile sizes (Meadows <->
 Paneli) unless a future idea handles the overlap.** The probe
 restores the pool slot automatically after placement.
 
-## 9. Open questions
+## 9. Procedural composition: places from pieces (2026-08-25)
+
+Squares are not atomic. A square is a level full of placed
+actors, and those actors can be read out and rebuilt elsewhere.
+This is the route to generated places: no new level asset, no
+pak, no encryption key. Code: `src/harvest.rs`.
+
+### 9.1 What a square is made of
+
+`harvest_classes` on live squares:
+
+- `L_Forest04`: 125 actors. 34 leaf-wind cues, 29
+  StaticMeshActor, 9 emitters, 8 anomaly zones, then props
+  (planks, boxes, chair, carpet, cars), 2 boars, dead bodies,
+  item spawners.
+- `L_Village_Drenazh`: 659 actors, **554 of them
+  StaticMeshActor**, plus dead bodies, anomaly zones,
+  furniture (sofa, wardrobe), bandit controllers, gun-part
+  spawners.
+
+So pieces come in two tiers:
+
+1. **Blueprint props** (`BP_*`): self-contained. Spawning the
+   class is enough.
+2. **StaticMeshActor**: the buildings, walls, fences, rocks,
+   and the bulk of every square. The class alone spawns an
+   EMPTY actor; the mesh lives on its component.
+
+### 9.2 Reading and rebuilding a piece
+
+Transforms come straight from memory, no UFunction calls:
+`AActor::RootComponent` +0x1A0, then on the component
+`RelativeLocation` +0x128, `RelativeRotation` +0x140,
+`RelativeScale3D` +0x158.
+
+For StaticMeshActor the mesh is
+`StaticMeshComponent` +0x290 then `StaticMesh` +0x560. A
+harvest stores the mesh's NAME (not its pointer) so a saved
+composition survives a restart; compose builds one name to
+pointer index per run.
+
+Rebuilding a mesh piece needs the deferred sequence, in order:
+
+1. `BeginDeferredActorSpawnFromClass` (StaticMeshActor)
+2. `SceneComponent:SetMobility(Movable)`. A Static component
+   rejects a mesh swap once registered.
+3. `StaticMeshComponent:SetStaticMesh(mesh)`
+4. `FinishSpawningActor`
+
+### 9.3 Proven live (2026-08-25)
+
+`research_harvest::harvest_and_compose`: 564 pieces harvested
+from `L_Village_Dwarf_Hole`, the 60 nearest its centre rebuilt
+beside the player (58 carrying meshes). 60 placed, 0 failed,
+and the operator confirmed the result in-game: **solid and
+real**, collidable structures standing where nothing was.
+
+## 10. Open questions
 
 - Why GenerateCustomBiom(1) does nothing when Factory
   generates fine under normal shinings: broken custom path,
