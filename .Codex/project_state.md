@@ -19,6 +19,8 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 - Survivalist retains voter eligibility, conscript exclusion, trait projections, thresholds, actions, outcome judgment, trait selection, reinforcement direction, and magnitude.
 - Settlement survival rungs and classification from nutrition, population loss, and threat pressure belong to `modforge::survival`.
 - Survivalist retains settlement threshold values, Unity reads, voting, and every response to the classified rung.
+- Adaptive-pressure target selection, tier resolution, deterministic ring placement, global caps, per-target exclusion, tracking, and pruning belong to `modforge::storyteller`.
+- Survivalist retains Unity target observations, threat checks, game handles, zombie spawning, liveness reads, movement commands, content values, logging, and chronicle text.
 
 ## Last session summary
 
@@ -41,6 +43,8 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 - Preserved Survivalist's outcome judgment, trait choices, directions, magnitudes, Unity effects, logging, and chronicle text. Added no tests and did not build.
 - Moved Survivalist's settlement survival rungs and pressure classification into `modforge::survival` while preserving its threshold values and all Unity-driven responses.
 - Added no tests and did not build for the settlement survival extraction, following the direct instruction.
+- Expanded `modforge::storyteller` with the complete engine-independent adaptive-pressure selection, tier, placement, and active-event lifecycle used by Survivalist's horde.
+- Migrated the horde to the Modforge authority while preserving Unity observation and execution, Survivalist's content values, logging, and chronicle text. Added no tests and did not build.
 
 ## Next steps
 
@@ -48,4 +52,4 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 
 ## Open questions
 
-- None for the completed item, upgrade, mission, ballot, reinforcement, and settlement survival extractions.
+- None for the completed item, upgrade, mission, ballot, reinforcement, settlement survival, and adaptive-pressure extractions.

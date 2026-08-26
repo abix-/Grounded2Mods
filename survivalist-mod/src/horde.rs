@@ -20,9 +20,12 @@
 
 use std::sync::OnceLock;
 
-use parking_lot::Mutex;
 use serde_json::json;
 
+use modforge::storyteller::{
+    PressureTarget, PressureTier, PressureTracker, pressure_ring_position, pressure_tier,
+    strongest_pressure_target,
+};
 use unityforge::mono::{self, LogLevel, MonoObject};
 
 use crate::common::{base_centre, ctype, display_name, for_each_community, handle_of, own, with};
@@ -49,23 +52,26 @@ const PACK_RING_TILES: f64 = 70.0;
 /// Size tiers: at or above `members`, a pack of `min..=max`
 /// zombies of `strain` (the game's own infection types, ascending
 /// menace).
-const TIERS: &[(i64, i64, i64, &str)] = &[
-    (44, 10, 12, "White"),
-    (34, 8, 10, "Red"),
-    (24, 6, 8, "Blue"),
-    (16, 4, 6, "Green"),
+const TIERS: &[PressureTier<(i64, i64, &str)>] = &[
+    PressureTier {
+        at_least: 44,
+        value: (10, 12, "White"),
+    },
+    PressureTier {
+        at_least: 34,
+        value: (8, 10, "Red"),
+    },
+    PressureTier {
+        at_least: 24,
+        value: (6, 8, "Blue"),
+    },
+    PressureTier {
+        at_least: 16,
+        value: (4, 6, "Green"),
+    },
 ];
 
-/// A pack we set loose: pruned once nobody in it is left standing.
-/// `target_id` is the community Id it was sent at (stable across the
-/// handle table, unlike a raw handle), so the survivable guard can
-/// refuse a second pack at the same camp.
-struct Pack {
-    pack_h: i32,
-    target_id: i64,
-}
-
-static PACKS: Mutex<Vec<Pack>> = Mutex::new(Vec::new());
+static PRESSURE: PressureTracker<i64, i32> = PressureTracker::new(MAX_PACKS);
 
 /// Logged once per generation when the running shim predates the
 /// static-invoke bridge (the horde arms after a game restart).
@@ -82,7 +88,7 @@ struct Alpha {
 }
 
 fn find_alpha() -> Result<Option<Alpha>, String> {
-    let mut best: Option<(i32, String, i64, (i64, i64))> = None;
+    let mut targets = Vec::new();
     for_each_community(|com| {
         let t = ctype(&com);
         let eligible = t == "Player"
@@ -95,24 +101,22 @@ fn find_alpha() -> Result<Option<Alpha>, String> {
             .invoke("GetLivingNonZombieMemberCount", &json!([]))?
             .as_i64()
             .unwrap_or(0);
-        if members < HORDE_MIN_MEMBERS {
-            return Ok(true);
-        }
         let Some(centre) = base_centre(&com) else {
             return Ok(true);
         };
-        if best.as_ref().map(|b| members > b.2).unwrap_or(true) {
-            if let Some(old) = best.replace((com.handle().0, display_name(&com), members, centre)) {
-                drop(own(old.0));
-            }
-            std::mem::forget(com);
-        }
+        let name = display_name(&com);
+        targets.push(PressureTarget {
+            eligible,
+            pressure: members,
+            value: (com, name, centre),
+        });
         Ok(true)
     })?;
-    let Some((h, name, members, centre)) = best else {
+    let Some(target) = strongest_pressure_target(targets, HORDE_MIN_MEMBERS) else {
         return Ok(None);
     };
-    let com = own(h);
+    let (com, name, centre) = target.value;
+    let members = target.pressure;
     let id = com.read_field("Id")?.as_i64().unwrap_or(-1);
     Ok(Some(Alpha {
         com,
@@ -124,19 +128,12 @@ fn find_alpha() -> Result<Option<Alpha>, String> {
 }
 
 fn run(now: f32) -> Result<Outcome, String> {
-    // Prune packs that have been put down; cap concurrent packs.
-    {
-        let mut packs = PACKS.lock();
-        packs.retain(|p| {
-            let standing = with(p.pack_h, any_member_alive);
-            if !standing {
-                drop(own(p.pack_h));
-            }
-            standing
-        });
-        if packs.len() >= MAX_PACKS {
-            return Ok(Outcome::Passed);
-        }
+    PRESSURE.prune(
+        |pack_h| with(pack_h, any_member_alive),
+        |pack_h| drop(own(pack_h)),
+    );
+    if PRESSURE.is_full() {
+        return Ok(Outcome::Passed);
     }
 
     let Some(alpha) = find_alpha()? else {
@@ -149,25 +146,20 @@ fn run(now: f32) -> Result<Outcome, String> {
     if !crate::storyteller::safe_to_pressure(alpha_h) {
         return Ok(Outcome::Passed);
     }
-    if PACKS.lock().iter().any(|p| p.target_id == alpha.id) {
+    if PRESSURE.is_targeted(alpha.id) {
         return Ok(Outcome::Passed);
     }
 
     let (cx, cy) = alpha.centre;
     let members = alpha.members;
-    let (_, min, max, strain) = *TIERS
-        .iter()
-        .find(|(at_least, ..)| members >= *at_least)
-        .expect("TIERS covers every size at or above HORDE_MIN_MEMBERS");
+    let (min, max, strain) = pressure_tier(members, TIERS)
+        .expect("TIERS covers every size at or above HORDE_MIN_MEMBERS")
+        .value;
 
     // A ring point out from the camp; the angle comes from a hash
     // of the scan time and camp handle so successive packs arrive
     // from different directions.
-    let mut h = (now.to_bits() as u64).wrapping_mul(0x9E3779B97F4A7C15) ^ (alpha_h as u64) << 17;
-    h ^= h >> 29;
-    let angle = (h % 6283) as f64 / 1000.0;
-    let sx = cx + (angle.cos() * PACK_RING_TILES) as i64;
-    let sy = cy + (angle.sin() * PACK_RING_TILES) as i64;
+    let (sx, sy) = pressure_ring_position(now, alpha_h as u64, alpha.centre, PACK_RING_TILES);
 
     // The game's own pack spawner: a null spawn point makes them
     // roaming hunter zombies with no respawn ties.
@@ -213,10 +205,7 @@ fn run(now: f32) -> Result<Outcome, String> {
         Ok(())
     })?;
 
-    PACKS.lock().push(Pack {
-        pack_h,
-        target_id: alpha.id,
-    });
+    PRESSURE.track(alpha.id, pack_h);
 
     crate::chronicle::post(&format!("the dead are massing near {}", alpha.name));
     mono::log(
@@ -237,7 +226,7 @@ pub fn alpha_view() -> Result<Option<(String, i64)>, String> {
 
 /// How many of our packs are currently tracked as roaming.
 pub fn live_pack_count() -> usize {
-    PACKS.lock().len()
+    PRESSURE.len()
 }
 
 /// Spawn a pack of `min..=max` zombies of `strain` at (sx, sy) and

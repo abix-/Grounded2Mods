@@ -40,6 +40,118 @@ pub enum Outcome {
     Passed,
 }
 
+/// One caller-observed target for adaptive pressure. The caller
+/// supplies engine facts; Modforge owns eligibility, threshold,
+/// and strongest-target selection.
+pub struct PressureTarget<T> {
+    pub eligible: bool,
+    pub pressure: i64,
+    pub value: T,
+}
+
+/// Select the first strongest eligible target at or above the
+/// minimum pressure. Equal-pressure ties preserve caller order.
+pub fn strongest_pressure_target<T>(
+    targets: impl IntoIterator<Item = PressureTarget<T>>,
+    minimum_pressure: i64,
+) -> Option<PressureTarget<T>> {
+    let mut strongest: Option<PressureTarget<T>> = None;
+    for target in targets {
+        if !target.eligible || target.pressure < minimum_pressure {
+            continue;
+        }
+        if strongest
+            .as_ref()
+            .map(|current| target.pressure > current.pressure)
+            .unwrap_or(true)
+        {
+            strongest = Some(target);
+        }
+    }
+    strongest
+}
+
+/// One caller-defined adaptive-pressure tier.
+pub struct PressureTier<T> {
+    pub at_least: i64,
+    pub value: T,
+}
+
+/// Resolve the first tier whose threshold the pressure reaches.
+/// Callers order tiers from strongest to weakest.
+pub fn pressure_tier<T>(pressure: i64, tiers: &[PressureTier<T>]) -> Option<&PressureTier<T>> {
+    tiers.iter().find(|tier| pressure >= tier.at_least)
+}
+
+/// Pick a deterministic point on a ring around a pressure target.
+pub fn pressure_ring_position(now: f32, salt: u64, centre: (i64, i64), radius: f64) -> (i64, i64) {
+    let mut hash = (now.to_bits() as u64).wrapping_mul(0x9E3779B97F4A7C15) ^ (salt << 17);
+    hash ^= hash >> 29;
+    let angle = (hash % 6283) as f64 / 1000.0;
+    (
+        centre.0 + (angle.cos() * radius) as i64,
+        centre.1 + (angle.sin() * radius) as i64,
+    )
+}
+
+struct ActivePressure<I, H> {
+    target_id: I,
+    handle: H,
+}
+
+/// Active adaptive-pressure lifecycle: global cap, per-target
+/// exclusion, tracking, and caller-driven liveness pruning.
+pub struct PressureTracker<I, H> {
+    max_active: usize,
+    active: Mutex<Vec<ActivePressure<I, H>>>,
+}
+
+impl<I, H> PressureTracker<I, H>
+where
+    I: Copy + Eq,
+    H: Copy,
+{
+    pub const fn new(max_active: usize) -> Self {
+        Self {
+            max_active,
+            active: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Remove finished pressure events. The caller observes engine
+    /// liveness and releases engine resources for each removed handle.
+    pub fn prune(&self, mut is_alive: impl FnMut(H) -> bool, mut cleanup: impl FnMut(H)) {
+        self.active.lock().retain(|event| {
+            let alive = is_alive(event.handle);
+            if !alive {
+                cleanup(event.handle);
+            }
+            alive
+        });
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.active.lock().len() >= self.max_active
+    }
+
+    pub fn is_targeted(&self, target_id: I) -> bool {
+        self.active
+            .lock()
+            .iter()
+            .any(|event| event.target_id == target_id)
+    }
+
+    pub fn track(&self, target_id: I, handle: H) {
+        self.active
+            .lock()
+            .push(ActivePressure { target_id, handle });
+    }
+
+    pub fn len(&self) -> usize {
+        self.active.lock().len()
+    }
+}
+
 /// Pacing knobs. Defaults can be overridden at construction or
 /// live via the `storyteller_config` op.
 #[derive(Clone, Copy)]
