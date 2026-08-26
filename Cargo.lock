@@ -1942,6 +1942,7 @@ dependencies = [
  "cc",
  "crossbeam-channel",
  "fastrand",
+ "glam",
  "hex",
  "insta",
  "memoffset",

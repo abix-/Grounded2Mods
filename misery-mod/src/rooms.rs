@@ -20,13 +20,10 @@ use modforge::structure::{
     Opening, RoomDef, ShellSlot, Side, SlotKind, SlotOpening, shell_slots,
 };
 
-use crate::harvest::Piece;
+use modforge::structure::PieceDef;
 
 /// Module widths the kit offers, largest first, in metres.
 pub const MODULES: &[f32] = &[4.0, 2.0, 1.0];
-
-/// UE centimetres per modforge metre.
-const CM_PER_M: f64 = 100.0;
 
 /// A wall 4 m tall is named 400x401, not 400x400.
 pub fn wall_name(w: i32, h: i32) -> String {
@@ -73,14 +70,13 @@ fn cm(v: f32) -> i32 {
     (v * 100.0).round() as i32
 }
 
-/// Build the pieces for one room. Offsets are UE centimetres
-/// relative to the room's origin, ready for
-/// `harvest::place_composition_at`.
+/// Build the pieces for one room, in modforge's space, ready for
+/// `ueforge::ue::pieces::spawn`.
 ///
-/// modforge works y-up with walls running +x before yaw; UE works
-/// z-up with wall meshes running +x. The quarter turn between the
-/// two conventions is applied once, here.
-pub fn room_pieces(room: &RoomDef) -> Vec<Piece> {
+/// This module's only job is naming: which mesh fills each slot.
+/// Positions and facings pass through untouched, and the two
+/// conventions are reconciled once, on the way into the world.
+pub fn room_pieces(room: &RoomDef) -> Vec<PieceDef> {
     let mut out = Vec::new();
     for slot in shell_slots(room, MODULES) {
         let mesh = match slot.kind {
@@ -139,9 +135,11 @@ fn room_plan(args: &serde_json::Value) -> Result<serde_json::Value, String> {
     let pieces = room_pieces(&room);
     Ok(serde_json::json!({
         "count": pieces.len(),
+        // modforge's numbers: metres, y up, radians. The Unreal
+        // ones only exist at the moment of spawning.
         "pieces": pieces.iter().map(|p| serde_json::json!({
-            "mesh": p.mesh,
-            "at": [p.dx, p.dy, p.dz],
+            "mesh": p.asset,
+            "at": [p.offset.x, p.offset.y, p.offset.z],
             "yaw": p.yaw,
         })).collect::<Vec<_>>(),
     }))
@@ -171,13 +169,15 @@ fn build_room(args: &serde_json::Value) -> Result<serde_json::Value, String> {
             let (x, y) = (here.0 + yaw.cos() * away, here.1 + yaw.sin() * away);
             let z = ueforge::ue::trace::ground_at(x, y, crate::TRACE_UP, crate::TRACE_DOWN)
                 .unwrap_or(here.2);
-            let comp = crate::harvest::Composition {
-                source: "generated room".to_string(),
-                pieces,
+            // SAFETY: player is a live actor, game thread.
+            let out = unsafe {
+                ueforge::ue::pieces::spawn(player, &pieces, (x, y, z), 0.0, usize::MAX)
             };
-            let placed =
-                crate::harvest::place_composition_at(&comp, x, y, z, 0.0, usize::MAX)?;
-            Ok(serde_json::json!({"placed": placed, "at": [x, y, z]}))
+            Ok(serde_json::json!({
+                "placed": out.placed,
+                "failed": out.failed,
+                "at": [x, y, z],
+            }))
         },
         std::time::Duration::from_secs(30),
     )
@@ -191,26 +191,26 @@ fn kit_layout(args: &serde_json::Value) -> Result<serde_json::Value, String> {
         .get("level")
         .and_then(|v| v.as_str())
         .ok_or("need {level: str}")?;
-    let comp = crate::harvest::harvest_level(level)?;
+    let pieces = ueforge::ue::pieces::read_level(level, &[]);
     let mut rows = Vec::new();
-    for p in &comp.pieces {
-        let Some(mesh) = &p.mesh else { continue };
+    for p in &pieces {
+        let Some(mesh) = &p.asset else { continue };
         // Kit parts only: the modular walls, floors and openings.
         if !(mesh.starts_with("SM_Wall") || mesh.starts_with("SM_Floor")) {
             continue;
         }
         rows.push(serde_json::json!({
             "mesh": mesh,
-            "x": p.dx,
-            "y": p.dy,
-            "z": p.dz,
+            "x": p.offset.x,
+            "y": p.offset.y,
+            "z": p.offset.z,
             "yaw": p.yaw,
         }));
     }
     Ok(serde_json::json!({
         "level": level,
         "kit_pieces": rows.len(),
-        "total_pieces": comp.pieces.len(),
+        "total_pieces": pieces.len(),
         "pieces": rows,
     }))
 }
@@ -238,31 +238,24 @@ pub fn register_ops() {
     ]);
 }
 
-/// One slot to one UE piece. modforge (x, y up, z) maps to UE
-/// (-z, x, y): the same mapping `places.rs` uses at its edge.
-fn to_piece(slot: &ShellSlot, mesh: String) -> Piece {
-    // The position map (mf x,y,z -> ue -z,x,y) has determinant -1:
-    // it converts right-handed y-up to left-handed z-up. Under a
-    // reflection angles REVERSE, so the yaw must be negated, not
-    // merely offset. Getting this wrong leaves two of a room's
-    // four walls running backwards into the room.
-    //   south (mf 0)    -> ue 90    east (mf +90) -> ue 0
-    //   north (mf 180)  -> ue -90   west (mf -90) -> ue 180
-    let yaw_deg = 90.0 - slot.yaw.to_degrees() as f64;
-    Piece {
+/// One slot to one piece.
+///
+/// No conversion here any more. A `ShellSlot` is already in
+/// modforge's space and so is a `PieceDef`, so this only names
+/// the mesh. `ueforge::ue::pieces::spawn` turns modforge's
+/// numbers into Unreal's once, on the way into the world, which
+/// is also the only place the handedness flip is handled.
+fn to_piece(slot: &ShellSlot, mesh: String) -> PieceDef {
+    PieceDef {
         class: "StaticMeshActor".to_string(),
-        dx: -(slot.position.z as f64) * CM_PER_M,
-        dy: slot.position.x as f64 * CM_PER_M,
-        dz: slot.position.y as f64 * CM_PER_M,
-        yaw: yaw_deg,
+        asset: Some(mesh),
+        offset: slot.position,
+        yaw: slot.yaw,
         pitch: 0.0,
         roll: 0.0,
         scale: 1.0,
-        mesh: Some(mesh),
-        // The builder does not need measurements; the mesh carries
-        // its own geometry.
-        ex: 0.0,
-        ey: 0.0,
-        ez: 0.0,
+        // The builder needs no measurements; the mesh carries its
+        // own geometry.
+        extent: glam::Vec3::ZERO,
     }
 }

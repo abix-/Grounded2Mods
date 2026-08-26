@@ -11,7 +11,7 @@ pub mod assets;
 pub mod debug;
 pub mod dispatch;
 pub mod gameplay;
-pub mod harvest;
+
 pub mod autoload;
 pub mod nag;
 pub mod places;
@@ -127,12 +127,13 @@ fn on_unreal_init() {
         .once("pe_dispatch", dispatch::install)
         .once("spawning", spawning::install)
         .once("strange", strange::install)
-        // OFF. Harvest reads a live square's actors and rebuilds
-        // them elsewhere: copying the designers' work, which is
-        // not on the todo and not the goal. Its endpoints are
-        // gone with it. `mesh_info` (measuring a mesh) is worth
-        // keeping and moves to a pieces module.
-        // .once("harvest", harvest::register_ops)
+        // Reading a level as pieces, measuring meshes and placing
+        // pieces are all engine work, so they live in
+        // `ueforge::ue::pieces` and register from there:
+        // level_pieces, level_classes, mesh_info, place_pieces.
+        // misery's harvest.rs is deleted; nothing of it was
+        // game-specific.
+        .once("pieces", ueforge::ue::pieces::register_ops)
         // .once("rooms", rooms::register_ops)
         .once("assets", assets::register_ops)
         // OFF. Harvesting squares and building monuments from

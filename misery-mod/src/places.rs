@@ -27,11 +27,9 @@ use modforge::monument::{Arrangement, Roll, arrange};
 use modforge::structure::{CONCRETE_FLOOR, CONCRETE_WALL, PieceDef, StructureDef};
 
 use crate::dispatch;
-use crate::harvest::{self, Composition, Piece};
 
 /// UE works in centimetres and z-up; modforge in metres and y-up
 /// (north = -z). Conversions live here, at the binder edge.
-const CM_PER_M: f64 = 100.0;
 
 /// Pieces within this radius of a seed piece belong to the same
 /// structure. Metres.
@@ -63,23 +61,25 @@ static STRUCTURES_CAPTURED: AtomicU64 = AtomicU64::new(0);
 /// Cut a square's harvested pieces into structures: greedy
 /// spatial grouping, so a building keeps the fence and the junk
 /// pile that stand with it.
-fn structures_from(comp: &Composition) -> Vec<StructureDef> {
-    let radius_cm = STRUCTURE_RADIUS_M * CM_PER_M;
-    let mut taken = vec![false; comp.pieces.len()];
+fn structures_from(source: &str, pieces: &[PieceDef]) -> Vec<StructureDef> {
+    // modforge's space: metres, and the ground plane is x and z
+    // because y is up.
+    let radius = STRUCTURE_RADIUS_M as f32;
+    let mut taken = vec![false; pieces.len()];
     let mut out = Vec::new();
-    for i in 0..comp.pieces.len() {
+    for i in 0..pieces.len() {
         if taken[i] {
             continue;
         }
-        let seed = &comp.pieces[i];
+        let seed = &pieces[i];
         let mut members: Vec<usize> = Vec::new();
-        for (j, other) in comp.pieces.iter().enumerate() {
+        for (j, other) in pieces.iter().enumerate() {
             if taken[j] {
                 continue;
             }
-            let dx = other.dx - seed.dx;
-            let dy = other.dy - seed.dy;
-            if dx * dx + dy * dy <= radius_cm * radius_cm {
+            let dx = other.offset.x - seed.offset.x;
+            let dz = other.offset.z - seed.offset.z;
+            if dx * dx + dz * dz <= radius * radius {
                 members.push(j);
             }
             if members.len() > STRUCTURE_MAX_PIECES {
@@ -91,81 +91,47 @@ fn structures_from(comp: &Composition) -> Vec<StructureDef> {
             continue;
         }
         // Re-centre on the group's own middle so it can be placed
-        // anywhere and turned about a sane pivot.
-        let cx = members.iter().map(|&j| comp.pieces[j].dx).sum::<f64>() / members.len() as f64;
-        let cy = members.iter().map(|&j| comp.pieces[j].dy).sum::<f64>() / members.len() as f64;
-        let base_z = members
+        // anywhere and turned about a sane pivot. Ground middle
+        // in x and z; the lowest point in y, which is up.
+        let n = members.len() as f32;
+        let cx = members.iter().map(|&j| pieces[j].offset.x).sum::<f32>() / n;
+        let cz = members.iter().map(|&j| pieces[j].offset.z).sum::<f32>() / n;
+        let base_y = members
             .iter()
-            .map(|&j| comp.pieces[j].dz)
-            .fold(f64::MAX, f64::min);
-        let pieces: Vec<PieceDef> = members
+            .map(|&j| pieces[j].offset.y)
+            .fold(f32::MAX, f32::min);
+        let group: Vec<PieceDef> = members
             .iter()
-            .map(|&j| to_piece_spec(&comp.pieces[j], cx, cy, base_z))
+            .map(|&j| PieceDef {
+                offset: pieces[j].offset - Vec3::new(cx, base_y, cz),
+                ..pieces[j].clone()
+            })
             .collect();
         for &j in &members {
             taken[j] = true;
         }
         out.push(StructureDef {
-            name: comp.source.clone(),
+            name: source.to_string(),
             wall_color: CONCRETE_WALL,
             floor_color: CONCRETE_FLOOR,
             rooms: Vec::new(),
             stairs: Vec::new(),
             furniture: Vec::new(),
             lights: Vec::new(),
-            pieces,
+            pieces: group,
         });
     }
     out
 }
 
-/// UE piece (cm, z-up) to modforge PieceDef (m, y-up, north -z).
-/// Extents are half-sizes, so only the axes swap, not the signs.
-fn to_piece_spec(p: &Piece, cx: f64, cy: f64, base_z: f64) -> PieceDef {
-    PieceDef {
-        class: p.class.clone(),
-        asset: p.mesh.clone(),
-        offset: Vec3::new(
-            ((p.dy - cy) / CM_PER_M) as f32,
-            ((p.dz - base_z) / CM_PER_M) as f32,
-            (-(p.dx - cx) / CM_PER_M) as f32,
-        ),
-        yaw: p.yaw.to_radians() as f32,
-        pitch: p.pitch.to_radians() as f32,
-        roll: p.roll.to_radians() as f32,
-        scale: p.scale as f32,
-        extent: Vec3::new(
-            (p.ey / CM_PER_M) as f32,
-            (p.ez / CM_PER_M) as f32,
-            (p.ex / CM_PER_M) as f32,
-        ),
-    }
-}
-
-/// modforge PieceDef back to a UE-space Piece for spawning.
-fn to_piece(spec: &PieceDef, member_offset: Vec3) -> Piece {
-    let o = spec.offset + member_offset;
-    Piece {
-        class: spec.class.clone(),
-        dx: -(o.z as f64) * CM_PER_M,
-        dy: o.x as f64 * CM_PER_M,
-        dz: o.y as f64 * CM_PER_M,
-        yaw: (spec.yaw as f64).to_degrees(),
-        pitch: (spec.pitch as f64).to_degrees(),
-        roll: (spec.roll as f64).to_degrees(),
-        scale: spec.scale as f64,
-        mesh: spec.asset.clone(),
-        ex: (spec.extent.z as f64) * CM_PER_M,
-        ey: (spec.extent.x as f64) * CM_PER_M,
-        ez: (spec.extent.y as f64) * CM_PER_M,
-    }
-}
-
 /// Take up to STRUCTURES_PER_SQUARE structures from a square into
 /// the library, preferring the meatier ones.
 fn donate(square: &str) {
-    let Ok(comp) = harvest::harvest_level(square) else { return };
-    let mut found = structures_from(&comp);
+    let pieces = ueforge::ue::pieces::read_level(square, &[]);
+    if pieces.is_empty() {
+        return;
+    }
+    let mut found = structures_from(square, &pieces);
     if found.is_empty() {
         return;
     }
@@ -298,18 +264,33 @@ fn build_monument(
         if PIECES_SPAWNED.load(Ordering::Relaxed) >= SESSION_PIECE_CAP {
             break;
         }
-        let comp = Composition {
-            source: member.structure.name.clone(),
-            pieces: member
-                .structure
-                .pieces
-                .iter()
-                .map(|p| to_piece(p, member.offset))
-                .collect(),
+        // Shift each piece by where the arrangement put its
+        // member, staying in modforge's space throughout.
+        let pieces: Vec<PieceDef> = member
+            .structure
+            .pieces
+            .iter()
+            .map(|p| PieceDef {
+                offset: p.offset + member.offset,
+                ..p.clone()
+            })
+            .collect();
+        let player = ueforge::ue::actor::find_actors_by_chain("BP_SGKMasterCharacter_C")
+            .into_iter()
+            .next()
+            .ok_or("no player")?;
+        // SAFETY: player is a live actor, game thread.
+        let out = unsafe {
+            ueforge::ue::pieces::spawn(
+                player,
+                &pieces,
+                (centre.0, centre.1, z),
+                turn,
+                usize::MAX,
+            )
         };
-        let n = harvest::place_composition_at(&comp, centre.0, centre.1, z, turn, usize::MAX)?;
-        PIECES_SPAWNED.fetch_add(n as u64, Ordering::Relaxed);
-        placed += n;
+        PIECES_SPAWNED.fetch_add(out.placed as u64, Ordering::Relaxed);
+        placed += out.placed;
     }
     MONUMENTS_BUILT.fetch_add(1, Ordering::Relaxed);
     ueforge::log::log(format_args!(
