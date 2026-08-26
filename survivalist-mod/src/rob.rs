@@ -23,6 +23,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use parking_lot::Mutex;
 use serde_json::{Value as Json, json};
 
+use modforge::mission::{self, OneStageStep};
 use unityforge::mono::{self, LogLevel};
 
 use crate::common::{ctype, display_name, for_each_community, handle_of, list_len, own, with};
@@ -81,22 +82,35 @@ static ROB_PLAYER_LAST_BITS: AtomicU32 = AtomicU32::new(0);
 
 /// The active robbery a faction is running, for survival_status.
 pub fn active_target(faction_id: i64) -> Option<Json> {
-    MISSIONS.lock().iter().find(|m| m.robber_id == faction_id).map(|m| {
-        json!({
-            "victim": m.victim_name,
-            "lead": m.lead_name,
+    MISSIONS
+        .lock()
+        .iter()
+        .find(|m| m.robber_id == faction_id)
+        .map(|m| {
+            json!({
+                "victim": m.victim_name,
+                "lead": m.lead_name,
+            })
         })
-    })
 }
 
 pub fn tick(now: f32) {
-    judge_missions(now);
-    let last_scan = f32::from_bits(LAST_SCAN_BITS.load(Ordering::Relaxed));
-    if now - last_scan >= ROB_SCAN_PERIOD_SECS {
-        LAST_SCAN_BITS.store(now.to_bits(), Ordering::Relaxed);
+    mission::advance_one_stage_all(&MISSIONS, now, |mission, error| {
+        mono::log(
+            LogLevel::Warn,
+            &format!(
+                "survivalist-mod: rob -- judgment failed for {}'s robbery of {}: {error}",
+                mission.robber_name, mission.victim_name
+            ),
+        );
+    });
+    if mission::should_tick(now, ROB_SCAN_PERIOD_SECS, &LAST_SCAN_BITS) {
         if let Err(e) = launch_scan(now) {
             if !e.contains("not found") {
-                mono::log(LogLevel::Warn, &format!("survivalist-mod: rob scan failed: {e}"));
+                mono::log(
+                    LogLevel::Warn,
+                    &format!("survivalist-mod: rob scan failed: {e}"),
+                );
             }
         }
     }
@@ -124,7 +138,10 @@ fn launch_scan(now: f32) -> Result<(), String> {
             .unwrap_or(0);
         let id = com.read_field("Id")?.as_i64().unwrap_or(-1);
         let at_war = handle_of(&com.read_field("InvasionTarget")?).is_some();
-        if members < ROB_MIN_MEMBERS || at_war || list_len(&com, "Threats") > 0 || active.contains(&id)
+        if members < ROB_MIN_MEMBERS
+            || at_war
+            || list_len(&com, "Threats") > 0
+            || active.contains(&id)
         {
             return Ok(true);
         }
@@ -294,11 +311,8 @@ fn launch_scan(now: f32) -> Result<(), String> {
                     .ok()
                     .and_then(|v| v.as_i64())
                     .unwrap_or(1);
-                if amount >= ROB_MIN_AMOUNT
-                    && best.as_ref().map(|b| amount > b.2).unwrap_or(true)
-                {
-                    let Some(proto_h) = handle_of(&item.invoke("GetPrototype", &json!([]))?)
-                    else {
+                if amount >= ROB_MIN_AMOUNT && best.as_ref().map(|b| amount > b.2).unwrap_or(true) {
+                    let Some(proto_h) = handle_of(&item.invoke("GetPrototype", &json!([]))?) else {
                         continue;
                     };
                     let iname = item
@@ -377,8 +391,15 @@ fn launch_scan(now: f32) -> Result<(), String> {
         LogLevel::Info,
         &format!(
             "survivalist-mod: rob -- {} ({}, {} of {} voters menacing, {:.2}) sends {} and a party to rob {} of {} x{}",
-            robber_name, robber_ctype, votes, franchise, eff, lead_name, victim_community,
-            item_name, amount,
+            robber_name,
+            robber_ctype,
+            votes,
+            franchise,
+            eff,
+            lead_name,
+            victim_community,
+            item_name,
+            amount,
         ),
     );
     Ok(())
@@ -388,8 +409,13 @@ fn pick_lead(
     com: &unityforge::mono::MonoObject,
     camp_ctype: &str,
 ) -> Result<Option<(i32, String)>, String> {
-    let leader_id = handle_of(&com.read_field("Leader")?)
-        .map(|h| own(h).read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1));
+    let leader_id = handle_of(&com.read_field("Leader")?).map(|h| {
+        own(h)
+            .read_field("Id")
+            .ok()
+            .and_then(|v| v.as_i64())
+            .unwrap_or(-1)
+    });
     let mut lead: Option<(i32, String, f64)> = None;
     if let Some(m_h) = handle_of(&com.read_field("Members")?) {
         let mlist = own(m_h);
@@ -413,7 +439,11 @@ fn pick_lead(
                 .unwrap_or(false);
             let squadded =
                 handle_of(&member.invoke("GetSquad", &json!([])).unwrap_or(Json::Null)).is_some();
-            let id = member.read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1);
+            let id = member
+                .read_field("Id")
+                .ok()
+                .and_then(|v| v.as_i64())
+                .unwrap_or(-1);
             if !alive || !human || !conscious || squadded || Some(id) == leader_id {
                 continue;
             }
@@ -437,30 +467,31 @@ fn pick_lead(
 
 // ---- judging -----------------------------------------------------------------
 
-fn judge_missions(now: f32) {
-    let mut missions = MISSIONS.lock();
-    let mut i = 0;
-    while i < missions.len() {
-        if now < missions[i].eval_at {
-            i += 1;
-            continue;
+impl mission::OneStageMission for Mission {
+    fn advance(&mut self, now: f32) -> Result<OneStageStep, String> {
+        if now < self.eval_at {
+            return Ok(OneStageStep::Continue);
         }
-        let m = missions.remove(i);
-        let lead_alive = with(m.lead_h, |l| l.invoke("get_AliveAndNotZombie", &json!([])))
-            .map(|v| v == json!(true))
-            .unwrap_or(false);
-        let held_now = with(m.robber_h, |com| {
-            com.invoke("CountInventoryItemsOfType", &json!([{ "handle": m.proto_h }]))
+        let lead_alive = with(self.lead_h, |lead| {
+            lead.invoke("get_AliveAndNotZombie", &json!([]))
+        })
+        .map(|v| v == json!(true))
+        .unwrap_or(false);
+        let held_now = with(self.robber_h, |community| {
+            community.invoke(
+                "CountInventoryItemsOfType",
+                &json!([{ "handle": self.proto_h }]),
+            )
         })
         .ok()
         .and_then(|v| v.as_i64())
         .unwrap_or(0);
-        let got_it = held_now > m.held_before;
+        let got_it = held_now > self.held_before;
 
         if lead_alive && got_it {
             crate::chronicle::post(&format!(
                 "{}'s bandits robbed a {} on the road",
-                m.robber_name, m.victim_name
+                self.robber_name, self.victim_name
             ));
         }
         let (up, magnitude, verdict) = if !lead_alive {
@@ -470,21 +501,29 @@ fn judge_missions(now: f32) {
         } else {
             (false, 0.5, "came home empty; a waste of menace")
         };
-        for &v in &m.voter_ids {
+        for &v in &self.voter_ids {
             genome::reinforce_individual(v, genome::AGGRESSION, up, magnitude);
             genome::reinforce_individual(v, genome::GUILE, up, magnitude);
         }
-        genome::reinforce(m.robber_id, genome::AGGRESSION, up, magnitude);
-        genome::reinforce(m.robber_id, genome::GUILE, up, magnitude);
+        genome::reinforce(self.robber_id, genome::AGGRESSION, up, magnitude);
+        genome::reinforce(self.robber_id, genome::GUILE, up, magnitude);
         mono::log(
             LogLevel::Info,
             &format!(
                 "survivalist-mod: rob -- {}'s robbery of {}: {}",
-                m.robber_name, m.victim_name, verdict,
+                self.robber_name, self.victim_name, verdict,
             ),
         );
-        drop(own(m.robber_h));
-        drop(own(m.lead_h));
-        drop(own(m.proto_h));
+        Ok(OneStageStep::Complete)
+    }
+
+    fn cleanup(self) {
+        drop(own(self.robber_h));
+        drop(own(self.lead_h));
+        drop(own(self.proto_h));
+    }
+
+    fn label(&self) -> String {
+        format!("{} robbing {}", self.robber_name, self.victim_name)
     }
 }

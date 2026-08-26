@@ -70,18 +70,18 @@ public class Main
         HarmonyBridge.AcquireHandle = MonoBridge.Acquire;
         HarmonyBridge.EnsureHarmony("abix.unityforge.shim.survivalist");
 
-        // Settlement upgrades: game-typed Harmony patches
-        // (Upgrades.cs). Idempotent; patches survive story
-        // switches with the assembly.
-        SettlementUpgrades.Install();
-
         var loader = new GenerationLoader(new MonoBackendBridge(), MonoBridge.ClearHandles);
+        loader.GenerationActivated += SettlementUpgrades.BindRust;
         if (!loader.LoadInitial(dllPath))
         {
             ShimLogger.Error("Unityforge.Shim: initial generation failed to load");
             return;
         }
         _loader = loader;
+        // Settlement upgrades use the active Rust generation as
+        // their single state authority. Install only after its
+        // exported accessors have been bound.
+        SettlementUpgrades.Install();
         EnsureDriver();
         ShimLogger.Info("Unityforge.Shim: ready (generation 0)");
     }

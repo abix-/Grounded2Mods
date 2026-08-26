@@ -9,6 +9,7 @@
 
 use serde_json::{Value as Json, json};
 
+use modforge::mission::{self, Stage, Step};
 use unityforge::mono::{self, LogLevel, MonoObject};
 
 use crate::common::{
@@ -26,11 +27,6 @@ const COURIER_TIMEOUT_SECS: f32 = 1800.0;
 /// Within this squared tile distance of a building the courier
 /// has arrived; same bar trade uses.
 const ARRIVE_DIST_SQ: f64 = 25.0;
-
-pub enum Stage {
-    Going,
-    Returning,
-}
 
 /// A payment on the road. Owns hirer_h, courier_h, and player_h;
 /// step() releases all three when the run ends.
@@ -78,7 +74,9 @@ pub fn launch(hirer_h: i32, hirer_name: &str, debt_name: &str, now: f32) -> Laun
     let Some((player_h, dest)) = player else {
         mono::log(
             LogLevel::Info,
-            &format!("survivalist-mod: courier: no player camp to pay; {hirer_name}'s debt is void"),
+            &format!(
+                "survivalist-mod: courier: no player camp to pay; {hirer_name}'s debt is void"
+            ),
         );
         return Launch::Void;
     };
@@ -181,106 +179,121 @@ pub fn launch(hirer_h: i32, hirer_name: &str, debt_name: &str, now: f32) -> Laun
 /// One courier step. None = the run ended (paid, lost, or
 /// recalled) and every handle is released.
 pub fn step(c: Courier, now: f32) -> Option<Courier> {
-    let alive = with(c.courier_h, |ch| ch.invoke("get_AliveAndNotZombie", &json!([])))
-        .map(|v| v == json!(true))
+    mission::advance_owned(c, now, |_courier, error| {
+        mono::log(
+            LogLevel::Warn,
+            &format!("survivalist-mod: courier: tile read failed: {error}"),
+        );
+    })
+}
+
+impl mission::Mission for Courier {
+    modforge::mission_accessors!();
+
+    fn is_agent_alive(&self) -> Result<bool, String> {
+        let alive = with(self.courier_h, |ch| {
+            ch.invoke("get_AliveAndNotZombie", &json!([]))
+        })
+        .map(|value| value == json!(true))
         .unwrap_or(false);
-    if !alive {
-        crate::chronicle::post(&format!("the payment from {} never arrived", c.hirer_name));
+        if !alive {
+            crate::chronicle::post(&format!(
+                "the payment from {} never arrived",
+                self.hirer_name
+            ));
+            mono::log(
+                LogLevel::Info,
+                &format!(
+                    "survivalist-mod: courier: {} died on the road; the payment is lost",
+                    self.courier_name
+                ),
+            );
+        }
+        Ok(alive)
+    }
+
+    fn on_going(&mut self, _now: f32) -> Result<Step, String> {
+        let tile = with(self.courier_h, |ch| ch.invoke("get_Tile", &json!([])))?;
+        let distance = with(self.player_h, |player| {
+            player.invoke("GetDistSqToNearestBuilding", &json!([tile]))
+        })
+        .ok()
+        .and_then(|value| value.as_f64())
+        .unwrap_or(f64::MAX);
+        if distance > ARRIVE_DIST_SQ {
+            return Ok(Step::Continue);
+        }
+        let delivered =
+            deliver_carried_payment(self.courier_h, self.player_h, self.loaded).unwrap_or(0);
+        if delivered > 0 {
+            crate::chronicle::post(&format!(
+                "a courier from {} brings your payment",
+                self.hirer_name
+            ));
+        }
         mono::log(
             LogLevel::Info,
             &format!(
-                "survivalist-mod: courier: {} died on the road; the payment is lost",
-                c.courier_name
+                "survivalist-mod: courier: {} delivers {delivered} stack(s) into the player's store",
+                self.courier_name
             ),
         );
-        close(&c);
-        return None;
+        let home = json!({"x": self.home.0, "y": self.home.1});
+        let _ = with(self.hirer_h, |community| -> Result<(), String> {
+            if let Ok(squad) = community.invoke("GetSquad", &json!([self.squad_id])) {
+                if let Some(squad_h) = handle_of(&squad) {
+                    let squad = own(squad_h);
+                    squad.write_field("GoalTile", &home)?;
+                    community.invoke(
+                        "SetSquadAction",
+                        &json!([{ "handle": squad_h }, "GoTo", 0, home.clone(), null, false]),
+                    )?;
+                }
+            }
+            Ok(())
+        });
+        self.loaded = delivered;
+        Ok(Step::Transition)
     }
-    if now >= c.deadline {
+
+    fn on_returning(&mut self, _now: f32) -> Result<Step, String> {
+        let tile = with(self.courier_h, |ch| ch.invoke("get_Tile", &json!([])))?;
+        let distance = with(self.hirer_h, |community| {
+            community.invoke("GetDistSqToNearestBuilding", &json!([tile]))
+        })
+        .ok()
+        .and_then(|value| value.as_f64())
+        .unwrap_or(f64::MAX);
+        if distance > ARRIVE_DIST_SQ {
+            return Ok(Step::Continue);
+        }
+        mono::log(
+            LogLevel::Info,
+            &format!(
+                "survivalist-mod: courier: {} home; the debt is paid and closed",
+                self.courier_name
+            ),
+        );
+        Ok(Step::Complete)
+    }
+
+    fn on_timeout(&mut self, _now: f32) -> Result<(), String> {
         mono::log(
             LogLevel::Info,
             &format!(
                 "survivalist-mod: courier: {} recalled (timeout); the payment never arrived",
-                c.courier_name
+                self.courier_name
             ),
         );
-        close(&c);
-        return None;
+        Ok(())
     }
-    let tile = match with(c.courier_h, |ch| ch.invoke("get_Tile", &json!([]))) {
-        Ok(t) => t,
-        Err(e) => {
-            mono::log(
-                LogLevel::Warn,
-                &format!("survivalist-mod: courier: tile read failed: {e}"),
-            );
-            close(&c);
-            return None;
-        }
-    };
-    match c.stage {
-        Stage::Going => {
-            let d = with(c.player_h, |p| {
-                p.invoke("GetDistSqToNearestBuilding", &json!([tile.clone()]))
-            })
-            .ok()
-            .and_then(|v| v.as_f64())
-            .unwrap_or(f64::MAX);
-            if d > ARRIVE_DIST_SQ {
-                return Some(c);
-            }
-            // At the gate: real hands into the player's store.
-            let delivered = deliver_carried_payment(c.courier_h, c.player_h, c.loaded).unwrap_or(0);
-            if delivered > 0 {
-                crate::chronicle::post(&format!(
-                    "a courier from {} brings your payment",
-                    c.hirer_name
-                ));
-            }
-            mono::log(
-                LogLevel::Info,
-                &format!(
-                    "survivalist-mod: courier: {} delivers {delivered} stack(s) into the player's store",
-                    c.courier_name
-                ),
-            );
-            // Walk home.
-            let home_j = json!({"x": c.home.0, "y": c.home.1});
-            let _ = with(c.hirer_h, |com| -> Result<(), String> {
-                if let Ok(sq) = com.invoke("GetSquad", &json!([c.squad_id])) {
-                    if let Some(sq_h) = handle_of(&sq) {
-                        let squad = own(sq_h);
-                        squad.write_field("GoalTile", &home_j)?;
-                        com.invoke(
-                            "SetSquadAction",
-                            &json!([{ "handle": sq_h }, "GoTo", 0, home_j.clone(), null, false]),
-                        )?;
-                    }
-                }
-                Ok(())
-            });
-            Some(Courier { stage: Stage::Returning, loaded: delivered, ..c })
-        }
-        Stage::Returning => {
-            let d = with(c.hirer_h, |com| {
-                com.invoke("GetDistSqToNearestBuilding", &json!([tile]))
-            })
-            .ok()
-            .and_then(|v| v.as_f64())
-            .unwrap_or(f64::MAX);
-            if d <= ARRIVE_DIST_SQ {
-                mono::log(
-                    LogLevel::Info,
-                    &format!(
-                        "survivalist-mod: courier: {} home; the debt is paid and closed",
-                        c.courier_name
-                    ),
-                );
-                close(&c);
-                return None;
-            }
-            Some(c)
-        }
+
+    fn cleanup(self) {
+        close(&self);
+    }
+
+    fn label(&self) -> String {
+        format!("payment from {}", self.hirer_name)
     }
 }
 
@@ -301,8 +314,13 @@ fn close(c: &Courier) {
 /// The first free member: alive, human, conscious, unsquadded,
 /// not the leader (murder.rs's eligibility, no genome ranking).
 fn pick_courier(com: &MonoObject) -> Result<Option<(i32, String)>, String> {
-    let leader_id = handle_of(&com.read_field("Leader")?)
-        .map(|h| own(h).read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1));
+    let leader_id = handle_of(&com.read_field("Leader")?).map(|h| {
+        own(h)
+            .read_field("Id")
+            .ok()
+            .and_then(|v| v.as_i64())
+            .unwrap_or(-1)
+    });
     let Some(m_h) = handle_of(&com.read_field("Members")?) else {
         return Ok(None);
     };
@@ -327,7 +345,11 @@ fn pick_courier(com: &MonoObject) -> Result<Option<(i32, String)>, String> {
             .unwrap_or(false);
         let squadded =
             handle_of(&member.invoke("GetSquad", &json!([])).unwrap_or(Json::Null)).is_some();
-        let id = member.read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1);
+        let id = member
+            .read_field("Id")
+            .ok()
+            .and_then(|v| v.as_i64())
+            .unwrap_or(-1);
         if !alive || !human || !conscious || squadded || Some(id) == leader_id {
             continue;
         }
@@ -402,7 +424,9 @@ fn deliver_carried_payment(courier_h: i32, player_h: i32, max: i64) -> Result<i6
             "Take",
             &json!([{ "handle": courier_h }, { "handle": item_h }, amount]),
         )?;
-        let Some(taken_h) = handle_of(&taken) else { break };
+        let Some(taken_h) = handle_of(&taken) else {
+            break;
+        };
         store_inv.invoke(
             "Add",
             &json!([{ "handle": store_bh }, { "handle": taken_h }]),

@@ -2,22 +2,19 @@
 // upgrade state and effect patches, written against the real game
 // types (docs/plans/2026-07-11-settlement-upgrades.md).
 //
-// Task 1 scope: the seed-keyed sidecar store, the Reinforce
-// effect (a Harmony postfix on Prop.GetMaxDamage multiplying the
-// type's max hit points by the placed structure's track bonus),
-// and the probe entry the Rust upgrade_probe op drives. The
-// action-menu patches (population, click dispatch, label) land
-// in Task 2.
+// Modforge owns the seed-keyed sidecar store and upgrade policy
+// math. This shim owns the Reinforce effect, action menu, and the
+// other game-typed Harmony patches.
 //
-// State lives HERE (the C# side) because the effect patches run
-// inside the game's hot stat reads; the Rust side reads the same
-// sidecar file for its ops and tie-ins. Structures never stack
-// and their ids persist in saves, so per-instance state is safe
-// (unlike items, whose stacking merges instances).
+// Modforge owns upgrade levels, policy math, and persistence. This
+// game-typed shim applies those levels through Harmony. Structures
+// never stack and their ids persist in saves, so per-instance state
+// is safe (unlike items, whose stacking merges instances).
 
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
 using HarmonyLib;
 using Newtonsoft.Json.Linq;
 using Unityforge.Shim;
@@ -158,14 +155,72 @@ public static class SettlementUpgrades
     private static Harmony _harmony;
     private static bool _installed;
 
-    // prop id -> track -> level. Loaded per save seed.
-    private static readonly Dictionary<int, Dictionary<string, int>> Tracks
-        = new Dictionary<int, Dictionary<string, int>>();
-    // community id -> track -> level (settlement-wide upgrades).
-    private static readonly Dictionary<int, Dictionary<string, int>> CommunityTracks
-        = new Dictionary<int, Dictionary<string, int>>();
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int UpgradeLoadFn(long seed, [MarshalAs(UnmanagedType.LPWStr)] string path, int pathLength);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int UpgradeGetFn(int scope, int entityId, [MarshalAs(UnmanagedType.LPStr)] string track);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int UpgradeSetFn(int scope, int entityId, [MarshalAs(UnmanagedType.LPStr)] string track, int level);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int UpgradeHasAnyFn(int scope, [MarshalAs(UnmanagedType.LPStr)] string track);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int UpgradeCostFn(double baseNeed, int factor, int nextLevel);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int UpgradeSkillFn(int baseSkill, int levelsPerBand, int nextLevel);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate float UpgradeCurveFn(int level, float baseStep, float decay);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate IntPtr UpgradeStatusFn();
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void UpgradeStringFreeFn(IntPtr value);
+
+    private static UpgradeLoadFn _upgradeLoad;
+    private static UpgradeGetFn _upgradeGet;
+    private static UpgradeSetFn _upgradeSet;
+    private static UpgradeHasAnyFn _upgradeHasAny;
+    private static UpgradeCostFn _upgradeCost;
+    private static UpgradeSkillFn _upgradeSkill;
+    private static UpgradeCurveFn _upgradeCurve;
+    private static UpgradeStatusFn _upgradeStatus;
+    private static UpgradeStringFreeFn _upgradeStringFree;
     private static long _seed;
     private static bool _loaded;
+
+    public static void BindRust(IntPtr module)
+    {
+        var load = Resolve<UpgradeLoadFn>(module, "survivalist_upgrade_load");
+        var get = Resolve<UpgradeGetFn>(module, "survivalist_upgrade_get");
+        var set = Resolve<UpgradeSetFn>(module, "survivalist_upgrade_set");
+        var hasAny = Resolve<UpgradeHasAnyFn>(module, "survivalist_upgrade_has_any");
+        var cost = Resolve<UpgradeCostFn>(module, "survivalist_upgrade_cost");
+        var skill = Resolve<UpgradeSkillFn>(module, "survivalist_upgrade_skill");
+        var curve = Resolve<UpgradeCurveFn>(module, "survivalist_upgrade_curve");
+        var status = Resolve<UpgradeStatusFn>(module, "survivalist_upgrade_status");
+        var stringFree = Resolve<UpgradeStringFreeFn>(module, "survivalist_upgrade_string_free");
+        if (load == null || get == null || set == null || hasAny == null
+            || cost == null || skill == null || curve == null || status == null
+            || stringFree == null)
+        {
+            throw new InvalidOperationException("Rust upgrade exports are incomplete");
+        }
+        _upgradeLoad = load;
+        _upgradeGet = get;
+        _upgradeSet = set;
+        _upgradeHasAny = hasAny;
+        _upgradeCost = cost;
+        _upgradeSkill = skill;
+        _upgradeCurve = curve;
+        _upgradeStatus = status;
+        _upgradeStringFree = stringFree;
+        _loaded = false;
+    }
+
+    private static T Resolve<T>(IntPtr module, string name) where T : class
+    {
+        if (!NativeLibrary.TryGetExport(module, name, out var address) || address == IntPtr.Zero)
+            return null;
+        return Marshal.GetDelegateForFunctionPointer(address, typeof(T)) as T;
+    }
 
     /// Called from Main.Load (idempotent). Installs the effect
     /// patches; the store loads lazily once a session is up.
@@ -258,13 +313,12 @@ public static class SettlementUpgrades
 
     private static int CostFor(PropPrototype proto, int nextLevel)
     {
-        var baseNeed = Math.Max(1, (int)Math.Ceiling(proto.RepairResourceNeeded));
-        return baseNeed * CostFactor * nextLevel;
+        return _upgradeCost(proto.RepairResourceNeeded, CostFactor, nextLevel);
     }
 
     private static int SkillFor(PropPrototype proto, int nextLevel)
     {
-        return proto.RepairSkillNeeded + (nextLevel - 1) / LevelsPerSkillBand;
+        return _upgradeSkill(proto.RepairSkillNeeded, LevelsPerSkillBand, nextLevel);
     }
 
     private static int CountCarried(Character c, EquipmentPrototype proto)
@@ -456,13 +510,7 @@ public static class SettlementUpgrades
     /// Shared diminishing curve for multiplier tracks.
     private static float CurveBonus(int level, float baseStep, float decay)
     {
-        float bonus = 0f, step = baseStep;
-        for (var i = 0; i < level; i++)
-        {
-            bonus += step;
-            step *= decay;
-        }
-        return bonus;
+        return _upgradeCurve(level, baseStep, decay);
     }
 
     /// Expand: storage capacity rides the track.
@@ -676,17 +724,8 @@ public static class SettlementUpgrades
             if (session == null || !_loaded) return;
             // Both driver-tick tracks: Health Regen tends the public
             // damage field; Comfort speeds sleepers' recovery.
-            var any = false;
-            foreach (var p in Tracks)
-            {
-                if ((p.Value.TryGetValue(TrackHealthRegen, out var hr) && hr > 0)
-                    || (p.Value.TryGetValue(TrackComfort, out var cf) && cf > 0))
-                {
-                    any = true;
-                    break;
-                }
-            }
-            if (!any) return;
+            if (_upgradeHasAny(0, TrackHealthRegen) == 0
+                && _upgradeHasAny(0, TrackComfort) == 0) return;
             foreach (var obj in session.PropManager.AllProps)
             {
                 if (!(obj is Prop prop) || prop.Destroyed) continue;
@@ -735,13 +774,7 @@ public static class SettlementUpgrades
 
     public static float ReinforceBonus(int level)
     {
-        float bonus = 0f, step = ReinforceBase;
-        for (var i = 0; i < level; i++)
-        {
-            bonus += step;
-            step *= ReinforceDecay;
-        }
-        return bonus;
+        return CurveBonus(level, ReinforceBase, ReinforceDecay);
     }
 
     // ---- the sidecar store ----------------------------------------------------
@@ -762,124 +795,35 @@ public static class SettlementUpgrades
         if (session == null) return false;
         long seed = session.RandomSeed;
         if (_loaded && seed == _seed) return true;
-        Tracks.Clear();
-        CommunityTracks.Clear();
         _seed = seed;
         _loaded = true;
-        try
-        {
-            var path = StorePath(seed);
-            if (File.Exists(path))
-            {
-                var root = JObject.Parse(File.ReadAllText(path));
-                if (root["props"] is JObject props)
-                {
-                    foreach (var p in props)
-                    {
-                        if (!(p.Value is JObject trackObj)) continue;
-                        var levels = new Dictionary<string, int>();
-                        foreach (var t in trackObj) levels[t.Key] = (int)t.Value;
-                        Tracks[int.Parse(p.Key)] = levels;
-                    }
-                }
-                if (root["communities"] is JObject coms)
-                {
-                    foreach (var c in coms)
-                    {
-                        if (!(c.Value is JObject trackObj)) continue;
-                        var levels = new Dictionary<string, int>();
-                        foreach (var t in trackObj) levels[t.Key] = (int)t.Value;
-                        CommunityTracks[int.Parse(c.Key)] = levels;
-                    }
-                }
-                ShimLogger.Info("SettlementUpgrades: restored upgrades for "
-                    + Tracks.Count + " structure(s) and " + CommunityTracks.Count
-                    + " camp(s) (seed " + seed + ")");
-            }
-        }
-        catch (Exception e)
-        {
-            ShimLogger.Warn("SettlementUpgrades: sidecar load failed: " + e.Message);
-        }
+        var path = StorePath(seed);
+        _upgradeLoad(seed, path, path.Length);
         return true;
-    }
-
-    /// Atomic tmp-then-rename write (the genome store's shape).
-    private static void Persist()
-    {
-        if (!_loaded) return;
-        try
-        {
-            var props = new JObject();
-            foreach (var p in Tracks)
-            {
-                var trackObj = new JObject();
-                foreach (var t in p.Value) trackObj[t.Key] = t.Value;
-                props[p.Key.ToString()] = trackObj;
-            }
-            var coms = new JObject();
-            foreach (var c in CommunityTracks)
-            {
-                var trackObj = new JObject();
-                foreach (var t in c.Value) trackObj[t.Key] = t.Value;
-                coms[c.Key.ToString()] = trackObj;
-            }
-            var root = new JObject
-            {
-                ["schema_version"] = 1,
-                ["props"] = props,
-                ["communities"] = coms,
-            };
-            var path = StorePath(_seed);
-            var tmp = path + ".tmp";
-            File.WriteAllText(tmp, root.ToString(Newtonsoft.Json.Formatting.None));
-            if (File.Exists(path)) File.Delete(path);
-            File.Move(tmp, path);
-        }
-        catch (Exception e)
-        {
-            ShimLogger.Warn("SettlementUpgrades: sidecar write failed: " + e.Message);
-        }
     }
 
     public static int GetLevel(int propId, string track)
     {
         if (!_loaded && !EnsureLoaded()) return 0;
-        return Tracks.TryGetValue(propId, out var t) && t.TryGetValue(track, out var level)
-            ? level
-            : 0;
+        return _upgradeGet(0, propId, track);
     }
 
     public static void SetLevel(int propId, string track, int level)
     {
         if (!EnsureLoaded()) return;
-        if (!Tracks.TryGetValue(propId, out var t))
-        {
-            t = new Dictionary<string, int>();
-            Tracks[propId] = t;
-        }
-        t[track] = level;
-        Persist();
+        _upgradeSet(0, propId, track, level);
     }
 
     public static int GetCommunityLevel(int communityId, string track)
     {
         if (!_loaded && !EnsureLoaded()) return 0;
-        return CommunityTracks.TryGetValue(communityId, out var t) && t.TryGetValue(track, out var level)
-            ? level
-            : 0;
+        return _upgradeGet(1, communityId, track);
     }
 
     public static void SetCommunityLevel(int communityId, string track, int level)
     {
         if (!EnsureLoaded()) return;
-        if (!CommunityTracks.TryGetValue(communityId, out var t))
-        {
-            t = new Dictionary<string, int>();
-            CommunityTracks[communityId] = t;
-        }
-        t[track] = level;
-        Persist();
+        _upgradeSet(1, communityId, track, level);
     }
 
     // ---- probes (driven by the Rust ops; permanent diagnostics) ---------------
@@ -931,27 +875,16 @@ public static class SettlementUpgrades
     public static string Status()
     {
         if (!EnsureLoaded()) return Err("no session (menu?)");
-        var perTrack = new Dictionary<string, int>();
-        var levels = 0;
-        foreach (var p in Tracks)
+        var value = _upgradeStatus();
+        if (value == IntPtr.Zero) return Err("upgrade status unavailable");
+        try
         {
-            foreach (var t in p.Value)
-            {
-                perTrack.TryGetValue(t.Key, out var n);
-                perTrack[t.Key] = n + t.Value;
-                levels += t.Value;
-            }
+            return Marshal.PtrToStringAnsi(value);
         }
-        var tracks = new JObject();
-        foreach (var t in perTrack) tracks[t.Key] = t.Value;
-        var root = new JObject
+        finally
         {
-            ["structures_upgraded"] = Tracks.Count,
-            ["levels_total"] = levels,
-            ["levels_per_track"] = tracks,
-            ["seed"] = _seed,
-        };
-        return root.ToString(Newtonsoft.Json.Formatting.None);
+            _upgradeStringFree(value);
+        }
     }
 
     private static string Err(string msg)

@@ -15,16 +15,15 @@
 //! A hot reload loses only the watch: the squad is fully
 //! vanilla-owned, so the settling still completes on its own.
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::AtomicU32;
 
 use parking_lot::Mutex;
 use serde_json::json;
 
+use modforge::mission::{self, OneStageStep};
 use unityforge::mono::{self, LogLevel};
 
-use crate::common::{
-    base_centre, ctype, display_name, for_each_community, handle_of, own, with,
-};
+use crate::common::{base_centre, ctype, display_name, for_each_community, handle_of, own, with};
 
 /// Seconds between watch passes.
 const WATCH_TICK_SECS: f32 = 10.0;
@@ -58,10 +57,16 @@ pub fn active_count() -> usize {
 }
 
 pub fn tick(now: f32) {
-    let last = f32::from_bits(LAST_TICK_BITS.load(Ordering::Relaxed));
-    if now - last >= WATCH_TICK_SECS {
-        LAST_TICK_BITS.store(now.to_bits(), Ordering::Relaxed);
-        advance(now);
+    if mission::should_tick(now, WATCH_TICK_SECS, &LAST_TICK_BITS) {
+        mission::advance_one_stage_all(&MISSIONS, now, |mission, error| {
+            mono::log(
+                LogLevel::Warn,
+                &format!(
+                    "survivalist-mod: settler -- watch for {} failed: {error}",
+                    mission.husk_name
+                ),
+            );
+        });
     }
 }
 
@@ -225,61 +230,62 @@ fn launch(now: f32) -> Result<bool, String> {
     Ok(true)
 }
 
-fn advance(now: f32) {
-    let mut missions = MISSIONS.lock();
-    let mut i = 0;
-    while i < missions.len() {
-        if resolve(&missions[i], now) {
-            let m = missions.remove(i);
-            drop(own(m.group_h));
-            drop(own(m.husk_h));
-        } else {
-            i += 1;
+impl mission::OneStageMission for Mission {
+    fn advance(&mut self, now: f32) -> Result<OneStageStep, String> {
+        let community_type = with(self.group_h, ctype);
+        if community_type == "Normal" || community_type == "Looter" {
+            let name = with(self.group_h, display_name);
+            crate::chronicle::post(&format!(
+                "a new banner flies over the dead walls of {}: outsiders settled there as {}",
+                self.husk_name, name
+            ));
+            mono::log(
+                LogLevel::Info,
+                &format!(
+                    "survivalist-mod: settler -- SETTLED: {} claimed the dead base of {}",
+                    name, self.husk_name
+                ),
+            );
+            return Ok(OneStageStep::Complete);
         }
+        let members = with(self.group_h, |group| {
+            group
+                .invoke("GetLivingNonZombieMemberCount", &json!([]))
+                .ok()
+                .and_then(|value| value.as_i64())
+        })
+        .unwrap_or(0);
+        if members <= 0 {
+            crate::chronicle::post("the settlers never made it; the road ate them");
+            mono::log(
+                LogLevel::Info,
+                "survivalist-mod: settler -- the settling group died on the road",
+            );
+            return Ok(OneStageStep::Complete);
+        }
+        if now >= self.deadline {
+            return Ok(OneStageStep::TimedOut);
+        }
+        Ok(OneStageStep::Continue)
     }
-}
 
-fn resolve(m: &Mission, now: f32) -> bool {
-    // OccupyBase flips the group's type when the claim lands.
-    let t = with(m.group_h, ctype);
-    if t == "Normal" || t == "Looter" {
-        let name = with(m.group_h, display_name);
-        crate::chronicle::post(&format!(
-            "a new banner flies over the dead walls of {}: outsiders settled there as {}",
-            m.husk_name, name
-        ));
-        mono::log(
-            LogLevel::Info,
-            &format!(
-                "survivalist-mod: settler -- SETTLED: {} claimed the dead base of {}",
-                name, m.husk_name
-            ),
-        );
-        return true;
-    }
-    let members = with(m.group_h, |g| {
-        g.invoke("GetLivingNonZombieMemberCount", &json!([]))
-            .ok()
-            .and_then(|v| v.as_i64())
-    })
-    .unwrap_or(0);
-    if members <= 0 {
-        crate::chronicle::post("the settlers never made it; the road ate them");
-        mono::log(
-            LogLevel::Info,
-            "survivalist-mod: settler -- the settling group died on the road",
-        );
-        return true;
-    }
-    if now >= m.deadline {
+    fn on_timeout(&mut self, _now: f32) -> Result<(), String> {
         mono::log(
             LogLevel::Info,
             &format!(
                 "survivalist-mod: settler -- stopped watching the walk to {} (the game still owns the squad)",
-                m.husk_name
+                self.husk_name
             ),
         );
-        return true;
+        Ok(())
     }
-    false
+
+    fn cleanup(self) {
+        drop(own(self.group_h));
+        drop(own(self.husk_h));
+    }
+
+    fn label(&self) -> String {
+        format!("settlers bound for {}", self.husk_name)
+    }
 }

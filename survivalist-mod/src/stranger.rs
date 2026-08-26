@@ -24,11 +24,12 @@
 //! not-knowing is the point; growth.rs skips a claimed group so
 //! this system owns its fate.
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::AtomicU32;
 
 use parking_lot::Mutex;
 use serde_json::json;
 
+use modforge::mission::{self, OneStageStep};
 use unityforge::mono::{self, LogLevel, MonoObject};
 
 use crate::common::{
@@ -49,7 +50,10 @@ pub fn launch_now(now: f32) -> bool {
 /// group) whose meaning is never learned. Same arrival machinery;
 /// the reveal is real but never explained.
 pub fn launch_mysterious(now: f32) -> bool {
-    matches!(launch_with(now, Some(Intent::Mysterious)), Ok(Outcome::Fired))
+    matches!(
+        launch_with(now, Some(Intent::Mysterious)),
+        Ok(Outcome::Fired)
+    )
 }
 
 /// Force-launch a refugee wave: up to WAVE_MAX real groups steered
@@ -125,10 +129,16 @@ pub fn active_count() -> usize {
 }
 
 pub fn tick(now: f32) {
-    let last = f32::from_bits(LAST_TICK_BITS.load(Ordering::Relaxed));
-    if now - last >= MISSION_TICK_SECS {
-        LAST_TICK_BITS.store(now.to_bits(), Ordering::Relaxed);
-        advance(now);
+    if mission::should_tick(now, MISSION_TICK_SECS, &LAST_TICK_BITS) {
+        mission::advance_one_stage_all(&MISSIONS, now, |mission, error| {
+            mono::log(
+                LogLevel::Warn,
+                &format!(
+                    "survivalist-mod: stranger -- resolve failed for the band near {}: {error}",
+                    mission.target_name
+                ),
+            );
+        });
     }
 }
 
@@ -280,9 +290,19 @@ fn hash_pick(id: i64, salt: f32, n: u64) -> u64 {
 }
 
 fn camp_pos(com: &MonoObject) -> Option<(f32, f32)> {
-    let b_h = com.read_field("Buildings").ok().as_ref().and_then(handle_of)?;
+    let b_h = com
+        .read_field("Buildings")
+        .ok()
+        .as_ref()
+        .and_then(handle_of)?;
     let blist = own(b_h);
-    if blist.invoke("get_Count", &json!([])).ok()?.as_i64().unwrap_or(0) == 0 {
+    if blist
+        .invoke("get_Count", &json!([]))
+        .ok()?
+        .as_i64()
+        .unwrap_or(0)
+        == 0
+    {
         return None;
     }
     let anchor_h = handle_of(&blist.invoke("get_Item", &json!([0])).ok()?)?;
@@ -291,193 +311,181 @@ fn camp_pos(com: &MonoObject) -> Option<(f32, f32)> {
 
 // ---- resolving -------------------------------------------------------------
 
-fn advance(now: f32) {
-    let mut missions = MISSIONS.lock();
-    let mut i = 0;
-    while i < missions.len() {
-        let done = match resolve(&missions[i], now) {
-            Ok(d) => d,
-            Err(e) => {
+impl mission::OneStageMission for Mission {
+    fn advance(&mut self, now: f32) -> Result<OneStageStep, String> {
+        let members = with(self.group_h, |g| {
+            g.invoke("GetLivingNonZombieMemberCount", &json!([]))
+                .ok()
+                .and_then(|v| v.as_i64())
+        })
+        .unwrap_or(0);
+        if members <= 0 {
+            return Ok(OneStageStep::Complete);
+        }
+        if now >= self.deadline {
+            return Ok(OneStageStep::TimedOut);
+        }
+
+        let lead_h = with(self.group_h, |g| -> Option<i32> {
+            handle_of(&g.read_field("Leader").ok()?)
+        });
+        let Some(lead_h) = lead_h else {
+            return Ok(OneStageStep::Continue);
+        };
+        let Some(gpos) = pos_of(&own(lead_h)) else {
+            return Ok(OneStageStep::Continue);
+        };
+        let Some(cpos) = with(self.target_h, camp_pos) else {
+            return Ok(OneStageStep::Complete); // the camp is gone
+        };
+        let (dx, dy) = (gpos.0 - cpos.0, gpos.1 - cpos.1);
+        if dx * dx + dy * dy > RESOLVE_RANGE * RESOLVE_RANGE {
+            return Ok(OneStageStep::Continue); // not at the gate yet
+        }
+
+        match self.intent {
+            Intent::FriendlyJoin => {
+                let joined = join_target(self)?;
+                crate::chronicle::post(&reveal_friendly(&self.target_name, joined));
                 mono::log(
-                    LogLevel::Warn,
+                    LogLevel::Info,
                     &format!(
-                        "survivalist-mod: stranger -- resolve failed for the band near {}: {e}",
-                        missions[i].target_name
+                        "survivalist-mod: stranger -- FRIENDLY: {joined} joined {}",
+                        self.target_name
                     ),
                 );
-                true
             }
-        };
-        if done {
-            let m = missions.remove(i);
-            CLAIMED.lock().retain(|id| *id != m.group_id);
-            drop(own(m.group_h));
-            drop(own(m.target_h));
-        } else {
-            i += 1;
+            Intent::FriendlyShare => {
+                let shared = gift_from_band(self, SHARE_STACKS)?;
+                crate::chronicle::post(&reveal_share(self.group_id, &self.target_name, shared));
+                mono::log(
+                    LogLevel::Info,
+                    &format!(
+                        "survivalist-mod: stranger -- FRIENDLY (trader): shared {shared} good(s) with {}",
+                        self.target_name
+                    ),
+                );
+            }
+            Intent::Aggressive => {
+                set_hostile(self)?;
+                crate::chronicle::post(&reveal_aggressive(self.group_id, &self.target_name));
+                mono::log(
+                    LogLevel::Info,
+                    &format!(
+                        "survivalist-mod: stranger -- AGGRESSIVE: a band falls on {}",
+                        self.target_name
+                    ),
+                );
+            }
+            Intent::Mysterious => {
+                // The outcome is real, but no line ever explains it:
+                // the lingering mystery IS the payoff.
+                match hash_pick(self.group_id, 9.0, 3) {
+                    0 => {
+                        let left = gift_from_band(self, 1)?;
+                        crate::chronicle::post(&reveal_mystery_gift(&self.target_name, left));
+                        mono::log(
+                            LogLevel::Info,
+                            &format!(
+                                "survivalist-mod: stranger -- MYSTERIOUS: the lone figure left {left} good(s) at {}",
+                                self.target_name
+                            ),
+                        );
+                    }
+                    1 => {
+                        crate::chronicle::post(&format!(
+                            "a lone figure watched {} from a distance for hours; by nightfall there was no trace",
+                            self.target_name
+                        ));
+                        mono::log(
+                            LogLevel::Info,
+                            &format!(
+                                "survivalist-mod: stranger -- MYSTERIOUS: the lone figure watched {} and vanished",
+                                self.target_name
+                            ),
+                        );
+                    }
+                    _ => {
+                        crate::chronicle::post(&format!(
+                            "the stranger spoke a single sentence at {}'s gate and left; no two retellings agree",
+                            self.target_name
+                        ));
+                        mono::log(
+                            LogLevel::Info,
+                            &format!(
+                                "survivalist-mod: stranger -- MYSTERIOUS: the lone figure spoke at {} and left",
+                                self.target_name
+                            ),
+                        );
+                    }
+                }
+            }
+            Intent::Refugee => {
+                // Shelter through the same real join path recruitment
+                // uses; what they fled is never named here (the loop
+                // that sent them delivers it next).
+                let joined = join_target(self)?;
+                crate::chronicle::post(&reveal_refugees(&self.target_name, joined));
+                mono::log(
+                    LogLevel::Info,
+                    &format!(
+                        "survivalist-mod: stranger -- REFUGEES: {joined} sheltered at {}",
+                        self.target_name
+                    ),
+                );
+            }
+            Intent::WaryLeave => {
+                crate::chronicle::post(&reveal_wary(self.group_id, &self.target_name));
+                mono::log(
+                    LogLevel::Info,
+                    &format!(
+                        "survivalist-mod: stranger -- WARY: a band sized up {} and left",
+                        self.target_name
+                    ),
+                );
+            }
+            Intent::Shakedown => {
+                let took = take_tribute(self)?;
+                crate::chronicle::post(&reveal_shakedown(self.group_id, &self.target_name, took));
+                mono::log(
+                    LogLevel::Info,
+                    &format!(
+                        "survivalist-mod: stranger -- SHAKEDOWN: took {took} stack(s) as tribute from {}",
+                        self.target_name
+                    ),
+                );
+            }
         }
+        Ok(OneStageStep::Complete)
     }
-}
 
-fn resolve(m: &Mission, now: f32) -> Result<bool, String> {
-    let members = with(m.group_h, |g| {
-        g.invoke("GetLivingNonZombieMemberCount", &json!([]))
-            .ok()
-            .and_then(|v| v.as_i64())
-    })
-    .unwrap_or(0);
-    if members <= 0 {
-        return Ok(true);
-    }
-    if now >= m.deadline {
-        match m.intent {
+    fn on_timeout(&mut self, _now: f32) -> Result<(), String> {
+        match self.intent {
             Intent::Mysterious => crate::chronicle::post(&format!(
                 "the lone figure never reached {}; perhaps it was never coming",
-                m.target_name
+                self.target_name
             )),
             Intent::Refugee => crate::chronicle::post(&format!(
                 "the refugees scattered before reaching {}",
-                m.target_name
+                self.target_name
             )),
             _ => crate::chronicle::post(&format!(
                 "the strangers never reached {} and moved on",
-                m.target_name
+                self.target_name
             )),
         }
-        return Ok(true);
+        Ok(())
     }
 
-    let lead_h = with(m.group_h, |g| -> Option<i32> {
-        handle_of(&g.read_field("Leader").ok()?)
-    });
-    let Some(lead_h) = lead_h else {
-        return Ok(false);
-    };
-    let Some(gpos) = pos_of(&own(lead_h)) else {
-        return Ok(false);
-    };
-    let Some(cpos) = with(m.target_h, camp_pos) else {
-        return Ok(true); // the camp is gone
-    };
-    let (dx, dy) = (gpos.0 - cpos.0, gpos.1 - cpos.1);
-    if dx * dx + dy * dy > RESOLVE_RANGE * RESOLVE_RANGE {
-        return Ok(false); // not at the gate yet
+    fn cleanup(self) {
+        CLAIMED.lock().retain(|id| *id != self.group_id);
+        drop(own(self.group_h));
+        drop(own(self.target_h));
     }
 
-    match m.intent {
-        Intent::FriendlyJoin => {
-            let joined = join_target(m)?;
-            crate::chronicle::post(&reveal_friendly(&m.target_name, joined));
-            mono::log(
-                LogLevel::Info,
-                &format!(
-                    "survivalist-mod: stranger -- FRIENDLY: {joined} joined {}",
-                    m.target_name
-                ),
-            );
-        }
-        Intent::FriendlyShare => {
-            let shared = gift_from_band(m, SHARE_STACKS)?;
-            crate::chronicle::post(&reveal_share(m.group_id, &m.target_name, shared));
-            mono::log(
-                LogLevel::Info,
-                &format!(
-                    "survivalist-mod: stranger -- FRIENDLY (trader): shared {shared} good(s) with {}",
-                    m.target_name
-                ),
-            );
-        }
-        Intent::Aggressive => {
-            set_hostile(m)?;
-            crate::chronicle::post(&reveal_aggressive(m.group_id, &m.target_name));
-            mono::log(
-                LogLevel::Info,
-                &format!(
-                    "survivalist-mod: stranger -- AGGRESSIVE: a band falls on {}",
-                    m.target_name
-                ),
-            );
-        }
-        Intent::Mysterious => {
-            // The outcome is real, but no line ever explains it:
-            // the lingering mystery IS the payoff.
-            match hash_pick(m.group_id, 9.0, 3) {
-                0 => {
-                    let left = gift_from_band(m, 1)?;
-                    crate::chronicle::post(&reveal_mystery_gift(&m.target_name, left));
-                    mono::log(
-                        LogLevel::Info,
-                        &format!(
-                            "survivalist-mod: stranger -- MYSTERIOUS: the lone figure left {left} good(s) at {}",
-                            m.target_name
-                        ),
-                    );
-                }
-                1 => {
-                    crate::chronicle::post(&format!(
-                        "a lone figure watched {} from a distance for hours; by nightfall there was no trace",
-                        m.target_name
-                    ));
-                    mono::log(
-                        LogLevel::Info,
-                        &format!(
-                            "survivalist-mod: stranger -- MYSTERIOUS: the lone figure watched {} and vanished",
-                            m.target_name
-                        ),
-                    );
-                }
-                _ => {
-                    crate::chronicle::post(&format!(
-                        "the stranger spoke a single sentence at {}'s gate and left; no two retellings agree",
-                        m.target_name
-                    ));
-                    mono::log(
-                        LogLevel::Info,
-                        &format!(
-                            "survivalist-mod: stranger -- MYSTERIOUS: the lone figure spoke at {} and left",
-                            m.target_name
-                        ),
-                    );
-                }
-            }
-        }
-        Intent::Refugee => {
-            // Shelter through the same real join path recruitment
-            // uses; what they fled is never named here (the loop
-            // that sent them delivers it next).
-            let joined = join_target(m)?;
-            crate::chronicle::post(&reveal_refugees(&m.target_name, joined));
-            mono::log(
-                LogLevel::Info,
-                &format!(
-                    "survivalist-mod: stranger -- REFUGEES: {joined} sheltered at {}",
-                    m.target_name
-                ),
-            );
-        }
-        Intent::WaryLeave => {
-            crate::chronicle::post(&reveal_wary(m.group_id, &m.target_name));
-            mono::log(
-                LogLevel::Info,
-                &format!(
-                    "survivalist-mod: stranger -- WARY: a band sized up {} and left",
-                    m.target_name
-                ),
-            );
-        }
-        Intent::Shakedown => {
-            let took = take_tribute(m)?;
-            crate::chronicle::post(&reveal_shakedown(m.group_id, &m.target_name, took));
-            mono::log(
-                LogLevel::Info,
-                &format!(
-                    "survivalist-mod: stranger -- SHAKEDOWN: took {took} stack(s) as tribute from {}",
-                    m.target_name
-                ),
-            );
-        }
+    fn label(&self) -> String {
+        format!("strangers bound for {}", self.target_name)
     }
-    Ok(true)
 }
 
 /// Move the band's living members into the target via the game's
@@ -485,7 +493,10 @@ fn resolve(m: &Mission, now: f32) -> Result<bool, String> {
 /// many joined.
 fn join_target(m: &Mission) -> Result<i64, String> {
     let headroom = with(m.target_h, |t| -> Result<i64, String> {
-        let beds = t.invoke("GetAccommodation", &json!([]))?.as_i64().unwrap_or(0);
+        let beds = t
+            .invoke("GetAccommodation", &json!([]))?
+            .as_i64()
+            .unwrap_or(0);
         let members = t
             .invoke("GetLivingNonZombieMemberCount", &json!([]))?
             .as_i64()
@@ -585,7 +596,12 @@ fn gift_from_band(m: &Mission, max: i64) -> Result<i64, String> {
     for mh in member_hs {
         let member = own(mh);
         if moved < max {
-            if let Some(inv_h) = member.read_field("Inventory").ok().as_ref().and_then(handle_of) {
+            if let Some(inv_h) = member
+                .read_field("Inventory")
+                .ok()
+                .as_ref()
+                .and_then(handle_of)
+            {
                 let inv = own(inv_h);
                 while moved < max {
                     let count = inv
@@ -626,7 +642,9 @@ fn gift_from_band(m: &Mission, max: i64) -> Result<i64, String> {
                         "Take",
                         &json!([{ "handle": mh }, { "handle": item_h }, amount]),
                     )?;
-                    let Some(taken_h) = handle_of(&taken) else { break };
+                    let Some(taken_h) = handle_of(&taken) else {
+                        break;
+                    };
                     store_inv.invoke(
                         "Add",
                         &json!([{ "handle": store_bh }, { "handle": taken_h }]),

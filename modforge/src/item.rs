@@ -9,6 +9,11 @@
 //! place). Consumers own where created stacks go: a world pickup, a
 //! crate, the edge's courier.
 
+use std::path::{Path, PathBuf};
+
+use parking_lot::Mutex;
+use serde_json::{Value as Json, json};
+
 use crate::quality;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -59,6 +64,8 @@ pub struct FoodStats {
 #[derive(Clone)]
 pub struct ItemDef {
     pub name: String,
+    /// Only one of this item may enter a save.
+    pub unique: bool,
     pub kind: ItemKind,
     pub max_stack: u32,
     pub quality_siblings: u64,
@@ -80,6 +87,125 @@ pub struct ItemDef {
     /// one on the ground, in the hand, and as the hotbar icon. None
     /// until one exists; the consumer draws a box then.
     pub model: Option<String>,
+}
+
+#[derive(Default)]
+struct ItemLedgerState {
+    entered: Vec<String>,
+    holders: serde_json::Map<String, Json>,
+}
+
+/// Per-save lifecycle state for unique items.
+pub struct ItemLedger {
+    schema_version: i64,
+    state: Mutex<Option<ItemLedgerState>>,
+}
+
+impl ItemLedger {
+    pub const fn new(schema_version: i64) -> Self {
+        Self {
+            schema_version,
+            state: Mutex::new(None),
+        }
+    }
+
+    pub fn entered(&self, path: Option<PathBuf>) -> Vec<String> {
+        self.ensure_loaded(path.as_deref());
+        self.state
+            .lock()
+            .as_ref()
+            .map(|state| state.entered.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn has_entered(&self, path: Option<PathBuf>, item_name: &str) -> bool {
+        self.entered(path).iter().any(|name| name == item_name)
+    }
+
+    pub fn holder(&self, item_name: &str) -> Option<String> {
+        self.state
+            .lock()
+            .as_ref()
+            .and_then(|state| state.holders.get(item_name))
+            .and_then(Json::as_str)
+            .map(str::to_string)
+    }
+
+    pub fn mark_entered(&self, path: Option<PathBuf>, item_name: &str) -> bool {
+        self.ensure_loaded(path.as_deref());
+        {
+            let mut slot = self.state.lock();
+            let state = slot.get_or_insert_with(ItemLedgerState::default);
+            if !state.entered.iter().any(|name| name == item_name) {
+                state.entered.push(item_name.to_string());
+            }
+        }
+        self.persist(path.as_deref())
+    }
+
+    pub fn set_holder(
+        &self,
+        path: Option<PathBuf>,
+        item_name: &str,
+        holder: Option<String>,
+    ) -> bool {
+        self.ensure_loaded(path.as_deref());
+        {
+            let mut slot = self.state.lock();
+            let state = slot.get_or_insert_with(ItemLedgerState::default);
+            match holder {
+                Some(holder) => {
+                    state.holders.insert(item_name.to_string(), json!(holder));
+                }
+                None => {
+                    state.holders.remove(item_name);
+                }
+            }
+        }
+        self.persist(path.as_deref())
+    }
+
+    fn ensure_loaded(&self, path: Option<&Path>) {
+        let mut slot = self.state.lock();
+        if slot.is_some() {
+            return;
+        }
+        let store: Option<Json> = path
+            .and_then(|path| std::fs::read_to_string(path).ok())
+            .and_then(|text| serde_json::from_str(&text).ok());
+        let entered = store
+            .as_ref()
+            .and_then(|value| value.get("entered"))
+            .and_then(Json::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let holders = store
+            .as_ref()
+            .and_then(|value| value.get("holders"))
+            .and_then(Json::as_object)
+            .cloned()
+            .unwrap_or_default();
+        *slot = Some(ItemLedgerState { entered, holders });
+    }
+
+    fn persist(&self, path: Option<&Path>) -> bool {
+        let Some(path) = path else { return true };
+        let slot = self.state.lock();
+        let state = slot.as_ref();
+        let text = json!({
+            "schema_version": self.schema_version,
+            "entered": state.map(|state| state.entered.clone()).unwrap_or_default(),
+            "holders": state.map(|state| state.holders.clone()).unwrap_or_default(),
+        })
+        .to_string();
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(&tmp, &text).is_ok() && std::fs::rename(&tmp, path).is_ok()
+    }
 }
 
 /// What a worn item does.
@@ -379,6 +505,7 @@ mod tests {
     fn def(name: &str) -> ItemDef {
         ItemDef {
             name: name.to_string(),
+            unique: false,
             kind: ItemKind::Material,
             max_stack: 10,
             quality_siblings: 3,

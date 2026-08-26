@@ -195,6 +195,7 @@ mod tests {
     fn def(name: &str, food: Option<FoodStats>) -> ItemDef {
         ItemDef {
             name: name.to_string(),
+            unique: false,
             kind: if food.is_some() {
                 ItemKind::Food
             } else {

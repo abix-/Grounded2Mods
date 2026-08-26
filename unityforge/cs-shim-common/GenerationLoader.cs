@@ -76,6 +76,8 @@ namespace Unityforge.Shim
         private static readonly Regex GenFilenameRe = new Regex(
             @"\.gen(\d+)\.dll$", RegexOptions.IgnoreCase);
 
+        public event Action<IntPtr> GenerationActivated;
+
         public GenerationLoader(IBackendBridge backend, Action clearBackendHandles)
         {
             _backend = backend;
@@ -109,6 +111,7 @@ namespace Unityforge.Shim
             _canonicalDir = Path.GetDirectoryName(dllPath);
             ShimLogger.Info("Unityforge.Shim: loading " + dllPath);
             _active = LoadGeneration(dllPath, generationNumber: 0);
+            NotifyGenerationActivated(_active);
             return _active != null;
         }
 
@@ -202,6 +205,7 @@ namespace Unityforge.Shim
             }
             _dormant = null;
             _active = g;
+            NotifyGenerationActivated(g);
             ShimLogger.Info($"Unityforge.Shim: generation {g.N} re-armed");
             return true;
         }
@@ -303,6 +307,7 @@ namespace Unityforge.Shim
                     if (rc == 0)
                     {
                         _active = old;
+                        NotifyGenerationActivated(old);
                         return;
                     }
                 }
@@ -315,8 +320,19 @@ namespace Unityforge.Shim
             }
 
             _active = fresh;
+            NotifyGenerationActivated(fresh);
             ShimLogger.Info(
                 $"Unityforge.Shim: hot reload complete (now generation {newGen}; {_quiesced.Count} draining)");
+        }
+
+        private void NotifyGenerationActivated(Generation generation)
+        {
+            if (generation == null || GenerationActivated == null) return;
+            try { GenerationActivated(generation.Module); }
+            catch (Exception e)
+            {
+                ShimLogger.Error("Unityforge.Shim: generation binding failed: " + e);
+            }
         }
 
         private Generation LoadGeneration(string path, int generationNumber)

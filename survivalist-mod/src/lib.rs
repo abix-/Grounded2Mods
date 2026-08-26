@@ -120,8 +120,8 @@ fn on_init() {
     // per save with a military remnant. unique_status op.
     unique::register_ops();
 
-    // Settlement upgrades: the state and effects live in the C#
-    // shim (Upgrades.cs); these ops drive its probes.
+    // Settlement upgrades: Modforge owns state and policy; the C#
+    // shim applies levels through game-typed effects.
     // upgrade_probe + upgrade_status.
     upgrade::register_ops();
 

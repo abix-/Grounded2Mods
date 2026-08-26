@@ -568,6 +568,7 @@ mod tests {
         for (name, max_stack) in [("scrap", 20), ("cloth", 20)] {
             reg.register(crate::item::ItemDef {
                 name: name.to_string(),
+                unique: false,
                 kind: crate::item::ItemKind::Material,
                 max_stack,
                 quality_siblings: 1,
@@ -696,6 +697,7 @@ mod tests {
         let mut reg = registry();
         reg.register(crate::item::ItemDef {
             name: "pipe".to_string(),
+            unique: false,
             kind: crate::item::ItemKind::Weapon,
             max_stack: 1,
             quality_siblings: 1,
@@ -709,6 +711,7 @@ mod tests {
         .unwrap();
         reg.register(crate::item::ItemDef {
             name: "hatchet".to_string(),
+            unique: false,
             kind: crate::item::ItemKind::Tool,
             max_stack: 1,
             quality_siblings: 1,

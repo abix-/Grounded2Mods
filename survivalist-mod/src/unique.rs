@@ -19,6 +19,7 @@ use std::path::PathBuf;
 use parking_lot::Mutex;
 use serde_json::{Value as Json, json};
 
+use modforge::item::ItemLedger;
 use modforge::ops::{OP_REGISTRY, OpDef};
 use unityforge::mono::{self, LogLevel};
 
@@ -37,16 +38,9 @@ const ENTER_ROLL_PCT: u64 = 20;
 /// whole-map inventory walk; word travels slowly.
 const HOLDER_SCAN_PERIOD_SECS: f32 = 300.0;
 
-const SCHEMA_VERSION: i64 = 1;
-
-/// Uniques that have entered THIS save (lazy from the sidecar).
-static ENTERED: Mutex<Option<Vec<String>>> = Mutex::new(None);
+static ITEMS: ItemLedger = ItemLedger::new(1);
 /// Who carried the last unique in, for unique_status.
 static LAST_CARRIER: Mutex<Option<String>> = Mutex::new(None);
-/// The legend's last known holder ("Name of Camp", "the stores of
-/// Camp", or None = whereabouts unknown). Persisted in the
-/// sidecar so a reload does not re-announce an unchanged holder.
-static HOLDER: Mutex<Option<String>> = Mutex::new(None);
 static LAST_HOLDER_SCAN_BITS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 /// The data-not-loaded line logs once per generation.
 static MISSING_LOGGED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
@@ -63,50 +57,11 @@ fn store_path(seed: i64) -> Option<PathBuf> {
 /// The entered list for this save, loaded once per generation
 /// (the same lazy load fills the holder cache).
 fn entered(seed: i64) -> Vec<String> {
-    let mut slot = ENTERED.lock();
-    if let Some(list) = slot.as_ref() {
-        return list.clone();
-    }
-    let store: Option<Json> = store_path(seed)
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|text| serde_json::from_str::<Json>(&text).ok());
-    let list: Vec<String> = store
-        .as_ref()
-        .and_then(|v| {
-            v.get("entered").and_then(Json::as_array).map(|a| {
-                a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()
-            })
-        })
-        .unwrap_or_default();
-    *HOLDER.lock() = store
-        .as_ref()
-        .and_then(|v| v.get("holders"))
-        .and_then(|h| h.get(COLONELS_RIFLE))
-        .and_then(Json::as_str)
-        .map(str::to_string);
-    *slot = Some(list.clone());
-    list
+    ITEMS.entered(store_path(seed))
 }
 
-/// Write the sidecar NOW (entries and holder changes are rare and
-/// must survive any reload; same atomic tmp-then-rename shape as
-/// the genome store).
-fn persist_store(seed: i64) {
-    let entered: Vec<String> = ENTERED.lock().clone().unwrap_or_default();
-    let holder = HOLDER.lock().clone();
-    let Some(path) = store_path(seed) else { return };
-    let mut holders = serde_json::Map::new();
-    if let Some(h) = holder {
-        holders.insert(COLONELS_RIFLE.to_string(), json!(h));
-    }
-    let text = json!({
-        "schema_version": SCHEMA_VERSION,
-        "entered": entered,
-        "holders": holders,
-    })
-    .to_string();
-    let tmp = path.with_extension("json.tmp");
-    if !(std::fs::write(&tmp, &text).is_ok() && std::fs::rename(&tmp, &path).is_ok()) {
+fn report_persist_result(written: bool) {
+    if !written {
         mono::log(
             LogLevel::Warn,
             "survivalist-mod: unique: sidecar write failed; a reload could re-enter a unique",
@@ -116,14 +71,7 @@ fn persist_store(seed: i64) {
 
 /// Record an entry and write the sidecar.
 fn mark_entered(seed: i64, name: &str) {
-    {
-        let mut slot = ENTERED.lock();
-        let list = slot.get_or_insert_with(Vec::new);
-        if !list.iter().any(|x| x == name) {
-            list.push(name.to_string());
-        }
-    }
-    persist_store(seed);
+    report_persist_result(ITEMS.mark_entered(store_path(seed), name));
 }
 
 // ---- the legend has an address -------------------------------------------------
@@ -138,7 +86,7 @@ pub fn tick(now: f32) {
     }
     LAST_HOLDER_SCAN_BITS.store(now.to_bits(), std::sync::atomic::Ordering::Relaxed);
     let Ok(seed) = session_seed() else { return };
-    if !entered(seed).iter().any(|x| x == COLONELS_RIFLE) {
+    if !ITEMS.has_entered(store_path(seed), COLONELS_RIFLE) {
         return; // nothing storied on the map yet
     }
     let found = match scan_holder() {
@@ -151,7 +99,7 @@ pub fn tick(now: f32) {
             return;
         }
     };
-    let changed = { *HOLDER.lock() != found };
+    let changed = ITEMS.holder(COLONELS_RIFLE) != found;
     if !changed {
         return;
     }
@@ -171,8 +119,7 @@ pub fn tick(now: f32) {
             );
         }
     }
-    *HOLDER.lock() = found;
-    persist_store(seed);
+    report_persist_result(ITEMS.set_holder(store_path(seed), COLONELS_RIFLE, found));
 }
 
 /// Find the rifle: every community's members' hands, then their
@@ -258,7 +205,7 @@ fn inventory_has_rifle(inv_h: i32) -> Result<bool, String> {
 /// after a military band spawns; best-effort.
 pub fn maybe_enter_with_military(band_h: i32, now: f32) {
     let Ok(seed) = session_seed() else { return };
-    if entered(seed).iter().any(|x| x == COLONELS_RIFLE) {
+    if ITEMS.has_entered(store_path(seed), COLONELS_RIFLE) {
         return;
     }
     if rng(now, 7793, 100) >= ENTER_ROLL_PCT {
@@ -405,7 +352,7 @@ fn unique_status(_args: &Json) -> Result<Json, String> {
             "colonels_rifle_loaded": loaded,
             "entered": entered_list,
             "last_entry_carrier": LAST_CARRIER.lock().clone(),
-            "holder": HOLDER.lock().clone(),
+            "holder": ITEMS.holder(COLONELS_RIFLE),
         }))
     })
 }

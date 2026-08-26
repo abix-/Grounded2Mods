@@ -107,6 +107,7 @@ mod tests {
         let mut items = ItemRegistry::default();
         items.register(ItemDef {
             name: "scrap".to_string(),
+            unique: false,
             kind: ItemKind::Material,
             max_stack: 20,
             quality_siblings: 1,
@@ -119,6 +120,7 @@ mod tests {
         }).unwrap();
         items.register(ItemDef {
             name: "knife".to_string(),
+            unique: false,
             kind: ItemKind::Weapon,
             max_stack: 1,
             quality_siblings: 3,
