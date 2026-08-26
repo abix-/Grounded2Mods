@@ -7,8 +7,12 @@
 
 use std::time::Duration;
 
-type Finder = Box<dyn Fn() -> Option<*const u8> + Send + 'static>;
-type OnLoad = Box<dyn Fn(*const u8) + Send + 'static>;
+// Sync as well as Send: `on_each_load` shares these across the
+// watcher thread and the game thread, because both the finder and
+// the action have to RUN on the game thread. See
+// `ueforge::game_thread::run`.
+type Finder = Box<dyn Fn() -> Option<*const u8> + Send + Sync + 'static>;
+type OnLoad = Box<dyn Fn(*const u8) + Send + Sync + 'static>;
 type OnTable = Box<dyn FnOnce(&'static crate::ue::UObject) + Send + 'static>;
 type OnceAction = Box<dyn FnOnce() + Send + 'static>;
 
@@ -59,8 +63,8 @@ impl Features {
         on_load: A,
     ) -> Self
     where
-        P: Fn() -> Option<*const u8> + Send + 'static,
-        A: Fn(*const u8) + Send + 'static,
+        P: Fn() -> Option<*const u8> + Send + Sync + 'static,
+        A: Fn(*const u8) + Send + Sync + 'static,
     {
         self.triggers.push(Trigger::EachLoad {
             label,

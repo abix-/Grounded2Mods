@@ -22,6 +22,10 @@ publish.workspace = true
 crate-type = ["rlib"]
 
 [dependencies]
+# Read a .pdb so the `minidump` tool can turn a crash address
+# into a function name. Release builds strip symbols from the
+# DLL but the PDB beside it keeps them.
+pdb = "0.8"
 serde = { workspace = true }
 serde_json = { workspace = true }
 parking_lot = { workspace = true }

@@ -206,7 +206,8 @@ pub fn install() {
     std::mem::forget(modforge::rpg::poller::spawn_interval(
         "misery-places",
         POLL,
-        watcher,
+        // Reads live actors, so it runs on the game thread.
+        ueforge::game_thread::each_tick(watcher),
     ));
 }
 

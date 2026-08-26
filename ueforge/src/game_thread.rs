@@ -60,6 +60,79 @@ pub fn serve(queue: &'static GameThread) {
     crate::frame::on_update(try_install);
 }
 
+/// True when the caller is already on the game thread.
+///
+/// `UEngine::Tick` only ever runs there, so the thread it last
+/// ran on IS the game thread. Before the first tick this returns
+/// false, which is the safe answer: work gets queued rather than
+/// run in place.
+pub fn is_game_thread() -> bool {
+    let tick = engine_tick::thread_id();
+    tick != 0 && tick == crate::frame::current_thread_id()
+}
+
+/// Run `f` on the game thread and wait for the result.
+///
+/// Anything that reads the game's object list, or touches any
+/// live object, must go through here when it is called from a
+/// background thread. A level unload deletes those objects, and
+/// a background thread reading them at that moment reads freed
+/// memory and kills the process. That is not theoretical: it is
+/// what a crash dump showed, faulting inside
+/// `ue::actor::find_objects_by_chain` one second after a level
+/// started unloading.
+///
+/// Called from the game thread already, `f` runs immediately.
+/// Queueing it there instead would wait for a drain that cannot
+/// happen until the current call returns, which is a deadlock.
+///
+/// Fails if the queue is not being served yet, rather than
+/// running `f` anyway.
+pub fn run<F>(f: F, timeout: std::time::Duration) -> Result<serde_json::Value, String>
+where
+    F: FnOnce() -> Result<serde_json::Value, String> + Send + 'static,
+{
+    if is_game_thread() {
+        return f();
+    }
+    let queue = *QUEUE.lock();
+    let Some(q) = queue else {
+        return Err("game_thread::run: no queue is being served".into());
+    };
+    q.queue().enqueue(f, timeout)
+}
+
+/// Wrap a background check so its whole body runs on the game
+/// thread.
+///
+/// Written for the repeating checks a mod runs on a timer, which
+/// all read live game objects and so must not run on their own
+/// thread. Pass the result straight to the poller:
+///
+/// ```ignore
+/// poller::spawn_interval("name", POLL, game_thread::each_tick(watcher));
+/// ```
+///
+/// A tick that cannot reach the game thread is skipped, not run
+/// anyway. Skipping a check costs a few seconds; reading a
+/// deleted object costs the process.
+pub fn each_tick<F>(tick: F) -> impl Fn() + Send + Sync + 'static
+where
+    F: Fn() + Send + Sync + 'static,
+{
+    let tick = std::sync::Arc::new(tick);
+    move || {
+        let t = tick.clone();
+        let _ = run(
+            move || {
+                t();
+                Ok(serde_json::Value::Null)
+            },
+            std::time::Duration::from_secs(5),
+        );
+    }
+}
+
 /// Absolute address patternsleuth resolved `UEngine::Tick` to, or
 /// 0 before it has run.
 pub fn tick_addr() -> usize {

@@ -110,38 +110,54 @@ fn on_unreal_init() {
 
     debug::spawn(DEBUG_PORT);
 
+    // EVERY GAMEPLAY FEATURE IS OFF (2026-08-26).
+    //
+    // Turned off to find what actually touches the game, after a
+    // run in which a world loaded with auto-load already
+    // disabled. With only pe_dispatch left, the mod resolves
+    // offsets, serves the game-thread queue and answers the
+    // control plane, and does nothing else: no watchers, no
+    // spawning, no props, no vendor writes, no data-table
+    // changes, no notice press.
+    //
+    // Re-enable ONE at a time. The ops for harvest, rooms and
+    // assets only register endpoints, so they are inert until
+    // called and are the safe ones to restore first.
     ueforge::features()
         .once("pe_dispatch", dispatch::install)
-        .once("spawning", spawning::install)
-        .once("strange", strange::install)
-        .once("harvest", harvest::register_ops)
-        .once("rooms", rooms::register_ops)
-        .once("assets", assets::register_ops)
-        .once("places", places::install)
-        .once("stack_10x", || {
-            STACK_TWEAK.apply_when_ready(
-                Duration::from_secs(30),
-                |v: i32| v.saturating_mul(10),
-                |v: i32| v <= 1,
-            );
-        })
-        // The notice is hidden properly now (nag.rs collapses the
-        // widget on the game thread); no synthesised keypress.
-        .once("nag", nag::install)
-        // Straight into the saved game on launch. Does nothing if
-        // no slot is set or the save is missing.
-        .once("autoload", autoload::install)
-        .on_each_load("speed_default", Duration::from_secs(2),
-            || ueforge::ue::actor::find_actor("BP_SGKMasterCharacter_C", None),
-            |_| {
-                if let Err(e) = speed::set_multiplier(2.0) {
-                    ueforge::log::log(format_args!("speed_default: {e}"));
-                }
-            })
-        .on_each_load("vendors", Duration::from_secs(3),
-            || ueforge::ue::actor::find_actors_by_chain("BP_MasterVendorBuildPart_C")
-                .into_iter().next(),
-            vendors::apply_all)
+        // .once("spawning", spawning::install)
+        // .once("strange", strange::install)
+        // .once("harvest", harvest::register_ops)
+        // .once("rooms", rooms::register_ops)
+        // .once("assets", assets::register_ops)
+        // .once("places", places::install)
+        // .once("stack_10x", || {
+        //     STACK_TWEAK.apply_when_ready(
+        //         Duration::from_secs(30),
+        //         |v: i32| v.saturating_mul(10),
+        //         |v: i32| v <= 1,
+        //     );
+        // })
+        // .once("nag", nag::install)
+        // Auto-load is OFF. It called LoadLevel on
+        // BP_HostLoadGameServer, the host-a-server path, and
+        // started a FRESH world every launch rather than loading
+        // the save: the map square names carry a world number and
+        // it differed on every run (5760, 244, 10776, 15820).
+        // Turn it back on once the singleplayer load path is
+        // read off the menu. See docs/todo.md.
+        // .once("autoload", autoload::install)
+        // .on_each_load("speed_default", Duration::from_secs(2),
+        //     || ueforge::ue::actor::find_actor("BP_SGKMasterCharacter_C", None),
+        //     |_| {
+        //         if let Err(e) = speed::set_multiplier(2.0) {
+        //             ueforge::log::log(format_args!("speed_default: {e}"));
+        //         }
+        //     })
+        // .on_each_load("vendors", Duration::from_secs(3),
+        //     || ueforge::ue::actor::find_actors_by_chain("BP_MasterVendorBuildPart_C")
+        //         .into_iter().next(),
+        //     vendors::apply_all)
         .install();
 }
 

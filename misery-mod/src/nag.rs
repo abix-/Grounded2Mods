@@ -48,7 +48,8 @@ pub fn install() {
     std::mem::forget(modforge::rpg::poller::spawn_interval(
         "misery-nag",
         std::time::Duration::from_millis(500),
-        watch,
+        // Looks for a live widget, so it runs on the game thread.
+        ueforge::game_thread::each_tick(watch),
     ));
 }
 

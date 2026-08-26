@@ -268,22 +268,59 @@ pub fn on_each_load<P, F>(
     finder: P,
     on_load: F,
 ) where
-    P: Fn() -> Option<*const u8> + Send + 'static,
-    F: Fn(*const u8) + Send + 'static,
+    P: Fn() -> Option<*const u8> + Send + Sync + 'static,
+    F: Fn(*const u8) + Send + Sync + 'static,
 {
+    use std::sync::Arc;
+
+    /// Long enough for a busy frame, short enough that a stalled
+    /// game thread does not wedge the watcher forever.
+    const TIMEOUT: Duration = Duration::from_secs(5);
+
+    let finder = Arc::new(finder);
+    let on_load = Arc::new(on_load);
+
+    // Both the finder and the action read live game objects, so
+    // NEITHER may run on this background thread. A level unload
+    // deletes those objects; reading one mid-delete faults and
+    // kills the process. This watcher used to do exactly that,
+    // and the crash landed one second after it logged
+    // "gone (main menu?)". See ueforge::game_thread::run.
     let thread_name = format!("ueforge-load-{label}");
     let _ = std::thread::Builder::new().name(thread_name).spawn(move || {
+        /// Ask the game thread whether the finder sees anything.
+        /// `None` also covers "the game thread did not answer",
+        /// which is the safe reading: do nothing.
+        fn look<P>(finder: &Arc<P>) -> Option<usize>
+        where
+            P: Fn() -> Option<*const u8> + Send + Sync + 'static,
+        {
+            let f = finder.clone();
+            let found = crate::game_thread::run(
+                move || Ok(serde_json::json!(f().map(|p| p as usize))),
+                TIMEOUT,
+            );
+            found.ok()?.as_u64().map(|a| a as usize)
+        }
+
         loop {
             std::thread::sleep(poll_interval);
-            let Some(ptr) = finder() else {
+            let Some(addr) = look(&finder) else {
                 continue;
             };
             crate::log::log(format_args!("{label}: found, applying"));
-            on_load(ptr);
+            let action = on_load.clone();
+            let _ = crate::game_thread::run(
+                move || {
+                    action(addr as *const u8);
+                    Ok(serde_json::Value::Null)
+                },
+                TIMEOUT,
+            );
 
             loop {
                 std::thread::sleep(poll_interval);
-                if finder().is_none() {
+                if look(&finder).is_none() {
                     crate::log::log(format_args!(
                         "{label}: gone (main menu?), waiting for reload"
                     ));
