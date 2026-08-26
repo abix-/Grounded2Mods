@@ -52,6 +52,10 @@ Newest first.
 | `misery` | [x] Mixed-pool area: all nine Paneli slots filled with a 6 Meadows + 3 Town blend, world generated mixed | mixed_pool_area passed live: Village_Dwarf_Hole among swamp towns and anomaly houses. worldgen.md 8.1. |
 | `misery` | [x] Tile sizes measured: Factory 16500, Bunker 4800, Meadows and Paneli 12000; complete 45-square catalog dumped | worldgen.md 3 and 4; Meadows/Paneli squares interchangeable. |
 | `misery` | [x] Size-mismatch probe: an oversized Factory square in the town grid streams fine but blocks traversal | Operator-confirmed blocked path; cross-size mixing ruled out. worldgen.md 8.2. |
+| `modforge` | [x] Structures can be CAPTURED as well as authored: StructureDef gains pieces (PieceSpec), footprint measures them, arrange is public | modforge builds, 243 lib tests pass (1 pre-existing unrelated input failure). Generic arrangement rules now serve host-game structures. |
+| `misery` | [x] Harvest pieces out of a live square with transforms and mesh identity, and rebuild them elsewhere | research_harvest::harvest_and_compose: 564 pieces read, 60 rebuilt, operator confirmed solid and real in-game. worldgen.md 9. |
+| `misery` | [x] Capture structures from squares into a library and generate monuments with modforge's arrangement rules | Live: 342-piece Clustered and 194-piece AlongRoad monuments built from structures harvested out of other squares. worldgen.md 9.4. |
+| `misery` | [x] Alternate-reality overlays: per-square phenomena (anomaly fields, teleport nests, black holes, camps, caches) with rewards guarded by dangers | Live in the bunker world: rolls logged per square, 28 props placed, no crash. src/strange.rs. |
 
 ## 2026-08-20
 

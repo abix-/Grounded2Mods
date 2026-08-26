@@ -339,6 +339,66 @@ beside the player (58 carrying meshes). 60 placed, 0 failed,
 and the operator confirmed the result in-game: **solid and
 real**, collidable structures standing where nothing was.
 
+### 9.4 Captured structures and generated monuments
+
+The vocabulary is modforge's, not invented here: a **structure**
+is one coherent placeable thing, a **monument** is several
+structures arranged by a rule. modforge already owned both
+(`modforge::structure`, `modforge::monument`), so misery-mod
+supplies only the two game-specific halves: reading UE actors
+and spawning them.
+
+**The modforge extension (2026-08-25).** `StructureDef` gained
+`pieces: Vec<PieceSpec>`. A structure is now either authored
+(rooms, stairs, furniture, lights: what topside builds from
+primitives) or CAPTURED (pieces lifted out of a running game),
+or both. A `PieceSpec` is an opaque host-game asset reference
+(`class`, optional `asset`) plus a transform, in modforge's own
+convention: metres, y up, north -z. `footprint()` measures
+captured structures too, and `arrange()` is public, so the
+Clustered / AroundYard / AlongRoad rules, cell grid, jitter and
+no-overlap guarantee apply to captured structures unchanged.
+
+**The misery binder** (`src/places.rs`):
+
+- Cuts a harvested square into structures by greedy spatial
+  grouping (14 m radius, 6 to 70 pieces), so a building keeps
+  the fence and junk pile standing with it.
+- Converts UE centimetres / z-up to modforge metres / y-up at
+  the edge, and back when spawning.
+- Keeps a library of 60 captured structures; every square
+  donates its 3 biggest, oldest drop out.
+- 45% of squares then receive a monument: 2 to 5 structures
+  drawn from the library (repeats allowed: a repeated building
+  reads as a settlement that grew), arranged by
+  `modforge::monument::arrange` with the rule rolled per site
+  from a seed derived from the spot, so one place always rolls
+  its own layout.
+
+**Proven live (2026-08-25).** Bunker world, log:
+
+```
+monument in 4867_2_0.L_NuclearBunker02 from 5 structure(s)
+  [Bunker06, Bunker05, Bunker02, Bunker05, Bunker05]
+  -> placed 342 piece(s), Clustered
+monument in 4867_1_1.L_NuclearBunker03 from 3 structure(s)
+  -> placed 194 piece(s), AlongRoad
+```
+
+Library reached 21 structures in a minute of walking; zero hook
+panics. Cross-pollination confirmed: the monument standing in
+Bunker02 is built from structures harvested out of Bunker06 and
+Bunker05.
+
+Known rough edges, not yet judged in-game:
+
+- Pieces may intersect: arrangement spaces STRUCTURES by
+  footprint, but pieces inside one structure keep their
+  original crowding.
+- A monument traces ground once at its centre while members sit
+  at their own offsets, so sloped ground will float or sink
+  members.
+
 ## 10. Open questions
 
 - Why GenerateCustomBiom(1) does nothing when Factory
