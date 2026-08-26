@@ -2,19 +2,41 @@
 
 ## THE GOAL
 
-Extract ALL the pieces of the game onto disk. Then use those
-pieces to make new stuff, when the operator wants it.
+Read ALL the pieces of the game out of the game, recognise them
+as pieces, and use them to make new stuff on demand.
 
-FIRST the extraction. ONLY the extraction. THEN we make stuff.
+FIRST every piece is known. THEN we make stuff from them.
 
-Nothing generates anything until the extraction exists on disk.
-Anything already built that makes stuff without it (harvesting
-squares at runtime, scattering monuments) is off and stays off.
+No disk step: reading from the game is what keeps this
+game-agnostic. Nothing generates anything from a live square or
+from whatever a session happened to see.
+
+**Every part already exists and nothing is joined up.** Per the
+changelog, all marked done:
+
+- `modforge::structure::PieceDef`, and StructureDef holding pieces
+- `modforge` shape classifier: a piece's role from its box
+  proportions alone (Slab, Panel, Post, Beam, Block, Clutter),
+  engine-agnostic, 9 unit tests
+- `misery` asset registry: every shipped mesh whether loaded or
+  not. 2398 static meshes, 55 wall pieces
+- `misery` `mesh_info`: a mesh's measured size and where its
+  position marker sits
+- `misery` harvest: pieces read out of a live square with
+  transforms and mesh identity
+
+The asset registry answers an HTTP request and the answer is
+thrown away: nothing in the mod calls `assets_of_class`. The
+classifier never sees a shipped mesh. `rooms.rs` builds mesh
+names by hand (`format!("SM_Wall_{w}x{h}")`) with special cases
+for the ones that turned out wrong, instead of choosing from
+what the game actually has.
 
 | Priority | System | Todo | Done when |
 |---:|---|---|---|
-| 1 | `extract` | [ ] Extract ALL the pieces of the game onto disk | Every piece the game ships is in a file on disk, readable with the game closed. |
-| 2 | `extract` | [ ] Use the pieces on disk to make new stuff, on demand | New stuff is built from the file. Not from a live square, not from what a session happened to see. |
+| 1 | `pieces` | [ ] Turn the asset registry into pieces: every shipped mesh becomes a `PieceDef` with its measured size and marker offset, and the shape classifier names its role | The mod holds a parts list of all 2398 meshes as pieces, each with a role, built from what the game ships. |
+| 1 | `pieces` | [ ] Measure the ones that are not loaded: `mesh_info` only reads meshes in memory, so `load_asset` has to pull each one in first. That path is recorded as not yet confirmed working | Every shipped mesh has real measurements, not just the third of them that happen to be loaded. |
+| 2 | `rooms` | [ ] Build from the parts list instead of hand-written names: `rooms.rs` picks a piece that fits the slot from the pieces we hold, rather than `format!("SM_Wall_{w}x{h}")` and its special cases | No hardcoded mesh names in rooms.rs. Rooms can use the 55 walls, including the 45-degree corners, not the handful currently named. |
 | 1 | `misery` | [ ] Re-enable the features ONE at a time and find which one breaks the game. Baseline established 2026-08-26: with only `pe_dispatch` (offsets, discovery, control plane, game-thread queue) the game works perfectly. Everything else is commented out in `lib.rs`. Start with harvest, rooms and assets, which only register endpoints and are inert until called | The feature that breaks the game is named, with a log line proving it. |
 | 1 | `misery` | [ ] Fix the nested queue wait `each_tick` introduced: a check now runs ON the game thread and its body enqueues again, waiting for a drain that cannot start until it returns. `spawning: plan failed: timed out after 10s waiting for game-thread drain`. Inner enqueues must go through `game_thread::run`, which runs in place when already on the game thread | No timeout lines; the spawner completes its plan. |
 | 1 | `ueforge` | [ ] Stop reading the game's object list from background threads: do it on the game thread instead. Every watcher (vendors, speed, the NPC census, map squares) reads that list every few seconds, and when a level unloads the game deletes those objects while we are reading them | Quitting to the main menu does not crash. Proven by the dump: fault inside `ue::actor::find_objects_by_chain`, one second after "gone (main menu?)". |

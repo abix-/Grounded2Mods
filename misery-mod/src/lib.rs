@@ -127,9 +127,9 @@ fn on_unreal_init() {
         .once("pe_dispatch", dispatch::install)
         .once("spawning", spawning::install)
         .once("strange", strange::install)
-        // .once("harvest", harvest::register_ops)
+        .once("harvest", harvest::register_ops)
         // .once("rooms", rooms::register_ops)
-        // .once("assets", assets::register_ops)
+        .once("assets", assets::register_ops)
         // OFF. Harvesting squares and building monuments from
         // them was not asked for: it re-read squares every
         // session, kept the library in memory only, and placed
