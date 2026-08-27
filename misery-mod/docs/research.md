@@ -2793,3 +2793,29 @@ FINE:
 So the rule: passing a Rust buffer to the engine is fine. STORING
 one where the engine keeps it is what kills the process, and it
 kills it later, somewhere else.
+
+## 28. You cannot build an FName from a string (2026-08-27)
+
+Every `FName` the framework has was READ off an object that
+already existed: a class, an actor, an asset entry. Nothing
+constructs one from a string we choose.
+
+That is a bigger limit than it sounds. Any engine call whose
+argument is a name WE pick, rather than one we found, is out of
+reach. It blocked reading the asset registry's cooked tags:
+`AssetRegistryHelpers::GetTagValue` exists and is callable
+(4 parms, 129 bytes), but its second argument is the tag name as
+an `FName`, and we cannot make one.
+
+The two ways out, neither attempted:
+
+- **The engine's own constructor.** `FName::FName(const TCHAR*)`
+  resolved by patternsleuth, then called. One function, and it is
+  the general answer.
+- **Walk the name pool** comparing strings. Around half a million
+  entries, and `NameResolver::to_arc` leaks one buffer per unique
+  name resolved (`fname.rs`), so a full sweep leaks heavily. Fine
+  once for research, wrong as a primitive.
+
+Until then, if a call needs a name, the name has to be found on
+something rather than typed.
