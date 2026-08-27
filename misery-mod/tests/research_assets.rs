@@ -182,3 +182,39 @@ fn does_the_registry_expose_a_tag_getter() {
         }
     }
 }
+
+/// Do the cooked tags carry a mesh's SIZE?
+///
+/// The tag NAMES exist in this build (research.md 28). Whether a
+/// value was cooked in per mesh is a different question, and it
+/// is the one that decides the parts list: if the size is here,
+/// it is one registry pass with no loading; if not, 1,500 meshes
+/// have to be loaded and measured (pieces.md).
+///
+/// Read-only, and it loads nothing.
+#[test]
+fn do_the_cooked_tags_carry_size() {
+    let Some(api) = api_or_skip() else { return };
+    let r = api.op(
+        "asset_tags",
+        serde_json::json!({
+            "class": "StaticMesh",
+            "count": 5,
+            "tags": ["ApproxSize", "Bounds", "Triangles", "Vertices", "Materials", "LODs"],
+        }),
+    );
+    if !r.ok {
+        println!("asset_tags failed: {:?}", r.error);
+        return;
+    }
+    println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+
+    let assets = r.result["assets"].as_array().cloned().unwrap_or_default();
+    assert!(!assets.is_empty(), "no assets came back");
+    let with_size = assets
+        .iter()
+        .filter(|a| !a["tags"]["ApproxSize"].is_null() || !a["tags"]["Bounds"].is_null())
+        .count();
+    println!("
+{with_size} of {} assets carry a size tag", assets.len());
+}

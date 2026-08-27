@@ -123,13 +123,48 @@ CollisionPrims yes    NaniteEnabled yes   BoundsExtent no
 **`ApproxSize` and `Bounds` are both there.** Those are the two
 that would carry a mesh's dimensions.
 
-Still to do: call `GetTagValue` for one of them on a real static
-mesh and see what the VALUE looks like. A tag name existing means
-the engine knows the word; it does not yet prove this build cooked
-a value in for every mesh. If the values are there, the parts list
-is one registry pass with no loading at all. If they are empty,
-load and measure, which works and is a one-time cost thanks to the
-on-disk list.
+### ANSWERED: `ApproxSize` carries the dimensions
+
+Read live 2026-08-27 with `asset_tags`, loading nothing:
+
+```text
+Sphere                     ApproxSize 320x320x320          Tris 528   Verts 323  LODs 1
+SM_MediaPlateScreen        ApproxSize 0x100x100            Tris 2     Verts 4
+SM_Derbis_B                ApproxSize 7x8x7                Tris 40    Verts 66
+SM_mountain_background_02  ApproxSize 200000x200000x45159  Tris 9829  Verts 4920 LODs 2
+```
+
+**So the parts list is ONE REGISTRY PASS, not 1,500 blocking
+loads.** Every mesh's size comes back as a `WxDxH` string, with
+triangle and vertex counts, materials and LODs alongside, for
+free and without touching the game thread for long.
+
+Two things to carry forward:
+
+- `Bounds` is null on every asset. `ApproxSize` is the one.
+- `SM_MediaPlateScreen` reports `0x100x100`. A flat mesh has a
+  ZERO dimension, so the classifier must treat zero as "flat",
+  not as "missing".
+
+`ApproxSize` is what its name says: approximate, and rounded to
+whole units. Good enough to sort a 4 m wall from a 2 m one, which
+is what the parts list needs. Anything needing exact bounds still
+has to load the mesh, and now only that mesh.
+
+### How the tag is read
+
+`AssetRegistryHelpers::GetTagValue(FAssetData, FName TagName,
+FString& OutValue) -> bool`, 4 parms in 129 bytes:
+
+```text
+0x00  FAssetData   the whole 0x68-byte entry, BY VALUE
+0x68  FName        the tag to ask for
+0x70  FString      the answer, written by the engine
+0x80  bool         whether the tag was there
+```
+
+The tag name must be an `FName`, which is why none of this was
+reachable until `ue::fname::from_str` landed (research.md 28).
 
 **2. The studs.** Where a piece can attach. Derived from its
 measured bounds and its marker: which face, where on it, which

@@ -229,6 +229,107 @@ pub fn asset_data_bytes(class_name: &str, count: usize) -> Result<Vec<(String, S
     Ok(out)
 }
 
+/// Read one cooked registry TAG off an asset, without loading it.
+///
+/// `AssetRegistryHelpers::GetTagValue(FAssetData, FName TagName,
+/// FString& OutValue) -> bool`, 4 parms in 129 bytes:
+///
+/// ```text
+/// 0x00  FAssetData    the whole 0x68-byte entry, BY VALUE
+/// 0x68  FName         the tag to ask for
+/// 0x70  FString       the answer, written by the engine
+/// 0x80  bool          whether the tag was there
+/// ```
+///
+/// The tag name has to be an `FName`, which is why this needs
+/// `fname::from_str` and why it was out of reach until that
+/// landed (research.md 28).
+///
+/// `None` means the asset carries no such tag. Game thread only.
+pub fn asset_tag(entry: *const u8, tag: &str) -> Option<String> {
+    let helpers = ue::find_class_fast("AssetRegistryHelpers")?;
+    let func = helpers.get_function("AssetRegistryHelpers", "GetTagValue")?;
+    let cdo = helpers.class_default_object()?;
+    let name = ue::fname::from_str(tag, ue::fname::FindName::Find)?;
+
+    let mut parms = [0u8; 0x81];
+    // SAFETY: `entry` is one FAssetData inside the array the
+    // registry returned, so a full stride is readable.
+    unsafe {
+        std::ptr::copy_nonoverlapping(entry, parms.as_mut_ptr(), offsets::ASSET_DATA_STRIDE);
+    }
+    parms[0x68..0x70].copy_from_slice(&name.as_u64().to_le_bytes());
+
+    // SAFETY: live CDO and function, and the parm block matches
+    // the dumped layout above.
+    unsafe {
+        cdo.process_event(func, parms.as_mut_ptr() as *mut c_void);
+    }
+    if parms[0x80] == 0 {
+        return None;
+    }
+    // The answer is an FString: { TCHAR* Data; int32 Num; int32 Max }.
+    let ptr = u64::from_le_bytes(parms[0x70..0x78].try_into().ok()?);
+    let num = i32::from_le_bytes(parms[0x78..0x7C].try_into().ok()?);
+    if ptr == 0 || num <= 0 {
+        return None;
+    }
+    // SAFETY: the engine wrote this FString; its own length says
+    // how much is readable.
+    let units = unsafe { std::slice::from_raw_parts(ptr as *const u16, num as usize) };
+    Some(
+        String::from_utf16_lossy(units)
+            .trim_end_matches(' ')
+            .to_string(),
+    )
+}
+
+/// Every tag asked for, on the first few assets of a class.
+///
+/// Read-only, and it loads nothing. Game thread only.
+pub fn asset_tags(
+    class_name: &str,
+    tags: &[String],
+    count: usize,
+) -> Result<Vec<(String, Vec<(String, Option<String>)>)>, String> {
+    let reg = registry().ok_or("asset registry unavailable")?;
+    let (pkg_fname, cls_fname) =
+        class_path(class_name).ok_or_else(|| format!("class '{class_name}' not found"))?;
+    let ar = ue::find_class_fast("AssetRegistry").ok_or("AssetRegistry class not found")?;
+    let func = ar
+        .get_function("AssetRegistry", "GetAssetsByClass")
+        .ok_or("GetAssetsByClass not found")?;
+
+    let mut parms = [0u8; 0x28];
+    parms[0x00..0x08].copy_from_slice(&pkg_fname.to_le_bytes());
+    parms[0x08..0x10].copy_from_slice(&cls_fname.to_le_bytes());
+    parms[0x20] = 1;
+    // SAFETY: as `assets_of_class`, which this mirrors.
+    unsafe {
+        reg.process_event(func, parms.as_mut_ptr() as *mut c_void);
+    }
+    let data = u64::from_le_bytes(parms[0x10..0x18].try_into().unwrap_or_default());
+    let num = i32::from_le_bytes(parms[0x18..0x1C].try_into().unwrap_or_default());
+    if data == 0 || num <= 0 {
+        return Ok(Vec::new());
+    }
+    if num > IMPLAUSIBLE_ASSET_COUNT {
+        return Err(format!("implausible asset count {num}"));
+    }
+
+    let mut out = Vec::new();
+    for i in 0..(num as usize).min(count) {
+        let entry = (data as usize + i * offsets::ASSET_DATA_STRIDE) as *const u8;
+        let name = fname_string(fname_at(entry, offsets::ASSET_NAME));
+        let values = tags
+            .iter()
+            .map(|t| (t.clone(), asset_tag(entry, t)))
+            .collect();
+        out.push((name, values));
+    }
+    Ok(out)
+}
+
 /// Pull an asset into memory by its package and asset FNames, so
 /// something the game has not loaded can still be used. Returns
 /// the loaded object's address, or 0 if the load failed.
@@ -266,6 +367,45 @@ pub fn register_ops() {
             "Every asset of a class the game ships, loaded or not",
             "{class?: str, contains?: str}",
             inventory_op,
+        ),
+        crate::ops::OpDef::new(
+            "asset_tags",
+            "Cooked registry tag values for the first few assets of a class, WITHOUT loading them",
+            "{class?: str, tags: [str], count?: u64}",
+            |args| {
+                let class = args
+                    .get("class")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("StaticMesh")
+                    .to_string();
+                let tags: Vec<String> = args
+                    .get("tags")
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.iter().filter_map(|t| t.as_str().map(str::to_string)).collect())
+                    .unwrap_or_default();
+                if tags.is_empty() {
+                    return Err("need {tags: [str]}".to_string());
+                }
+                let count = args.get("count").and_then(|v| v.as_u64()).unwrap_or(3) as usize;
+                crate::game_thread::run(
+                    move || {
+                        let rows = asset_tags(&class, &tags, count)?;
+                        Ok(serde_json::json!({
+                            "assets": rows
+                                .iter()
+                                .map(|(name, values)| serde_json::json!({
+                                    "name": name,
+                                    "tags": values
+                                        .iter()
+                                        .map(|(t, v)| (t.clone(), serde_json::json!(v)))
+                                        .collect::<serde_json::Map<_, _>>(),
+                                }))
+                                .collect::<Vec<_>>(),
+                        }))
+                    },
+                    ENGINE_TIMEOUT,
+                )
+            },
         ),
         crate::ops::OpDef::new(
             "asset_data_bytes",
