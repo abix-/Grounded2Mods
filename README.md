@@ -81,7 +81,7 @@ The Unity Mono and IL2CPP binding layer.
 |---|---|
 | Loaders | [BepInEx](unityforge/cs-shim-mono/Plugin.cs), [MelonLoader](unityforge/cs-shim-melonloader/Mod.cs), [Survivalist](unityforge/cs-shim-survivalist/Main.cs) |
 | Lifecycle | [Lifecycle](unityforge/src/mod_main.rs) |
-| Bridges | [Mono](unityforge/src/mono.rs), [IL2CPP](unityforge/src/il2cpp.rs), [Shim](unityforge/cs-shim-common/HarmonyBridge.cs) |
+| Bridges | [Mono](unityforge/src/mono.rs), [IL2CPP](unityforge/src/il2cpp.rs), [Boundary](unityforge/src/ffi.rs), [Shim](unityforge/cs-shim-common/HarmonyBridge.cs) |
 | Hooks | [Hooks](unityforge/src/hook.rs) |
 | Runtime | [Objects](unityforge/src/unity.rs), [Selectors](unityforge/src/selector.rs), [Input](unityforge/src/input.rs), [Queue](unityforge/src/main_thread_queue.rs) |
 | RPG | [Effects](unityforge/src/rpg/std_effect.rs), [Triggers](unityforge/src/rpg/trigger_harmony.rs), [Skills](unityforge/src/rpg/skill.rs), [Tracking](unityforge/src/rpg/tracker.rs), [Identity](unityforge/src/rpg/slot_key.rs) |

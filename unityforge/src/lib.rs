@@ -11,6 +11,7 @@
 
 pub mod bridge;
 pub mod client;
+pub mod ffi;
 pub mod hook;
 pub mod il2cpp;
 pub mod input;

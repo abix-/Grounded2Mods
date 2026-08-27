@@ -1,12 +1,12 @@
 //! Settlement upgrade state and the C# effect bridge.
 
-use std::ffi::{CStr, CString, c_char};
-use std::path::PathBuf;
+use std::ffi::c_char;
 
 use serde_json::{Value as Json, json};
 
 use modforge::ops::{OP_REGISTRY, OpDef};
 use modforge::upgrade::UpgradeStore;
+use unityforge::ffi;
 use unityforge::main_thread_queue::MAIN_QUEUE;
 use unityforge::mono;
 
@@ -25,35 +25,13 @@ fn scope(scope: i32) -> Option<&'static str> {
     }
 }
 
-/// Read a checked UTF-8 track name supplied by the C# shim.
-/// Extraction candidate: Unityforge should own checked UTF-8 input at the Rust and C# boundary; Survivalist should retain its upgrade calls.
-fn with_text<T>(ptr: *const c_char, f: impl FnOnce(&str) -> T) -> Option<T> {
-    if ptr.is_null() {
-        return None;
-    }
-    // SAFETY: C# supplies a non-null, NUL-terminated string for the
-    // duration of each synchronous call.
-    unsafe { CStr::from_ptr(ptr) }.to_str().ok().map(f)
-}
-
-/// Read a checked Windows save path supplied by the C# shim.
-/// Extraction candidate: Unityforge should own checked UTF-16 path input at the Rust and C# boundary; Survivalist should retain its save-path policy.
-fn path(ptr: *const u16, len: i32) -> Option<PathBuf> {
-    if ptr.is_null() || len < 0 {
-        return None;
-    }
-    // SAFETY: C# supplies `len` UTF-16 code units that remain valid
-    // for the duration of this synchronous call.
-    let units = unsafe { std::slice::from_raw_parts(ptr, len as usize) };
-    String::from_utf16(units).ok().map(PathBuf::from)
-}
-
 /// Load this world's upgrade state for the C# effects layer.
 /// Stays here because it implements Survivalist upgrade scopes and the exact C# shim contract; Modforge owns upgrade state and math.
 #[unsafe(no_mangle)]
 pub extern "C" fn survivalist_upgrade_load(seed: i64, path_ptr: *const u16, path_len: i32) -> i32 {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let Some(path) = path(path_ptr, path_len) else { return -1 };
+    ffi::catch_result_or(-1, || {
+        // SAFETY: C# keeps the supplied UTF-16 buffer live for this call.
+        let path = (unsafe { ffi::utf16_path(path_ptr, path_len) }).ok_or(())?;
         let existed = path.exists();
         match UPGRADES.load(seed, path) {
             Ok(()) => {
@@ -69,7 +47,7 @@ pub extern "C" fn survivalist_upgrade_load(seed: i64, path_ptr: *const u16, path
                         ),
                     );
                 }
-                0
+                Ok(0)
             }
             Err(error) => {
                 let _ = UPGRADES.ensure_scope(PROPS);
@@ -78,11 +56,10 @@ pub extern "C" fn survivalist_upgrade_load(seed: i64, path_ptr: *const u16, path
                     mono::LogLevel::Warn,
                     &format!("SettlementUpgrades: sidecar load failed: {error}"),
                 );
-                -1
+                Err(())
             }
         }
-    }))
-    .unwrap_or(-1)
+    })
 }
 
 /// Return one structure or settlement upgrade level to C#.
@@ -93,16 +70,18 @@ pub extern "C" fn survivalist_upgrade_get(
     entity_id: i32,
     track: *const c_char,
 ) -> i32 {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    ffi::catch_or(0, || {
         let Some(scope) = scope(scope_id) else {
             return 0;
         };
-        with_text(track, |track| {
-            UPGRADES.level(scope, i64::from(entity_id), track) as i32
-        })
+        // SAFETY: C# keeps the supplied NUL-terminated track name live for this call.
+        unsafe {
+            ffi::with_utf8(track, |track| {
+                UPGRADES.level(scope, i64::from(entity_id), track) as i32
+            })
+        }
         .unwrap_or(0)
-    }))
-    .unwrap_or(0)
+    })
 }
 
 /// Persist a purchased structure or settlement upgrade level.
@@ -114,56 +93,56 @@ pub extern "C" fn survivalist_upgrade_set(
     track: *const c_char,
     level: i32,
 ) -> i32 {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let Some(scope) = scope(scope_id) else {
-            return -1;
-        };
-        let Some(result) = with_text(track, |track| {
-            UPGRADES.set_level(scope, i64::from(entity_id), track, i64::from(level))
-        }) else {
-            return -1;
-        };
+    ffi::catch_result_or(-1, || {
+        let scope = scope(scope_id).ok_or(())?;
+        // SAFETY: C# keeps the supplied NUL-terminated track name live for this call.
+        let result = (unsafe {
+            ffi::with_utf8(track, |track| {
+                UPGRADES.set_level(scope, i64::from(entity_id), track, i64::from(level))
+            })
+        })
+        .ok_or(())?;
         match result {
-            Ok(()) => 0,
+            Ok(()) => Ok(0),
             Err(error) => {
                 mono::log(
                     mono::LogLevel::Warn,
                     &format!("SettlementUpgrades: sidecar write failed: {error}"),
                 );
-                -1
+                Err(())
             }
         }
-    }))
-    .unwrap_or(-1)
+    })
 }
 
 /// Tell C# whether any entity owns a named upgrade track.
 /// Stays here because it implements Survivalist upgrade scopes and the exact C# shim contract; Modforge owns upgrade state and math.
 #[unsafe(no_mangle)]
 pub extern "C" fn survivalist_upgrade_has_any(scope_id: i32, track: *const c_char) -> i32 {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    ffi::catch_or(0, || {
         let Some(scope) = scope(scope_id) else {
             return 0;
         };
-        with_text(
-            track,
-            |track| {
-                if UPGRADES.has_any(scope, track) { 1 } else { 0 }
-            },
-        )
+        // SAFETY: C# keeps the supplied NUL-terminated track name live for this call.
+        unsafe {
+            ffi::with_utf8(
+                track,
+                |track| {
+                    if UPGRADES.has_any(scope, track) { 1 } else { 0 }
+                },
+            )
+        }
         .unwrap_or(0)
-    }))
-    .unwrap_or(0)
+    })
 }
 
 /// Calculate the real material cost of the next upgrade level.
 /// Stays here because it implements Survivalist upgrade scopes and the exact C# shim contract; Modforge owns upgrade state and math.
 #[unsafe(no_mangle)]
 pub extern "C" fn survivalist_upgrade_cost(base_need: f64, factor: i32, next_level: i32) -> i32 {
-    std::panic::catch_unwind(|| {
+    ffi::catch_or(0, || {
         modforge::upgrade::cost(base_need, i64::from(factor), i64::from(next_level)) as i32
     })
-    .unwrap_or(0)
 }
 
 /// Calculate the skill required for the next upgrade level.
@@ -174,31 +153,29 @@ pub extern "C" fn survivalist_upgrade_skill(
     levels_per_band: i32,
     next_level: i32,
 ) -> i32 {
-    std::panic::catch_unwind(|| {
+    ffi::catch_or(base, || {
         modforge::upgrade::skill_requirement(
             i64::from(base),
             i64::from(levels_per_band),
             i64::from(next_level),
         ) as i32
     })
-    .unwrap_or(base)
 }
 
 /// Calculate the diminishing benefit supplied by current upgrade levels.
 /// Stays here because it implements Survivalist upgrade scopes and the exact C# shim contract; Modforge owns upgrade state and math.
 #[unsafe(no_mangle)]
 pub extern "C" fn survivalist_upgrade_curve(level: i32, base_step: f32, decay: f32) -> f32 {
-    std::panic::catch_unwind(|| {
+    ffi::catch_or(0.0, || {
         modforge::upgrade::diminishing_bonus(i64::from(level), base_step, decay)
     })
-    .unwrap_or(0.0)
 }
 
 /// Return structure upgrade totals to the C# status surface.
 /// Stays here because it implements Survivalist upgrade scopes and the exact C# shim contract; Modforge owns upgrade state and math.
 #[unsafe(no_mangle)]
 pub extern "C" fn survivalist_upgrade_status() -> *mut c_char {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    ffi::catch_or(std::ptr::null_mut(), || {
         let status = UPGRADES.status(PROPS);
         let report = json!({
             "structures_upgraded": status.entities_upgraded,
@@ -207,24 +184,19 @@ pub extern "C" fn survivalist_upgrade_status() -> *mut c_char {
             "seed": UPGRADES.slot().unwrap_or(0),
         })
         .to_string();
-        CString::new(report)
-            .map(CString::into_raw)
-            .unwrap_or(std::ptr::null_mut())
-    }))
-    .unwrap_or(std::ptr::null_mut())
+        ffi::string_into_raw(report)
+    })
 }
 
 /// Release a status string previously returned to C#.
-/// Extraction candidate: Unityforge should own freeing strings returned across its Rust and C# boundary; Survivalist should retain the report contents.
+/// Stays here because its exported name is part of Survivalist's C# shim contract; Unityforge owns the returned string allocation.
 #[unsafe(no_mangle)]
 pub extern "C" fn survivalist_upgrade_string_free(ptr: *mut c_char) {
-    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        if !ptr.is_null() {
-            // SAFETY: the pointer came from CString::into_raw in
-            // survivalist_upgrade_status and is freed exactly once.
-            drop(unsafe { CString::from_raw(ptr) });
-        }
-    }));
+    ffi::catch_or((), || {
+        // SAFETY: C# returns each non-null pointer from
+        // survivalist_upgrade_status exactly once.
+        unsafe { ffi::string_free(ptr) };
+    });
 }
 
 /// Expose this system status and controls through the mod control endpoint.

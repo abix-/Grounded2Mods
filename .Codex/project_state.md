@@ -119,10 +119,16 @@ Extract every engine-independent or Unity-specific mechanism identified by the S
 - Verified `k3sc cargo-lock check -p unityforge -p survivalist-mod`.
 - Verified `k3sc cargo-lock test -p unityforge --lib`: all 6 existing tests pass.
 - Verified `k3sc cargo-lock test -p survivalist-mod --lib`: build passes with the two existing unused genome-helper warnings; its library target has zero tests.
+- Added `unityforge::ffi` for checked UTF-8 input, UTF-16 paths, returned C-string allocation and freeing, panic containment, and fallible result fallback.
+- Migrated all nine Survivalist upgrade exports to the Unityforge boundary helpers while preserving their exported names, return codes, fallback values, logging, report contents, save-path choice, and C-string ownership contract.
+- Added the new Unityforge boundary source to the root capability table. Added no tests.
+- Verified `k3sc cargo-lock check -p unityforge -p survivalist-mod`.
+- Verified `k3sc cargo-lock test -p unityforge --lib`: all 6 existing tests pass.
+- Verified `k3sc cargo-lock test -p survivalist-mod --lib`: build passes with the two existing unused genome-helper warnings; its library target has zero tests.
 
 ## Next steps
 
-- Add checked Rust/C# boundary helpers for UTF-8 strings, UTF-16 paths, returned strings, panic containment, and result conversion; migrate Survivalist's upgrade exports.
+- Add engine-independent rectangular annex planning with caller-supplied passability and construction policy; migrate Survivalist development planning.
 
 ## Open questions
 
