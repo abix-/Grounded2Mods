@@ -2,16 +2,16 @@
 
 ## Current focus
 
-Turn the MISERY live action journal into recorded waypoint routes with closed-loop movement and look control, then add A* when recorded routes form alternate traversable edges.
+Generate a complete MISERY navmesh path from the live player to the placed expedition door, convert it into waypoints, and walk it with the existing closed-loop movement and look controller.
 
 ## Design goals
 
 - Topside-style fixed-tick journals remain authoritative for simulations Modforge owns.
 - Injected games use the same producer and consumer separation, but replay operation actions through the existing control plane and advance only after observable condition gates.
 - MISERY is the first proof: record a movement-speed write, wait for the live read, assert it, restore the original value, and replay the saved journal.
-- A recorded MISERY journey is a world-space waypoint route derived from where the player walked, not a long timed keyboard and mouse tape.
+- A MISERY journey is a world-space waypoint route generated from Unreal's live navigation mesh when available, with manual recording only as a fallback.
 - One route follower owns movement and look input during travel, corrects toward each waypoint from live position and camera observations, and releases every held input on completion or failure.
-- A* may select only among waypoint edges proven traversable by recording; it never treats an unobserved straight line through the 3D world as walkable.
+- A* may select only among edges supplied by the live engine navigation path or proven traversable by recording; it never treats an unobserved straight line through the 3D world as walkable.
 - Generation loading, hot reload, rollback, shutdown, and bridge lifetime have one implementation in `cs-shim-common/GenerationLoader.cs`.
 - Each C# shim retains only its loader integration, logging, backend bridge, and host-specific frame callback.
 - Every Grounded 2 source function explains its player-facing purpose and its verified ownership boundary with Modforge and Ueforge.
@@ -56,6 +56,8 @@ Turn the MISERY live action journal into recorded waypoint routes with closed-lo
 
 ## Last session summary
 
+- Added a permanent live MISERY navigation test. It found the player at `[19575.10, 24919.65, -273.37]`, distinguished the placed expedition door at `[19248.00, 32776.95, 54.00]` from a zero-position startup instance, and verified that MISERY loads `NavigationSystemV1::FindPathToLocationSynchronously` and `NavigationPath` validity, partial, cost, and length functions.
+- The first navigation call built from the assumed stock UE5 parameter layout timed out the game-thread control queue. The next implementation must expose live UFunction parameter offsets and sizes before invoking it again.
 - Added `modforge::route` with versioned world-space waypoint graphs, recorded directed edges, A* over available recorded edges, trail reduction, closed-loop yaw steering, arrival checks, and stuck evidence.
 - Added relative mouse movement and look-axis operations, registered the generic input catalog in MISERY, and extended Horsey's input surface for relative axes.
 - Added five route tests. All five pass, all 327 Modforge library tests pass, and Modforge, MISERY, and Horsey compile across all targets.
@@ -263,7 +265,7 @@ Turn the MISERY live action journal into recorded waypoint routes with closed-lo
 
 ## Next steps
 
-- Record the real MISERY trail from spawn to the expedition, then record an alternate edge and run the first measured A* reroute.
+- Expose live UFunction parameter offsets, generate the complete MISERY navmesh path from player to expedition door, then walk its waypoints in the permanent live test.
 - Compile the BepInEx IL2CPP shim when a BepInEx 6 IL2CPP reference directory is available.
 - Namespace Unityforge's managed handle table by generation so stale handles cannot collide after a hot swap.
 - Run the existing Grounded 2 in-game smoke checks for the completed extraction batch.
