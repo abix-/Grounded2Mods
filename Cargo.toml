@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["grounded2-mod", "horsey-mod", "il2cpp-smoke", "misery-mod", "modforge", "outworld-station-mod", "schedule1-mod", "survivalist-mod", "ueforge", "unityforge", "wwm-mod"]
-exclude = ["vendor/hudhook"]
+exclude = ["decomp", "vendor/hudhook"]
 # Note: `decomp/` is intentionally NOT a workspace member yet. It depends on
 # r2sleigh which depends on libsla-sys, which does not currently build on
 # Windows MSVC. Build decomp via WSL until upstream lands the windows fix.
@@ -11,7 +11,7 @@ exclude = ["vendor/hudhook"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.95"
+rust-version = "1.98"
 license = "GPL-3.0-only"
 publish = false
 
@@ -23,18 +23,18 @@ anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tiny_http = "0.12"
-socket2 = "0.5"
-ureq = { version = "2", default-features = false, features = ["json"] }
+socket2 = "0.6"
+ureq = { version = "3", default-features = false, features = ["json"] }
 cc = "1"
 clap = { version = "4", features = ["derive"] }
 regex = "1"
-winreg = "0.55"
-zip = "5"
+winreg = "0.56"
+zip = "8"
 parking_lot = "0.12"
 arc-swap = "1"
 hex = "0.4"
 crossbeam-channel = "0.5"
-region = "3"
+region = "4"
 smallvec = "1"
 fastrand = "2"
 # retour: cross-platform detour library, Rust port of MS Detours.
@@ -42,7 +42,7 @@ fastrand = "2"
 # Used by the horsey-mod D1 / D5 detours. See
 # `horsey-mod/docs/HOOKING-STRATEGY.md` for the strategy rationale.
 retour = "0.3"
-sha2 = "0.10"
+sha2 = "0.11"
 proptest = "1"
 insta = { version = "1", features = ["json"] }
 zerocopy = { version = "0.8", features = ["derive"] }

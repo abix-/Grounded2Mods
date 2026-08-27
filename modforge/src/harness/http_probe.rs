@@ -25,10 +25,10 @@ pub fn post(
     let body = format!(r#"{{"op":"{}","args":{}}}"#, op, args_json);
     let mut req = ureq::post(&url);
     if let Some(tok) = probe.auth_token.as_deref() {
-        req = req.set("X-Ueforge-Auth", tok);
+        req = req.header("X-Ueforge-Auth", tok);
     }
-    let resp = req.send_string(&body)?;
-    Ok(resp.into_string()?)
+    let mut resp = req.content_type("application/json").send(body.as_str())?;
+    Ok(resp.body_mut().read_to_string()?)
 }
 
 /// Poll `ping` until it succeeds or the deadline elapses.

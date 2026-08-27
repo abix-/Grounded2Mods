@@ -2,7 +2,7 @@
 
 ## Current focus
 
-Share Unityforge's generation-versioned Rust DLL lifecycle across every C# host without changing host-specific behavior.
+Keep Modforge on the current stable Rust toolchain and current compatible crate releases while preserving each engine integration.
 
 ## Design goals
 
@@ -50,6 +50,12 @@ Share Unityforge's generation-versioned Rust DLL lifecycle across every C# host 
 
 ## Last session summary
 
+- Updated the installed stable toolchain and workspace minimum to Rust 1.98.
+- Refreshed the workspace lockfile and migrated direct dependencies including ureq 3, glam 0.33, zip 8, sha2 0.11, region 4, socket2 0.6, and winreg 0.56.
+- Migrated Modforge's blocking HTTP client and harness to the ureq 3 request and response APIs.
+- Merged upstream hudhook 0.9.2 into the local Present1 fork, updated its image dependency to 0.25.10, and retained the custom Present1 hook.
+- Updated the excluded decomp crate to Rust 1.98, sleigh-config 1.0.1, goblin 0.10.7, and clap 4.6.6. Its documented external r2sleigh Windows build blocker remains unchanged.
+- Verified `k3sc cargo-lock check --workspace --all-targets --all-features`, all 53 Ueforge tests, all 6 Unityforge tests, and all hudhook tests. Modforge ran 326 tests with 325 passing and the existing stale `backend_parse_rejects_garbage` assertion still failing because `l3` is a recognized backend.
 - Removed four stale priority-1 rows from `docs/todo.md` after verifying their exact Harmony bridge and Ueforge features-builder completions in the existing changelog and current source.
 - Cleaned the workspace backlog by moving 30 completed MISERY, Survivalist, and Schedule 1 rows into the dated changelog, verifying nine existing Grounded 2, Ueforge, Modforge documentation, and IL2CPP shim entries, and removing all 39 checked rows from `docs/todo.md`.
 - Linked the BepInEx IL2CPP shim to the existing shared `GenerationLoader` and removed its duplicate DLL discovery, symbol resolution, bridge pinning, direct tick delegate, shutdown, and `FreeLibrary` implementation.

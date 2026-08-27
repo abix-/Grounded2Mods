@@ -50,7 +50,10 @@ impl<S: DeserializeOwned> Api<S> {
     /// override.
     pub fn at(port: u16, endpoint: impl Into<String>) -> Self {
         let timeout = Duration::from_secs(DEFAULT_TIMEOUT_SECS);
-        let agent = ureq::AgentBuilder::new().timeout(timeout).build();
+        let config = ureq::Agent::config_builder()
+            .timeout_global(Some(timeout))
+            .build();
+        let agent = config.into();
         Self {
             port,
             endpoint: endpoint.into(),
@@ -63,7 +66,10 @@ impl<S: DeserializeOwned> Api<S> {
 
     /// Override the per-request timeout.
     pub fn with_timeout(self, timeout: Duration) -> Self {
-        let agent = ureq::AgentBuilder::new().timeout(timeout).build();
+        let config = ureq::Agent::config_builder()
+            .timeout_global(Some(timeout))
+            .build();
+        let agent = config.into();
         Self {
             port: self.port,
             endpoint: self.endpoint,
@@ -124,12 +130,13 @@ impl<S: DeserializeOwned> Api<S> {
         let url = format!("http://127.0.0.1:{}{}", self.port, self.endpoint);
         let mut req = self.agent.post(&url);
         if let Some(token) = &self.auth_token {
-            req = req.set("X-Ueforge-Auth", token);
+            req = req.header("X-Ueforge-Auth", token);
         }
-        let res = req
+        let mut res = req
             .send_json(body)
             .map_err(|e| format!("ueforge::client POST {url} failed: {e}"))?;
-        res.into_json::<OpResponse<S>>()
+        res.body_mut()
+            .read_json::<OpResponse<S>>()
             .map_err(|e| format!("ueforge::client: response not valid JSON: {e}"))
     }
 
@@ -156,13 +163,14 @@ impl<S: DeserializeOwned> Api<S> {
         let url = format!("http://127.0.0.1:{}{}", self.port, self.endpoint);
         let mut req = self.agent.post(&url);
         if let Some(token) = &self.auth_token {
-            req = req.set("X-Ueforge-Auth", token);
+            req = req.header("X-Ueforge-Auth", token);
         }
-        let res = req
+        let mut res = req
             .send_json(body)
             .unwrap_or_else(|e| panic!("snapshot_value POST {url} failed: {e}"));
         let envelope: Value = res
-            .into_json()
+            .body_mut()
+            .read_json()
             .unwrap_or_else(|e| panic!("snapshot_value: response not JSON: {e}"));
         envelope.get("state").cloned().unwrap_or(Value::Null)
     }

@@ -43,7 +43,6 @@ Survivalist extraction means moving existing engine-independent code out of the 
 | 20 | `ueforge` | [ ] proptest remaining: FieldTweak decoder + inspect_address byte slabs | Property tests cover FieldTweak and inspect_address. |
 | 20 | `ueforge` | [ ] insta per-op snapshots for the standard debug-op set (skill_toggle / spend / refund / etc.); gated on building a stateless test fixture | Per-op snapshot tests pass. |
 | 25 | `ueforge` | [ ] UE-version-aware ffield / fproperty / ustruct offsets (hardcoded for UE 5.4; UE 5.5+ silently returns wrong names) | Offsets auto-detect UE version. |
-| 25 | `ueforge` | [ ] tiny_http / ureq 2 migration window (both on 2-5 year support horizon) | HTTP dependencies evaluated and migrated if needed. |
 | 25 | `ueforge` | [ ] PE hook trampoline linear search: index by vtable pointer when 6+ hooks are installed | Hook dispatch O(1) by vtable pointer. |
 | 25 | `ueforge` | [ ] Wave E: Global ProcessEvent pre-callback (RegisterProcessEventPreCallback wrapper + Queue::install_drain helper) | Guaranteed drain site available for status-effect migration. |
 | 25 | `ueforge` | [ ] Wave E: AddUObjectCreateListener integration (~100 LOC) | CDO-revert-replay scenario unblocked. |

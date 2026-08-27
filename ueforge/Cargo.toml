@@ -36,7 +36,7 @@ path = "src/bin/read_property.rs"
 modforge = { path = "../modforge" }
 # Same version modforge pins: `ue::pieces` reads levels straight
 # into `modforge::structure::PieceDef`, whose vectors are glam's.
-glam = "0.32"
+glam = "0.33"
 serde = { workspace = true }
 serde_json = { workspace = true }
 tiny_http = { workspace = true }
