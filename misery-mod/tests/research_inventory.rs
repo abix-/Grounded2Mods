@@ -1,4 +1,4 @@
-//! The complete inventory: every building piece the game has
+//! The complete inventory: every building part the game has
 //! loaded, with its real measured size and where its position
 //! marker sits.
 //!
@@ -14,8 +14,8 @@ mod common;
 use common::{api_or_skip, offsets_live};
 use serde_json::json;
 
-/// A piece, measured. Sizes are full extents in centimetres.
-struct Piece {
+/// A part, measured. Sizes are full extents in centimetres.
+struct Part {
     name: String,
     w: f64,
     d: f64,
@@ -77,9 +77,9 @@ fn full_inventory() {
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0)
     };
-    let pieces: Vec<Piece> = meshes
+    let parts: Vec<Part> = meshes
         .iter()
-        .map(|m| Piece {
+        .map(|m| Part {
             name: m["name"].as_str().unwrap_or("?").to_string(),
             w: g(m, "size", 0),
             d: g(m, "size", 1),
@@ -107,12 +107,12 @@ fn full_inventory() {
     ];
 
     for cat in ORDER {
-        let mut group: Vec<&Piece> = pieces.iter().filter(|p| category(&p.name) == *cat).collect();
+        let mut group: Vec<&Part> = parts.iter().filter(|p| category(&p.name) == *cat).collect();
         if group.is_empty() {
             continue;
         }
         group.sort_by(|a, b| a.name.cmp(&b.name));
-        println!("## {cat} ({} piece(s))", group.len());
+        println!("## {cat} ({} part(s))", group.len());
         for p in group {
             println!(
                 "  {:<40} {:>6.0} x {:>6.0} x {:>6.0} cm   marker {:>6.0} {:>6.0} {:>6.0}",
@@ -124,11 +124,11 @@ fn full_inventory() {
 
     let building: usize = ORDER
         .iter()
-        .map(|c| pieces.iter().filter(|p| category(&p.name) == *c).count())
+        .map(|c| parts.iter().filter(|p| category(&p.name) == *c).count())
         .sum();
     println!(
-        "{building} building piece(s) of {} loaded meshes ({} are props and scenery)",
-        pieces.len(),
-        pieces.len() - building
+        "{building} building part(s) of {} loaded meshes ({} are props and scenery)",
+        parts.len(),
+        parts.len() - building
     );
 }

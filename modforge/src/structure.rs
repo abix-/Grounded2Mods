@@ -99,7 +99,7 @@ pub struct LightDef {
     pub intensity: f32,
 }
 
-/// One placed piece of a CAPTURED structure: an opaque host-game
+/// One placed part of a CAPTURED structure: an opaque host-game
 /// asset plus where it sits relative to the structure origin.
 ///
 /// Authored structures describe themselves as rooms; a structure
@@ -113,7 +113,7 @@ pub struct LightDef {
 /// Offsets follow the structure convention: y up, north = -z.
 /// Consumers on z-up engines convert in their binder.
 #[derive(Clone, Debug, PartialEq)]
-pub struct PieceDef {
+pub struct PartDef {
     /// What to spawn, in the host game's naming.
     pub class: String,
     /// A second identity for classes that are a shell around an
@@ -126,22 +126,22 @@ pub struct PieceDef {
     pub pitch: f32,
     pub roll: f32,
     pub scale: f32,
-    /// Half-size of the piece's own geometry in its local axes,
+    /// Half-size of the part's own geometry in its local axes,
     /// metres. `Vec3::ZERO` when the host could not measure it.
-    /// This is what makes a piece more than a name: with it, a
-    /// piece is a box in space and its role can be read off its
+    /// This is what makes a part more than a name: with it, a
+    /// part is a box in space and its role can be read off its
     /// proportions.
     pub extent: Vec3,
 }
 
-/// What a piece is, judged by its proportions alone. No names, no
+/// What a part is, judged by its proportions alone. No names, no
 /// per-game knowledge: a thin tall wide box is a wall whatever
 /// the game calls it.
 ///
 /// Read in the structure convention (y up), so "flat" means small
 /// in y and "thin" means small in one horizontal axis.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum PieceShape {
+pub enum PartShape {
     /// Flat and wide: floors, ceilings, road slabs, platforms.
     Slab,
     /// Thin in one horizontal axis, long and tall: walls, fences.
@@ -163,50 +163,50 @@ pub enum PieceShape {
 /// architecture. Metres (half-extent).
 const CLUTTER_HALF_SIZE: f32 = 0.35;
 
-/// Classify a piece by the proportions of its box.
+/// Classify a part by the proportions of its box.
 ///
 /// The thresholds are ratios, not sizes, so the same rules read a
 /// garden fence and a factory wall the same way.
-pub fn classify(extent: Vec3) -> PieceShape {
+pub fn classify(extent: Vec3) -> PartShape {
     let (x, y, z) = (extent.x.abs(), extent.y.abs(), extent.z.abs());
     if x <= 0.0 && y <= 0.0 && z <= 0.0 {
-        return PieceShape::Unknown;
+        return PartShape::Unknown;
     }
     if x < CLUTTER_HALF_SIZE && y < CLUTTER_HALF_SIZE && z < CLUTTER_HALF_SIZE {
-        return PieceShape::Clutter;
+        return PartShape::Clutter;
     }
     let horizontal_max = x.max(z);
     let horizontal_min = x.min(z);
     // Flat: height is a small fraction of the ground span.
     if y * 4.0 < horizontal_max && horizontal_min * 3.0 > horizontal_max {
-        return PieceShape::Slab;
+        return PartShape::Slab;
     }
     // Thin in one horizontal axis but tall and long: a panel.
     if horizontal_min * 4.0 < horizontal_max && y * 2.0 > horizontal_max {
-        return PieceShape::Panel;
+        return PartShape::Panel;
     }
     // Narrow footprint, tall: a post.
     if y > horizontal_max * 2.0 {
-        return PieceShape::Post;
+        return PartShape::Post;
     }
     // Long and slender horizontally: a beam.
     if horizontal_max > horizontal_min * 4.0 && horizontal_max > y * 2.0 {
-        return PieceShape::Beam;
+        return PartShape::Beam;
     }
-    PieceShape::Block
+    PartShape::Block
 }
 
-impl PieceDef {
-    /// This piece's shape, from its measured extent.
-    pub fn shape(&self) -> PieceShape {
+impl PartDef {
+    /// This part's shape, from its measured extent.
+    pub fn shape(&self) -> PartShape {
         classify(self.extent * self.scale.abs())
     }
 
-    /// Where this piece ends up when its whole set is placed at
+    /// Where this part ends up when its whole set is placed at
     /// `origin` and turned by `turn` radians about the up axis.
     ///
-    /// Returns the position and the piece's own facing, both
-    /// already turned. A set of pieces keeps its shape because
+    /// Returns the position and the part's own facing, both
+    /// already turned. A set of parts keeps its shape because
     /// every offset turns by the same angle and every facing
     /// gains it.
     ///
@@ -228,7 +228,7 @@ impl PieceDef {
         )
     }
 
-    /// World-space half-extent ignoring tilt: the box a piece
+    /// World-space half-extent ignoring tilt: the box a part
     /// occupies on the ground, with yaw applied.
     pub fn ground_half_size(&self) -> (f32, f32) {
         let e = self.extent * self.scale.abs();
@@ -240,15 +240,15 @@ impl PieceDef {
     }
 }
 
-/// Cut a loose heap of pieces into groups that stand together.
+/// Cut a loose heap of parts into groups that stand together.
 ///
-/// A level read as pieces is one flat list: a building, its
+/// A level read as parts is one flat list: a building, its
 /// fence, the junk pile beside it, and a rock forty metres away,
 /// all mixed. Things that belong together are near each other, so
 /// grouping by distance recovers them without knowing anything
 /// about the game.
 ///
-/// `radius` is how far apart two pieces can be and still count as
+/// `radius` is how far apart two parts can be and still count as
 /// one thing, in metres on the ground plane. Height is ignored:
 /// an upper floor belongs with the floor beneath it.
 ///
@@ -261,20 +261,20 @@ impl PieceDef {
 /// lowest point at y = 0, so it can be placed anywhere and turned
 /// about a sensible pivot.
 pub fn group_nearby(
-    pieces: &[PieceDef],
+    parts: &[PartDef],
     radius: f32,
     min: usize,
     max: usize,
-) -> Vec<Vec<PieceDef>> {
-    let mut taken = vec![false; pieces.len()];
+) -> Vec<Vec<PartDef>> {
+    let mut taken = vec![false; parts.len()];
     let mut out = Vec::new();
-    for i in 0..pieces.len() {
+    for i in 0..parts.len() {
         if taken[i] {
             continue;
         }
-        let seed = &pieces[i];
+        let seed = &parts[i];
         let mut members: Vec<usize> = Vec::new();
-        for (j, other) in pieces.iter().enumerate() {
+        for (j, other) in parts.iter().enumerate() {
             if taken[j] {
                 continue;
             }
@@ -294,18 +294,18 @@ pub fn group_nearby(
             continue;
         }
         let n = members.len() as f32;
-        let cx = members.iter().map(|&j| pieces[j].offset.x).sum::<f32>() / n;
-        let cz = members.iter().map(|&j| pieces[j].offset.z).sum::<f32>() / n;
+        let cx = members.iter().map(|&j| parts[j].offset.x).sum::<f32>() / n;
+        let cz = members.iter().map(|&j| parts[j].offset.z).sum::<f32>() / n;
         let base_y = members
             .iter()
-            .map(|&j| pieces[j].offset.y)
+            .map(|&j| parts[j].offset.y)
             .fold(f32::MAX, f32::min);
         out.push(
             members
                 .iter()
-                .map(|&j| PieceDef {
-                    offset: pieces[j].offset - Vec3::new(cx, base_y, cz),
-                    ..pieces[j].clone()
+                .map(|&j| PartDef {
+                    offset: parts[j].offset - Vec3::new(cx, base_y, cz),
+                    ..parts[j].clone()
                 })
                 .collect(),
         );
@@ -316,21 +316,21 @@ pub fn group_nearby(
     out
 }
 
-/// Turn a heap of loose pieces into named structures.
+/// Turn a heap of loose parts into named structures.
 ///
 /// [`group_nearby`] with the naming and colouring done, which is
 /// what a caller wants when capturing a place: it has a source
 /// name and a palette, not a pile of groups.
 pub fn capture(
     source: &str,
-    pieces: &[PieceDef],
+    parts: &[PartDef],
     radius: f32,
     min: usize,
     max: usize,
     wall_color: Rgb,
     floor_color: Rgb,
 ) -> Vec<StructureDef> {
-    group_nearby(pieces, radius, min, max)
+    group_nearby(parts, radius, min, max)
         .into_iter()
         .map(|group| StructureDef {
             name: source.to_string(),
@@ -340,7 +340,7 @@ pub fn capture(
             stairs: Vec::new(),
             furniture: Vec::new(),
             lights: Vec::new(),
-            pieces: group,
+            parts: group,
         })
         .collect()
 }
@@ -396,11 +396,11 @@ impl Library {
 
     /// Keep the `n` biggest of `structures` and discard the rest.
     ///
-    /// Biggest by piece count: a capture of one place yields both
+    /// Biggest by part count: a capture of one place yields both
     /// a building and the litter around it, and the building is
     /// the part worth keeping.
     pub fn add_best(&mut self, mut structures: Vec<StructureDef>, n: usize) -> usize {
-        structures.sort_by_key(|s| std::cmp::Reverse(s.pieces.len()));
+        structures.sort_by_key(|s| std::cmp::Reverse(s.parts.len()));
         structures.truncate(n);
         let kept = structures.len();
         for s in structures {
@@ -431,7 +431,7 @@ impl Library {
 /// and stairs; `floor_color` the floor slabs.
 ///
 /// A structure is authored (rooms, stairs, furniture, lights) or
-/// captured (`pieces`, lifted from a running game), or both. The
+/// captured (`parts`, lifted from a running game), or both. The
 /// generic machinery (footprints, arrangement, monuments) works
 /// over either, so a game that cannot author rooms still gets
 /// generated places.
@@ -444,8 +444,8 @@ pub struct StructureDef {
     pub stairs: Vec<StairDef>,
     pub furniture: Vec<SolidDef>,
     pub lights: Vec<LightDef>,
-    /// Captured pieces. Empty for authored structures.
-    pub pieces: Vec<PieceDef>,
+    /// Captured parts. Empty for authored structures.
+    pub parts: Vec<PartDef>,
 }
 
 /// The bare concrete every hand-authored building used before
@@ -517,15 +517,15 @@ pub fn validate(def: &StructureDef) -> Result<(), String> {
 }
 
 /// Floor and landing slab thickness, step depth, and the most one
-/// step may rise. Shared by the piece builder and the generators.
+/// step may rise. Shared by the part builder and the generators.
 pub const SLAB: f32 = 0.1;
 pub const STEP_DEPTH: f32 = 0.3;
 pub const STEP_RISE_MAX: f32 = 0.31;
-/// Health of a freshly built piece until grades land.
-pub const PIECE_HEALTH: f32 = 100.0;
+/// Health of a freshly built part until grades land.
+pub const PART_HEALTH: f32 = 100.0;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum PieceKind {
+pub enum PartKind {
     Wall,
     Floor,
     Ceiling,
@@ -535,20 +535,20 @@ pub enum PieceKind {
 }
 
 /// One solid box of a built structure: a wall segment, a slab, a
-/// step, a piece of furniture. The unit of damage and rebuild, the
+/// step, a part of furniture. The unit of damage and rebuild, the
 /// way Rust (the game) treats building blocks. Structure-local
 /// centre; the consumer bakes the whole list into one collider and
 /// one mesh per colour, and rebakes when the list changes.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Piece {
-    pub kind: PieceKind,
+pub struct Part {
+    pub kind: PartKind,
     pub center: Vec3,
     pub size: Vec3,
     pub color: Rgb,
     pub health: f32,
 }
 
-impl Piece {
+impl Part {
     pub fn aabb(&self) -> Aabb {
         Aabb::from_center_size(self.center, self.size)
     }
@@ -556,17 +556,17 @@ impl Piece {
 
 /// Every solid box of a structure, from its def: wall segments
 /// between openings, panels under sills, floor and ceiling slabs,
-/// steps and landings, furniture. Doors are not pieces; they move,
+/// steps and landings, furniture. Doors are not parts; they move,
 /// and the consumer spawns them from the openings.
-pub fn pieces_of(def: &StructureDef) -> Vec<Piece> {
-    let mut pieces = Vec::new();
+pub fn parts_of(def: &StructureDef) -> Vec<Part> {
+    let mut parts = Vec::new();
     let mut push = |kind, center, size, color| {
-        pieces.push(Piece {
+        parts.push(Part {
             kind,
             center,
             size,
             color,
-            health: PIECE_HEALTH,
+            health: PART_HEALTH,
         });
     };
     for room in &def.rooms {
@@ -598,7 +598,7 @@ pub fn pieces_of(def: &StructureDef) -> Vec<Piece> {
                 let run = end - start;
                 let center = wall_center + axis * mid + Vec3::Y * (height / 2.0);
                 let size = axis * run + Vec3::Y * height + (Vec3::ONE - axis - Vec3::Y) * t;
-                push(PieceKind::Wall, center, size, def.wall_color);
+                push(PartKind::Wall, center, size, def.wall_color);
             }
             // Panels below raised sills.
             for opening in room
@@ -610,13 +610,13 @@ pub fn pieces_of(def: &StructureDef) -> Vec<Piece> {
                 let size = axis * opening.width
                     + Vec3::Y * opening.sill
                     + (Vec3::ONE - axis - Vec3::Y) * t;
-                push(PieceKind::Wall, center, size, def.wall_color);
+                push(PartKind::Wall, center, size, def.wall_color);
             }
         }
         let slab_xz = Vec3::new(room.interior.x + 2.0 * t, 0.0, room.interior.z + 2.0 * t);
         if room.floor {
             push(
-                PieceKind::Floor,
+                PartKind::Floor,
                 room.origin + Vec3::Y * (SLAB / 2.0),
                 slab_xz + Vec3::Y * SLAB,
                 def.floor_color,
@@ -624,7 +624,7 @@ pub fn pieces_of(def: &StructureDef) -> Vec<Piece> {
         }
         if room.ceiling {
             push(
-                PieceKind::Ceiling,
+                PartKind::Ceiling,
                 room.origin + Vec3::Y * (height + SLAB),
                 slab_xz + Vec3::Y * 0.2,
                 def.wall_color,
@@ -639,7 +639,7 @@ pub fn pieces_of(def: &StructureDef) -> Vec<Piece> {
         for i in 0..steps {
             let height = step_rise * (i + 1) as f32;
             push(
-                PieceKind::Step,
+                PartKind::Step,
                 stair.base + dir * (STEP_DEPTH * (i as f32 + 0.5)) + Vec3::Y * (height / 2.0),
                 dir.abs() * STEP_DEPTH + across * stair.width + Vec3::Y * height,
                 def.floor_color,
@@ -647,7 +647,7 @@ pub fn pieces_of(def: &StructureDef) -> Vec<Piece> {
         }
         if stair.landing > 0.0 {
             push(
-                PieceKind::Landing,
+                PartKind::Landing,
                 stair.base
                     + dir * (STEP_DEPTH * steps as f32 + stair.landing / 2.0)
                     + Vec3::Y * (stair.rise - SLAB / 2.0),
@@ -656,18 +656,18 @@ pub fn pieces_of(def: &StructureDef) -> Vec<Piece> {
             );
         }
     }
-    for piece in &def.furniture {
-        push(PieceKind::Furniture, piece.center, piece.size, piece.color);
+    for part in &def.furniture {
+        push(PartKind::Furniture, part.center, part.size, part.color);
     }
-    pieces
+    parts
 }
 
-/// The piece containing a structure-local point, if any: the hit to
-/// piece lookup. A point on a shared face belongs to the first piece
+/// The part containing a structure-local point, if any: the hit to
+/// part lookup. A point on a shared face belongs to the first part
 /// in list order.
-pub fn piece_at(pieces: &[Piece], point: Vec3) -> Option<usize> {
+pub fn part_at(parts: &[Part], point: Vec3) -> Option<usize> {
     const SKIN: f32 = 1e-3;
-    pieces.iter().position(|p| {
+    parts.iter().position(|p| {
         let a = p.aabb();
         point.x >= a.min.x - SKIN
             && point.x <= a.max.x + SKIN
@@ -678,27 +678,27 @@ pub fn piece_at(pieces: &[Piece], point: Vec3) -> Option<usize> {
     })
 }
 
-/// Land `hit` on piece `index` through the one damage function
-/// (a piece is a target with health and no armor). A piece at zero
+/// Land `hit` on part `index` through the one damage function
+/// (a part is a target with health and no armor). A part at zero
 /// health is removed; `removed` tells the consumer to rebake.
-pub fn damage(pieces: &mut Vec<Piece>, index: usize, hit: &Hit<'_>) -> Option<PieceHit> {
-    let piece = pieces.get_mut(index)?;
+pub fn damage(parts: &mut Vec<Part>, index: usize, hit: &Hit<'_>) -> Option<PartHit> {
+    let part = parts.get_mut(index)?;
     let mut health = Health {
-        current: piece.health,
-        max: PIECE_HEALTH,
+        current: part.health,
+        max: PART_HEALTH,
     };
     let result = resolve_hit(hit, &mut Protection::default(), &mut health);
-    piece.health = health.current;
+    part.health = health.current;
     let removed = result.killed;
     if removed {
-        pieces.remove(index);
+        parts.remove(index);
     }
-    Some(PieceHit { result, removed })
+    Some(PartHit { result, removed })
 }
 
-/// What a hit did to a piece.
+/// What a hit did to a part.
 #[derive(Clone, Debug, PartialEq)]
-pub struct PieceHit {
+pub struct PartHit {
     pub result: HitResult,
     pub removed: bool,
 }
@@ -782,7 +782,7 @@ pub struct MonumentDef {
     pub good_for: crate::memory::GoodFor,
 }
 
-/// What a shell slot is for. A builder supplies one piece per
+/// What a shell slot is for. A builder supplies one part per
 /// slot from whatever kit its host game has.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SlotKind {
@@ -798,7 +798,7 @@ pub enum SlotOpening {
     Window,
 }
 
-/// One piece of a room's shell that a builder must supply: where
+/// One part of a room's shell that a builder must supply: where
 /// it goes, how big a span it must cover, and what it needs to
 /// contain.
 ///
@@ -811,7 +811,7 @@ pub struct ShellSlot {
     pub kind: SlotKind,
     pub position: Vec3,
     pub yaw: f32,
-    /// Span the piece must cover: width along the slot's run, and
+    /// Span the part must cover: width along the slot's run, and
     /// height (walls) or depth (floors and ceilings).
     pub width: f32,
     pub height: f32,
@@ -820,13 +820,13 @@ pub struct ShellSlot {
 
 /// Greedy fill of a run using the largest modules that fit, so a
 /// 7 m wall becomes 4 + 2 + 1 when the kit has those sizes.
-/// `modules` must be sorted largest first. Returns each piece's
+/// `modules` must be sorted largest first. Returns each part's
 /// start offset along the run and its width.
 pub fn fill_run(run: f32, modules: &[f32]) -> Vec<(f32, f32)> {
     let mut out = Vec::new();
     let mut at = 0.0f32;
     // A hair of tolerance so float remainders do not spawn a
-    // sliver piece at the end of every wall.
+    // sliver part at the end of every wall.
     const EPS: f32 = 1e-3;
     'fill: while run - at > EPS {
         let left = run - at;
@@ -916,7 +916,7 @@ impl KitNames {
     }
 }
 
-/// Build the pieces for one room, given a way to name the mesh
+/// Build the parts for one room, given a way to name the mesh
 /// for each slot.
 ///
 /// The shell (which tiles, which wall segments, which one carries
@@ -928,15 +928,15 @@ impl KitNames {
 ///
 /// Positions and facings come straight from the slots, so the
 /// result is in this crate's space: metres, y up, radians.
-pub fn room_pieces(
+pub fn room_parts(
     room: &RoomDef,
     modules: &[f32],
     class: &str,
     mesh_for: impl Fn(&ShellSlot) -> String,
-) -> Vec<PieceDef> {
+) -> Vec<PartDef> {
     shell_slots(room, modules)
         .into_iter()
-        .map(|slot| PieceDef {
+        .map(|slot| PartDef {
             class: class.to_string(),
             asset: Some(mesh_for(&slot)),
             offset: slot.position,
@@ -996,7 +996,7 @@ pub fn room_from_json(args: &serde_json::Value) -> RoomDef {
     }
 }
 
-/// Decompose a room into the shell pieces a builder must supply:
+/// Decompose a room into the shell parts a builder must supply:
 /// floor tiles, wall segments on all four sides with openings
 /// assigned, and ceiling tiles.
 ///
@@ -1064,7 +1064,7 @@ pub fn shell_slots(room: &RoomDef, modules: &[f32]) -> Vec<ShellSlot> {
             // A segment claims the opening whose centre falls in
             // it. Openings are usually narrower than a module (a
             // 1.2 m door in a 4 m wall), so comparing spans would
-            // never match; the piece that contains the doorway is
+            // never match; the part that contains the doorway is
             // the one that must carry it.
             let opening = room
                 .openings
@@ -1239,48 +1239,48 @@ mod shape_tests {
     #[test]
     fn floor_slab_is_a_slab() {
         // 8m x 8m floor, 20cm thick.
-        assert_eq!(classify(e(4.0, 0.1, 4.0)), PieceShape::Slab);
+        assert_eq!(classify(e(4.0, 0.1, 4.0)), PartShape::Slab);
     }
 
     #[test]
     fn wall_panel_is_a_panel() {
         // 4m long, 20cm thick, 3m tall.
-        assert_eq!(classify(e(2.0, 1.5, 0.1)), PieceShape::Panel);
+        assert_eq!(classify(e(2.0, 1.5, 0.1)), PartShape::Panel);
         // Same wall turned the other way.
-        assert_eq!(classify(e(0.1, 1.5, 2.0)), PieceShape::Panel);
+        assert_eq!(classify(e(0.1, 1.5, 2.0)), PartShape::Panel);
     }
 
     #[test]
     fn pillar_is_a_post() {
         // 40cm square, 3m tall.
-        assert_eq!(classify(e(0.2, 1.5, 0.2)), PieceShape::Post);
+        assert_eq!(classify(e(0.2, 1.5, 0.2)), PartShape::Post);
     }
 
     #[test]
     fn pipe_is_a_beam() {
         // 6m long, 30cm through.
-        assert_eq!(classify(e(3.0, 0.15, 0.15)), PieceShape::Beam);
+        assert_eq!(classify(e(3.0, 0.15, 0.15)), PartShape::Beam);
     }
 
     #[test]
     fn crate_is_a_block() {
-        assert_eq!(classify(e(0.6, 0.6, 0.6)), PieceShape::Block);
+        assert_eq!(classify(e(0.6, 0.6, 0.6)), PartShape::Block);
     }
 
     #[test]
     fn small_prop_is_clutter() {
-        assert_eq!(classify(e(0.1, 0.2, 0.15)), PieceShape::Clutter);
+        assert_eq!(classify(e(0.1, 0.2, 0.15)), PartShape::Clutter);
     }
 
     #[test]
     fn unmeasured_is_unknown() {
-        assert_eq!(classify(Vec3::ZERO), PieceShape::Unknown);
+        assert_eq!(classify(Vec3::ZERO), PartShape::Unknown);
     }
 
     #[test]
     fn scale_is_applied_before_classifying() {
         // A clutter-sized box scaled up ten times is architecture.
-        let p = PieceDef {
+        let p = PartDef {
             class: "x".into(),
             asset: None,
             offset: Vec3::ZERO,
@@ -1290,7 +1290,7 @@ mod shape_tests {
             scale: 10.0,
             extent: e(0.2, 0.15, 0.02),
         };
-        assert_eq!(p.shape(), PieceShape::Panel);
+        assert_eq!(p.shape(), PartShape::Panel);
     }
 
     const TEST_KIT: KitNames = KitNames {
@@ -1381,8 +1381,8 @@ mod shape_tests {
         assert!(r.openings.is_empty());
     }
 
-    fn at(x: f32, y: f32, z: f32) -> PieceDef {
-        PieceDef {
+    fn at(x: f32, y: f32, z: f32) -> PartDef {
+        PartDef {
             class: "x".into(),
             asset: None,
             offset: Vec3::new(x, y, z),
@@ -1397,15 +1397,15 @@ mod shape_tests {
     /// Two clusters ten metres apart, with a radius of three, are
     /// two things and not one.
     #[test]
-    fn nearby_pieces_group_and_distant_ones_do_not() {
-        let mut pieces = Vec::new();
+    fn nearby_parts_group_and_distant_ones_do_not() {
+        let mut parts = Vec::new();
         for i in 0..4 {
-            pieces.push(at(i as f32 * 0.5, 0.0, 0.0));
+            parts.push(at(i as f32 * 0.5, 0.0, 0.0));
         }
         for i in 0..4 {
-            pieces.push(at(10.0 + i as f32 * 0.5, 0.0, 0.0));
+            parts.push(at(10.0 + i as f32 * 0.5, 0.0, 0.0));
         }
-        let groups = group_nearby(&pieces, 3.0, 2, 100);
+        let groups = group_nearby(&parts, 3.0, 2, 100);
         assert_eq!(groups.len(), 2, "got {} group(s)", groups.len());
         assert_eq!(groups[0].len(), 4);
         assert_eq!(groups[1].len(), 4);
@@ -1413,8 +1413,8 @@ mod shape_tests {
 
     #[test]
     fn a_group_below_the_minimum_is_dropped() {
-        let pieces: Vec<PieceDef> = (0..3).map(|i| at(i as f32 * 0.1, 0.0, 0.0)).collect();
-        assert!(group_nearby(&pieces, 1.0, 5, 100).is_empty());
+        let parts: Vec<PartDef> = (0..3).map(|i| at(i as f32 * 0.1, 0.0, 0.0)).collect();
+        assert!(group_nearby(&parts, 1.0, 5, 100).is_empty());
     }
 
     /// Over the maximum, only the seed is dropped and the rest
@@ -1422,8 +1422,8 @@ mod shape_tests {
     /// nothing at all.
     #[test]
     fn an_oversized_group_regroups_smaller() {
-        let pieces: Vec<PieceDef> = (0..3).map(|i| at(i as f32 * 0.1, 0.0, 0.0)).collect();
-        let groups = group_nearby(&pieces, 1.0, 1, 2);
+        let parts: Vec<PartDef> = (0..3).map(|i| at(i as f32 * 0.1, 0.0, 0.0)).collect();
+        let groups = group_nearby(&parts, 1.0, 1, 2);
         assert!(!groups.is_empty(), "a dense area should still yield something");
         assert!(
             groups.iter().all(|g| g.len() <= 2),
@@ -1434,9 +1434,9 @@ mod shape_tests {
     /// Height must not split a group, or an upper floor becomes
     /// its own building.
     #[test]
-    fn height_does_not_separate_pieces() {
-        let pieces = vec![at(0.0, 0.0, 0.0), at(0.5, 40.0, 0.0)];
-        let groups = group_nearby(&pieces, 3.0, 2, 100);
+    fn height_does_not_separate_parts() {
+        let parts = vec![at(0.0, 0.0, 0.0), at(0.5, 40.0, 0.0)];
+        let groups = group_nearby(&parts, 3.0, 2, 100);
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].len(), 2);
     }
@@ -1445,8 +1445,8 @@ mod shape_tests {
     /// it can be put down anywhere.
     #[test]
     fn a_group_is_recentred_on_its_own_middle() {
-        let pieces = vec![at(100.0, 5.0, 100.0), at(102.0, 7.0, 100.0)];
-        let groups = group_nearby(&pieces, 5.0, 2, 100);
+        let parts = vec![at(100.0, 5.0, 100.0), at(102.0, 7.0, 100.0)];
+        let groups = group_nearby(&parts, 5.0, 2, 100);
         assert_eq!(groups.len(), 1);
         let g = &groups[0];
         let mid_x: f32 = g.iter().map(|p| p.offset.x).sum::<f32>() / g.len() as f32;
@@ -1458,11 +1458,11 @@ mod shape_tests {
     }
 
     #[test]
-    fn no_piece_lands_in_two_groups() {
-        let pieces: Vec<PieceDef> = (0..12).map(|i| at(i as f32 * 0.4, 0.0, 0.0)).collect();
-        let groups = group_nearby(&pieces, 1.0, 2, 100);
+    fn no_part_lands_in_two_groups() {
+        let parts: Vec<PartDef> = (0..12).map(|i| at(i as f32 * 0.4, 0.0, 0.0)).collect();
+        let groups = group_nearby(&parts, 1.0, 2, 100);
         let total: usize = groups.iter().map(|g| g.len()).sum();
-        assert!(total <= pieces.len(), "{total} placed from {}", pieces.len());
+        assert!(total <= parts.len(), "{total} placed from {}", parts.len());
     }
 
     fn structure(name: &str) -> StructureDef {
@@ -1474,7 +1474,7 @@ mod shape_tests {
             stairs: Vec::new(),
             furniture: Vec::new(),
             lights: Vec::new(),
-            pieces: Vec::new(),
+            parts: Vec::new(),
         }
     }
 
@@ -1503,11 +1503,11 @@ mod shape_tests {
     fn add_best_keeps_the_biggest_and_drops_the_rest() {
         let mut lib = Library::new(10);
         let mut small = structure("small");
-        small.pieces = vec![at(0.0, 0.0, 0.0)];
+        small.parts = vec![at(0.0, 0.0, 0.0)];
         let mut big = structure("big");
-        big.pieces = (0..9).map(|i| at(i as f32, 0.0, 0.0)).collect();
+        big.parts = (0..9).map(|i| at(i as f32, 0.0, 0.0)).collect();
         let mut middling = structure("middling");
-        middling.pieces = (0..4).map(|i| at(i as f32, 0.0, 0.0)).collect();
+        middling.parts = (0..4).map(|i| at(i as f32, 0.0, 0.0)).collect();
 
         let kept = lib.add_best(vec![small, big, middling], 2);
         assert_eq!(kept, 2);
@@ -1536,12 +1536,12 @@ mod shape_tests {
 
     #[test]
     fn capture_names_and_colours_every_group() {
-        let pieces: Vec<PieceDef> = (0..4).map(|i| at(i as f32 * 0.5, 0.0, 0.0)).collect();
-        let got = capture("a_square", &pieces, 3.0, 2, 100, CONCRETE_WALL, CONCRETE_FLOOR);
+        let parts: Vec<PartDef> = (0..4).map(|i| at(i as f32 * 0.5, 0.0, 0.0)).collect();
+        let got = capture("a_square", &parts, 3.0, 2, 100, CONCRETE_WALL, CONCRETE_FLOOR);
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].name, "a_square");
         assert_eq!(got[0].wall_color, CONCRETE_WALL);
-        assert_eq!(got[0].pieces.len(), 4);
+        assert_eq!(got[0].parts.len(), 4);
     }
 
     #[test]
@@ -1557,7 +1557,7 @@ mod shape_tests {
 
     #[test]
     fn ground_half_size_turns_with_yaw() {
-        let p = PieceDef {
+        let p = PartDef {
             class: "x".into(),
             asset: None,
             offset: Vec3::ZERO,
@@ -1598,7 +1598,7 @@ mod tests {
             stairs: vec![],
             furniture: vec![],
             lights: vec![],
-            pieces: vec![],
+            parts: vec![],
         }
     }
 
@@ -1616,7 +1616,7 @@ mod tests {
     }
 
     #[test]
-    fn a_room_with_a_doorway_becomes_seven_pieces_and_a_hit_finds_the_wall() {
+    fn a_room_with_a_doorway_becomes_seven_parts_and_a_hit_finds_the_wall() {
         let mut r = room(Vec3::ZERO);
         r.openings.push(Opening {
             side: Side::North,
@@ -1626,20 +1626,20 @@ mod tests {
             door: true,
         });
         let d = def(vec![r]);
-        let mut pieces = pieces_of(&d);
+        let mut parts = parts_of(&d);
         // Three whole walls, two segments beside the doorway, floor,
         // ceiling.
-        assert_eq!(pieces.len(), 7);
-        assert_eq!(pieces.iter().filter(|p| p.kind == PieceKind::Wall).count(), 5);
+        assert_eq!(parts.len(), 7);
+        assert_eq!(parts.iter().filter(|p| p.kind == PartKind::Wall).count(), 5);
 
         // A point in the east wall band (x 3.0 to 3.2).
-        let hit = piece_at(&pieces, Vec3::new(3.1, 1.0, 0.0)).expect("the east wall");
-        assert_eq!(pieces[hit].kind, PieceKind::Wall);
-        // The doorway gap has no piece.
-        assert!(piece_at(&pieces, Vec3::new(0.0, 1.0, -4.1)).is_none());
+        let hit = part_at(&parts, Vec3::new(3.1, 1.0, 0.0)).expect("the east wall");
+        assert_eq!(parts[hit].kind, PartKind::Wall);
+        // The doorway gap has no part.
+        assert!(part_at(&parts, Vec3::new(0.0, 1.0, -4.1)).is_none());
 
         // Damage short of death keeps it; death removes it. The
-        // piece goes through the one damage function.
+        // part goes through the one damage function.
         let def = crate::combat::DamageDef {
             name: "test".to_string(),
             amount: 40.0,
@@ -1655,15 +1655,15 @@ mod tests {
             distance: 1.0,
             location_scale: 1.0,
         };
-        let first = damage(&mut pieces, hit, &swing).unwrap();
+        let first = damage(&mut parts, hit, &swing).unwrap();
         assert!(!first.removed);
         assert_eq!(first.result.damage_dealt, 40.0);
-        assert_eq!(pieces.len(), 7);
-        assert!(!damage(&mut pieces, hit, &swing).unwrap().removed);
-        assert!(damage(&mut pieces, hit, &swing).unwrap().removed, "120 of 100 health");
-        assert_eq!(pieces.len(), 6);
-        assert!(piece_at(&pieces, Vec3::new(3.1, 1.0, 0.0)).is_none());
-        assert!(damage(&mut pieces, 99, &swing).is_none());
+        assert_eq!(parts.len(), 7);
+        assert!(!damage(&mut parts, hit, &swing).unwrap().removed);
+        assert!(damage(&mut parts, hit, &swing).unwrap().removed, "120 of 100 health");
+        assert_eq!(parts.len(), 6);
+        assert!(part_at(&parts, Vec3::new(3.1, 1.0, 0.0)).is_none());
+        assert!(damage(&mut parts, 99, &swing).is_none());
     }
 
     #[test]

@@ -1,15 +1,15 @@
-//! Reading a level's actors as pieces, and putting pieces back.
+//! Reading a level's actors as parts, and putting parts back.
 //!
 //! A level is not one lump. It is a set of placed actors:
-//! buildings, walls, rocks, fences, containers. Each is a piece
+//! buildings, walls, rocks, fences, containers. Each is a part
 //! with a class, a position, a facing, a size and often a mesh.
 //! Reading them and spawning them are both Unreal work that no
 //! single game owns, so they live here.
 //!
-//! Pieces are [`modforge::structure::PieceDef`]. There is one
-//! piece type in this workspace and this is it: a game mod
+//! Parts are [`modforge::structure::PartDef`]. There is one
+//! part type in this workspace and this is it: a game mod
 //! defining its own is how two of them end up disagreeing about
-//! what a piece is.
+//! what a part is.
 //!
 //! # The two spaces
 //!
@@ -29,7 +29,7 @@
 use std::collections::HashMap;
 
 use glam::Vec3;
-use modforge::structure::PieceDef;
+use modforge::structure::PartDef;
 
 use super::transform;
 
@@ -41,12 +41,12 @@ const CM_PER_M: f64 = 100.0;
 /// the caller.
 const ENGINE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
-/// A piece read out of a level, still in Unreal's numbers.
+/// A part read out of a level, still in Unreal's numbers.
 ///
 /// Kept only long enough to work out the set's middle, because
-/// offsets are relative to that. Converted to [`PieceDef`]
+/// offsets are relative to that. Converted to [`PartDef`]
 /// immediately after.
-struct RawPiece {
+struct RawPart {
     class: String,
     x: f64,
     y: f64,
@@ -60,7 +60,7 @@ struct RawPiece {
 }
 
 /// Read every actor in levels whose path contains `path_needle`
-/// as pieces, with offsets relative to the set's own middle and
+/// as parts, with offsets relative to the set's own middle and
 /// its lowest point.
 ///
 /// Relative offsets are what let a set be put down anywhere
@@ -68,8 +68,8 @@ struct RawPiece {
 /// whose names contain one of its entries.
 ///
 /// Game thread only: it reads live objects.
-pub fn read_level(path_needle: &str, only: &[String]) -> Vec<PieceDef> {
-    let mut raw: Vec<RawPiece> = Vec::new();
+pub fn read_level(path_needle: &str, only: &[String]) -> Vec<PartDef> {
+    let mut raw: Vec<RawPart> = Vec::new();
     // Actors whose read faulted. Counted rather than ignored: a
     // level that skips half its actors is telling us something.
     let mut skipped = 0usize;
@@ -112,7 +112,7 @@ pub fn read_level(path_needle: &str, only: &[String]) -> Vec<PieceDef> {
             Some((name, ex, ey, ez)) => (Some(name), (ex, ey, ez)),
             None => (None, (0.0, 0.0, 0.0)),
         };
-        raw.push(RawPiece {
+        raw.push(RawPart {
             class,
             x: t.x,
             y: t.y,
@@ -137,13 +137,13 @@ pub fn read_level(path_needle: &str, only: &[String]) -> Vec<PieceDef> {
     let base_z = raw.iter().map(|r| r.z).fold(f64::MAX, f64::min);
 
     raw.into_iter()
-        .map(|r| to_piece(&r, cx, cy, base_z))
+        .map(|r| to_part(&r, cx, cy, base_z))
         .collect()
 }
 
-/// One Unreal-space piece as a [`PieceDef`].
-fn to_piece(r: &RawPiece, cx: f64, cy: f64, base_z: f64) -> PieceDef {
-    PieceDef {
+/// One Unreal-space part as a [`PartDef`].
+fn to_part(r: &RawPart, cx: f64, cy: f64, base_z: f64) -> PartDef {
+    PartDef {
         class: r.class.clone(),
         asset: r.mesh.clone(),
         offset: Vec3::new(
@@ -185,14 +185,14 @@ pub struct Placed {
     pub failed: usize,
 }
 
-/// Spawn pieces into the world, centred on an Unreal-space point
+/// Spawn parts into the world, centred on an Unreal-space point
 /// and turned by `turn_deg` about the up axis.
 ///
 /// `world_context` is any live actor in the target world.
 ///
 /// Meshes are resolved by NAME through one index built up front,
 /// not by pointer: a pointer is meaningless in a later session,
-/// and searching per piece is a search per piece.
+/// and searching per part is a search per part.
 ///
 /// Game thread only.
 ///
@@ -200,7 +200,7 @@ pub struct Placed {
 /// `world_context` must be a live actor.
 pub unsafe fn spawn(
     world_context: *const u8,
-    pieces: &[PieceDef],
+    parts: &[PartDef],
     at: (f64, f64, f64),
     turn_deg: f64,
     limit: usize,
@@ -208,7 +208,7 @@ pub unsafe fn spawn(
     let turn = turn_deg.to_radians();
     let (ts, tc) = turn.sin_cos();
 
-    let need_meshes = pieces.iter().any(|p| p.asset.is_some());
+    let need_meshes = parts.iter().any(|p| p.asset.is_some());
     let meshes: HashMap<String, u64> = if need_meshes {
         transform::loaded_meshes()
     } else {
@@ -216,20 +216,20 @@ pub unsafe fn spawn(
     };
 
     let mut out = Placed::default();
-    for piece in pieces.iter().take(limit) {
-        let Some(class) = super::find_class_fast(&piece.class) else {
+    for part in parts.iter().take(limit) {
+        let Some(class) = super::find_class_fast(&part.class) else {
             out.failed += 1;
             continue;
         };
         // Back to Unreal's numbers to place it.
-        let dx = -(piece.offset.z as f64) * CM_PER_M;
-        let dy = piece.offset.x as f64 * CM_PER_M;
-        let dz = piece.offset.y as f64 * CM_PER_M;
+        let dx = -(part.offset.z as f64) * CM_PER_M;
+        let dy = part.offset.x as f64 * CM_PER_M;
+        let dz = part.offset.y as f64 * CM_PER_M;
         let rx = dx * tc - dy * ts;
         let ry = dx * ts + dy * tc;
         let pos = (at.0 + rx, at.1 + ry, at.2 + dz);
-        let yaw = yaw_to_unreal(piece.yaw).to_radians() + turn;
-        let scale = (piece.scale as f64).max(0.01);
+        let yaw = yaw_to_unreal(part.yaw).to_radians() + turn;
+        let scale = (part.scale as f64).max(0.01);
 
         // SAFETY: caller guarantees a live world context; the
         // class came from this frame's lookup; game thread.
@@ -248,7 +248,7 @@ pub unsafe fn spawn(
         }
         // A static mesh actor spawns empty: the copy needs the
         // same mesh, set before the spawn finishes.
-        if let Some(name) = &piece.asset {
+        if let Some(name) = &part.asset {
             if let Some(mesh) = meshes.get(name) {
                 // SAFETY: actor came from begin_spawn above.
                 unsafe { transform::set_actor_mesh(actor, *mesh) };
@@ -301,8 +301,8 @@ pub fn measured_meshes(prefix: &str) -> Vec<(String, (f64, f64, f64), (f64, f64,
     out
 }
 
-/// One piece as JSON, in modforge's numbers.
-fn piece_json(p: &PieceDef) -> serde_json::Value {
+/// One part as JSON, in modforge's numbers.
+fn part_json(p: &PartDef) -> serde_json::Value {
     serde_json::json!({
         "class": p.class,
         "asset": p.asset,
@@ -315,9 +315,9 @@ fn piece_json(p: &PieceDef) -> serde_json::Value {
     })
 }
 
-/// A piece back from JSON. Missing fields take sane defaults so a
+/// A part back from JSON. Missing fields take sane defaults so a
 /// caller can send only what it cares about.
-fn piece_from_json(v: &serde_json::Value) -> Option<PieceDef> {
+fn part_from_json(v: &serde_json::Value) -> Option<PartDef> {
     let f = |k: &str, d: f32| v.get(k).and_then(|x| x.as_f64()).unwrap_or(d as f64) as f32;
     let vec3 = |k: &str| {
         let a = v.get(k).and_then(|x| x.as_array());
@@ -330,7 +330,7 @@ fn piece_from_json(v: &serde_json::Value) -> Option<PieceDef> {
             _ => Vec3::ZERO,
         }
     };
-    Some(PieceDef {
+    Some(PartDef {
         class: v.get("class")?.as_str()?.to_string(),
         asset: v
             .get("asset")
@@ -345,7 +345,7 @@ fn piece_from_json(v: &serde_json::Value) -> Option<PieceDef> {
     })
 }
 
-/// Register the piece endpoints with the workspace op registry.
+/// Register the part endpoints with the workspace op registry.
 ///
 /// Generic: no game names anywhere. A mod calls this once and
 /// gets reading, measuring and placing over the control plane.
@@ -353,11 +353,11 @@ fn piece_from_json(v: &serde_json::Value) -> Option<PieceDef> {
 /// Every one of these enters the engine, so a consumer must route
 /// them through its game-thread queue. They are registered here
 /// as plain ops; wrapping them is the consumer's job.
-/// Every pair of placed pieces near enough to be joined, in one
+/// Every pair of placed parts near enough to be joined, in one
 /// or more levels.
 ///
 /// This is EVIDENCE, not conclusions: the raw sightings, for
-/// `modforge::studs::derive` to turn into per-piece studs. A
+/// `modforge::studs::derive` to turn into per-part studs. A
 /// threshold changed later re-derives from the same sightings
 /// rather than needing the game running again.
 ///
@@ -365,7 +365,7 @@ fn piece_from_json(v: &serde_json::Value) -> Option<PieceDef> {
 pub fn joins_in(levels: &[String], touching: f64) -> Vec<modforge::studs::Join> {
     let mut out = Vec::new();
     for level in levels {
-        let placed: Vec<PieceDef> = read_level(level, &[]);
+        let placed: Vec<PartDef> = read_level(level, &[]);
         for a in &placed {
             let Some(from) = a.asset.as_ref() else { continue };
             for b in &placed {
@@ -395,8 +395,8 @@ pub fn joins_in(levels: &[String], touching: f64) -> Vec<modforge::studs::Join> 
 pub fn register_ops() {
     crate::ops::OP_REGISTRY.register_many([
         crate::ops::OpDef::new(
-            "level_pieces",
-            "Read every actor in a level as pieces, offsets relative to the set's middle",
+            "level_parts",
+            "Read every actor in a level as parts, offsets relative to the set's middle",
             "{level: str, classes?: [str]}",
             |args| {
                 let level = crate::args::arg_str(args, "level")?.to_string();
@@ -417,11 +417,11 @@ pub fn register_ops() {
                 // these were missed.
                 crate::game_thread::run(
                     move || {
-                        let pieces = read_level(&level, &classes);
+                        let parts = read_level(&level, &classes);
                         Ok(serde_json::json!({
                             "level": level,
-                            "count": pieces.len(),
-                            "pieces": pieces.iter().map(piece_json).collect::<Vec<_>>(),
+                            "count": parts.len(),
+                            "parts": parts.iter().map(part_json).collect::<Vec<_>>(),
                         }))
                     },
                     ENGINE_TIMEOUT,
@@ -430,7 +430,7 @@ pub fn register_ops() {
         ),
         crate::ops::OpDef::new(
             "joins",
-            "Write every pair of placed pieces near enough to be joined to a file, as raw sightings for stud derivation",
+            "Write every pair of placed parts near enough to be joined to a file, as raw sightings for stud derivation",
             "{levels: [str], path: str, touching?: f64}",
             |args| {
                 let levels: Vec<String> = args
@@ -539,17 +539,17 @@ pub fn register_ops() {
             },
         ),
         crate::ops::OpDef::new(
-            "place_pieces",
-            "Spawn pieces into the world at a point, turned by a yaw",
-            "{pieces: [piece], x: f64, y: f64, z: f64, turn?: f64, limit?: u64}",
+            "place_parts",
+            "Spawn parts into the world at a point, turned by a yaw",
+            "{parts: [part], x: f64, y: f64, z: f64, turn?: f64, limit?: u64}",
             |args| {
                 let raw = args
-                    .get("pieces")
+                    .get("parts")
                     .and_then(|v| v.as_array())
-                    .ok_or("need {pieces: [piece]}")?;
-                let pieces: Vec<PieceDef> = raw.iter().filter_map(piece_from_json).collect();
-                if pieces.is_empty() {
-                    return Err("no usable pieces".into());
+                    .ok_or("need {parts: [part]}")?;
+                let parts: Vec<PartDef> = raw.iter().filter_map(part_from_json).collect();
+                if parts.is_empty() {
+                    return Err("no usable parts".into());
                 }
                 let at = (
                     crate::args::arg_f64(args, "x")?,
@@ -566,7 +566,7 @@ pub fn register_ops() {
                             .ok_or("no level loaded, so nowhere to place anything")?;
                         // SAFETY: ctx is a live actor from the
                         // search just above, on the game thread.
-                        let out = unsafe { spawn(ctx, &pieces, at, turn, limit) };
+                        let out = unsafe { spawn(ctx, &parts, at, turn, limit) };
                         Ok(serde_json::json!({
                             "placed": out.placed,
                             "failed": out.failed,

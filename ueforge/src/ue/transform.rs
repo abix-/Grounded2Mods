@@ -129,7 +129,7 @@ pub unsafe fn world_location(actor: *const u8) -> Option<(f64, f64, f64)> {
 /// A static mesh's name and the HALF-size of its own geometry.
 ///
 /// Read off the asset, not the actor, so it is the mesh's
-/// intrinsic size before any scaling. That is what lets a piece
+/// intrinsic size before any scaling. That is what lets a part
 /// be classified by shape.
 ///
 /// # Safety
@@ -170,9 +170,9 @@ pub unsafe fn static_mesh(actor: *const u8) -> Option<(String, f64, f64, f64)> {
 
 /// Every loaded static mesh, by name.
 ///
-/// Built in one pass. A caller placing many pieces resolves each
+/// Built in one pass. A caller placing many parts resolves each
 /// mesh from this map instead of searching the object list per
-/// piece.
+/// part.
 ///
 /// Only meshes currently IN MEMORY appear. What a game ships is a
 /// larger set, and comes from the asset registry

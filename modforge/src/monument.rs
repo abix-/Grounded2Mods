@@ -20,7 +20,7 @@ use glam::Vec3;
 use crate::structure::{
     Aabb, Gate, LightDef, LootSpot, MonumentDef, MonumentMember, NpcSpot, Opening, Rgb,
     RoomDef, SLAB, STEP_DEPTH, STEP_RISE_MAX, Side, SolidDef, StairDef, StructureDef,
-    PieceDef, room_interior_aabb, validate,
+    PartDef, room_interior_aabb, validate,
 };
 use crate::unknown::rng;
 
@@ -112,7 +112,7 @@ pub struct BuildingTypeDef {
     pub height: (f32, f32),
     /// Chance per exterior wall of a window, per mille.
     pub windows: u64,
-    /// Chance per room of a piece of furniture, per mille.
+    /// Chance per room of a part of furniture, per mille.
     pub clutter: u64,
     /// Chance per room of a light, per mille. The first room of a
     /// building is always lit.
@@ -124,7 +124,7 @@ pub struct BuildingTypeDef {
     /// so footprints come out as L and step shapes, not boxes.
     pub carve: u64,
     /// Wall and floor colours are drawn from here per building;
-    /// furniture per piece.
+    /// furniture per part.
     pub palette: Vec<Rgb>,
 }
 
@@ -337,8 +337,8 @@ pub fn generate_building(def: &BuildingTypeDef, roll: &mut Roll) -> StructureDef
                     // missing with damage.
                     ceiling: top && !roll.chance(p.damage),
                 });
-                let pieces = roll.between(0, 2) as usize + usize::from(roll.chance(p.clutter));
-                for _ in 0..pieces.min(3) {
+                let parts = roll.between(0, 2) as usize + usize::from(roll.chance(p.clutter));
+                for _ in 0..parts.min(3) {
                     let size = Vec3::new(
                         roll.measure(0.5, 1.6),
                         roll.measure(0.3, 1.2),
@@ -467,7 +467,7 @@ pub fn generate_building(def: &BuildingTypeDef, roll: &mut Roll) -> StructureDef
         stairs,
         furniture,
         lights,
-        pieces: Vec::new(),
+        parts: Vec::new(),
     };
     if let Err(e) = validate(&out) {
         debug_assert!(false, "generated buildings are legal: {e}");
@@ -511,8 +511,8 @@ fn window(side: Side, offset: f32) -> Opening {
 }
 
 /// The ground footprint of a structure: every room interior plus
-/// its walls, and every captured piece, flattened to the ground.
-/// A captured structure has no rooms to measure, so its pieces
+/// its walls, and every captured part, flattened to the ground.
+/// A captured structure has no rooms to measure, so its parts
 /// carry the extent instead.
 pub fn footprint(def: &StructureDef) -> Aabb {
     let mut min = Vec3::splat(f32::INFINITY);
@@ -523,11 +523,11 @@ pub fn footprint(def: &StructureDef) -> Aabb {
         min = min.min(a.min - t);
         max = max.max(a.max + t);
     }
-    for piece in &def.pieces {
-        min = min.min(piece.offset);
-        max = max.max(piece.offset);
+    for part in &def.parts {
+        min = min.min(part.offset);
+        max = max.max(part.offset);
     }
-    if def.rooms.is_empty() && def.pieces.is_empty() {
+    if def.rooms.is_empty() && def.parts.is_empty() {
         return Aabb {
             min: Vec3::ZERO,
             max: Vec3::ZERO,
@@ -814,19 +814,19 @@ fn gate_wall(back: &RoomDef) -> Option<Vec3> {
     }
 }
 
-/// A laid-out monument: which rule was used, and every piece of
+/// A laid-out monument: which rule was used, and every part of
 /// every building already shifted to where it belongs.
 ///
-/// One flat list, because a consumer places pieces, not
+/// One flat list, because a consumer places parts, not
 /// buildings. Offsets are relative to the monument's own middle,
 /// so the whole thing can be put down anywhere.
 #[derive(Clone, Debug)]
 pub struct BuiltMonument {
     pub arrangement: Arrangement,
-    pub pieces: Vec<PieceDef>,
+    pub parts: Vec<PartDef>,
 }
 
-/// Lay out buildings into one piece list, choosing the
+/// Lay out buildings into one part list, choosing the
 /// arrangement from where the monument stands.
 ///
 /// The same spot always produces the same layout and a different
@@ -847,12 +847,12 @@ pub fn build_at(buildings: Vec<StructureDef>, x: f64, z: f64) -> BuiltMonument {
     ]);
     let members = arrange(buildings, arrangement, &mut roll);
 
-    // Flatten: every building's pieces shifted by where the
+    // Flatten: every building's parts shifted by where the
     // arrangement put that building.
-    let mut pieces = Vec::new();
+    let mut parts = Vec::new();
     for m in &members {
-        for p in &m.structure.pieces {
-            pieces.push(PieceDef {
+        for p in &m.structure.parts {
+            parts.push(PartDef {
                 offset: p.offset + m.offset,
                 ..p.clone()
             });
@@ -860,7 +860,7 @@ pub fn build_at(buildings: Vec<StructureDef>, x: f64, z: f64) -> BuiltMonument {
     }
     BuiltMonument {
         arrangement,
-        pieces,
+        parts,
     }
 }
 
@@ -976,9 +976,9 @@ pub fn validate_monument(def: &MonumentDef) -> Result<(), String> {
 mod tests {
     use super::*;
 
-    /// A structure made only of loose pieces, as a captured one
+    /// A structure made only of loose parts, as a captured one
     /// is: no rooms, no stairs, just parts at offsets.
-    fn pieced(name: &str, n: usize) -> StructureDef {
+    fn partd(name: &str, n: usize) -> StructureDef {
         StructureDef {
             name: name.into(),
             wall_color: [0.5, 0.5, 0.5],
@@ -987,8 +987,8 @@ mod tests {
             stairs: Vec::new(),
             furniture: Vec::new(),
             lights: Vec::new(),
-            pieces: (0..n)
-                .map(|i| PieceDef {
+            parts: (0..n)
+                .map(|i| PartDef {
                     class: "part".into(),
                     asset: None,
                     offset: Vec3::new(i as f32, 0.0, 0.0),
@@ -1006,23 +1006,23 @@ mod tests {
     /// nothing is stored to make that true.
     #[test]
     fn the_same_spot_builds_the_same_monument() {
-        let a = build_at(vec![pieced("a", 3), pieced("b", 4)], 1200.0, -800.0);
-        let b = build_at(vec![pieced("a", 3), pieced("b", 4)], 1200.0, -800.0);
+        let a = build_at(vec![partd("a", 3), partd("b", 4)], 1200.0, -800.0);
+        let b = build_at(vec![partd("a", 3), partd("b", 4)], 1200.0, -800.0);
         assert_eq!(a.arrangement, b.arrangement);
-        assert_eq!(a.pieces.len(), b.pieces.len());
-        for (p, q) in a.pieces.iter().zip(b.pieces.iter()) {
+        assert_eq!(a.parts.len(), b.parts.len());
+        for (p, q) in a.parts.iter().zip(b.parts.iter()) {
             assert_eq!(p.offset, q.offset);
         }
     }
 
     #[test]
     fn a_different_spot_builds_a_different_monument() {
-        let a = build_at(vec![pieced("a", 3), pieced("b", 4)], 1200.0, -800.0);
-        let b = build_at(vec![pieced("a", 3), pieced("b", 4)], 9000.0, 4000.0);
+        let a = build_at(vec![partd("a", 3), partd("b", 4)], 1200.0, -800.0);
+        let b = build_at(vec![partd("a", 3), partd("b", 4)], 9000.0, 4000.0);
         let same = a.arrangement == b.arrangement
-            && a.pieces
+            && a.parts
                 .iter()
-                .zip(b.pieces.iter())
+                .zip(b.parts.iter())
                 .all(|(p, q)| p.offset == q.offset);
         assert!(!same, "two distant places produced the same layout");
     }
@@ -1038,9 +1038,9 @@ mod tests {
     }
 
     #[test]
-    fn every_piece_of_every_building_comes_out() {
-        let built = build_at(vec![pieced("a", 3), pieced("b", 4), pieced("c", 5)], 0.0, 0.0);
-        assert_eq!(built.pieces.len(), 12);
+    fn every_part_of_every_building_comes_out() {
+        let built = build_at(vec![partd("a", 3), partd("b", 4), partd("c", 5)], 0.0, 0.0);
+        assert_eq!(built.parts.len(), 12);
     }
 
     /// Buildings are moved apart by the arrangement, so they
@@ -1051,15 +1051,15 @@ mod tests {
     /// buildings under that rule differ in z and not in x.
     #[test]
     fn buildings_are_spread_not_stacked() {
-        let built = build_at(vec![pieced("a", 2), pieced("b", 2)], 0.0, 0.0);
-        let span = |f: fn(&PieceDef) -> f32| {
-            let v: Vec<f32> = built.pieces.iter().map(f).collect();
+        let built = build_at(vec![partd("a", 2), partd("b", 2)], 0.0, 0.0);
+        let span = |f: fn(&PartDef) -> f32| {
+            let v: Vec<f32> = built.parts.iter().map(f).collect();
             v.iter().cloned().fold(f32::MIN, f32::max) - v.iter().cloned().fold(f32::MAX, f32::min)
         };
         let ground = span(|p| p.offset.x).max(span(|p| p.offset.z));
         assert!(
             ground > 1.0,
-            "{:?} spread the pieces only {ground} across the ground",
+            "{:?} spread the parts only {ground} across the ground",
             built.arrangement
         );
     }
@@ -1067,7 +1067,7 @@ mod tests {
     #[test]
     fn nothing_in_builds_nothing_out() {
         let built = build_at(Vec::new(), 0.0, 0.0);
-        assert!(built.pieces.is_empty());
+        assert!(built.parts.is_empty());
     }
 
     fn building(

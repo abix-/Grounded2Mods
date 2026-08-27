@@ -55,6 +55,14 @@ const IMPLAUSIBLE_ASSET_COUNT: i32 = 500_000;
 /// of assets, and for a blocking asset load.
 const ENGINE_TIMEOUT: Duration = Duration::from_secs(20);
 
+/// The parts list is the one op that loads every mesh the game
+/// ships, one blocking load at a time, because a pivot only
+/// exists on a loaded mesh. Two thousand of those do not fit in
+/// [`ENGINE_TIMEOUT`], and the game is stopped for the whole
+/// pass, which is expected and is why this is asked for by hand
+/// rather than run on a timer.
+const PARTS_LIST_TIMEOUT: Duration = Duration::from_secs(600);
+
 /// An FName as the engine stores it: comparison index then
 /// number, read as one u64.
 fn fname_at(base: *const u8, offset: usize) -> u64 {
@@ -343,6 +351,17 @@ pub fn parse_approx_size(text: &str) -> Option<(f64, f64, f64)> {
     }
 }
 
+/// Unreal's axes and centimetres to this crate's: metres, y up.
+/// `mf(x, y, z) = ue(y, z, x) / 100`, the same permutation
+/// `ue::parts` uses.
+fn ue_to_mf(v: (f64, f64, f64)) -> glam::Vec3 {
+    glam::Vec3::new(
+        (v.1 / CM_PER_M) as f32,
+        (v.2 / CM_PER_M) as f32,
+        (v.0 / CM_PER_M) as f32,
+    )
+}
+
 /// One entry in the parts list: what a mesh is, without loading
 /// it.
 pub struct Part {
@@ -350,7 +369,16 @@ pub struct Part {
     pub package: String,
     /// Half-size in this crate's convention: metres, y up.
     pub extent: glam::Vec3,
-    pub shape: modforge::structure::PieceShape,
+    /// Where the bounding box's centre sits relative to the
+    /// mesh's PIVOT, metres, y up. The part's faces run from
+    /// `pivot - extent` to `pivot + extent`, which is what
+    /// deciding whether two placed parts touch needs.
+    ///
+    /// `None` when the mesh was not in memory. The registry tags
+    /// carry a size and no pivot, so only a loaded mesh can
+    /// answer this.
+    pub pivot: Option<glam::Vec3>,
+    pub shape: modforge::structure::PartShape,
     pub triangles: Option<u32>,
     pub vertices: Option<u32>,
     pub materials: Option<u32>,
@@ -363,7 +391,7 @@ pub struct Part {
 /// The size comes from `ApproxSize`, which is approximate and
 /// rounded to whole units. That is enough to tell a 4 m wall from
 /// a 2 m one, which is what a parts list is for; anything needing
-/// exact bounds loads that one mesh (pieces.md).
+/// exact bounds loads that one mesh (parts.md).
 ///
 /// Game thread only.
 pub fn parts_list(class_name: &str) -> Result<Vec<Part>, String> {
@@ -385,15 +413,11 @@ pub fn parts_list(class_name: &str) -> Result<Vec<Part>, String> {
         let num = |key: &str| -> Option<u32> { get(key).and_then(|v| v.parse().ok()) };
 
         // Unreal's axes and centimetres to this crate's: metres,
-        // y up, and HALF the size because `PieceDef::extent` is a
+        // y up, and HALF the size because `PartDef::extent` is a
         // half-extent. The permutation is the same one
-        // `ue::pieces` uses (mf x,y,z = ue y,z,x).
+        // `ue::parts` uses (mf x,y,z = ue y,z,x).
         let extent = match get(APPROX_SIZE).as_deref().and_then(parse_approx_size) {
-            Some((ux, uy, uz)) => glam::Vec3::new(
-                (uy / 2.0 / CM_PER_M) as f32,
-                (uz / 2.0 / CM_PER_M) as f32,
-                (ux / 2.0 / CM_PER_M) as f32,
-            ),
+            Some(size) => ue_to_mf(size) / 2.0,
             None => glam::Vec3::ZERO,
         };
         let package = entries
@@ -405,6 +429,7 @@ pub fn parts_list(class_name: &str) -> Result<Vec<Part>, String> {
             name,
             package,
             extent,
+            pivot: None,
             shape: modforge::structure::classify(extent),
             triangles: num("Triangles"),
             vertices: num("Vertices"),
@@ -412,10 +437,34 @@ pub fn parts_list(class_name: &str) -> Result<Vec<Part>, String> {
             lods: num("LODs"),
         });
     }
+
+    // The pivot lives on the loaded mesh, so every pivot means a
+    // load. ONE way of getting one: `LoadAsset_Blocking` hands
+    // back a mesh that is already in memory without reloading it,
+    // so asking it for all of them covers both cases and there is
+    // no second path to disagree with the first.
+    //
+    // This is the expensive half: a blocking load per mesh, on
+    // the game thread, where the registry pass before it loaded
+    // nothing at all. The game stops for the whole pass, which is
+    // why the op that calls this has a timeout of its own.
+    for part in out.iter_mut() {
+        let Some(entry) = entries.iter().find(|a| a.name == part.name) else {
+            continue;
+        };
+        let addr = load_asset(entry.package_fname, entry.name_fname)?;
+        if addr == 0 {
+            continue;
+        }
+        // SAFETY: the entry is a StaticMesh asset, so what
+        // LoadAsset_Blocking returned is a live UStaticMesh.
+        let (origin, _) = unsafe { crate::ue::transform::mesh_bounds(addr as *const u8) };
+        part.pivot = Some(ue_to_mf(origin));
+    }
     Ok(out)
 }
 
-/// Centimetres per metre, as `ue::pieces` uses it.
+/// Centimetres per metre, as `ue::parts` uses it.
 const CM_PER_M: f64 = 100.0;
 
 /// Pull an asset into memory by its package and asset FNames, so
@@ -458,7 +507,7 @@ pub fn register_ops() {
         ),
         crate::ops::OpDef::new(
             "parts_list",
-            "Every mesh the game ships as a part: size, shape and counts, read from the cooked registry tags with nothing loaded. Writes it to disk when given a path",
+            "Every mesh the game ships as a part: size, shape, pivot and counts. Sizes come from the registry, but a pivot only exists on a loaded mesh, so this loads every one of them and the game stops until it finishes. Writes it to disk when given a path",
             "{class?: str, path?: str}",
             |args| {
                 let class = args
@@ -478,6 +527,10 @@ pub fn register_ops() {
                                     "package": p.package,
                                     // Half-size, metres, y up.
                                     "extent": [p.extent.x, p.extent.y, p.extent.z],
+                                    // Box centre from the pivot,
+                                    // metres, y up. Null when the
+                                    // mesh was not loaded.
+                                    "pivot": p.pivot.map(|v| vec![v.x, v.y, v.z]),
                                     "shape": format!("{:?}", p.shape),
                                     "triangles": p.triangles,
                                     "vertices": p.vertices,
@@ -489,8 +542,14 @@ pub fn register_ops() {
                         let doc = serde_json::json!({
                             "class": class,
                             "count": rows.len(),
-                            "units": "half-extent in metres, y up",
-                            "source": "ApproxSize registry tag; nothing loaded",
+                            "units": "half-extent and pivot in metres, y up",
+                            "source": "size from the ApproxSize registry tag with nothing loaded; pivot from ExtendedBounds on the meshes that were already in memory",
+                            // Said out loud, because a null pivot
+                            // is the difference between a part
+                            // that can be placed against another
+                            // and one that cannot.
+                            "with_pivot": parts.iter().filter(|p| p.pivot.is_some()).count(),
+                            "no_pivot": parts.iter().filter(|p| p.pivot.is_none()).count(),
                             "parts": rows,
                         });
                         // Written where the caller asks, because
@@ -509,13 +568,15 @@ pub fn register_ops() {
                         Ok(serde_json::json!({
                             "class": doc["class"],
                             "count": doc["count"],
+                            "with_pivot": doc["with_pivot"],
+                            "no_pivot": doc["no_pivot"],
                             "written_to": written,
                             // The whole list only comes back when
                             // it is not being written; it is large.
                             "parts": if written.is_some() { serde_json::Value::Null } else { doc["parts"].clone() },
                         }))
                     },
-                    ENGINE_TIMEOUT,
+                    PARTS_LIST_TIMEOUT,
                 )
             },
         ),

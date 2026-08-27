@@ -1,4 +1,4 @@
-//! The game's own asset index: every piece it ships, loaded or
+//! The game's own asset index: every part it ships, loaded or
 //! not, and pulling an unloaded one into memory (src/assets.rs).
 //!
 //! Walking GObjects only sees what is in memory, which varies by
@@ -47,7 +47,7 @@ fn every_wall_in_the_game() {
     );
     assert!(r.ok, "asset_inventory failed: {:?}", r.error);
     let assets = r.result["assets"].as_array().cloned().unwrap_or_default();
-    println!("{} wall piece(s) in the game:", assets.len());
+    println!("{} wall part(s) in the game:", assets.len());
     let mut names: Vec<&str> = assets
         .iter()
         .filter_map(|a| a["name"].as_str())
@@ -58,12 +58,12 @@ fn every_wall_in_the_game() {
     }
 }
 
-/// Pull a piece into memory that is not currently loaded, which
-/// is what lets generation use ANY piece rather than only what
+/// Pull a part into memory that is not currently loaded, which
+/// is what lets generation use ANY part rather than only what
 /// the current area happens to have.
 #[test]
 #[ignore = "loads assets into the live game"]
-fn load_an_unloaded_piece() {
+fn load_an_unloaded_part() {
     let Some(api) = api_or_skip() else { return };
     if !offsets_live(&api) {
         println!("SKIP: offsets not live");
@@ -78,7 +78,7 @@ fn load_an_unloaded_piece() {
         .iter()
         .filter_map(|m| m["name"].as_str().map(str::to_string))
         .collect();
-    println!("{} wall piece(s) loaded now", loaded_names.len());
+    println!("{} wall part(s) loaded now", loaded_names.len());
 
     // What does the game have that is NOT loaded?
     let all = api.op(
@@ -129,7 +129,7 @@ fn load_an_unloaded_piece() {
 /// in the dump we have. The rest should hold `TagsAndValues`, the
 /// searchable metadata Unreal cooks in. If a static mesh's bounds
 /// are in there, the parts list needs no loading at all: 1,500
-/// blocking loads become one registry query (pieces.md).
+/// blocking loads become one registry query (parts.md).
 ///
 /// Read-only.
 #[test]
@@ -189,7 +189,7 @@ fn does_the_registry_expose_a_tag_getter() {
 /// value was cooked in per mesh is a different question, and it
 /// is the one that decides the parts list: if the size is here,
 /// it is one registry pass with no loading; if not, 1,500 meshes
-/// have to be loaded and measured (pieces.md).
+/// have to be loaded and measured (parts.md).
 ///
 /// Read-only, and it loads nothing.
 #[test]
@@ -219,15 +219,18 @@ fn do_the_cooked_tags_carry_size() {
 {with_size} of {} assets carry a size tag", assets.len());
 }
 
-/// THE PARTS LIST. Every mesh the game ships, with a size and a
-/// shape, written to a file the operator can open.
+/// THE PARTS LIST. Every mesh the game ships, with a size, a
+/// shape and a pivot, written to a file the operator can open.
 ///
-/// Nothing is loaded: the size comes from the cooked `ApproxSize`
-/// tag (pieces.md). Writes next to the mod's own log so it sits
-/// with the rest of the mod's output.
+/// The size comes from the cooked `ApproxSize` tag and loads
+/// nothing. The PIVOT only exists on a loaded mesh, so this pulls
+/// every mesh into memory and the game stops until it is done.
+/// That is why the request waits far longer than the five seconds
+/// the client allows by default.
 #[test]
 fn write_the_parts_list() {
     let Some(api) = api_or_skip() else { return };
+    let api = api.with_timeout(std::time::Duration::from_secs(900));
     let path = "C:/Games/Steam/steamapps/common/MISERY/MISERY/Binaries/Win64/ue4ss/Mods/MiseryMod/dlls/parts.json";
     let r = api.op(
         "parts_list",
@@ -237,4 +240,10 @@ fn write_the_parts_list() {
     println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
     let count = r.result["count"].as_u64().unwrap_or(0);
     assert!(count > 2000, "expected every shipped mesh, got {count}");
+    // A part with no pivot cannot be placed against another one,
+    // so the count that matters is how many got one.
+    let with_pivot = r.result["with_pivot"].as_u64().unwrap_or(0);
+    let no_pivot = r.result["no_pivot"].as_u64().unwrap_or(0);
+    println!("pivots: {with_pivot} of {count}, {no_pivot} without");
+    assert!(with_pivot > 0, "no mesh gave up a pivot");
 }

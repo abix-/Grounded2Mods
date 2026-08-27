@@ -1,19 +1,19 @@
-//! Where do two pieces MEET?
+//! Where do two parts MEET?
 //!
 //! Those contact points are the studs. Not the mesh's bounding
 //! box, which lies: `SM_Floor_400x400` measures 5.18 by 5.73 m
 //! because it has a lip, and measuring the mesh more precisely
-//! does not help, because the lip is really there (pieces.md).
+//! does not help, because the lip is really there (parts.md).
 //! Not the mesh's name either, which we do not trust.
 //!
 //! What we trust is where the designers put things. If a wall
 //! always sits 400 cm along from the next wall, that offset is a
 //! stud. If a wall always sits 200 cm out and 150 cm up from a
 //! floor tile, that is another one. The offsets that RECUR
-//! between a pair of meshes are the ways those two pieces are
+//! between a pair of meshes are the ways those two parts are
 //! allowed to join.
 //!
-//! So this measures, for every pair of placed pieces near enough
+//! So this measures, for every pair of placed parts near enough
 //! to touch, the offset from one to the other and their relative
 //! facing. Then it counts. The common ones are the instruction
 //! booklet.
@@ -29,10 +29,10 @@ use common::api_or_skip;
 use serde_json::json;
 use std::collections::HashMap;
 
-/// Two pieces further apart than this are not touching, and the
+/// Two parts further apart than this are not touching, and the
 /// offset between them says nothing about how they join. Metres,
 /// and generous: the biggest kit part is 4 m, so 9 m still
-/// catches a large piece meeting a large piece corner to corner.
+/// catches a large part meeting a large part corner to corner.
 const TOUCHING: f64 = 9.0;
 
 /// Offsets are rounded to this before counting, so a hand-nudged
@@ -48,25 +48,25 @@ const MIN_SIGHTINGS: usize = 4;
 /// One way two meshes are seen to join.
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct Join {
-    /// The piece being joined FROM.
+    /// The part being joined FROM.
     from: String,
-    /// The piece being joined TO.
+    /// The part being joined TO.
     to: String,
     /// Offset from one origin to the other, centimetres, rounded.
     /// In this crate's convention: metres, y up, so y is height.
     dx: i64,
     dy: i64,
     dz: i64,
-    /// How much the second piece is turned relative to the first,
+    /// How much the second part is turned relative to the first,
     /// degrees, rounded to the nearest 15. A stud is as much about
     /// facing as position: a wall meeting a wall end-on is a
     /// different join from the same wall turned across it.
     turn: i64,
 }
 
-/// Every way the designers join two pieces, counted.
+/// Every way the designers join two parts, counted.
 #[test]
-fn where_two_pieces_meet() {
+fn where_two_parts_meet() {
     let Some(api) = api_or_skip() else { return };
     let squares = loaded_squares(&api);
     if squares.is_empty() {
@@ -79,27 +79,27 @@ fn where_two_pieces_meet() {
     let mut read = 0usize;
 
     for square in squares.iter().take(4) {
-        let r = api.op("level_pieces", json!({ "level": square }));
+        let r = api.op("level_parts", json!({ "level": square }));
         if !r.ok {
             println!("  {}: {:?}", short(square), r.error);
             continue;
         }
-        let pieces: Vec<Placed> = r.result["pieces"]
+        let parts: Vec<Placed> = r.result["parts"]
             .as_array()
             .cloned()
             .unwrap_or_default()
             .iter()
             .filter_map(placed)
             .collect();
-        println!("  {} placed pieces in {}", pieces.len(), short(square));
-        read += pieces.len();
+        println!("  {} placed parts in {}", parts.len(), short(square));
+        read += parts.len();
 
         // Every ordered pair close enough to be touching. Ordered,
         // because "a wall 2 m from a floor" and "a floor 2 m from
         // a wall" are the same join seen from each end, and we
-        // want both so either piece can be the one already placed.
-        for a in &pieces {
-            for b in &pieces {
+        // want both so either part can be the one already placed.
+        for a in &parts {
+            for b in &parts {
                 if std::ptr::eq(a, b) {
                     continue;
                 }
@@ -130,7 +130,7 @@ fn where_two_pieces_meet() {
     rows.sort_by(|a, b| b.1.cmp(a.1));
 
     println!(
-        "\n{read} placed pieces, {} distinct joins, {} seen {MIN_SIGHTINGS}+ times\n",
+        "\n{read} placed parts, {} distinct joins, {} seen {MIN_SIGHTINGS}+ times\n",
         joins.len(),
         rows.len()
     );
@@ -159,11 +159,11 @@ fn where_two_pieces_meet() {
 
 /// The same joins, but only between two DIFFERENT meshes.
 ///
-/// A piece next to another of its own kind gives the grid pitch.
-/// A piece next to a different kind is the more interesting half:
+/// A part next to another of its own kind gives the grid pitch.
+/// A part next to a different kind is the more interesting half:
 /// it says a wall may sit on a floor, and exactly where.
 #[test]
-fn where_two_different_pieces_meet() {
+fn where_two_different_parts_meet() {
     let Some(api) = api_or_skip() else { return };
     let squares = loaded_squares(&api);
     if squares.is_empty() {
@@ -173,19 +173,19 @@ fn where_two_different_pieces_meet() {
 
     let mut joins: HashMap<Join, usize> = HashMap::new();
     for square in squares.iter().take(4) {
-        let r = api.op("level_pieces", json!({ "level": square }));
+        let r = api.op("level_parts", json!({ "level": square }));
         if !r.ok {
             continue;
         }
-        let pieces: Vec<Placed> = r.result["pieces"]
+        let parts: Vec<Placed> = r.result["parts"]
             .as_array()
             .cloned()
             .unwrap_or_default()
             .iter()
             .filter_map(placed)
             .collect();
-        for a in &pieces {
-            for b in &pieces {
+        for a in &parts {
+            for b in &parts {
                 if a.mesh == b.mesh {
                     continue;
                 }
@@ -243,13 +243,13 @@ fn what_one_square_holds() {
         println!("no map squares loaded; load a save");
         return;
     };
-    let r = api.op("level_pieces", json!({ "level": square }));
-    assert!(r.ok, "level_pieces failed: {:?}", r.error);
-    let pieces = r.result["pieces"].as_array().cloned().unwrap_or_default();
-    println!("{} pieces in {}\n", pieces.len(), short(&square));
+    let r = api.op("level_parts", json!({ "level": square }));
+    assert!(r.ok, "level_parts failed: {:?}", r.error);
+    let parts = r.result["parts"].as_array().cloned().unwrap_or_default();
+    println!("{} parts in {}\n", parts.len(), short(&square));
 
     let mut by_mesh: HashMap<String, usize> = HashMap::new();
-    for p in &pieces {
+    for p in &parts {
         *by_mesh
             .entry(p["asset"].as_str().unwrap_or("<none>").to_string())
             .or_default() += 1;
@@ -261,7 +261,7 @@ fn what_one_square_holds() {
     }
 
     println!("\nfirst few, with position and facing:");
-    for p in pieces.iter().take(6) {
+    for p in parts.iter().take(6) {
         println!(
             "  {:<34} at {:?} yaw {}",
             p["asset"].as_str().unwrap_or("<none>"),
@@ -271,7 +271,7 @@ fn what_one_square_holds() {
     }
 }
 
-/// One placed piece: what it is, where it is, which way it faces.
+/// One placed part: what it is, where it is, which way it faces.
 struct Placed {
     mesh: String,
     x: f64,
@@ -398,7 +398,7 @@ fn derive_the_studs() {
         .collect();
 
     let studs = modforge::studs::derive(&joins, modforge::studs::Derive::default());
-    println!("{} pieces have studs
+    println!("{} parts have studs
 ", studs.len());
 
     let mut names: Vec<&String> = studs.keys().collect();
@@ -417,5 +417,5 @@ fn derive_the_studs() {
         }
         println!();
     }
-    assert!(!studs.is_empty(), "no piece got a stud");
+    assert!(!studs.is_empty(), "no part got a stud");
 }

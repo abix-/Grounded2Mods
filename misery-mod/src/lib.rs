@@ -137,13 +137,13 @@ fn on_unreal_init() {
         // `modforge::storyteller::Phenomenon`, reacting to a new
         // square is `ue::streaming::NewLevels`, and putting a
         // rolled plan into the world is `ue::phenomena::place`.
-        // Reading a level as pieces, measuring meshes and placing
-        // pieces are all engine work, so they live in
-        // `ueforge::ue::pieces` and register from there:
-        // level_pieces, level_classes, mesh_info, place_pieces.
+        // Reading a level as parts, measuring meshes and placing
+        // parts are all engine work, so they live in
+        // `ueforge::ue::parts` and register from there:
+        // level_parts, level_classes, mesh_info, place_parts.
         // misery's harvest.rs is deleted; nothing of it was
         // game-specific.
-        .once("pieces", ueforge::ue::pieces::register_ops)
+        .once("parts", ueforge::ue::parts::register_ops)
         .once("assets", ueforge::assets::register_ops)
         .once("nag", nag::install)
         // Auto-load calls LoadLevel on BP_SingleplayerNewGameMenu,

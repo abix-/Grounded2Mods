@@ -2846,7 +2846,7 @@ CollisionPrims yes    NaniteEnabled yes   BoundsExtent no
 **`ApproxSize` and `Bounds` both exist**, which are the two that
 would carry a mesh's dimensions. So `GetTagValue` can now be
 asked for them, and the parts list may not need to load 1,500
-meshes after all. See pieces.md.
+meshes after all. See parts.md.
 
 ## 29. Reading a live actor can fault (2026-08-27)
 
@@ -2857,7 +2857,7 @@ takes the whole process down:
 
 ```text
 EXCEPTION_ACCESS_VIOLATION reading address 0x0000008000000018
-  ueforge::ue::pieces::read_level (+0x1e0)
+  ueforge::ue::parts::read_level (+0x1e0)
 ```
 
 **The clue was in the output before the crash.** Actors were

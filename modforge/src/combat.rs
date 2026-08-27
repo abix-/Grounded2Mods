@@ -100,7 +100,7 @@ impl DamageRegistry {
     }
 }
 
-/// Health for any combatant: player, NPCs, and building pieces.
+/// Health for any combatant: player, NPCs, and building parts.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Health {
     pub current: f32,

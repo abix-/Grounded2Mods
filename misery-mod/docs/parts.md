@@ -1,13 +1,13 @@
-# MISERY building pieces
+# MISERY building parts
 
-> **Authoritative on:** the goal, and every piece the game can
-> build with: what it measures and where its position marker
-> sits. `worldgen.md` covers how areas and squares are generated;
+> **Authoritative on:** the goal, and every part the game can
+> build with: what it measures and where its pivot sits.
+> `worldgen.md` covers how areas and squares are generated;
 > this file is the plan and the parts list.
 
 ## The goal: super configurable Lego
 
-An area in MISERY is made of pieces. We want the mod to discover
+An area in MISERY is made of parts. We want the mod to discover
 every one of them, understand how they can attach, learn how the
 game's own designers put them together, and then build new things
 the same way.
@@ -16,15 +16,15 @@ A real Lego system has three parts, and so does this. In order,
 because each one needs the one before it.
 
 **1. The parts list.** Every mesh the game ships, measured: its
-size, where its position marker sits, and what it is. The game's
+size, where its pivot sits, and what it is. The game's
 own asset registry is the source, and it reports 2,398 static
-meshes while a memory walk sees about a third of them. A piece
+meshes while a memory walk sees about a third of them. A part
 whose size is unknown cannot be attached to anything, so nothing
 downstream works until this is complete.
 
 **It is written to disk, and it is a file to READ**, not just a
 cache. Every asset with its package, class, registry tags,
-measured size, marker offset and role, openable without the game
+measured size, pivot offset and role, openable without the game
 running.
 
 Keyed on the ASSET NAME SET, not the game binary. The meshes live
@@ -134,10 +134,11 @@ SM_Derbis_B                ApproxSize 7x8x7                Tris 40    Verts 66
 SM_mountain_background_02  ApproxSize 200000x200000x45159  Tris 9829  Verts 4920 LODs 2
 ```
 
-**So the parts list is ONE REGISTRY PASS, not 1,500 blocking
-loads.** Every mesh's size comes back as a `WxDxH` string, with
-triangle and vertex counts, materials and LODs alongside, for
-free and without touching the game thread for long.
+**So every SIZE is one registry pass, not 1,500 blocking loads.**
+Every mesh's size comes back as a `WxDxH` string, with triangle
+and vertex counts, materials and LODs alongside, for free and
+without touching the game thread for long. The pivots do cost a
+load each, which turned out to be cheap; that is further down.
 
 Two things to carry forward:
 
@@ -158,7 +159,7 @@ they are:
 
 | Step | State |
 |---|---|
-| the parts list | DONE. 2,407 meshes on disk with size and shape. No studs, no marker offset. |
+| the parts list | DONE. 2,407 meshes on disk with size, shape and pivot, every one of them. No studs yet. |
 | deriving studs from joins | BUILT and unit-tested. Never yet run on real sightings. |
 | the sweep between them | BUILT and WRONG. Unfiltered and uncapped; its only real output was a 900 MB file. |
 | the 350 cm wall-to-floor stud | MEASURED, but by a test-local pairing loop, NOT by the shipped sweep. The two have never agreed on anything. |
@@ -169,8 +170,7 @@ anything is built on top of it.
 
 ### The parts list exists (2026-08-27)
 
-`parts_list` writes every shipped mesh to a file, with nothing
-loaded. Live:
+`parts_list` writes every shipped mesh to a file. Live:
 
 ```text
 count 2407, half-extent in metres, y up
@@ -180,6 +180,44 @@ no size: 0
 
 Every one of 2,407 meshes has a size, and the whole pass takes
 under a second.
+
+### And every one has its pivot (2026-08-27)
+
+```text
+count 2407, with_pivot 2407, no_pivot 0, in 2.41s
+```
+
+The size comes from the registry tag and loads nothing, but a
+pivot only exists on a LOADED mesh: it is
+`UStaticMesh::ExtendedBounds.Origin`, the middle of the geometry
+measured from the point the game places the part at. So the pass
+asks `LoadAsset_Blocking` for every mesh in turn.
+
+**One way of getting it, not two.** `LoadAsset_Blocking` hands
+back a mesh that is already in memory without reloading it, so
+asking it for all of them covers both cases, and there is no
+second path that could disagree with the first. All 2,407 in 2.41
+seconds, which is far less than a blocking load per mesh sounds
+like it should cost.
+
+The numbers agree with the tables at the bottom of this file,
+which were measured months earlier through the loaded-mesh probe:
+
+```text
+SM_Wall_100x100   pivot [0, 0.5, 0.5]      table 50, 0, 50
+SM_Floor_400x400  pivot [2.0, -0.09, 2.0]  table 200, 200, -9
+SM_Pillar         pivot [0, 1.65, 0]       table 0, 0, 165
+```
+
+(the table is centimetres on Unreal's axes, the file is metres
+y up, so they are the same numbers through `mf(x,y,z) =
+ue(y,z,x)/100`.)
+
+**And it already shows why a size alone is not enough.**
+`SM_Floor_400x400` has a half-extent of 2.59 m and a pivot at
+exactly 2.0, so the extra 0.59 m is the lip hanging past the 4 m
+module. Placing that tile's faces from its bounding box would put
+them more than half a metre out.
 
 **The classifier agrees with the names without being told any**,
 which is the point of judging by proportion:
@@ -199,9 +237,9 @@ BOX, so a tile with a lip or a skirt reads larger than its module
 size. Fine for sorting parts; NOT the same as the module grid,
 and the studs must not be placed from the bounding box alone.
 
-Conversion, matching what `ue::pieces` already does: Unreal is
+Conversion, matching what `ue::parts` already does: Unreal is
 centimetres with z up, this crate is metres with y up, and
-`PieceDef::extent` is a HALF-extent while `ApproxSize` is a full
+`PartDef::extent` is a HALF-extent while `ApproxSize` is a full
 size. So `mf(x,y,z) = ue(y,z,x) / 2 / 100`.
 
 ### How the tag is read
@@ -221,7 +259,7 @@ reachable until `ue::fname::from_str` landed (research.md 28).
 
 **2. The studs, and they come from the VANILLA BUILDINGS.**
 
-The first plan was to derive attachment points from a piece's
+The first plan was to derive attachment points from a part's
 measured bounds. That is wrong, and the parts list proved it:
 `SM_Floor_400x400` measures 5.18 by 5.73 m because `ApproxSize`
 is a bounding box and that tile has a lip. Measuring the mesh
@@ -235,7 +273,7 @@ interlock. So the module size is the SPACING BETWEEN NEIGHBOURS,
 and the only place that exists is in real placements.
 
 **The vanilla buildings give us the attachment points.** Read a
-level's placed pieces with their transforms, and the offset
+level's placed parts with their transforms, and the offset
 between two that are touching is a join we did not have to guess.
 
 We cannot trust the names and we cannot trust the boxes. We can
@@ -243,8 +281,8 @@ trust where the designers put things.
 
 ### A join is evidence. A STUD is the model.
 
-One observed join yields TWO studs, one on each piece, each
-expressed in THAT PIECE'S OWN local frame. That is the whole
+One observed join yields TWO studs, one on each part, each
+expressed in THAT PART'S OWN local frame. That is the whole
 point, and an edge list cannot express it.
 
 Measured 2026-08-27: a wall sits 350 cm above a floor tile's
@@ -257,29 +295,28 @@ the WALL   a stud at local (0, -350, 0)   I attach to something below me
 ```
 
 (the wall's, after undoing its 90 degree turn, which is why local
-frames matter: two pieces placed at different angles are only
+frames matter: two parts placed at different angles are only
 comparable once each is read in its own.)
 
-**Then substitution works.** Any other piece with a stud at local
+**Then substitution works.** Any other part with a stud at local
 `(0, -350, 0)` can take that wall's place. Recording the join as
 "this wall meets this floor" could never tell us that; recording
-it as a stud on each piece does.
+it as a stud on each part does.
 
 So:
 
-- **`parts.json` is the model, and studs are per PIECE**, next to
-  its size and shape. To place a piece you need only its own
+- **`parts.json` is the model, and studs are per PART**, next to
+  its size and shape. To place a part you need only its own
   studs and the studs of what is already there. The pair is never
   looked up.
-- **Observations are working, not the model.** Kept so the studs
-  can be RE-DERIVED when a threshold changes, the way a build log
-  is kept rather than only the binary. Store what you SAW, derive
-  what it MEANS.
-- **Observations accumulate across sessions.** We only ever see
-  the squares that happen to be loaded, eleven at a time out of
-  hundreds. Each run merges its sightings in rather than
-  overwriting, and the count is the confidence: 231 sightings in
-  twelve squares is a rule, four in one square is a maybe.
+- **ONE FILE.** Reading a level finds parts placed touching each
+  other. Each pair becomes studs right there and goes into
+  `parts.json`. Nothing else is written. If the pairs were also
+  written to their own file there would be two files saying the
+  same thing, and sooner or later one of them is wrong.
+- **`seen` is part of the stud.** It sits in the part's own
+  entry, next to its size and shape. 231 is a rule, four is a
+  maybe.
 
 Prior art: Wave Function Collapse learns which tiles were
 observed adjacent to which in an example, then generates from
@@ -321,6 +358,7 @@ A part in `parts.json`, with the real measured numbers:
   "name": "SM_Floor_300x400",
   "package": "/Game/.../SM_Floor_300x400",
   "extent": [1.5, 0.1, 2.0],
+  "pivot": [1.5, -0.09, 2.0],
   "shape": "Slab",
   "triangles": 44, "vertices": 24, "materials": 1, "lods": 1,
 
@@ -335,16 +373,20 @@ A part in `parts.json`, with the real measured numbers:
 }
 ```
 
-- **`at`** is in the piece's OWN local frame, metres, y up: the
+- **`pivot`** is where the middle of the geometry sits relative
+  to the point the game places the part at, metres, y up. The
+  part's faces run from `pivot - extent` to `pivot + extent`,
+  which is how two placed parts are told to be touching or not.
+- **`at`** is in the part's OWN local frame, metres, y up: the
   same units and axes as `extent` directly above it. The
   measurement is in centimetres and converts on the way in,
   because two units in one file is how mistakes happen.
-- **`turn`** is how far the attached piece is turned relative to
+- **`turn`** is how far the attached part is turned relative to
   this one, degrees. Position alone is not enough: a wall laid
   across a floor and one stood along it sit at the same spot.
 - **`seen`** is the confidence, left visible rather than
   collapsed into a boolean. 231 is a rule; 4 is a maybe.
-- **`with`** is which pieces were actually seen there, counted.
+- **`with`** is which parts were actually seen there, counted.
   It answers "what does the game put here", and it is what biases
   generation toward looking like this game rather than merely
   being legal.
@@ -354,8 +396,8 @@ The document header says how far to trust the whole thing:
 ```json
 {
   "count": 2407,
-  "units": "half-extent and stud positions in metres, y up",
-  "observed": { "sightings": 50328, "squares": 11, "sessions": 3 },
+  "units": "half-extent, pivot and stud positions in metres, y up",
+  "observed": { "sightings": 50328, "squares": 11 },
   "derived_with": { "touching_m": 9.0, "round_cm": 1.0, "min_sightings": 4 }
 }
 ```
@@ -373,19 +415,19 @@ joins the game never makes.
 
 Then the rule that says when two of those points may join. Kinds
 that are allowed to meet, facings that must oppose, sizes that
-must match. Two pieces connect ONLY through a legal pair. That is
+must match. Two parts connect ONLY through a legal pair. That is
 what stops a generated building from being a pile of meshes
 sharing a coordinate.
 
 **3. The instructions.** Read the vanilla buildings back and
-record which pieces the designers actually place against which,
+record which parts the designers actually place against which,
 at what offset and facing. Two uses: it tells us what looks like
 this game rather than like a grid, and it CHECKS the rule. Every
 join the game itself makes should be a join our rule allows.
 Where the game does something the rule forbids, the rule is
 wrong, not the game.
 
-**Then assembly.** Build a structure by choosing pieces whose
+**Then assembly.** Build a structure by choosing parts whose
 points fit, biased toward the pairings the designers actually
 use.
 
@@ -420,7 +462,7 @@ loading anything: `AssetRegistryHelpers:GetAssetRegistry` then
 **2,398 static meshes in the game while only 869 were loaded**,
 so any memory walk sees roughly a third of what exists.
 
-For walls specifically the registry lists **55 pieces** where a
+For walls specifically the registry lists **55 parts** where a
 memory walk saw 12, including parts we had not seen at all:
 eight corner variants (`SM_WallRoundedCorner_100x300_45d`,
 `_100x400_90d`, `_200x300_90d`, `_200x400_90d`, `_300x300_90d`,
@@ -431,46 +473,47 @@ rectangular), `SM_WallDoorGarage_400x300`,
 `SM_WallWindowSmall_200x300`, `SM_Wall_100x301`,
 `SM_Wall_200x101`, `SM_Wall_400x300_1`, `SM_Wall_01Half02`.
 
-`KismetSystemLibrary:LoadAsset_Blocking` pulls an unloaded piece
+`KismetSystemLibrary:LoadAsset_Blocking` pulls an unloaded part
 into memory, so generation is not limited to what an area
 happens to have. Both go through the game-thread drain
 (`asset_inventory` and `load_asset` ops, `src/assets.rs`); the
 load path is not yet confirmed working.
 
 The tables below came from measuring what was loaded, so they
-carry sizes and markers. Names the registry knows but that were
+carry sizes and pivots. Names the registry knows but that were
 not loaded at measuring time have no measurements yet.
 
 Two sources, because neither alone is complete:
 
 - **The object dump** (`UE4SS_ObjectDump.txt`) lists every asset
   loaded when it was written, organised by folder. The game files
-  the building pieces under
+  the building parts under
   `/Game/Meshes/Blockout/Meshes/Architecture/` and
   `/Game/Meshes/Structures/Constructor/`, so the folder listing
   is the complete parts list.
 - **A live probe** (`mesh_info` op, `research_inventory` test)
-  measures what is loaded RIGHT NOW. Sizes and markers below come
+  measures what is loaded RIGHT NOW. Sizes and pivots below come
   from there.
 
 **Caution: what is loaded changes with the area.** A live probe
 in one world reported 887 meshes with 5 wall sizes; another world
-had 12. Never conclude a piece does not exist because a probe did
+had 12. Never conclude a part does not exist because a probe did
 not see it; check this list.
 
 All measurements are full sizes in centimetres, `width x depth x
-height`. "Marker" is where the piece's position handle sits
-relative to the middle of its geometry, which is what placement
-maths needs.
+height`. "Pivot" is where the middle of the geometry sits
+relative to the part's PIVOT, which is the point the game places
+it at. So a part's faces run from `pivot - extent` to `pivot +
+extent`, and that is what says whether two placed parts touch.
 
 ## Walls
 
 Named `<width>x<height>` in centimetres, and those numbers are
-the real size. The marker sits at the bottom of the starting
+the real size. The pivot sits at the bottom of the starting
 edge, so a wall is placed at the corner it starts from, not at
 its middle. All are 20 cm thick.
 
-| Piece | Size | Marker |
+| Part | Size | Pivot |
 |---|---|---|
 | `SM_Wall_100x100` | 100 x 20 x 100 | 50, 0, 50 |
 | `SM_Wall_100x300` | 100 x 20 x 300 | 50, 0, 150 |
@@ -494,7 +537,7 @@ pivoted at their middle: `SM_Wall_01` (330 x 1 x 330),
 
 ## Walls with a door
 
-| Piece | Size | Marker |
+| Part | Size | Pivot |
 |---|---|---|
 | `SM_WallDoor_200x300` | 200 x 20 x 300 | 100, 0, 150 |
 | `SM_WallDoor_200x400` | 200 x 20 x 400 | 100, 0, 200 |
@@ -504,12 +547,12 @@ pivoted at their middle: `SM_Wall_01` (330 x 1 x 330),
 | `SM_WallDoorGarage_400x400` | 400 x 20 x 400 | 200, 0, 200 |
 
 **Avoid `SM_WallDoor_400x400`.** It measures 458 x 56 x 460 with
-its marker at 171, 18, 227: it does not follow the rule and will
+its pivot at 171, 18, 227: it does not follow the rule and will
 not line up. `SM_WallDoor_400x400Long` also exists, unmeasured.
 
 ## Walls with a window
 
-| Piece | Size | Marker |
+| Part | Size | Pivot |
 |---|---|---|
 | `SM_WallWindow_200x400` | 200 x 20 x 400 | 100, 0, 200 |
 | `SM_WallWindow_400x300` | 400 x 20 x 300 | 200, 0, 150 |
@@ -520,19 +563,19 @@ not line up. `SM_WallDoor_400x400Long` also exists, unmeasured.
 
 ## Corners
 
-Marker at the OUTER corner, geometry running back from it.
+Pivot at the OUTER corner, geometry running back from it.
 
-| Piece | Size | Marker |
+| Part | Size | Pivot |
 |---|---|---|
 | `SM_WallRoundedCorner_200x300_90d` | 210 x 210 x 300 | -105, -105, 150 |
 | `SM_WallRoundedCorner_400x400_90d` | 410 x 410 x 400 | -205, -205, 200 |
 
 ## Floors
 
-22 cm thick, marker at a corner with the walking surface at
-marker height, so a floor is placed at floor level.
+22 cm thick, pivot at a corner with the walking surface at
+pivot height, so a floor is placed at floor level.
 
-| Piece | Size | Marker |
+| Part | Size | Pivot |
 |---|---|---|
 | `SM_Floor_100x100` | 100 x 100 x 22 | 50, 50, -9 |
 | `SM_Floor_100x200` | 100 x 200 x 22 | 50, 100, -9 |
@@ -550,7 +593,7 @@ the concrete panel buildings.
 
 ## Pillars and beams
 
-| Piece | Size | Marker |
+| Part | Size | Pivot |
 |---|---|---|
 | `SM_Pillar` | 56 x 56 x 330 | 0, 0, 165 |
 | `SM_Beam_300` | 40 x 40 x 300 | 0, 0, 150 |
@@ -560,11 +603,11 @@ the concrete panel buildings.
 | `SM_Concrete_SmallLthing` | (unmeasured) | |
 
 Beams and pillars are centred in both horizontal axes with the
-marker at their base, unlike walls.
+pivot at their base, unlike walls.
 
 ## Stairs and walkways
 
-| Piece | Size | Marker |
+| Part | Size | Pivot |
 |---|---|---|
 | `SM_Stair_100` | 200 x 150 x 102 | 100, 75, 51 |
 | `SM_StairPlane_200` | 200 x 300 x 222 | 100, 150, 91 |
@@ -587,15 +630,15 @@ wall segment: `SM_DoorFrame` (132 x 24 x 232),
 ## What the designers actually use
 
 Read from live squares (`research_vanilla_rooms`): in a town and
-road area, 108 placed pieces used only five distinct parts:
+road area, 108 placed parts used only five distinct parts:
 `SM_Floor_400x400` (66), `SM_Wall_400x401` (27),
 `SM_WallRoundedCorner_200x300_90d` (8),
 `SM_WallDoorGarage_400x400` (6), `SM_Floor_1000x1000` (1).
 
 So the designers work mostly at 4 m, and much of what looks like
-building pieces is road paving. Buildings are assembled square-on
+building parts is road paving. Buildings are assembled square-on
 and then turned to an arbitrary angle when placed (the dominant
-angle in that sample was 5 degrees), which is why placed pieces
+angle in that sample was 5 degrees), which is why placed parts
 never line up with the world axes.
 
 Two caveats on that sample: it is small, and it came from a road
@@ -606,14 +649,14 @@ put together.
 
 ## Whole buildings
 
-Separately from the pieces, the game has entire buildings as one
+Separately from the parts, the game has entire buildings as one
 mesh, which can only be placed, never assembled:
 `SM_WoodenCabit_02` (6.3 x 6.6 x 8.3 m),
 `SM_WatchTower_SM_ContainerHouse1`, `SM_House01_Var_A_Stairs`,
 and the `SM_BrikGarage_*` family (garage, closed garage, left and
 right doors, two tarps) which is a kit for one building type.
 
-## Not building pieces
+## Not building parts
 
 The name prefixes overlap with props, so filter by folder rather
 than by name where it matters: `SM_WallClock`, `SM_WallLamp`,

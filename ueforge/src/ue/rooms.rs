@@ -4,20 +4,20 @@
 //! wall segments in a few widths, some with a doorway or a
 //! window, and floor tiles. Given a way to name the part that
 //! fills a slot, the rest is the same everywhere: work out the
-//! shell, name each piece, put them in the world.
+//! shell, name each part, put them in the world.
 //!
-//! The shell is [`modforge::structure::room_pieces`]. This adds
+//! The shell is [`modforge::structure::room_parts`]. This adds
 //! the Unreal half: reading a level's kit parts, and spawning a
 //! room into the world.
 //!
 //! A consumer supplies [`Kit`] and gets three endpoints. Nothing
 //! here knows a mesh name.
 
-use modforge::structure::{KitNames, PieceDef};
+use modforge::structure::{KitNames, PartDef};
 
 /// What a game must say about its modular parts.
 ///
-/// `class` is the actor to spawn per piece; `modules` are the
+/// `class` is the actor to spawn per part; `modules` are the
 /// widths the kit offers, largest first; `names` says what the
 /// kit calls each part.
 #[derive(Clone, Copy)]
@@ -34,12 +34,12 @@ pub struct Kit {
 }
 
 impl Kit {
-    fn pieces(&self, room: &modforge::structure::RoomDef) -> Vec<PieceDef> {
-        modforge::structure::room_pieces(room, self.modules, self.class, |s| self.names.mesh_for(s))
+    fn parts(&self, room: &modforge::structure::RoomDef) -> Vec<PartDef> {
+        modforge::structure::room_parts(room, self.modules, self.class, |s| self.names.mesh_for(s))
     }
 }
 
-fn piece_json(p: &PieceDef) -> serde_json::Value {
+fn part_json(p: &PartDef) -> serde_json::Value {
     serde_json::json!({
         "mesh": p.asset,
         "at": [p.offset.x, p.offset.y, p.offset.z],
@@ -65,12 +65,12 @@ pub fn register_ops(kit: Kit) {
             "What a room would be built from, without building it",
             "{width?, length?, height?, door?, windows?, floor?, ceiling?}",
             move |args| {
-                let pieces = kit.pieces(&modforge::structure::room_from_json(args));
+                let parts = kit.parts(&modforge::structure::room_from_json(args));
                 Ok(serde_json::json!({
-                    "count": pieces.len(),
+                    "count": parts.len(),
                     // This crate's numbers: metres, y up, radians.
                     // Unreal's exist only at the moment of spawning.
-                    "pieces": pieces.iter().map(piece_json).collect::<Vec<_>>(),
+                    "parts": parts.iter().map(part_json).collect::<Vec<_>>(),
                 }))
             },
         ),
@@ -81,7 +81,7 @@ pub fn register_ops(kit: Kit) {
             move |args| {
                 let x = crate::args::arg_f64(args, "x")?;
                 let y = crate::args::arg_f64(args, "y")?;
-                let pieces = kit.pieces(&modforge::structure::room_from_json(args));
+                let parts = kit.parts(&modforge::structure::room_from_json(args));
                 // Game thread: traces, searches and spawns.
                 crate::game_thread::run(
                     move || {
@@ -92,7 +92,7 @@ pub fn register_ops(kit: Kit) {
                         // SAFETY: world came from the search just
                         // above, on the game thread.
                         let out = unsafe {
-                            super::pieces::spawn(world, &pieces, (x, y, z), 0.0, usize::MAX)
+                            super::parts::spawn(world, &parts, (x, y, z), 0.0, usize::MAX)
                         };
                         Ok(serde_json::json!({
                             "placed": out.placed,
@@ -112,24 +112,24 @@ pub fn register_ops(kit: Kit) {
                 let for_job = crate::args::arg_str(args, "level")?.to_string();
                 // Game thread: reads the object list. The
                 // filtering happens INSIDE the job, because a
-                // `PieceDef` is not serialisable and does not need
+                // `PartDef` is not serialisable and does not need
                 // to leave the thread that read it.
                 crate::game_thread::run(
                     move || {
-                        let all = super::pieces::read_level(&for_job, &[]);
+                        let all = super::parts::read_level(&for_job, &[]);
                         let rows: Vec<serde_json::Value> = all
                             .iter()
                             .filter(|p| match &p.asset {
                                 Some(m) => kit.prefixes.iter().any(|pre| m.starts_with(pre)),
                                 None => false,
                             })
-                            .map(piece_json)
+                            .map(part_json)
                             .collect();
                         Ok(serde_json::json!({
                             "level": for_job,
-                            "kit_pieces": rows.len(),
-                            "total_pieces": all.len(),
-                            "pieces": rows,
+                            "kit_parts": rows.len(),
+                            "total_parts": all.len(),
+                            "parts": rows,
                         }))
                     },
                     std::time::Duration::from_secs(10),

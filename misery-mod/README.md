@@ -22,7 +22,7 @@ by UE4SS as `main.dll`.
 | [Spawning](src/spawning.rs) | Scales NPC threat budgets with past emissions. | 4/10 |
 | [Phenomena](src/strange.rs) | Places anomalies, camps, caches, lights, and hazards. | 3/10 |
 | [Assets](src/assets.rs) | Queries and streams shipped assets. | 4/10 |
-| [Pieces](../ueforge/src/ue/pieces.rs) | Captures and rebuilds Blueprint props and static meshes. | 6/10 |
+| [Parts](../ueforge/src/ue/parts.rs) | Captures and rebuilds Blueprint props and static meshes. | 6/10 |
 | [Monuments](src/places.rs) | Arranges captured structures into generated places. | 4/10 |
 | [Rooms](src/rooms.rs) | Builds rooms from the game's construction kit; disabled at startup. | 6/10 |
 | [World generation](tests/research_worldgen.rs) | Regenerates areas and mixes square pools through research operations. | 5/10 |
@@ -57,7 +57,7 @@ Installs to `MISERY\Binaries\Win64\ue4ss\Mods\MiseryMod\dlls\main.dll`.
 - [Research](docs/research.md)
 - [Open issues](docs/todo.md)
 - [Performance](docs/performance.md)
-- [Pieces](docs/pieces.md)
+- [Parts](docs/parts.md)
 - [World generation](docs/worldgen.md)
 - [RPG direction](docs/rpg.md)
 

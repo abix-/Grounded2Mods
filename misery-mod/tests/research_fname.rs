@@ -69,7 +69,7 @@ fn a_name_the_game_lacks_stays_missing() {
 /// Which of these the game has tells us what `GetTagValue` can be
 /// asked for, and whether a static mesh's SIZE is among them.
 /// That decides whether the parts list needs to load 1,500 meshes
-/// or none (pieces.md).
+/// or none (parts.md).
 #[test]
 fn which_asset_tag_names_this_build_has() {
     let Some(api) = api_or_skip() else { return };

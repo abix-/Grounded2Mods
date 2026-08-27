@@ -282,7 +282,7 @@ mixing stays restricted to matching tile sizes (Meadows <->
 Paneli) unless a future idea handles the overlap.** The probe
 restores the pool slot automatically after placement.
 
-## 9. Procedural composition: places from pieces (2026-08-25)
+## 9. Procedural composition: places from parts (2026-08-25)
 
 Squares are not atomic. A square is a level full of placed
 actors, and those actors can be read out and rebuilt elsewhere.
@@ -302,7 +302,7 @@ pak, no encryption key. Code: `src/harvest.rs`.
   furniture (sofa, wardrobe), bandit controllers, gun-part
   spawners.
 
-So pieces come in two tiers:
+So parts come in two tiers:
 
 1. **Blueprint props** (`BP_*`): self-contained. Spawning the
    class is enough.
@@ -310,7 +310,7 @@ So pieces come in two tiers:
    and the bulk of every square. The class alone spawns an
    EMPTY actor; the mesh lives on its component.
 
-### 9.2 Reading and rebuilding a piece
+### 9.2 Reading and rebuilding a part
 
 Transforms come straight from memory, no UFunction calls:
 `AActor::RootComponent` +0x1A0, then on the component
@@ -323,7 +323,7 @@ harvest stores the mesh's NAME (not its pointer) so a saved
 composition survives a restart; compose builds one name to
 pointer index per run.
 
-Rebuilding a mesh piece needs the deferred sequence, in order:
+Rebuilding a mesh part needs the deferred sequence, in order:
 
 1. `BeginDeferredActorSpawnFromClass` (StaticMeshActor)
 2. `SceneComponent:SetMobility(Movable)`. A Static component
@@ -333,7 +333,7 @@ Rebuilding a mesh piece needs the deferred sequence, in order:
 
 ### 9.3 Proven live (2026-08-25)
 
-`research_harvest::harvest_and_compose`: 564 pieces harvested
+`research_harvest::harvest_and_compose`: 564 parts harvested
 from `L_Village_Dwarf_Hole`, the 60 nearest its centre rebuilt
 beside the player (58 carrying meshes). 60 placed, 0 failed,
 and the operator confirmed the result in-game: **solid and
@@ -349,10 +349,10 @@ supplies only the two game-specific halves: reading UE actors
 and spawning them.
 
 **The modforge extension (2026-08-25).** `StructureDef` gained
-`pieces: Vec<PieceSpec>`. A structure is now either authored
+`parts: Vec<PartSpec>`. A structure is now either authored
 (rooms, stairs, furniture, lights: what topside builds from
-primitives) or CAPTURED (pieces lifted out of a running game),
-or both. A `PieceSpec` is an opaque host-game asset reference
+primitives) or CAPTURED (parts lifted out of a running game),
+or both. A `PartSpec` is an opaque host-game asset reference
 (`class`, optional `asset`) plus a transform, in modforge's own
 convention: metres, y up, north -z. `footprint()` measures
 captured structures too, and `arrange()` is public, so the
@@ -362,7 +362,7 @@ no-overlap guarantee apply to captured structures unchanged.
 **The misery binder** (`src/places.rs`):
 
 - Cuts a harvested square into structures by greedy spatial
-  grouping (14 m radius, 6 to 70 pieces), so a building keeps
+  grouping (14 m radius, 6 to 70 parts), so a building keeps
   the fence and junk pile standing with it.
 - Converts UE centimetres / z-up to modforge metres / y-up at
   the edge, and back when spawning.
@@ -380,9 +380,9 @@ no-overlap guarantee apply to captured structures unchanged.
 ```
 monument in 4867_2_0.L_NuclearBunker02 from 5 structure(s)
   [Bunker06, Bunker05, Bunker02, Bunker05, Bunker05]
-  -> placed 342 piece(s), Clustered
+  -> placed 342 part(s), Clustered
 monument in 4867_1_1.L_NuclearBunker03 from 3 structure(s)
-  -> placed 194 piece(s), AlongRoad
+  -> placed 194 part(s), AlongRoad
 ```
 
 Library reached 21 structures in a minute of walking; zero hook
@@ -392,25 +392,25 @@ Bunker05.
 
 Known rough edges, not yet judged in-game:
 
-- Pieces may intersect: arrangement spaces STRUCTURES by
-  footprint, but pieces inside one structure keep their
+- Parts may intersect: arrangement spaces STRUCTURES by
+  footprint, but parts inside one structure keep their
   original crowding.
 - A monument traces ground once at its centre while members sit
   at their own offsets, so sloped ground will float or sink
   members.
 
-### 9.5 The building pieces
+### 9.5 The building parts
 
-The parts list moved to [`pieces.md`](pieces.md), the
+The parts list moved to [`parts.md`](parts.md), the
 authoritative inventory: every wall, floor, door, window, corner,
 stair and pillar with its measured size and marker position.
-What follows is only how those pieces relate to building.
+What follows is only how those parts relate to building.
 
-Measured live 2026-08-26 (`research_harvest::piece_shapes` and
-`piece_vocabulary`), plus the object dump for the full asset
-list. Pieces now carry their mesh's half-extent
+Measured live 2026-08-26 (`research_harvest::part_shapes` and
+`part_vocabulary`), plus the object dump for the full asset
+list. Parts now carry their mesh's half-extent
 (`UStaticMesh::ExtendedBounds` +0x1F0, `BoxExtent` +0x18) and
-full rotation, so every piece is a measurable box.
+full rotation, so every part is a measurable box.
 
 The game uses BOTH approaches:
 
@@ -419,14 +419,14 @@ The game uses BOTH approaches:
 `SM_WatchTower_SM_ContainerHouse1` likewise. These can only be
 placed, never assembled.
 
-**Separate pieces on a 100/200/400 cm grid.** Everything a room
+**Separate parts on a 100/200/400 cm grid.** Everything a room
 needs exists as its own mesh: walls in three widths and three
 heights, walls with a door or a window, corners, ruined walls,
 floor tiles, ceilings, stairs and pillars. Full list with
-measurements in [`pieces.md`](pieces.md).
+measurements in [`parts.md`](parts.md).
 
 The names carry the dimensions (`400x300` is 4 m wide, 3 m
-tall), so the grid is explicit and pieces line up when placed
+tall), so the grid is explicit and parts line up when placed
 next to each other.
 
 Some building types ship as their own set of parts: the garage
@@ -445,10 +445,10 @@ meshes. The generic room logic stays in modforge, and the
 binder maps "4 m wall segment with a door" to
 `SM_WallDoor_400x300`.
 
-Risk when building: pieces resolve by name out of loaded
+Risk when building: parts resolve by name out of loaded
 objects, and what is loaded varies by area. One live probe saw
-5 wall sizes where another saw 12, so a piece missing from a
-probe is not a piece the game lacks.
+5 wall sizes where another saw 12, so a part missing from a
+probe is not a part the game lacks.
 
 ### 9.6 Rooms are built, not copied (confirmed 2026-08-26)
 
@@ -461,7 +461,7 @@ the corners, a doorway, windows, floor tiles. Operator verdict:
 naming:
 
 - `modforge::structure::shell_slots(room, modules)` decomposes a
-  `RoomSpec` into the pieces a shell needs: floor and ceiling
+  `RoomSpec` into the parts a shell needs: floor and ceiling
   tiles, wall segments per side, each with a span and a yaw, and
   openings assigned to the segment that CONTAINS them (openings
   are narrower than a module, so comparing spans never matches).

@@ -25,6 +25,8 @@ Newest first.
 
 | System | Item | Done when |
 |---|---|---|
+| `modforge::structure` | [x] Hard cutover from the word "piece" to "part" across the building kit: types, functions, ops, filenames and docs | `PartDef`, `PartShape`, `ueforge/src/ue/parts.rs`, `misery-mod/docs/parts.md`, the `level_parts` and `place_parts` ops, and a clean `cargo check --workspace --all-targets`. |
+| `ueforge::assets` | [x] Put every mesh's pivot in the parts list, so a size is no longer the only thing known about a part's faces | `parts_list` reports 2407 of 2407 with a pivot in 2.41 s live, and `SM_Wall_100x100`, `SM_Floor_400x400` and `SM_Pillar` match the tables in parts.md that were measured by the loaded-mesh probe. |
 | `unityforge` | [x] Move Schedule 1's guarded main-thread effect wrapper into Unityforge | Schedule 1 keeps its crash-bisection flag, labels, timeout, and effect configurations without implementing Unity queue dispatch or effect delegation. |
 | `modforge` | [x] Replace Schedule 1's manual capped combat-trace vector with Modforge's bounded ring | Schedule 1 records, snapshots, and clears combat events with the same drop-oldest ordering and atomic snapshot-and-clear behavior without a local bounded-collection loop. |
 | `modforge` | [x] Move Schedule 1's fixed-capacity timestamped recent-key tracking into Modforge's ring system | Schedule 1 configures NPC hit and credit windows without implementing timestamp storage, rotation, or window lookup. |

@@ -1,17 +1,17 @@
-//! Where a piece can attach, learned from how a game's own
-//! designers put pieces together.
+//! Where a part can attach, learned from how a game's own
+//! designers put parts together.
 //!
-//! A piece's size does not say where it attaches. A mesh's
+//! A part's size does not say where it attaches. A mesh's
 //! bounding box is not its module: a floor tile measured 5.18 by
 //! 5.73 m while sitting on a 3 by 4 m grid, because it has a lip
 //! and the lip is really there. Its NAME is not evidence either.
 //!
-//! What is evidence is where the designers put things. Two pieces
+//! What is evidence is where the designers put things. Two parts
 //! that keep turning up at the same offset from each other are
 //! joined, and that offset is the attachment.
 //!
 //! **A join is evidence. A stud is the model.** One observed join
-//! yields TWO studs, one on each piece, each in THAT PIECE'S OWN
+//! yields TWO studs, one on each part, each in THAT PART'S OWN
 //! local frame. Measured in MISERY, a wall sits 350 cm above a
 //! floor tile turned 90 degrees, 231 times, which gives:
 //!
@@ -20,9 +20,9 @@
 //! the WALL   a stud at local (0, -3.5, 0)   I attach to something below me
 //! ```
 //!
-//! Local frames are the point. Two pieces placed at different
+//! Local frames are the point. Two parts placed at different
 //! angles are only comparable once each is read in its own, and
-//! comparability is what lets ANY piece with a matching stud take
+//! comparability is what lets ANY part with a matching stud take
 //! the other's place. That is how Lego works, and an edge list of
 //! "this wall meets this floor" cannot express it.
 //!
@@ -33,7 +33,7 @@
 
 use std::collections::HashMap;
 
-/// One sighting: two pieces, where each was, and which way each
+/// One sighting: two parts, where each was, and which way each
 /// faced. Raw evidence, never edited, because the rules derived
 /// from it will change and the sightings will not.
 #[derive(Clone, Debug, PartialEq)]
@@ -42,18 +42,18 @@ pub struct Join {
     pub to: String,
     /// World offset from `from`'s origin to `to`'s, metres.
     pub offset: (f64, f64, f64),
-    /// Facing of each piece, radians, as placed.
+    /// Facing of each part, radians, as placed.
     pub from_yaw: f64,
     pub to_yaw: f64,
 }
 
-/// One place a piece can be attached to, in ITS OWN local frame.
+/// One place a part can be attached to, in ITS OWN local frame.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Stud {
     /// Local position, metres, y up. Same units and axes as a
-    /// `PieceDef`'s extent.
+    /// `PartDef`'s extent.
     pub at: (f64, f64, f64),
-    /// How far the attached piece is turned relative to this one,
+    /// How far the attached part is turned relative to this one,
     /// degrees. Position alone is not enough: a wall laid across
     /// a floor and one stood along it sit at the same spot.
     pub turn: i64,
@@ -61,18 +61,18 @@ pub struct Stud {
     /// collapsed into a boolean, because 231 is a rule and 4 is a
     /// maybe.
     pub seen: usize,
-    /// Which pieces were actually seen here, counted. Answers
+    /// Which parts were actually seen here, counted. Answers
     /// "what does the game put here", and biases generation
     /// toward looking like this game rather than merely being
     /// legal.
     pub with: HashMap<String, usize>,
 }
 
-/// Turn an offset measured in the world into one piece's local
-/// frame, by undoing that piece's own facing.
+/// Turn an offset measured in the world into one part's local
+/// frame, by undoing that part's own facing.
 ///
-/// Only the turn about the up axis is undone: kit pieces stand
-/// upright, and a piece that is tilted is not something a stud
+/// Only the turn about the up axis is undone: kit parts stand
+/// upright, and a part that is tilted is not something a stud
 /// model describes anyway.
 fn into_local(offset: (f64, f64, f64), yaw: f64) -> (f64, f64, f64) {
     let (s, c) = (-yaw).sin_cos();
@@ -111,19 +111,19 @@ impl Default for Derive {
     }
 }
 
-/// Derive every piece's studs from the sightings.
+/// Derive every part's studs from the sightings.
 ///
-/// Each join contributes to BOTH pieces: the `from` piece learns
-/// that something attaches at that offset, and the `to` piece
+/// Each join contributes to BOTH parts: the `from` part learns
+/// that something attaches at that offset, and the `to` part
 /// learns that it attaches at the mirror of it. Both are recorded
 /// in their own local frame, which is what makes them comparable
-/// between pieces placed at different angles.
+/// between parts placed at different angles.
 pub fn derive(joins: &[Join], how: Derive) -> HashMap<String, Vec<Stud>> {
-    // piece -> (rounded local position, turn) -> (count, who)
+    // part -> (rounded local position, turn) -> (count, who)
     type Key = (i64, i64, i64, i64);
     let mut acc: HashMap<String, HashMap<Key, (usize, HashMap<String, usize>)>> = HashMap::new();
 
-    let mut note = |piece: &str, at: (f64, f64, f64), turn: i64, other: &str| {
+    let mut note = |part: &str, at: (f64, f64, f64), turn: i64, other: &str| {
         let key = (
             (at.0 * 100.0).round() as i64,
             (at.1 * 100.0).round() as i64,
@@ -131,7 +131,7 @@ pub fn derive(joins: &[Join], how: Derive) -> HashMap<String, Vec<Stud>> {
             turn,
         );
         let entry = acc
-            .entry(piece.to_string())
+            .entry(part.to_string())
             .or_default()
             .entry(key)
             .or_insert_with(|| (0, HashMap::new()));
@@ -152,7 +152,7 @@ pub fn derive(joins: &[Join], how: Derive) -> HashMap<String, Vec<Stud>> {
         note(&j.from, at, turn_of(relative, how.snap_deg), &j.to);
 
         // On `to`: I attach to something back that way. The
-        // mirror, read in the OTHER piece's frame, which is not
+        // mirror, read in the OTHER part's frame, which is not
         // simply the negated vector once the two face differently.
         let back = (-j.offset.0, -j.offset.1, -j.offset.2);
         let at = into_local(back, j.to_yaw);
@@ -165,7 +165,7 @@ pub fn derive(joins: &[Join], how: Derive) -> HashMap<String, Vec<Stud>> {
     }
 
     acc.into_iter()
-        .map(|(piece, keys)| {
+        .map(|(part, keys)| {
             let mut studs: Vec<Stud> = keys
                 .into_iter()
                 .filter(|(_, (n, _))| *n >= how.min_seen)
@@ -180,7 +180,7 @@ pub fn derive(joins: &[Join], how: Derive) -> HashMap<String, Vec<Stud>> {
             // should be the first thing read, and the first thing
             // reached for.
             studs.sort_by(|a, b| b.seen.cmp(&a.seen));
-            (piece, studs)
+            (part, studs)
         })
         .filter(|(_, studs)| !studs.is_empty())
         .collect()
@@ -201,9 +201,9 @@ mod tests {
     }
 
     /// The measured case: a wall 3.5 m above a floor, turned 90.
-    /// Both pieces must come out of it, each in its own frame.
+    /// Both parts must come out of it, each in its own frame.
     #[test]
-    fn one_join_gives_both_pieces_a_stud() {
+    fn one_join_gives_both_parts_a_stud() {
         let quarter = std::f64::consts::FRAC_PI_2;
         let joins: Vec<Join> = (0..5)
             .map(|_| join("floor", "wall", (0.0, 3.5, 0.0), 0.0, quarter))
@@ -221,11 +221,11 @@ mod tests {
         assert_eq!(wall.turn, 270, "and the floor is a quarter back the other way");
     }
 
-    /// The whole point: a stud is comparable BETWEEN pieces, so a
-    /// third piece seen in the same place gets the same stud and
+    /// The whole point: a stud is comparable BETWEEN parts, so a
+    /// third part seen in the same place gets the same stud and
     /// can therefore substitute.
     #[test]
-    fn a_different_piece_in_the_same_place_gets_the_same_stud() {
+    fn a_different_part_in_the_same_place_gets_the_same_stud() {
         let quarter = std::f64::consts::FRAC_PI_2;
         let mut joins: Vec<Join> = (0..5)
             .map(|_| join("floor", "wall", (0.0, 3.5, 0.0), 0.0, quarter))
@@ -233,20 +233,20 @@ mod tests {
         joins.extend((0..5).map(|_| join("floor", "window", (0.0, 3.5, 0.0), 0.0, quarter)));
         let studs = derive(&joins, Derive::default());
 
-        // One stud on the floor, used by two different pieces.
+        // One stud on the floor, used by two different parts.
         assert_eq!(studs["floor"].len(), 1);
         assert_eq!(studs["floor"][0].seen, 10);
         assert_eq!(studs["floor"][0].with["wall"], 5);
         assert_eq!(studs["floor"][0].with["window"], 5);
 
-        // And both of those pieces have the SAME stud, which is
+        // And both of those parts have the SAME stud, which is
         // what makes them interchangeable there.
         assert_eq!(studs["wall"][0].at, studs["window"][0].at);
         assert_eq!(studs["wall"][0].turn, studs["window"][0].turn);
     }
 
     /// The same join seen with the floor turned reads as the same
-    /// stud, because each piece is read in its own frame. Without
+    /// stud, because each part is read in its own frame. Without
     /// that, every rotation of a building would invent new studs.
     #[test]
     fn turning_the_whole_thing_does_not_invent_studs() {
@@ -274,7 +274,7 @@ mod tests {
         assert!(studs.is_empty(), "one sighting should not become a stud");
     }
 
-    /// Two pieces a whole tile apart are not joined; they are
+    /// Two parts a whole tile apart are not joined; they are
     /// neighbours of neighbours. The caller decides what counts as
     /// touching, but distinct offsets must stay distinct here.
     #[test]
