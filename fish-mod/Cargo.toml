@@ -19,6 +19,11 @@ modforge = { path = "../modforge" }
 unityforge = { path = "../unityforge" }
 serde_json = { workspace = true }
 
+[dev-dependencies]
+modforge = { path = "../modforge" }
+unityforge = { path = "../unityforge" }
+serde_json = { workspace = true }
+
 [lints]
 workspace = true
 
