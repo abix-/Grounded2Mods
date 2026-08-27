@@ -59,6 +59,7 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 
 ## Last session summary
 
+- The restarted player-input follower verification failed before movement because MISERY does not expose `NavigationPath::GetPathPoints` as a reflected function. Epic's `UNavigationPath` surface exposes `PathPoints` as a reflected field; the native `GetPathPoints` method belongs to `FNavigationPath` and cannot be called through `ProcessEvent`.
 - Added forward and right movement axes plus ordered movement, look, and key dispatch to `modforge::input::InputSurface`.
 - Added the shared `modforge::route::PathFollower`. It consumes path points and observed poses, emits player axes, advances points, and releases movement on arrival, cancellation, or stuck detection.
 - Added two input tests and two follower tests. The focused suite passes all nine tests.
@@ -293,6 +294,7 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 
 ## Next steps
 
+- Replace the invalid `NavigationPath::GetPathPoints` call with one reflected `UNavigationPath.PathPoints` field read.
 - Live-verify the extracted Unreal path points and shared follower from spawn through both doors on a restarted local game.
 - Aim at the door's colliding-bounds center from the active camera and gate `E` on interaction range.
 - Complete ranked crate fallback, retained-state opening, UI transfer, and inventory-count evidence.

@@ -1383,6 +1383,13 @@ fn expedition_loot_route_adds_only_the_discovered_target() {
 }
 
 #[test]
+fn navigation_path_points_use_the_reflected_unavigationpath_field() {
+    let source = include_str!("research_navigation.rs");
+    assert!(!source.contains("\"GetPathPoints\""));
+    assert!(source.contains("\"PathPoints\""));
+}
+
+#[test]
 fn interaction_range_uses_the_nearest_point_on_actor_bounds() {
     assert!(interaction_in_range(
         [0.0, 0.0, 0.0],
