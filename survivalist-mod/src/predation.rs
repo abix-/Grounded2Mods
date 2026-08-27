@@ -112,11 +112,11 @@ fn consume(winner: MonoObject, loser: MonoObject) -> Result<(), String> {
     let mut carriers: Vec<i32> = Vec::new();
     if let Some(m_h) = handle_of(&loser.read_field("Members")?) {
         let mlist = own(m_h);
-        let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+        let count = mlist.list_len_or_zero()?;
         // Collect first: SetCommunity mutates the source list.
         let mut joiners: Vec<i32> = Vec::new();
         for i in 0..count {
-            if let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) {
+            if let Some(h) = mlist.list_handle(i)? {
                 let member = own(h);
                 let alive = member
                     .invoke("get_AliveAndNotZombie", &json!([]))
@@ -177,7 +177,9 @@ fn consume(winner: MonoObject, loser: MonoObject) -> Result<(), String> {
         winner.read_field("Id")?.as_i64().unwrap_or(-1),
         &ctype(&winner),
     );
-    crate::chronicle::post(&format!("{winner_name} has wiped {loser_name} from the map"));
+    crate::chronicle::post(&format!(
+        "{winner_name} has wiped {loser_name} from the map"
+    ));
     mono::log(
         LogLevel::Info,
         &format!(
@@ -187,4 +189,3 @@ fn consume(winner: MonoObject, loser: MonoObject) -> Result<(), String> {
     );
     Ok(())
 }
-

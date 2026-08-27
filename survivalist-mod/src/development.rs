@@ -28,9 +28,7 @@ use serde_json::{Value as Json, json};
 use modforge::ops::{OP_REGISTRY, OpDef};
 use unityforge::mono::{self, LogLevel, MonoObject};
 
-use crate::common::{
-    ctype, display_name, for_each_community, handle_of, list_len, on_main_thread, own,
-};
+use crate::common::{ctype, display_name, for_each_community, handle_of, on_main_thread, own};
 
 /// Seconds between annex-planning scans (real time).
 const ANNEX_SCAN_PERIOD_SECS: f32 = 120.0;
@@ -155,9 +153,9 @@ fn dev_status(_args: &Json) -> Result<Json, String> {
                 "members": members,
                 "base_rect": com.read_field("BaseRect").unwrap_or(Json::Null),
                 "base_centre": base_centre(&com).map(|(x,y)| json!({"x":x,"y":y})).unwrap_or(Json::Null),
-                "rebuild_queue": list_len(&com, "ConstructionRecords"),
-                "repair_queue": list_len(&com, "NeedsRepair"),
-                "building_now": list_len(&com, "UnderConstructionBuildings"),
+                "rebuild_queue": com.field_list_len("ConstructionRecords"),
+                "repair_queue": com.field_list_len("NeedsRepair"),
+                "building_now": com.field_list_len("UnderConstructionBuildings"),
             }));
             Ok(true)
         })?;
@@ -249,8 +247,12 @@ struct AnnexPlan {
 /// Extraction candidate: Modforge should own engine-independent rectangular annex planning; Survivalist should supply terrain passability and construction policy.
 fn plan_annex(base: &Rect, terrain: &MonoObject) -> Option<AnnexPlan> {
     // Try east, south, west, north.
-    let sides: [(&str, i64, i64); 4] =
-        [("east", 1, 0), ("south", 0, 1), ("west", -1, 0), ("north", 0, -1)];
+    let sides: [(&str, i64, i64); 4] = [
+        ("east", 1, 0),
+        ("south", 0, 1),
+        ("west", -1, 0),
+        ("north", 0, -1),
+    ];
     for (side, sx, sy) in sides {
         // The annex strip rectangle.
         let (aminx, aminy, amaxx, amaxy) = match (sx, sy) {
@@ -343,7 +345,10 @@ fn annex_scan() -> Result<(), String> {
         if members == 0 {
             return Ok(true);
         }
-        let beds = com.invoke("GetAccommodation", &json!([]))?.as_i64().unwrap_or(0);
+        let beds = com
+            .invoke("GetAccommodation", &json!([]))?
+            .as_i64()
+            .unwrap_or(0);
         if members < beds {
             return Ok(true); // no growth pressure yet
         }
@@ -355,7 +360,9 @@ fn annex_scan() -> Result<(), String> {
         {
             return Ok(true); // cannot feed more people
         }
-        if list_len(&com, "ConstructionRecords") > 0 || list_len(&com, "UnderConstructionBuildings") > 0 {
+        if com.field_list_len("ConstructionRecords") > 0
+            || com.field_list_len("UnderConstructionBuildings") > 0
+        {
             return Ok(true); // already building something
         }
         let Some(base) = base_rect(&com) else {
@@ -449,8 +456,14 @@ fn dev_place(args: &Json) -> Result<Json, String> {
         .and_then(Json::as_str)
         .ok_or("missing arg 'prototype' (e.g. Shack, WoodFence)")?
         .to_string();
-    let dx = args.get("dx").and_then(Json::as_i64).ok_or("missing arg 'dx' (int)")? as i32;
-    let dy = args.get("dy").and_then(Json::as_i64).ok_or("missing arg 'dy' (int)")? as i32;
+    let dx = args
+        .get("dx")
+        .and_then(Json::as_i64)
+        .ok_or("missing arg 'dx' (int)")? as i32;
+    let dy = args
+        .get("dy")
+        .and_then(Json::as_i64)
+        .ok_or("missing arg 'dy' (int)")? as i32;
     let orientation = args
         .get("orientation")
         .and_then(Json::as_str)
@@ -493,7 +506,7 @@ fn dev_place(args: &Json) -> Result<Json, String> {
             ]),
         )?;
 
-        let queue = list_len(&com, "ConstructionRecords");
+        let queue = com.field_list_len("ConstructionRecords");
         unityforge::mono::log(
             unityforge::mono::LogLevel::Info,
             &format!(

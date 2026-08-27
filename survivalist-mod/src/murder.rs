@@ -148,9 +148,9 @@ fn launch_scan(now: f32) -> Result<(), String> {
         let mut ballot = Ballot::new(MURDER_GUILE_FLOOR);
         if let Some(m_h) = handle_of(&com.read_field("Members")?) {
             let mlist = own(m_h);
-            let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+            let count = mlist.list_len_or_zero()?;
             for i in 0..count {
-                let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+                let Some(h) = mlist.list_handle(i)? else {
                     continue;
                 };
                 let member = own(h);
@@ -302,9 +302,9 @@ fn pick_operative(
     let mut best: Option<(i32, String, f64)> = None;
     if let Some(m_h) = handle_of(&com.read_field("Members")?) {
         let mlist = own(m_h);
-        let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+        let count = mlist.list_len_or_zero()?;
         for i in 0..count {
-            let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+            let Some(h) = mlist.list_handle(i)? else {
                 continue;
             };
             let member = own(h);

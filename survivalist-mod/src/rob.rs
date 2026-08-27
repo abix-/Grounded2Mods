@@ -27,7 +27,7 @@ use modforge::genome::Ballot;
 use modforge::mission::{self, OneStageStep};
 use unityforge::mono::{self, LogLevel};
 
-use crate::common::{ctype, display_name, for_each_community, handle_of, list_len, own, with};
+use crate::common::{ctype, display_name, for_each_community, handle_of, own, with};
 use crate::genome;
 
 /// Seconds between robbery scans.
@@ -146,7 +146,7 @@ fn launch_scan(now: f32) -> Result<(), String> {
         let at_war = handle_of(&com.read_field("InvasionTarget")?).is_some();
         if members < ROB_MIN_MEMBERS
             || at_war
-            || list_len(&com, "Threats") > 0
+            || com.field_list_len("Threats") > 0
             || active.contains(&id)
         {
             return Ok(true);
@@ -164,9 +164,9 @@ fn launch_scan(now: f32) -> Result<(), String> {
         // launched Almighty Rock Family, live 2026-07-05).
         if let Some(s_h) = handle_of(&com.read_field("Squads")?) {
             let slist = own(s_h);
-            let n = slist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+            let n = slist.list_len_or_zero()?;
             for i in 0..n {
-                let Some(h) = handle_of(&slist.invoke("get_Item", &json!([i]))?) else {
+                let Some(h) = slist.list_handle(i)? else {
                     continue;
                 };
                 if own(h).read_field("Behaviour").ok() == Some(json!("Ambush")) {
@@ -179,9 +179,9 @@ fn launch_scan(now: f32) -> Result<(), String> {
         let mut ballot = Ballot::new(ROB_FLOOR);
         if let Some(m_h) = handle_of(&com.read_field("Members")?) {
             let mlist = own(m_h);
-            let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+            let count = mlist.list_len_or_zero()?;
             for i in 0..count {
-                let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+                let Some(h) = mlist.list_handle(i)? else {
                     continue;
                 };
                 let member = own(h);
@@ -263,9 +263,9 @@ fn launch_scan(now: f32) -> Result<(), String> {
             return Ok(true);
         };
         let mlist = own(m_h);
-        let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+        let count = mlist.list_len_or_zero()?;
         for i in 0..count {
-            let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+            let Some(h) = mlist.list_handle(i)? else {
                 continue;
             };
             let member = own(h);
@@ -297,7 +297,7 @@ fn launch_scan(now: f32) -> Result<(), String> {
                 continue;
             };
             let inv = own(inv_h);
-            let n = inv.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+            let n = inv.list_len_or_zero()?;
             let mut best: Option<(i32, String, i64)> = None;
             for j in 0..n {
                 let Some(item_h) = handle_of(&inv.invoke("GetItem", &json!([j]))?) else {
@@ -419,9 +419,9 @@ fn pick_lead(
     let mut lead: Option<(i32, String, f64)> = None;
     if let Some(m_h) = handle_of(&com.read_field("Members")?) {
         let mlist = own(m_h);
-        let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+        let count = mlist.list_len_or_zero()?;
         for i in 0..count {
-            let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+            let Some(h) = mlist.list_handle(i)? else {
                 continue;
             };
             let member = own(h);

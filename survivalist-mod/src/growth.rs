@@ -44,9 +44,7 @@ use modforge::ops::{OP_REGISTRY, OpDef};
 use unityforge::hook::{self, HOOK_REGISTRY, HookCtx};
 use unityforge::mono::{self, LogLevel, MonoObject};
 
-use crate::common::{
-    ctype, display_name, for_each_community, handle_of, list_len, own, pos_of,
-};
+use crate::common::{ctype, display_name, for_each_community, handle_of, own, pos_of};
 
 /// Seconds between recruitment scans (real time; the scan is a
 /// few dozen reflection reads on the main thread).
@@ -197,18 +195,16 @@ struct OpenDoor {
 /// Find a camp entrance where willing recruits can join.
 /// Stays here because it applies Survivalist's faction growth rules through the game's classes, fields, content, and actions.
 fn base_anchor(com: &MonoObject) -> Option<(f32, f32)> {
-    let b_h = com.read_field("Buildings").ok().as_ref().and_then(handle_of)?;
+    let b_h = com
+        .read_field("Buildings")
+        .ok()
+        .as_ref()
+        .and_then(handle_of)?;
     let blist = own(b_h);
-    if blist
-        .invoke("get_Count", &json!([]))
-        .ok()?
-        .as_i64()
-        .unwrap_or(0)
-        == 0
-    {
+    if blist.list_len_or_zero().ok()? == 0 {
         return None;
     }
-    let anchor_h = handle_of(&blist.invoke("get_Item", &json!([0])).ok()?)?;
+    let anchor_h = blist.list_handle(0).ok().flatten()?;
     pos_of(&own(anchor_h))
 }
 
@@ -222,18 +218,9 @@ fn squad_anchors(com: &MonoObject) -> Vec<(f32, f32)> {
         return out;
     };
     let sq_list = own(sq_h);
-    let n = sq_list
-        .invoke("get_Count", &json!([]))
-        .ok()
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
+    let n = sq_list.list_len().unwrap_or(0);
     for i in 0..n {
-        let Some(s_h) = sq_list
-            .invoke("get_Item", &json!([i]))
-            .ok()
-            .as_ref()
-            .and_then(handle_of)
-        else {
+        let Some(s_h) = sq_list.list_handle(i).ok().flatten() else {
             continue;
         };
         let squad = own(s_h);
@@ -270,10 +257,7 @@ fn recruit_scan() -> Result<(), String> {
             // A band the stranger or settler system has claimed is
             // its to resolve; do not recruit it out from under the
             // roll or the walk to a claimable base.
-            if members > 0
-                && !crate::stranger::is_claimed(id)
-                && !crate::settler::is_claimed(id)
-            {
+            if members > 0 && !crate::stranger::is_claimed(id) && !crate::settler::is_claimed(id) {
                 refugees.push(com);
             }
             return Ok(true);
@@ -293,7 +277,10 @@ fn recruit_scan() -> Result<(), String> {
         if members == 0 {
             return Ok(true); // dead camps do not recruit
         }
-        let beds = com.invoke("GetAccommodation", &json!([]))?.as_i64().unwrap_or(0);
+        let beds = com
+            .invoke("GetAccommodation", &json!([]))?
+            .as_i64()
+            .unwrap_or(0);
         let headroom = beds - members;
         if headroom <= 0 {
             return Ok(true);
@@ -382,19 +369,22 @@ fn absorb_group(group: &MonoObject, door: &mut OpenDoor) -> Result<i64, String> 
         return Ok(0);
     };
     let mlist = own(m_h);
-    let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+    let count = mlist.list_len_or_zero()?;
     // Collect handles first: SetCommunity mutates the source list.
     let mut joiners: Vec<i32> = Vec::new();
     for i in 0..count {
         if (joiners.len() as i64) >= door.headroom {
             break;
         }
-        if let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) {
+        if let Some(h) = mlist.list_handle(i)? {
             let member = own(h);
             let alive = member.invoke("get_AliveAndNotZombie", &json!([]));
             let alive = match alive {
                 Ok(v) => v == json!(true),
-                Err(_) => member.read_field("Alive").map(|v| v == json!(true)).unwrap_or(false),
+                Err(_) => member
+                    .read_field("Alive")
+                    .map(|v| v == json!(true))
+                    .unwrap_or(false),
             };
             if alive {
                 joiners.push(member.handle().0);
@@ -459,7 +449,10 @@ fn collect_growth_status() -> Result<Json, String> {
         if members == 0 && t != "Player" {
             return Ok(true);
         }
-        let beds = com.invoke("GetAccommodation", &json!([]))?.as_i64().unwrap_or(0);
+        let beds = com
+            .invoke("GetAccommodation", &json!([]))?
+            .as_i64()
+            .unwrap_or(0);
         let nutrition = com
             .invoke("CalcCommunityNutritionLevel", &json!([0.0]))?
             .as_f64()
@@ -471,8 +464,8 @@ fn collect_growth_status() -> Result<Json, String> {
             "initial_members": com.read_field("InitialMemberCount").unwrap_or(Json::Null),
             "beds": beds,
             "nutrition": (nutrition * 100.0).round() / 100.0,
-            "rebuild_queue": list_len(&com, "ConstructionRecords"),
-            "repair_queue": list_len(&com, "NeedsRepair"),
+            "rebuild_queue": com.field_list_len("ConstructionRecords"),
+            "repair_queue": com.field_list_len("NeedsRepair"),
         }));
         Ok(true)
     })?;

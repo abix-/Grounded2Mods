@@ -2,7 +2,7 @@
 
 ## Current focus
 
-Audit every Survivalist source function and extract every engine-independent or Unity-specific mechanism into Modforge or Unityforge without changing game behavior.
+Extract every engine-independent or Unity-specific mechanism identified by the Survivalist source audit into Modforge or Unityforge without changing game behavior.
 
 ## Design goals
 
@@ -38,6 +38,12 @@ Audit every Survivalist source function and extract every engine-independent or 
 
 ## Last session summary
 
+- Added Unityforge managed-object helpers for owned and borrowed handles, bridge JSON handle decoding, typed managed-list counts and entries, managed-list fields, and Unity coordinate decoding.
+- Migrated every Survivalist raw managed-list `get_Count` and `get_Item` call to Unityforge and removed the local handle, borrowed-object, coordinate, and list-count implementations from `common.rs`.
+- Preserved Survivalist's existing error propagation, soft-failure defaults, handle ownership, stale-list behavior, game fields, and gameplay policy.
+- Added no tests.
+- Verified `k3sc cargo-lock test -p unityforge --lib`: all 6 existing tests pass.
+- Verified `k3sc cargo-lock test -p survivalist-mod --lib`: build passes with the two existing unused genome-helper warnings; its library target has zero tests.
 - Documented every function in `survivalist-mod/src` with a concise purpose and an explicit ownership boundary.
 - Marked eleven functions as concrete extraction evidence instead of defending engine-independent or Unity-specific mechanics as game code.
 - Recorded five coherent lifts in `docs/todo.md`: managed-object and collection helpers, existing main-thread dispatch adoption, Rust/C# boundary helpers, annex planning, and deterministic identity selection.
@@ -110,7 +116,7 @@ Audit every Survivalist source function and extract every engine-independent or 
 
 ## Next steps
 
-- Start with the Unityforge managed-object and collection helpers because they remove repeated bridge boilerplate across nearly every Survivalist system.
+- Replace Survivalist's local blocking main-thread helper with the existing `MainThreadQueue::run` authority.
 
 ## Open questions
 

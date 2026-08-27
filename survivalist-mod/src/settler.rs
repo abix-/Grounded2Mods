@@ -185,9 +185,9 @@ fn launch(now: f32) -> Result<bool, String> {
             .ok_or("AddSquad gave no squad")?;
         if let Some(m_h) = handle_of(&com.read_field("Members")?) {
             let mlist = own(m_h);
-            let n = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+            let n = mlist.list_len_or_zero()?;
             for i in 0..n {
-                if let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) {
+                if let Some(h) = mlist.list_handle(i)? {
                     let _ = com.invoke(
                         "AddToSquad",
                         &json!([{ "handle": h }, { "handle": squad_h }]),

@@ -312,16 +312,10 @@ fn camp_pos(com: &MonoObject) -> Option<(f32, f32)> {
         .as_ref()
         .and_then(handle_of)?;
     let blist = own(b_h);
-    if blist
-        .invoke("get_Count", &json!([]))
-        .ok()?
-        .as_i64()
-        .unwrap_or(0)
-        == 0
-    {
+    if blist.list_len_or_zero().ok()? == 0 {
         return None;
     }
-    let anchor_h = handle_of(&blist.invoke("get_Item", &json!([0])).ok()?)?;
+    let anchor_h = blist.list_handle(0).ok().flatten()?;
     pos_of(&own(anchor_h))
 }
 
@@ -537,12 +531,12 @@ fn join_target(m: &Mission) -> Result<i64, String> {
             return Ok(out);
         };
         let mlist = own(m_h);
-        let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+        let count = mlist.list_len_or_zero()?;
         for i in 0..count {
             if (out.len() as i64) >= headroom {
                 break;
             }
-            let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+            let Some(h) = mlist.list_handle(i)? else {
                 continue;
             };
             let member = own(h);
@@ -577,9 +571,9 @@ fn gift_from_band(m: &Mission, max: i64) -> Result<i64, String> {
     let store: Option<(i32, i32)> = with(m.target_h, |camp| {
         let b_h = handle_of(&camp.read_field("Buildings").ok()?)?;
         let blist = own(b_h);
-        let nb = blist.invoke("get_Count", &json!([])).ok()?.as_i64()?;
+        let nb = blist.list_len().ok()?;
         for bi in 0..nb {
-            let Some(bh) = handle_of(&blist.invoke("get_Item", &json!([bi])).ok()?) else {
+            let Some(bh) = blist.list_handle(bi).ok()? else {
                 continue;
             };
             let building = own(bh);
@@ -599,18 +593,9 @@ fn gift_from_band(m: &Mission, max: i64) -> Result<i64, String> {
         let mut out = Vec::new();
         if let Some(mlist_h) = g.read_field("Members").ok().as_ref().and_then(handle_of) {
             let mlist = own(mlist_h);
-            let n = mlist
-                .invoke("get_Count", &json!([]))
-                .ok()
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0);
+            let n = mlist.list_len().unwrap_or(0);
             for i in 0..n {
-                if let Some(h) = mlist
-                    .invoke("get_Item", &json!([i]))
-                    .ok()
-                    .as_ref()
-                    .and_then(handle_of)
-                {
+                if let Some(h) = mlist.list_handle(i).ok().flatten() {
                     out.push(h);
                 }
             }
@@ -630,11 +615,7 @@ fn gift_from_band(m: &Mission, max: i64) -> Result<i64, String> {
             {
                 let inv = own(inv_h);
                 while moved < max {
-                    let count = inv
-                        .invoke("get_Count", &json!([]))
-                        .ok()
-                        .and_then(|v| v.as_i64())
-                        .unwrap_or(0);
+                    let count = inv.list_len().unwrap_or(0);
                     let mut pick: Option<(i32, i64)> = None;
                     for j in 0..count {
                         let Some(item_h) = inv
@@ -697,14 +678,9 @@ fn take_tribute(m: &Mission) -> Result<i64, String> {
         }
         let mlist_h = handle_of(&g.read_field("Members").ok()?)?;
         let mlist = own(mlist_h);
-        let n = mlist.invoke("get_Count", &json!([])).ok()?.as_i64()?;
+        let n = mlist.list_len().ok()?;
         for i in 0..n {
-            if let Some(h) = mlist
-                .invoke("get_Item", &json!([i]))
-                .ok()
-                .as_ref()
-                .and_then(handle_of)
-            {
+            if let Some(h) = mlist.list_handle(i).ok().flatten() {
                 return Some(h);
             }
         }

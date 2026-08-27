@@ -33,8 +33,7 @@ use unityforge::mono::{self, LogLevel};
 
 use crate::common::{
     GoodsFilter, base_centre, carry_off_stored_goods, ctype, display_name, dist_sq_to_building,
-    for_each_community, handle_of, is_npc_alive, list_len, own, remove_squad_and_drop,
-    send_squad_home, with,
+    for_each_community, handle_of, is_npc_alive, own, remove_squad_and_drop, send_squad_home, with,
 };
 use crate::genome;
 
@@ -184,7 +183,7 @@ fn launch_scan(now: f32) -> Result<(), String> {
         // otherwise occupied: at peace (no invasion), unthreatened,
         // and 3+ members. Any camp can still be a TARGET.
         let at_war = handle_of(&com.read_field("InvasionTarget")?).is_some();
-        let threats = list_len(&com, "Threats");
+        let threats = com.field_list_len("Threats");
         let can_thieve = members >= 3 && !at_war && threats == 0;
 
         let mut ballot = Ballot::new(STEAL_GUILE_FLOOR);
@@ -192,9 +191,9 @@ fn launch_scan(now: f32) -> Result<(), String> {
             let looter = t == "Looter";
             if let Some(m_h) = handle_of(&com.read_field("Members")?) {
                 let mlist = own(m_h);
-                let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+                let count = mlist.list_len_or_zero()?;
                 for i in 0..count {
-                    let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+                    let Some(h) = mlist.list_handle(i)? else {
                         continue;
                     };
                     let member = own(h);
@@ -309,9 +308,9 @@ fn launch(camp: &Camp, target: &Camp, now: f32) -> Result<(), String> {
         let mut thief: Option<(i32, String, f64)> = None;
         if let Some(m_h) = handle_of(&com.read_field("Members")?) {
             let mlist = own(m_h);
-            let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+            let count = mlist.list_len_or_zero()?;
             for i in 0..count {
-                let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+                let Some(h) = mlist.list_handle(i)? else {
                     continue;
                 };
                 let member = own(h);

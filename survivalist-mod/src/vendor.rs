@@ -31,8 +31,7 @@ use unityforge::mono::{self, LogLevel, MonoObject};
 
 use crate::common::{
     GoodsFilter, base_centre, carry_off_stored_goods, ctype, display_name, dist_sq_to_building,
-    for_each_community, handle_of, is_npc_alive, list_len, own, remove_squad_and_drop,
-    send_squad_home, with,
+    for_each_community, handle_of, is_npc_alive, own, remove_squad_and_drop, send_squad_home, with,
 };
 use crate::storyteller::{Outcome, Rule};
 
@@ -151,8 +150,9 @@ fn run(now: f32) -> Result<Outcome, String> {
             return Ok(true);
         };
         let at_war = handle_of(&com.read_field("InvasionTarget")?).is_some();
-        let threats = list_len(&com, "Threats");
-        let eligible_source = !is_player && members >= VENDOR_MIN_MEMBERS && !at_war && threats == 0;
+        let threats = com.field_list_len("Threats");
+        let eligible_source =
+            !is_player && members >= VENDOR_MIN_MEMBERS && !at_war && threats == 0;
         camps.push(Camp {
             handle: com.handle().0,
             id: com.read_field("Id")?.as_i64().unwrap_or(-1),
@@ -291,15 +291,20 @@ fn launch(source: &Camp, target: &Camp, now: f32) -> Result<Outcome, String> {
 /// Choose a living, unassigned survivor to travel.
 /// Stays here because it applies Survivalist's traveling vendors rules through the game's classes, fields, content, and actions.
 fn pick_free_member(com: &MonoObject) -> Result<Option<(i32, String)>, String> {
-    let leader_id = handle_of(&com.read_field("Leader")?)
-        .map(|h| own(h).read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1));
+    let leader_id = handle_of(&com.read_field("Leader")?).map(|h| {
+        own(h)
+            .read_field("Id")
+            .ok()
+            .and_then(|v| v.as_i64())
+            .unwrap_or(-1)
+    });
     let Some(m_h) = handle_of(&com.read_field("Members")?) else {
         return Ok(None);
     };
     let mlist = own(m_h);
-    let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+    let count = mlist.list_len_or_zero()?;
     for i in 0..count {
-        let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+        let Some(h) = mlist.list_handle(i)? else {
             continue;
         };
         let member = own(h);
@@ -317,7 +322,11 @@ fn pick_free_member(com: &MonoObject) -> Result<Option<(i32, String)>, String> {
             .unwrap_or(false);
         let squadded =
             handle_of(&member.invoke("GetSquad", &json!([])).unwrap_or(Json::Null)).is_some();
-        let id = member.read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1);
+        let id = member
+            .read_field("Id")
+            .ok()
+            .and_then(|v| v.as_i64())
+            .unwrap_or(-1);
         if !alive || !human || !conscious || squadded || Some(id) == leader_id {
             continue;
         }
@@ -412,7 +421,11 @@ impl mission::Mission for Mission {
     /// Release the mission squad and managed handles when the mission ends.
     /// Stays here because it applies Survivalist's traveling vendors rules through the game's classes, fields, content, and actions.
     fn cleanup(self) {
-        remove_squad_and_drop(self.source_h, self.squad_id, &[self.source_h, self.target_h, self.trader_h]);
+        remove_squad_and_drop(
+            self.source_h,
+            self.squad_id,
+            &[self.source_h, self.target_h, self.trader_h],
+        );
     }
 
     /// Describe the active work for status output.
@@ -431,9 +444,9 @@ fn deposit_goods(trader_h: i32, target_h: i32, max: i64) -> Result<i64, String> 
     let store: Option<(i32, i32)> = with(target_h, |t| {
         let b_h = handle_of(&t.read_field("Buildings").ok()?)?;
         let blist = own(b_h);
-        let nb = blist.invoke("get_Count", &json!([])).ok()?.as_i64()?;
+        let nb = blist.list_len().ok()?;
         for bi in 0..nb {
-            let Some(bh) = handle_of(&blist.invoke("get_Item", &json!([bi])).ok()?) else {
+            let Some(bh) = blist.list_handle(bi).ok()? else {
                 continue;
             };
             let building = own(bh);
@@ -455,11 +468,7 @@ fn deposit_goods(trader_h: i32, target_h: i32, max: i64) -> Result<i64, String> 
     let store_inv = own(store_inv_h);
     let mut moved = 0i64;
     while moved < max {
-        let count = trader_inv
-            .invoke("get_Count", &json!([]))
-            .ok()
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+        let count = trader_inv.list_len().unwrap_or(0);
         let mut pick: Option<(i32, i64)> = None;
         for i in 0..count {
             let Some(item_h) = handle_of(&trader_inv.invoke("GetItem", &json!([i]))?) else {
@@ -488,7 +497,9 @@ fn deposit_goods(trader_h: i32, target_h: i32, max: i64) -> Result<i64, String> 
             "Take",
             &json!([{ "handle": trader_h }, { "handle": item_h }, amount]),
         )?;
-        let Some(taken_h) = handle_of(&taken) else { break };
+        let Some(taken_h) = handle_of(&taken) else {
+            break;
+        };
         store_inv.invoke(
             "Add",
             &json!([{ "handle": store_bh }, { "handle": taken_h }]),

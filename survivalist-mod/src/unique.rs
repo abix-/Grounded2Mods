@@ -139,13 +139,17 @@ fn scan_holder() -> Result<Option<String>, String> {
         // Hands first: the carrier is the story.
         if let Some(m_h) = com.read_field("Members").ok().as_ref().and_then(handle_of) {
             let mlist = own(m_h);
-            let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+            let count = mlist.list_len_or_zero()?;
             for i in 0..count {
-                let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+                let Some(h) = mlist.list_handle(i)? else {
                     continue;
                 };
                 let member = own(h);
-                if let Some(inv_h) = member.read_field("Inventory").ok().as_ref().and_then(handle_of)
+                if let Some(inv_h) = member
+                    .read_field("Inventory")
+                    .ok()
+                    .as_ref()
+                    .and_then(handle_of)
                 {
                     if inventory_has_rifle(inv_h)? {
                         let who = member
@@ -160,16 +164,24 @@ fn scan_holder() -> Result<Option<String>, String> {
             }
         }
         // Then the shelves.
-        if let Some(b_h) = com.read_field("Buildings").ok().as_ref().and_then(handle_of) {
+        if let Some(b_h) = com
+            .read_field("Buildings")
+            .ok()
+            .as_ref()
+            .and_then(handle_of)
+        {
             let blist = own(b_h);
-            let nb = blist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+            let nb = blist.list_len_or_zero()?;
             for bi in 0..nb {
-                let Some(bh) = handle_of(&blist.invoke("get_Item", &json!([bi]))?) else {
+                let Some(bh) = blist.list_handle(bi)? else {
                     continue;
                 };
                 let building = own(bh);
-                if let Some(inv_h) =
-                    building.read_field("Inventory").ok().as_ref().and_then(handle_of)
+                if let Some(inv_h) = building
+                    .read_field("Inventory")
+                    .ok()
+                    .as_ref()
+                    .and_then(handle_of)
                 {
                     if inventory_has_rifle(inv_h)? {
                         found = Some(format!("the stores of {camp}"));
@@ -187,7 +199,7 @@ fn scan_holder() -> Result<Option<String>, String> {
 /// Stays here because it applies Survivalist's unique items rules through the game's classes, fields, content, and actions.
 fn inventory_has_rifle(inv_h: i32) -> Result<bool, String> {
     let inv = own(inv_h);
-    let n = inv.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+    let n = inv.list_len_or_zero()?;
     for i in 0..n {
         let Some(item_h) = handle_of(&inv.invoke("GetItem", &json!([i]))?) else {
             continue;
@@ -301,7 +313,10 @@ fn give_to_band(band_h: i32, proto_h: i32) -> Result<Option<String>, String> {
         return Err("Equipment.Spawn gave no item".into());
     };
     let who = with(carrier_h, |c| {
-        let _ = c.invoke("Add", &json!([{ "handle": carrier_h }, { "handle": item_h }]));
+        let _ = c.invoke(
+            "Add",
+            &json!([{ "handle": carrier_h }, { "handle": item_h }]),
+        );
         c.invoke("GetDisplayNameString", &json!([]))
             .ok()
             .and_then(|v| v.as_str().map(str::to_string))
@@ -315,14 +330,15 @@ fn give_to_band(band_h: i32, proto_h: i32) -> Result<Option<String>, String> {
 /// Choose a living carrier when a military leader is unavailable.
 /// Stays here because it applies Survivalist's unique items rules through the game's classes, fields, content, and actions.
 fn first_living_member(band_h: i32) -> Result<Option<i32>, String> {
-    let Some(m_h) = with(band_h, |b| b.read_field("Members").ok().as_ref().and_then(handle_of))
-    else {
+    let Some(m_h) = with(band_h, |b| {
+        b.read_field("Members").ok().as_ref().and_then(handle_of)
+    }) else {
         return Ok(None);
     };
     let mlist = own(m_h);
-    let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+    let count = mlist.list_len_or_zero()?;
     for i in 0..count {
-        let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+        let Some(h) = mlist.list_handle(i)? else {
             continue;
         };
         let alive = with(h, |c| {

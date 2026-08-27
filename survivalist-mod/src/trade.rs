@@ -33,8 +33,7 @@ use unityforge::mono::{self, LogLevel};
 
 use crate::common::{
     GoodsFilter, base_centre, carry_off_stored_goods, ctype, display_name, dist_sq_to_building,
-    for_each_community, handle_of, is_npc_alive, list_len, own, remove_squad_and_drop,
-    send_squad_home, with,
+    for_each_community, handle_of, is_npc_alive, own, remove_squad_and_drop, send_squad_home, with,
 };
 use crate::genome;
 
@@ -240,7 +239,7 @@ fn launch_scan(now: f32) -> Result<(), String> {
             return Ok(true);
         };
         let at_war = handle_of(&com.read_field("InvasionTarget")?).is_some();
-        let threats = list_len(&com, "Threats");
+        let threats = com.field_list_len("Threats");
         let can_sell = members >= 3 && !at_war && threats == 0;
 
         let mut ballot = Ballot::new(TRADE_DEFENSIVENESS_FLOOR);
@@ -248,9 +247,9 @@ fn launch_scan(now: f32) -> Result<(), String> {
             let looter = t == "Looter";
             if let Some(m_h) = handle_of(&com.read_field("Members")?) {
                 let mlist = own(m_h);
-                let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+                let count = mlist.list_len_or_zero()?;
                 for i in 0..count {
-                    let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+                    let Some(h) = mlist.list_handle(i)? else {
                         continue;
                     };
                     let member = own(h);
@@ -369,9 +368,9 @@ fn launch(camp: &Camp, host: &Camp, now: f32) -> Result<(), String> {
         let mut trader: Option<(i32, i64, String, f64)> = None;
         if let Some(m_h) = handle_of(&com.read_field("Members")?) {
             let mlist = own(m_h);
-            let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+            let count = mlist.list_len_or_zero()?;
             for i in 0..count {
-                let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+                let Some(h) = mlist.list_handle(i)? else {
                     continue;
                 };
                 let member = own(h);
@@ -638,12 +637,12 @@ fn load_food_from_members(
         return Ok(0);
     };
     let mlist = own(m_h);
-    let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+    let count = mlist.list_len_or_zero()?;
     'members: for i in 0..count {
         if gained >= need {
             break;
         }
-        let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+        let Some(h) = mlist.list_handle(i)? else {
             continue;
         };
         let member = own(h);
@@ -667,11 +666,7 @@ fn load_food_from_members(
         };
         let inv = own(inv_h);
         loop {
-            let n = inv
-                .invoke("get_Count", &json!([]))
-                .ok()
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0);
+            let n = inv.list_len().unwrap_or(0);
             // Count the donor's food stacks and find one to give.
             let mut food_stacks = 0i64;
             let mut pick: Option<(i32, i64)> = None;
@@ -736,9 +731,9 @@ fn deliver_carried_food(trader_h: i32, host_h: i32, max: i64) -> Result<i64, Str
     let store: Option<(i32, i32)> = with(host_h, |host| {
         let b_h = handle_of(&host.read_field("Buildings").ok()?)?;
         let blist = own(b_h);
-        let nb = blist.invoke("get_Count", &json!([])).ok()?.as_i64()?;
+        let nb = blist.list_len().ok()?;
         for bi in 0..nb {
-            let Some(bh) = handle_of(&blist.invoke("get_Item", &json!([bi])).ok()?) else {
+            let Some(bh) = blist.list_handle(bi).ok()? else {
                 continue;
             };
             let building = own(bh);
@@ -760,11 +755,7 @@ fn deliver_carried_food(trader_h: i32, host_h: i32, max: i64) -> Result<i64, Str
     let store_inv = own(store_inv_h);
     let mut delivered = 0i64;
     while delivered < max {
-        let count = trader_inv
-            .invoke("get_Count", &json!([]))
-            .ok()
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+        let count = trader_inv.list_len().unwrap_or(0);
         let mut pick: Option<(i32, i64)> = None;
         for i in 0..count {
             let Some(item_h) = handle_of(&trader_inv.invoke("GetItem", &json!([i]))?) else {

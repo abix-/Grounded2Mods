@@ -25,7 +25,7 @@ use modforge::ops::{OP_REGISTRY, OpDef};
 use unityforge::mono::{self, LogLevel, MonoObject};
 
 use crate::common::{
-    GoodsFilter, count_stored_goods, ctype, display_name, for_each_community, handle_of, list_len,
+    GoodsFilter, count_stored_goods, ctype, display_name, for_each_community, handle_of,
     on_main_thread, own, with,
 };
 use crate::{board, courier};
@@ -104,7 +104,11 @@ impl Contract for ClearThreat {
                 expires,
                 now,
             ),
-            ClearThreat::Owed { camp_h, camp_name, waiting_logged } => {
+            ClearThreat::Owed {
+                camp_h,
+                camp_name,
+                waiting_logged,
+            } => {
                 match courier::launch(
                     camp_h,
                     &camp_name,
@@ -121,7 +125,11 @@ impl Contract for ClearThreat {
                                 ),
                             );
                         }
-                        Some(ClearThreat::Owed { camp_h, camp_name, waiting_logged: true })
+                        Some(ClearThreat::Owed {
+                            camp_h,
+                            camp_name,
+                            waiting_logged: true,
+                        })
                     }
                     courier::Launch::Void => {
                         drop(own(camp_h));
@@ -161,7 +169,10 @@ pub fn tick(now: f32) {
     LAST_NOW_BITS.store(now.to_bits(), Ordering::Relaxed);
     if mission::should_tick(now, MISSION_TICK_SECS, &LAST_TICK_BITS) {
         mission::advance_contract(&STATE, now, |e| {
-            mono::log(LogLevel::Warn, &format!("survivalist-mod: threat advance failed: {e}"));
+            mono::log(
+                LogLevel::Warn,
+                &format!("survivalist-mod: threat advance failed: {e}"),
+            );
         });
     }
     if mission::should_tick(now, THREAT_SCAN_PERIOD_SECS, &LAST_SCAN_BITS) {
@@ -170,7 +181,10 @@ pub fn tick(now: f32) {
         }
         if let Err(e) = offer_scan(now) {
             if !e.contains("not found") {
-                mono::log(LogLevel::Warn, &format!("survivalist-mod: threat scan failed: {e}"));
+                mono::log(
+                    LogLevel::Warn,
+                    &format!("survivalist-mod: threat scan failed: {e}"),
+                );
             }
         }
     }
@@ -193,7 +207,9 @@ fn offer_scan(now: f32) -> Result<(), String> {
         }
         Ok(true)
     })?;
-    let Some(player_h) = player_h else { return Ok(()) };
+    let Some(player_h) = player_h else {
+        return Ok(());
+    };
 
     // The hirer: an AI settlement with a live threat at its door,
     // friendly enough to the player, able to pay; the smallest
@@ -214,7 +230,7 @@ fn offer_scan(now: f32) -> Result<(), String> {
         if members < 2 {
             return Ok(true);
         }
-        if list_len(&com, "Threats") == 0 {
+        if com.field_list_len("Threats") == 0 {
             return Ok(true);
         }
         let friendly = com
@@ -253,9 +269,9 @@ fn post_offer(camp_h: i32, camp_name: String, now: f32) -> Result<bool, String> 
     let snapshot: Option<(i64, Vec<(i32, i64)>)> = with(camp_h, |com| {
         let t_h = handle_of(&com.read_field("Threats").ok()?)?;
         let tlist = own(t_h);
-        let nt = tlist.invoke("get_Count", &json!([])).ok()?.as_i64()?;
+        let nt = tlist.list_len().ok()?;
         'threats: for ti in 0..nt {
-            let Some(th) = handle_of(&tlist.invoke("get_Item", &json!([ti])).ok()?) else {
+            let Some(th) = tlist.list_handle(ti).ok()? else {
                 continue;
             };
             let threat = own(th);
@@ -264,10 +280,10 @@ fn post_offer(camp_h: i32, camp_name: String, now: f32) -> Result<bool, String> 
                 continue;
             };
             let mlist = own(m_h);
-            let nm = mlist.invoke("get_Count", &json!([])).ok()?.as_i64()?;
+            let nm = mlist.list_len().ok()?;
             let mut members: Vec<(i32, i64)> = Vec::new();
             for mi in 0..nm {
-                let Some(mh) = handle_of(&mlist.invoke("get_Item", &json!([mi])).ok()?) else {
+                let Some(mh) = mlist.list_handle(mi).ok()? else {
                     continue;
                 };
                 let member = own(mh);
@@ -293,7 +309,11 @@ fn post_offer(camp_h: i32, camp_name: String, now: f32) -> Result<bool, String> 
                     }
                     continue 'threats;
                 }
-                let id = member.read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1);
+                let id = member
+                    .read_field("Id")
+                    .ok()
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(-1);
                 std::mem::forget(member);
                 members.push((mh, id));
             }
@@ -364,7 +384,13 @@ pub fn on_death(member: &MonoObject) {
         return;
     };
     let mut slot = STATE.lock();
-    let Some(ClearThreat::Offered { camp_name, members, player_kills, .. }) = slot.as_mut() else {
+    let Some(ClearThreat::Offered {
+        camp_name,
+        members,
+        player_kills,
+        ..
+    }) = slot.as_mut()
+    else {
         return;
     };
     if !members.iter().any(|(_, id)| *id == dead_id) {
@@ -461,7 +487,11 @@ fn advance_offered(
                     "survivalist-mod: threat: the threat at {camp_name} is over with {player_kills} player kill(s); {camp_name} owes payment"
                 ),
             );
-            return Some(ClearThreat::Owed { camp_h, camp_name, waiting_logged: false });
+            return Some(ClearThreat::Owed {
+                camp_h,
+                camp_name,
+                waiting_logged: false,
+            });
         }
         board::close(quest_h, false);
         mono::log(
@@ -514,7 +544,14 @@ fn threat_status(_args: &Json) -> Result<Json, String> {
     Ok(match slot.as_ref() {
         None => json!({ "threat_work": null }),
         Some(ClearThreat::Offered {
-            camp_name, threat_id, members, player_kills, pays, quest_h, expires, ..
+            camp_name,
+            threat_id,
+            members,
+            player_kills,
+            pays,
+            quest_h,
+            expires,
+            ..
         }) => json!({
             "threat_work": {
                 "stage": "offered",
@@ -563,7 +600,7 @@ fn threat_post(args: &Json) -> Result<Json, String> {
         for_each_community(|com| {
             if display_name(&com).eq_ignore_ascii_case(&hirer) {
                 let name = display_name(&com);
-                if list_len(&com, "Threats") == 0 {
+                if com.field_list_len("Threats") == 0 {
                     return Err(format!("'{name}' has no live threats"));
                 }
                 found = Some((com.handle().0, name));
@@ -582,7 +619,12 @@ fn threat_post(args: &Json) -> Result<Json, String> {
             ));
         }
         match &*STATE.lock() {
-            Some(ClearThreat::Offered { threat_id, members, pays, .. }) => Ok(json!({
+            Some(ClearThreat::Offered {
+                threat_id,
+                members,
+                pays,
+                ..
+            }) => Ok(json!({
                 "posted": true, "hirer": camp_name, "threat_id": threat_id,
                 "raiders": members.len(), "pays": pays,
             })),

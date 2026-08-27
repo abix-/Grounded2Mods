@@ -342,9 +342,9 @@ fn pick_courier(com: &MonoObject) -> Result<Option<(i32, String)>, String> {
         return Ok(None);
     };
     let mlist = own(m_h);
-    let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+    let count = mlist.list_len_or_zero()?;
     for i in 0..count {
-        let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+        let Some(h) = mlist.list_handle(i)? else {
             continue;
         };
         let member = own(h);
@@ -392,9 +392,9 @@ fn deliver_carried_payment(courier_h: i32, player_h: i32, max: i64) -> Result<i6
     let store: Option<(i32, i32)> = with(player_h, |host| {
         let b_h = handle_of(&host.read_field("Buildings").ok()?)?;
         let blist = own(b_h);
-        let nb = blist.invoke("get_Count", &json!([])).ok()?.as_i64()?;
+        let nb = blist.list_len().ok()?;
         for bi in 0..nb {
-            let Some(bh) = handle_of(&blist.invoke("get_Item", &json!([bi])).ok()?) else {
+            let Some(bh) = blist.list_handle(bi).ok()? else {
                 continue;
             };
             let building = own(bh);
@@ -415,11 +415,7 @@ fn deliver_carried_payment(courier_h: i32, player_h: i32, max: i64) -> Result<i6
     let store_inv = own(store_inv_h);
     let mut delivered = 0i64;
     while delivered < max {
-        let count = courier_inv
-            .invoke("get_Count", &json!([]))
-            .ok()
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+        let count = courier_inv.list_len().unwrap_or(0);
         let mut pick: Option<(i32, i64)> = None;
         for i in 0..count {
             let Some(item_h) = handle_of(&courier_inv.invoke("GetItem", &json!([i]))?) else {

@@ -33,9 +33,8 @@ use std::ffi::c_void;
 
 use serde_json::json;
 
-use unityforge::bridge::MonoHandle;
 use unityforge::hook::{self, HOOK_REGISTRY, HookCtx};
-use unityforge::mono::{self, LogLevel, MonoObject};
+use unityforge::mono::{self, LogLevel};
 
 /// Install the game hooks that activate this system.
 /// Stays here because it patches Survivalist's exact Injury infection field and method.
@@ -62,10 +61,7 @@ pub fn install() {
 extern "C" fn zero_injury_infection(ctx: *const c_void) -> i32 {
     let handle = ctx as isize as i32;
     if handle != 0 {
-        // SAFETY: the shim's prefix_ctx dispatcher acquired this
-        // handle for us and we own it; MonoObject's Drop releases
-        // it after the writes.
-        let injury = unsafe { MonoObject::from_handle(MonoHandle(handle)) };
+        let injury = mono::owned_object(handle);
         // Enum fields are written by variant name (the shim's
         // WriteField does Enum.Parse).
         if let Err(e) = injury.write_field("InfectionType", &json!("None")) {

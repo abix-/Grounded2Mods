@@ -34,7 +34,7 @@ use unityforge::mono::{self, LogLevel, MonoObject, MonoType};
 
 use crate::common::{
     base_centre, ctype, display_name, dist_sq_to_building, for_each_community, handle_of,
-    is_npc_alive, list_len, own, parse_xy, remove_squad_and_drop, send_squad_home, with,
+    is_npc_alive, own, parse_xy, remove_squad_and_drop, send_squad_home, with,
 };
 use crate::genome;
 
@@ -160,7 +160,7 @@ fn launch_scan(now: f32) -> Result<(), String> {
         let at_war = handle_of(&com.read_field("InvasionTarget")?).is_some();
         if members < SCAV_MIN_MEMBERS
             || at_war
-            || list_len(&com, "Threats") > 0
+            || com.field_list_len("Threats") > 0
             || active.contains(&id)
         {
             return Ok(true);
@@ -184,9 +184,9 @@ fn launch_scan(now: f32) -> Result<(), String> {
         let mut candidates: Vec<(i64, f64)> = Vec::new();
         if let Some(m_h) = handle_of(&com.read_field("Members")?) {
             let mlist = own(m_h);
-            let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+            let count = mlist.list_len_or_zero()?;
             for i in 0..count {
-                let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+                let Some(h) = mlist.list_handle(i)? else {
                     continue;
                 };
                 let member = own(h);
@@ -337,22 +337,16 @@ fn find_target(home: (i64, i64)) -> Result<Option<(i32, (f64, f64), String, i64)
     let list = own(list_h);
     // AllProps is large and VOLATILE: the game creates and destroys
     // props constantly, so the list can shrink under this walk and a
-    // get_Item at a now-stale index throws. Read the count softly and
+    // A now-stale list index throws. Read the count softly and
     // stop the walk on the first faulting index instead of letting it
     // abort (and log-spam) the whole scan.
-    let count = list
-        .invoke("get_Count", &json!([]))
-        .ok()
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
+    let count = list.list_len().unwrap_or(0);
     let mut best: Option<(i32, (f64, f64), String, i64, f64)> = None;
     for i in 0..count {
-        let item = match list.invoke("get_Item", &json!([i])) {
-            Ok(v) => v,
+        let ph = match list.list_handle(i) {
+            Ok(Some(handle)) => handle,
+            Ok(None) => continue,
             Err(_) => break, // the live props list moved under us
-        };
-        let Some(ph) = handle_of(&item) else {
-            continue;
         };
         let prop = own(ph);
         // Owned by the living? Then it is theft, not scavenging.
@@ -370,11 +364,7 @@ fn find_target(home: (i64, i64)) -> Result<Option<(i32, (f64, f64), String, i64)
         let Some(inv_h) = handle_of(&prop.read_field("Inventory").unwrap_or(Json::Null)) else {
             continue;
         };
-        let items = own(inv_h)
-            .invoke("get_Count", &json!([]))
-            .ok()
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+        let items = own(inv_h).list_len().unwrap_or(0);
         if items <= 0 {
             continue;
         }
@@ -423,9 +413,9 @@ fn gather_members(com: &MonoObject, ids: &[i64]) -> Result<Vec<i32>, String> {
         return Ok(out);
     };
     let mlist = own(m_h);
-    let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+    let count = mlist.list_len_or_zero()?;
     for i in 0..count {
-        let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+        let Some(h) = mlist.list_handle(i)? else {
             continue;
         };
         let member = own(h);
@@ -590,11 +580,7 @@ fn take_loot(m: &Mission) -> Result<i64, String> {
         let cinv = own(cinv_h);
         let mut mine = 0i64;
         while mine < STACKS_PER_CARRIER && hauled < MAX_HAUL_STACKS {
-            let count = inv
-                .invoke("get_Count", &json!([]))
-                .ok()
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0);
+            let count = inv.list_len().unwrap_or(0);
             if count <= 0 {
                 break;
             }

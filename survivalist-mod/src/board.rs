@@ -52,7 +52,9 @@ pub fn spawn(quest_id: &str, hirer_h: i32, ob_h: i32) -> Option<i32> {
             return None;
         }
     };
-    let giver_h = with(hirer_h, |c| c.read_field("Leader").ok().as_ref().and_then(handle_of));
+    let giver_h = with(hirer_h, |c| {
+        c.read_field("Leader").ok().as_ref().and_then(handle_of)
+    });
     let mut seeker_h: Option<i32> = None;
     let _ = for_each_community(|com| {
         if ctype(&com) == "Player" {
@@ -105,9 +107,9 @@ fn find_quest(quest_id: &str) -> Result<Option<i32>, String> {
         return Ok(None);
     };
     let list = own(list_h);
-    let n = list.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+    let n = list.list_len_or_zero()?;
     for i in 0..n {
-        let Some(story_h) = handle_of(&list.invoke("get_Item", &json!([i]))?) else {
+        let Some(story_h) = list.list_handle(i)? else {
             continue;
         };
         let story = own(story_h);
@@ -160,24 +162,20 @@ pub fn sweep_orphans() {
     let Some(sm) = MonoType::find("StoryManager").and_then(|t| t.singleton_instance()) else {
         return;
     };
-    let Some(list_h) = sm.read_field("ActiveQuests").ok().as_ref().and_then(handle_of) else {
+    let Some(list_h) = sm
+        .read_field("ActiveQuests")
+        .ok()
+        .as_ref()
+        .and_then(handle_of)
+    else {
         return;
     };
     let list = own(list_h);
-    let n = list
-        .invoke("get_Count", &json!([]))
-        .ok()
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
+    let n = list.list_len().unwrap_or(0);
     // Collect first: Delete mutates the list.
     let mut orphans = Vec::new();
     for i in 0..n {
-        let Some(h) = list
-            .invoke("get_Item", &json!([i]))
-            .ok()
-            .as_ref()
-            .and_then(handle_of)
-        else {
+        let Some(h) = list.list_handle(i).ok().flatten() else {
             continue;
         };
         let q = own(h);

@@ -181,7 +181,9 @@ extern "C" fn on_craft_recipe(ctx: *const c_void) -> i32 {
             .and_then(handle_of)
             .and_then(|ph| {
                 let p = own(ph);
-                p.read_field("Name").ok().and_then(|v| v.as_str().map(str::to_string))
+                p.read_field("Name")
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_string))
             })
             .unwrap_or_default();
     }
@@ -193,7 +195,11 @@ extern "C" fn on_craft_recipe(ctx: *const c_void) -> i32 {
         .ok()
         .and_then(|v| v.as_str().map(str::to_string))
         .unwrap_or_default();
-    let recipe_level = recipe.read_field("SkillLevel").ok().and_then(|v| v.as_i64()).unwrap_or(0);
+    let recipe_level = recipe
+        .read_field("SkillLevel")
+        .ok()
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
     *PENDING_RECIPE.lock() = Some((product, skill_type, recipe_level));
     0
 }
@@ -280,7 +286,7 @@ fn try_craft_roll(job: &CraftJob, now: f32) -> Result<bool, String> {
         return Ok(true);
     };
     let inv = own(inv_h);
-    let n = inv.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+    let n = inv.list_len_or_zero()?;
     for i in 0..n {
         let Some(item_h) = handle_of(&inv.invoke("GetItem", &json!([i]))?) else {
             continue;
@@ -288,7 +294,9 @@ fn try_craft_roll(job: &CraftJob, now: f32) -> Result<bool, String> {
         let item = own(item_h);
         let name = handle_of(&item.invoke("GetPrototype", &json!([]))?).and_then(|ph| {
             let p = own(ph);
-            p.read_field("Name").ok().and_then(|v| v.as_str().map(str::to_string))
+            p.read_field("Name")
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_string))
         });
         if name.as_deref() != Some(job.product.as_str()) {
             continue;
@@ -299,13 +307,19 @@ fn try_craft_roll(job: &CraftJob, now: f32) -> Result<bool, String> {
         // better benches make finer things.
         CRAFT_ROLLS.fetch_add(1, Ordering::Relaxed);
         let crafter_id = with(job.crafter_h, |c| {
-            c.read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1)
-        });
-        let prop_bonus =
-            mono::invoke_static("SettlementUpgrades", "TakeCraftQualityBonus", &json!([crafter_id]))
+            c.read_field("Id")
                 .ok()
                 .and_then(|v| v.as_i64())
-                .unwrap_or(0);
+                .unwrap_or(-1)
+        });
+        let prop_bonus = mono::invoke_static(
+            "SettlementUpgrades",
+            "TakeCraftQualityBonus",
+            &json!([crafter_id]),
+        )
+        .ok()
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
         let salt = (job.crafter_h as u64).wrapping_mul(53) ^ 0xC0FFEE;
         let odds = craft_odds(job.surplus + prop_bonus);
         let Some(tier_ix) = roll_tier(&odds, now, salt) else {
@@ -371,7 +385,11 @@ pub fn upgrade_band_gear(band_h: i32, now: f32, military: bool) {
     if !variants_loaded() {
         return;
     }
-    let odds = if military { &MILITARY_ODDS } else { &RAIDER_ODDS };
+    let odds = if military {
+        &MILITARY_ODDS
+    } else {
+        &RAIDER_ODDS
+    };
     if let Err(e) = roll_band(band_h, odds, now, "edge band") {
         mono::log(
             LogLevel::Warn,
@@ -427,14 +445,15 @@ pub fn tick(now: f32) {
 /// Roll and replace eligible gear carried by an arriving band.
 /// Stays here because Survivalist owns the tier catalog, crafting odds, prototype names, and inventory swaps; Modforge owns the quality rolls.
 fn roll_band(band_h: i32, odds: &[u64; 4], now: f32, origin: &str) -> Result<(), String> {
-    let Some(m_h) = with(band_h, |b| b.read_field("Members").ok().as_ref().and_then(handle_of))
-    else {
+    let Some(m_h) = with(band_h, |b| {
+        b.read_field("Members").ok().as_ref().and_then(handle_of)
+    }) else {
         return Ok(());
     };
     let mlist = own(m_h);
-    let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+    let count = mlist.list_len_or_zero()?;
     for mi in 0..count {
-        let Some(mh) = handle_of(&mlist.invoke("get_Item", &json!([mi]))?) else {
+        let Some(mh) = mlist.list_handle(mi)? else {
             continue;
         };
         let member = own(mh);
@@ -449,15 +468,15 @@ fn roll_band(band_h: i32, odds: &[u64; 4], now: f32, origin: &str) -> Result<(),
             continue;
         };
         let inv = own(inv_h);
-        let n = inv.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+        let n = inv.list_len_or_zero()?;
         // Walk top-down: a swap mutates the container.
         for i in (0..n).rev() {
             let Some(item_h) = handle_of(&inv.invoke("GetItem", &json!([i]))?) else {
                 continue;
             };
             let item = own(item_h);
-            let Some(base_name) = handle_of(&item.invoke("GetPrototype", &json!([]))?)
-                .and_then(|ph| {
+            let Some(base_name) =
+                handle_of(&item.invoke("GetPrototype", &json!([]))?).and_then(|ph| {
                     with(ph, |p| {
                         let name = p
                             .read_field("Name")
@@ -484,7 +503,9 @@ fn roll_band(band_h: i32, odds: &[u64; 4], now: f32, origin: &str) -> Result<(),
                 .ok()
                 .and_then(|v| v.as_str().map(str::to_string))
                 .unwrap_or_else(|| "<unnamed>".into());
-            let _ = swap_to_variant(mh, &inv, item_h, &base_name, tier_ix, now, salt, &who, origin)?;
+            let _ = swap_to_variant(
+                mh, &inv, item_h, &base_name, tier_ix, now, salt, &who, origin,
+            )?;
         }
     }
     Ok(())
@@ -575,9 +596,9 @@ pub(crate) fn find_prototype(name: &str) -> Result<Option<i32>, String> {
         return Ok(None);
     };
     let list = own(list_h);
-    let n = list.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+    let n = list.list_len_or_zero()?;
     for i in 0..n {
-        let Some(story_h) = handle_of(&list.invoke("get_Item", &json!([i]))?) else {
+        let Some(story_h) = list.list_handle(i)? else {
             continue;
         };
         let story = own(story_h);

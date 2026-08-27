@@ -6,6 +6,7 @@
 //! Dropping a Rust wrapper releases the handle back to the shim.
 
 use std::ffi::{CStr, CString};
+use std::mem::ManuallyDrop;
 
 use serde_json::Value as Json;
 
@@ -95,6 +96,11 @@ pub struct MonoObject {
 }
 
 impl MonoObject {
+    /// Take ownership of a managed handle returned by the bridge.
+    pub fn from_owned_handle(handle: MonoHandle) -> Self {
+        Self { handle }
+    }
+
     /// Wrap an existing handle without taking ownership. Used by
     /// op handlers that get a handle by address-selector and want
     /// to operate on it for the duration of one call.
@@ -109,6 +115,46 @@ impl MonoObject {
 
     pub fn handle(&self) -> MonoHandle {
         self.handle
+    }
+
+    /// Invoke `List<T>.get_Count` on a managed collection.
+    fn list_count(&self) -> Result<Json, String> {
+        self.invoke("get_Count", &serde_json::json!([]))
+    }
+
+    /// Invoke `List<T>.get_Item` on a managed collection.
+    fn list_item(&self, index: i64) -> Result<Json, String> {
+        self.invoke("get_Item", &serde_json::json!([index]))
+    }
+
+    /// Read a managed collection count as an integer.
+    pub fn list_len(&self) -> Result<i64, String> {
+        self.list_count()?
+            .as_i64()
+            .ok_or_else(|| "get_Count did not return a number".to_string())
+    }
+
+    /// Read a managed collection count, treating a non-numeric
+    /// bridge value as the empty-list default used by game mods.
+    pub fn list_len_or_zero(&self) -> Result<i64, String> {
+        Ok(self.list_count()?.as_i64().unwrap_or(0))
+    }
+
+    /// Read one managed collection entry as a handle.
+    pub fn list_handle(&self, index: i64) -> Result<Option<i32>, String> {
+        Ok(json_handle(&self.list_item(index)?))
+    }
+
+    /// Count the managed list stored in `field`, returning zero for
+    /// a missing field, null list, or bridge failure.
+    pub fn field_list_len(&self, field: &str) -> i64 {
+        self.read_field(field)
+            .ok()
+            .as_ref()
+            .and_then(json_handle)
+            .map(owned_object)
+            .and_then(|list| list.list_len().ok())
+            .unwrap_or(0)
     }
 
     /// Read a typed field. Returns the JSON-tagged value.
@@ -199,6 +245,44 @@ impl MonoObject {
         let s = std::str::from_utf8(&buf).map_err(|e| format!("inspect: bad utf-8: {e}"))?;
         serde_json::from_str(s).map_err(|e| format!("inspect: bad json: {e}"))
     }
+}
+
+/// Decode a managed-object handle from a bridge JSON value.
+pub fn json_handle(value: &Json) -> Option<i32> {
+    value.get("handle").and_then(Json::as_i64).map(|h| h as i32)
+}
+
+/// Take ownership of a raw managed handle returned by the bridge.
+pub fn owned_object(handle: i32) -> MonoObject {
+    MonoObject::from_owned_handle(MonoHandle(handle))
+}
+
+/// Borrow a managed handle for one operation without releasing it.
+pub fn with_object<R>(handle: i32, f: impl FnOnce(&MonoObject) -> R) -> R {
+    let object = ManuallyDrop::new(owned_object(handle));
+    f(&object)
+}
+
+/// Decode a Unity two-dimensional value from the bridge object
+/// form or its legacy `(x, y)` string form.
+pub fn unity_xy(value: &Json) -> Option<(f32, f32)> {
+    if let Some(object) = value.as_object() {
+        let component = |key: &str| {
+            object
+                .get(key)
+                .and_then(Json::as_f64)
+                .map(|number| number as f32)
+        };
+        if let (Some(x), Some(y)) = (component("x"), component("y")) {
+            return Some((x, y));
+        }
+    }
+    let text = value.as_str()?;
+    let text = text.trim().trim_start_matches('(').trim_end_matches(')');
+    let mut components = text.split(',');
+    let x = components.next()?.trim().parse::<f32>().ok()?;
+    let y = components.next()?.trim().parse::<f32>().ok()?;
+    Some((x, y))
 }
 
 impl Drop for MonoObject {

@@ -2,24 +2,11 @@
 //! growth, development). Extracted at the third consumer.
 
 use serde_json::{Value as Json, json};
-use unityforge::bridge::MonoHandle;
 use unityforge::mono::{self, LogLevel, MonoObject, MonoType};
 
-/// Wrap a handle we own; Drop releases it back to the shim table.
-///
-/// SAFETY: caller asserts the handle came fresh out of a bridge
-/// response (read_field / invoke / ctx dispatcher) and is not
-/// wrapped anywhere else.
-/// Extraction candidate: Unityforge should own safe wrappers for newly returned Mono handles; Survivalist should only decide which game objects to retain.
-pub fn own(h: i32) -> MonoObject {
-    unsafe { MonoObject::from_handle(MonoHandle(h)) }
-}
-
-/// Read a managed-object handle from a Unity bridge response.
-/// Extraction candidate: Unityforge should decode bridge handles from JSON; Survivalist should only consume the resulting managed objects.
-pub fn handle_of(v: &Json) -> Option<i32> {
-    v.get("handle").and_then(Json::as_i64).map(|h| h as i32)
-}
+pub use unityforge::mono::{
+    json_handle as handle_of, owned_object as own, unity_xy as parse_xy, with_object as with,
+};
 
 /// The running world's seed (Session.RandomSeed, persisted in the
 /// save): the identity key for the genome memory sidecar.
@@ -56,12 +43,9 @@ pub fn for_each_community(
     let cm = community_manager()?;
     let list_h = handle_of(&cm.read_field("Communities")?).ok_or("Communities list is null")?;
     let list = own(list_h);
-    let count = list
-        .invoke("get_Count", &json!([]))?
-        .as_i64()
-        .ok_or("get_Count did not return a number")?;
+    let count = list.list_len()?;
     for i in 0..count {
-        let Some(item_h) = handle_of(&list.invoke("get_Item", &json!([i]))?) else {
+        let Some(item_h) = list.list_handle(i)? else {
             continue;
         };
         if !f(own(item_h))? {
@@ -88,38 +72,6 @@ pub fn ctype(com: &MonoObject) -> String {
         .unwrap_or_else(|_| "?".to_string())
 }
 
-/// Count the entries in a managed list field without leaking its handle.
-/// Extraction candidate: Unityforge should provide managed-list field access; Survivalist should only name the game fields it reads.
-pub fn list_len(owner: &MonoObject, field: &str) -> i64 {
-    match owner.read_field(field).ok().as_ref().and_then(handle_of) {
-        Some(h) => own(h)
-            .invoke("get_Count", &json!([]))
-            .ok()
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0),
-        None => 0,
-    }
-}
-
-/// Read an (x, y) pair from either the shim's struct-object form
-/// (`{"x": .., "y": ..}`, the current bridge) or the legacy
-/// ToString form ("(x, y)").
-/// Extraction candidate: Unityforge should decode Unity coordinate values returned by the bridge; Survivalist should only choose which game positions matter.
-pub fn parse_xy(v: &Json) -> Option<(f32, f32)> {
-    if let Some(o) = v.as_object() {
-        let g = |k: &str| o.get(k).and_then(Json::as_f64).map(|f| f as f32);
-        if let (Some(x), Some(y)) = (g("x"), g("y")) {
-            return Some((x, y));
-        }
-    }
-    let s = v.as_str()?;
-    let s = s.trim().trim_start_matches('(').trim_end_matches(')');
-    let mut it = s.split(',');
-    let x = it.next()?.trim().parse::<f32>().ok()?;
-    let y = it.next()?.trim().parse::<f32>().ok()?;
-    Some((x, y))
-}
-
 /// Read an object's world or tile position.
 /// Stays here because it uses Survivalist's exact community, squad, inventory, and object conventions.
 pub fn pos_of(obj: &MonoObject) -> Option<(f32, f32)> {
@@ -129,15 +81,6 @@ pub fn pos_of(obj: &MonoObject) -> Option<(f32, f32)> {
         }
     }
     obj.read_field("Tile").ok().and_then(|v| parse_xy(&v))
-}
-
-/// Run `f` against a handle without releasing it.
-/// Extraction candidate: Unityforge should own temporary borrowed access to managed handles; Survivalist should only supply game operations.
-pub fn with<R>(h: i32, f: impl FnOnce(&MonoObject) -> R) -> R {
-    let o = own(h);
-    let r = f(&o);
-    std::mem::forget(o);
-    r
 }
 
 /// Give a freshly-spawned band a squad and send every living member
@@ -153,9 +96,9 @@ pub fn march_band_to(com_h: i32, tile: (i64, i64), behaviour: &str) -> Result<i6
             .ok_or("AddSquad gave no squad")?;
         if let Some(m_h) = handle_of(&com.read_field("Members")?) {
             let mlist = own(m_h);
-            let n = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+            let n = mlist.list_len_or_zero()?;
             for i in 0..n {
-                if let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) {
+                if let Some(h) = mlist.list_handle(i)? {
                     let alive = with(h, |member| {
                         member
                             .invoke("get_AliveAndNotZombie", &json!([]))
@@ -277,11 +220,11 @@ pub fn carry_off_stored_goods(
         return Ok(0);
     };
     let blist = own(b_h);
-    let nb = blist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+    let nb = blist.list_len_or_zero()?;
     let mut carried = 0i64;
     let mut carrier_ix = 0usize;
     for bi in 0..nb {
-        let Some(bh) = handle_of(&blist.invoke("get_Item", &json!([bi]))?) else {
+        let Some(bh) = blist.list_handle(bi)? else {
             continue;
         };
         let building = own(bh);
@@ -298,11 +241,7 @@ pub fn carry_off_stored_goods(
         // status.md "Quality system"); Take() shrinks the
         // container, so re-scan each time.
         loop {
-            let count = inv
-                .invoke("get_Count", &json!([]))
-                .ok()
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0);
+            let count = inv.list_len().unwrap_or(0);
             let mut pick: Option<i32> = None;
             let mut pick_price = -1.0f64;
             for i in 0..count {
@@ -374,36 +313,32 @@ pub fn carry_off_stored_goods(
 /// pillar's "can they pay" and "what does it pay" reads.
 /// Stays here because it uses Survivalist's exact community, squad, inventory, and object conventions.
 pub fn count_stored_goods(com: &MonoObject, filter: GoodsFilter, cap: i64) -> i64 {
-    let Some(b_h) = com.read_field("Buildings").ok().as_ref().and_then(handle_of) else {
+    let Some(b_h) = com
+        .read_field("Buildings")
+        .ok()
+        .as_ref()
+        .and_then(handle_of)
+    else {
         return 0;
     };
     let mut found = 0i64;
     let blist = own(b_h);
-    let nb = blist
-        .invoke("get_Count", &json!([]))
-        .ok()
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
+    let nb = blist.list_len().unwrap_or(0);
     for bi in 0..nb {
-        let Some(bh) = blist
-            .invoke("get_Item", &json!([bi]))
+        let Some(bh) = blist.list_handle(bi).ok().flatten() else {
+            continue;
+        };
+        let building = own(bh);
+        let Some(inv_h) = building
+            .read_field("Inventory")
             .ok()
             .as_ref()
             .and_then(handle_of)
         else {
             continue;
         };
-        let building = own(bh);
-        let Some(inv_h) = building.read_field("Inventory").ok().as_ref().and_then(handle_of)
-        else {
-            continue;
-        };
         let inv = own(inv_h);
-        let n = inv
-            .invoke("get_Count", &json!([]))
-            .ok()
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+        let n = inv.list_len().unwrap_or(0);
         for i in 0..n {
             let Some(item_h) = inv
                 .invoke("GetItem", &json!([i]))
@@ -447,11 +382,11 @@ pub fn sweep_orphan_trade_squads() {
             return Ok(true);
         };
         let slist = own(s_h);
-        let count = slist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+        let count = slist.list_len_or_zero()?;
         // Collect first: RemoveSquad mutates the list.
         let mut orphans = Vec::new();
         for i in 0..count {
-            let Some(h) = handle_of(&slist.invoke("get_Item", &json!([i]))?) else {
+            let Some(h) = slist.list_handle(i)? else {
                 continue;
             };
             let squad = own(h);

@@ -12,9 +12,13 @@ use modforge::ops::{OP_REGISTRY, OpDef};
 use modforge::storyteller::{Config, Director};
 use unityforge::mono::{self, LogLevel};
 
-use crate::common::{list_len, on_main_thread, session_seed, with};
+use crate::common::{on_main_thread, session_seed, with};
 
-static RULES: &[Rule] = &[crate::horde::RULE, crate::vendor::RULE, crate::incursion::RULE];
+static RULES: &[Rule] = &[
+    crate::horde::RULE,
+    crate::vendor::RULE,
+    crate::incursion::RULE,
+];
 
 static DIRECTOR: Director = Director::with_config(
     RULES,
@@ -48,7 +52,7 @@ pub fn tick(now: f32) {
 /// Stays here because it applies Survivalist's storyteller pacing rules through the game's classes, fields, content, and actions.
 pub fn safe_to_pressure(community_h: i32) -> bool {
     let max = guard_max_threats();
-    with(community_h, |com| list_len(com, "Threats") <= max)
+    with(community_h, |com| com.field_list_len("Threats") <= max)
 }
 
 /// Game-specific guard knob, stored alongside the director config.
@@ -89,11 +93,26 @@ fn storyteller_status(_args: &Json) -> Result<Json, String> {
             .map(|(name, members)| json!({"name": name, "members": members}));
         if let Some(obj) = status.as_object_mut() {
             obj.insert("guard_max_threats".to_string(), json!(guard_max_threats()));
-            obj.insert("packs_live".to_string(), json!(crate::horde::live_pack_count()));
-            obj.insert("vendors_live".to_string(), json!(crate::vendor::active_count()));
-            obj.insert("strangers_live".to_string(), json!(crate::stranger::active_count()));
-            obj.insert("settlers_live".to_string(), json!(crate::settler::active_count()));
-            obj.insert("incursion_pending".to_string(), json!(crate::incursion::pending()));
+            obj.insert(
+                "packs_live".to_string(),
+                json!(crate::horde::live_pack_count()),
+            );
+            obj.insert(
+                "vendors_live".to_string(),
+                json!(crate::vendor::active_count()),
+            );
+            obj.insert(
+                "strangers_live".to_string(),
+                json!(crate::stranger::active_count()),
+            );
+            obj.insert(
+                "settlers_live".to_string(),
+                json!(crate::settler::active_count()),
+            );
+            obj.insert(
+                "incursion_pending".to_string(),
+                json!(crate::incursion::pending()),
+            );
             obj.insert("alpha".to_string(), alpha.unwrap_or(Json::Null));
         }
         Ok(status)

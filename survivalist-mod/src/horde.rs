@@ -195,13 +195,16 @@ fn run(now: f32) -> Result<Outcome, String> {
     with(pack_h, |com| -> Result<(), String> {
         if let Some(m_h) = handle_of(&com.read_field("Members")?) {
             let mlist = own(m_h);
-            let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+            let count = mlist.list_len_or_zero()?;
             for i in 0..count {
-                let Some(zh) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+                let Some(zh) = mlist.list_handle(i)? else {
                     continue;
                 };
                 let zombie = own(zh);
-                if zombie.invoke("MoveToTile", &json!(["Walk", dest.clone()])).is_ok() {
+                if zombie
+                    .invoke("MoveToTile", &json!(["Walk", dest.clone()]))
+                    .is_ok()
+                {
                     pointed += 1;
                 }
             }
@@ -263,13 +266,16 @@ pub fn spawn_traveling_pack(
     with(pack_h, |com| -> Result<(), String> {
         if let Some(m_h) = handle_of(&com.read_field("Members")?) {
             let mlist = own(m_h);
-            let count = mlist.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+            let count = mlist.list_len_or_zero()?;
             for i in 0..count {
-                let Some(zh) = handle_of(&mlist.invoke("get_Item", &json!([i]))?) else {
+                let Some(zh) = mlist.list_handle(i)? else {
                     continue;
                 };
                 let zombie = own(zh);
-                if zombie.invoke("MoveToTile", &json!(["Walk", d.clone()])).is_ok() {
+                if zombie
+                    .invoke("MoveToTile", &json!(["Walk", d.clone()]))
+                    .is_ok()
+                {
                     pointed += 1;
                 }
             }
@@ -286,14 +292,9 @@ fn any_member_alive(com: &MonoObject) -> bool {
         return false;
     };
     let mlist = own(m_h);
-    let count = mlist
-        .invoke("get_Count", &json!([]))
-        .ok()
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
+    let count = mlist.list_len().unwrap_or(0);
     for i in 0..count {
-        let Some(h) = handle_of(&mlist.invoke("get_Item", &json!([i])).unwrap_or(serde_json::Value::Null))
-        else {
+        let Some(h) = mlist.list_handle(i).ok().flatten() else {
             continue;
         };
         // Zombies are dead already; "alive" for them is get_Alive.

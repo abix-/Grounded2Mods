@@ -161,7 +161,9 @@ fn try_ai_revenge(member: &MonoObject) -> Result<(), String> {
     let kname = display_name(&killer_com);
     mono::log(
         LogLevel::Info,
-        &format!("survivalist-mod: war -- {vname} sets a revenge invasion on {kname} (member killed)"),
+        &format!(
+            "survivalist-mod: war -- {vname} sets a revenge invasion on {kname} (member killed)"
+        ),
     );
     Ok(())
 }
@@ -193,19 +195,16 @@ fn war_status(_args: &Json) -> Result<Json, String> {
             let mut squads = Vec::new();
             if let Some(sq_h) = handle_of(&com.read_field("Squads")?) {
                 let sq_list = own(sq_h);
-                let n = sq_list.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
+                let n = sq_list.list_len_or_zero()?;
                 for i in 0..n {
-                    if let Some(s_h) = handle_of(&sq_list.invoke("get_Item", &json!([i]))?) {
+                    if let Some(s_h) = sq_list.list_handle(i)? {
                         let squad = own(s_h);
                         let behaviour = squad
                             .read_field("Behaviour")
                             .map(|v| v.as_str().unwrap_or("?").to_string())
                             .unwrap_or_else(|_| "?".to_string());
                         let n_members = match handle_of(&squad.read_field("Members")?) {
-                            Some(m_h) => own(m_h)
-                                .invoke("get_Count", &json!([]))?
-                                .as_i64()
-                                .unwrap_or(0),
+                            Some(m_h) => own(m_h).list_len_or_zero()?,
                             None => 0,
                         };
                         squads.push(json!({"behaviour": behaviour, "members": n_members}));
@@ -283,8 +282,16 @@ fn war_ignite(args: &Json) -> Result<Json, String> {
 /// End hostility between two named camps through the game relationship system.
 /// Stays here because it applies Survivalist's faction war rules through the game's classes, fields, content, and actions.
 fn war_end(args: &Json) -> Result<Json, String> {
-    let loser = args.get("loser").and_then(Json::as_str).ok_or("war_end: needs `loser`")?.to_string();
-    let winner = args.get("winner").and_then(Json::as_str).ok_or("war_end: needs `winner`")?.to_string();
+    let loser = args
+        .get("loser")
+        .and_then(Json::as_str)
+        .ok_or("war_end: needs `loser`")?
+        .to_string();
+    let winner = args
+        .get("winner")
+        .and_then(Json::as_str)
+        .ok_or("war_end: needs `winner`")?
+        .to_string();
     on_main_thread(move || {
         let mut loser_h: Option<i32> = None;
         let mut winner_h: Option<i32> = None;
@@ -300,7 +307,9 @@ fn war_end(args: &Json) -> Result<Json, String> {
             Ok(true)
         })?;
         let (Some(lh), Some(wh)) = (loser_h, winner_h) else {
-            return Err(format!("war_end: could not find both '{loser}' and '{winner}'"));
+            return Err(format!(
+                "war_end: could not find both '{loser}' and '{winner}'"
+            ));
         };
         let cm = community_manager()?;
         cm.invoke(
