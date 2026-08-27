@@ -4,6 +4,8 @@
 
 | Area | Shipped | Verification |
 |---|---|---|
+| MISERY input | [x] Register the Unreal player-input surface and route look plus interaction through strict in-process batches | The permanent navigation suite passes 10 deterministic tests. Its source proof rejects OS mouse, keyboard, focus, viewport lookup, and direct yaw, pitch, or Enhanced Input handler calls. |
+| `modforge::input` | [x] Add a serializable strict in-process player-command batch operation | Three input tests prove ordered one-batch dispatch and JSON round-trip. The operation errors when no player surface is registered instead of falling back to OS input. |
 | `ueforge` input | [x] Add a reusable Unreal player-input adapter | The adapter batches each command sequence into one game-thread job, resolves standard movement and look UFunctions from reflected parameter layouts, uses the retained local player, and delegates only game-specific key actions. All 59 Ueforge library tests pass. |
 | `modforge::input` + `modforge::route` | [x] Execute calculated paths as ordered player input | Input tests prove ordered movement, look, and key dispatch. Route tests prove aim, movement, path-point advancement, arrival, stuck handling, cancellation, and neutral release. |
 | `misery` | [x] Retained current-world player selector and Unreal actor-collection discovery for expedition and metal doors | Exact pushed commit `b9d41c7f` completed cold setup with no global UObject scan row. |

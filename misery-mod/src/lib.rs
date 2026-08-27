@@ -10,6 +10,7 @@
 pub mod debug;
 pub mod dispatch;
 pub mod gameplay;
+pub mod input;
 
 pub mod autoload;
 pub mod nag;
@@ -131,7 +132,8 @@ fn on_unreal_init() {
     ueforge::features()
         .once("pe_dispatch", dispatch::install)
         .once("input", || {
-            ueforge::ops::OP_REGISTRY.register_many(modforge::input::ops::all())
+            ueforge::ops::OP_REGISTRY.register_many(modforge::input::ops::all());
+            input::register();
         })
         .once("spawning", spawning::install)
         // `strange` is DELETED (2026-08-26). It spawned up to 48

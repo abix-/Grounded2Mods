@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 
 use common::{Api, api_or_skip, offsets_live};
 use modforge::client::{self, ClassInstance};
+use modforge::input::{Axis, Key, PlayerCommand};
 use modforge::route::{Position, RouteEdge, RouteGraph, StuckDetector, Waypoint};
 use serde_json::{Value, json};
 
@@ -49,9 +50,6 @@ struct NavigationCalls {
     find_path: Value,
     get_controller: Value,
     simple_move: Value,
-    add_yaw_input: Value,
-    add_pitch_input: Value,
-    interact: Value,
 }
 
 struct ReachableLootBox {
@@ -71,13 +69,6 @@ impl NavigationCalls {
             ),
             get_controller: function_layout(api, "Pawn", "GetController"),
             simple_move: function_layout(api, "AIBlueprintHelperLibrary", "SimpleMoveToLocation"),
-            add_yaw_input: function_layout(api, "PlayerController", "AddYawInput"),
-            add_pitch_input: function_layout(api, "PlayerController", "AddPitchInput"),
-            interact: function_layout(
-                api,
-                PLAYER_CLASS,
-                "InpActEvt_InteractInput_K2Node_EnhancedInputActionEvent_0",
-            ),
         }
     }
 }
@@ -358,25 +349,17 @@ fn look_command(yaw_error: f64, pitch_error: f64) -> (f32, f32) {
     )
 }
 
-fn controller_axis_input(api: &Api, layout: &Value, function: &str, controller: u64, value: f32) {
-    let mut parms = vec![0u8; layout["parms_size"].as_u64().unwrap() as usize];
-    put_f32(&mut parms, parameter_offset(layout, "Val"), value);
-    api.call_ufunction(
-        "PlayerController",
-        function,
-        &format!("addr:0x{controller:X}"),
-        &parms,
-    )
-    .unwrap_or_else(|error| panic!("PlayerController::{function} failed: {error}"));
+fn player_axis_input(api: &Api, axis: &str, value: f32) {
+    let axis = Axis::parse(axis).expect("known player axis");
+    player_commands(api, &[PlayerCommand::axis(axis, value, 0.016)]);
 }
 
-fn aim_at(
-    api: &Api,
-    calls: &NavigationCalls,
-    player_selector: &str,
-    controller: u64,
-    target: [f64; 3],
-) {
+fn player_commands(api: &Api, commands: &[PlayerCommand]) {
+    let response = api.op("input.player.commands", json!({"commands": commands}));
+    assert!(response.ok, "player commands failed: {:?}", response.error);
+}
+
+fn aim_at(api: &Api, player_selector: &str, target: [f64; 3]) {
     let started = Instant::now();
     let mut unchanged_steps = 0;
     loop {
@@ -398,23 +381,11 @@ fn aim_at(
         );
         if yaw_error.abs() > 1.0 {
             let (yaw_input, _) = look_command(yaw_error, pitch_error);
-            controller_axis_input(
-                api,
-                &calls.add_yaw_input,
-                "AddYawInput",
-                controller,
-                yaw_input,
-            );
+            player_axis_input(api, "mouse_x", yaw_input);
         }
         if pitch_error.abs() > 1.0 {
             let (_, pitch_input) = look_command(yaw_error, pitch_error);
-            controller_axis_input(
-                api,
-                &calls.add_pitch_input,
-                "AddPitchInput",
-                controller,
-                pitch_input,
-            );
+            player_axis_input(api, "mouse_y", pitch_input);
         }
         std::thread::sleep(Duration::from_millis(16));
         let after = control_rotation(api, player_selector);
@@ -456,10 +427,6 @@ fn put_u64(bytes: &mut [u8], offset: usize, value: u64) {
 
 fn put_f64(bytes: &mut [u8], offset: usize, value: f64) {
     bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-}
-
-fn put_f32(bytes: &mut [u8], offset: usize, value: f32) {
-    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }
 
 fn function_layout(api: &Api, class: &str, function: &str) -> Value {
@@ -655,15 +622,14 @@ fn stop_movement(api: &Api, controller: u64) {
     .expect("Controller::StopMovement failed");
 }
 
-fn interact(api: &Api, calls: &NavigationCalls, player_selector: &str) {
-    let parms = vec![0u8; calls.interact["parms_size"].as_u64().unwrap() as usize];
-    api.call_ufunction(
-        PLAYER_CLASS,
-        "InpActEvt_InteractInput_K2Node_EnhancedInputActionEvent_0",
-        player_selector,
-        &parms,
-    )
-    .expect("player interaction action failed");
+fn interact(api: &Api, _calls: &NavigationCalls, _player_selector: &str) {
+    player_commands(
+        api,
+        &[
+            PlayerCommand::key(Key(0x45), true),
+            PlayerCommand::key(Key(0x45), false),
+        ],
+    );
 }
 
 fn nearest_loot_box(
@@ -841,7 +807,7 @@ fn walk_edge(
             println!("bunker_door_interact attempt={interactions} location={current:?}");
             stop_movement(api, controller);
             let (interaction_point, extent) = actor_bounds(api, &blocking_door.addr_selector);
-            aim_at(api, calls, player_selector, controller, interaction_point);
+            aim_at(api, player_selector, interaction_point);
             let view = pawn_view_location(api, player_selector);
             let in_range = interaction_in_range(view, interaction_point, extent);
             let allowed = interaction_allowed(api, blocking_door);
@@ -917,16 +883,6 @@ fn player_interaction_surface_is_discoverable() {
             .as_array()
             .is_some_and(|functions| !functions.is_empty()),
         "the live player exposes no interaction function"
-    );
-    let layout = function_layout(
-        &api,
-        PLAYER_CLASS,
-        "InpActEvt_InteractInput_K2Node_EnhancedInputActionEvent_0",
-    );
-    println!("player_interaction_layout={layout}");
-    println!(
-        "player_sgk_interact_layout={}",
-        function_layout(&api, PLAYER_CLASS, "SGK Interact")
     );
     println!(
         "actor_components_layout={}",
@@ -1097,13 +1053,7 @@ fn unreal_navigation_opens_nearest_expedition_loot_box() {
         client::read_i32(&api, storage_inventory, INVENTORY_ITEM_COUNT_OFFSET);
     let mut live_loot_box_location = actor_location(&api, &loot_box.actor.addr_selector);
     live_loot_box_location[2] += 150.0;
-    aim_at(
-        &api,
-        &calls,
-        &player.addr_selector,
-        controller,
-        live_loot_box_location,
-    );
+    aim_at(&api, &player.addr_selector, live_loot_box_location);
     let interaction_attempts =
         open_loot_box(&api, &calls, &player.addr_selector, storage_inventory);
     let timing_report = timing.finish();
@@ -1372,6 +1322,19 @@ fn navigation_and_looting_use_only_in_process_commands() {
         assert!(
             !source.contains(forbidden),
             "bot flow still depends on OS input path {forbidden}"
+        );
+    }
+    for forbidden in [
+        concat!("Add", "YawInput"),
+        concat!("Add", "PitchInput"),
+        concat!(
+            "InpActEvt_Interact",
+            "Input_K2Node_EnhancedInputActionEvent_0"
+        ),
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "bot flow bypasses the registered player input surface with {forbidden}"
         );
     }
 }

@@ -88,7 +88,8 @@ impl Axis {
 }
 
 /// One ordered command sent through a game's player input surface.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PlayerCommand {
     Axis {
         axis: Axis,
@@ -211,7 +212,7 @@ impl Key {
 /// Per-game L3 input surface. Consumer mods implement this against
 /// their engine's input subsystem; modforge registers it as the
 /// optional L3 backend.
-pub trait InputSurface: Send + Sync + 'static {
+pub trait InputSurface: Send + Sync {
     fn name(&self) -> &'static str;
     fn click(&self, button: Button, x: i32, y: i32) -> Result<(), String>;
     fn move_abs(&self, x: i32, y: i32) -> Result<(), String>;
@@ -255,7 +256,7 @@ static INPUT_SURFACE: parking_lot::Mutex<Option<&'static dyn InputSurface>> =
 /// at attach. The surface is leaked into `'static` storage so it
 /// can be looked up by op handlers without ownership tracking;
 /// this matches how `OP_REGISTRY` handlers work.
-pub fn set_input_surface<S: InputSurface>(surface: S) {
+pub fn set_input_surface<S: InputSurface + 'static>(surface: S) {
     let boxed: &'static dyn InputSurface = Box::leak(Box::new(surface));
     let mut g = INPUT_SURFACE.lock();
     if g.is_none() {

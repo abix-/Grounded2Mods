@@ -92,3 +92,18 @@ fn movement_axes_parse_by_player_meaning() {
     assert_eq!(Axis::parse("move_forward").unwrap(), Axis::MoveForward);
     assert_eq!(Axis::parse("move_right").unwrap(), Axis::MoveRight);
 }
+
+#[test]
+fn player_command_batch_round_trips_for_the_control_plane() {
+    let commands = vec![
+        PlayerCommand::axis(Axis::MoveForward, 1.0, 0.016),
+        PlayerCommand::key(Key(0x45), true),
+    ];
+    let json = serde_json::to_value(&commands).unwrap();
+    assert_eq!(json[0]["kind"], "axis");
+    assert_eq!(json[1]["kind"], "key");
+    assert_eq!(
+        serde_json::from_value::<Vec<PlayerCommand>>(json).unwrap(),
+        commands
+    );
+}

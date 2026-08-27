@@ -21,7 +21,7 @@ use serde_json::{Value as Json, json};
 
 use crate::ops::OpDef;
 
-use super::{Axis, Backend, Button, InputSurface, Key, l1, l2};
+use super::{Axis, Backend, Button, InputSurface, Key, PlayerCommand, l1, l2};
 
 /// Run an action through the registered L3 [`InputSurface`] if any;
 /// otherwise log a one-line warning and run `fallback` (typically L1).
@@ -126,6 +126,27 @@ fn l1_direction_keys(positive: Key, negative: Key, value: f32) -> Result<(), Str
 /// `OP_REGISTRY.register_many(modforge::input::ops::all())` at attach.
 pub fn all() -> Vec<OpDef> {
     vec![
+        OpDef::new(
+            "input.player.commands",
+            "Send one ordered command batch through the registered in-process player input surface.",
+            "{commands: [{kind: axis, axis, value, delta_time}|{kind: key, key, down}]}",
+            |args| {
+                let commands: Vec<PlayerCommand> = serde_json::from_value(
+                    args.get("commands")
+                        .cloned()
+                        .ok_or("missing arg 'commands' (array)")?,
+                )
+                .map_err(|error| format!("invalid player command batch: {error}"))?;
+                let surface = super::input_surface()
+                    .ok_or("no in-process player input surface is registered")?;
+                surface.commands(&commands)?;
+                Ok(json!({
+                    "ok": true,
+                    "surface": surface.name(),
+                    "commands": commands.len(),
+                }))
+            },
+        ),
         OpDef::new(
             "input.mouse.move",
             "Move the mouse to (x, y). L1 = screen px; L2 = client-area px of hwnd.",
