@@ -41,6 +41,8 @@ counter!(
 /// PE-queue and damage-ring counters are owned by their respective
 /// container types (`GameThread`, `EventRing`) and surfaced through
 /// dedicated keys below.
+/// Stays here because the counter names measure Grounded 2's hooks and player-facing systems;
+/// Ueforge owns the reusable counter and process-snapshot machinery.
 pub fn snapshot_json() -> serde_json::Value {
     let mut obj = counter_json! {
         KILL_HOOK_FIRES                  => "kill_hook_fires",

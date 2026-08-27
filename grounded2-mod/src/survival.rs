@@ -41,6 +41,9 @@ pub struct SurvivalStats {
     pub patched: usize,
 }
 
+/// Applies the configured hunger and thirst rates to Grounded 2's survival components.
+/// Stays here because the setting choices and survival field names belong to Grounded 2;
+/// Ueforge owns vanilla capture and idempotent field tweaking.
 pub fn run(thirst_multiplier: f32, hunger_multiplier: f32) -> SurvivalStats {
     HUNGER_TWEAK.store_f32(hunger_multiplier);
     THIRST_TWEAK.store_f32(thirst_multiplier);

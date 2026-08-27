@@ -36,6 +36,9 @@ static HOOK: FallHook<G2FallBinder> = FallHook::new(G2_FALL_CONFIG);
 struct G2FallBinder;
 
 impl FallBinder for G2FallBinder {
+    /// Applies the purchased fall resistance before Grounded 2 calculates landing damage.
+    /// Stays here because it writes Grounded 2's movement field and fires this mod's skill catalog;
+    /// Ueforge owns landing detection and hook dispatch.
     fn before(&self, event: &FallEvent) {
         let _t = ueforge::counters::time_scope(&crate::counters::TIME_NS_FALL_HOOK);
         ueforge::counters::bump(&crate::counters::FALL_HOOK_FIRES);
@@ -77,10 +80,15 @@ impl FallBinder for G2FallBinder {
     }
 }
 
+/// Installs landing hooks on every supported Grounded 2 player character class.
+/// Stays here because the player classes and movement offsets are Grounded 2 facts;
+/// Ueforge owns the reusable fall hook.
 pub fn install() -> Result<Vec<ProcessEventHook>, &'static str> {
     HOOK.install(G2FallBinder)
 }
 
+/// Calculates the live fall-resistance reduction from the purchased Grounded 2 skill level.
+/// Stays here because it reads this mod's catalog and tuning; Modforge owns progression math and state.
 fn current_fall_resistance_reduction() -> f32 {
     tracker::with_state(|state| {
         let level = state
@@ -105,6 +113,8 @@ fn current_fall_resistance_reduction() -> f32 {
 /// Look up a row in a `UDataTable` by FName-as-u64. Thin wrapper
 /// over `ueforge::ue::tmap::find_value_by_fname_key` at the
 /// `UDataTable.RowMap` offset.
+/// Stays here because it supports Grounded 2's status-effect snapshot;
+/// Ueforge owns the reusable Unreal map lookup.
 pub(crate) fn lookup_data_table_row(table: &UObject, row_name: u64) -> Option<*const u8> {
     use ueforge::ue::offsets::datatable;
     unsafe { ueforge::ue::tmap::find_value_by_fname_key(table, datatable::ROW_MAP, row_name) }
@@ -112,6 +122,7 @@ pub(crate) fn lookup_data_table_row(table: &UObject, row_name: u64) -> Option<*c
 
 /// Read `FStatusEffectData.Type` (u8 at +0x30) and `Value`
 /// (f32 at +0x34) from the row bytes.
+/// Stays here because these offsets are Grounded 2's status-effect row layout.
 fn read_status_effect_row(row: *const u8) -> (u8, f32) {
     const TYPE_OFFSET: usize = 0x30;
     const VALUE_OFFSET: usize = 0x34;
@@ -130,6 +141,9 @@ pub struct StatusEffectEntry {
     pub value: Option<f32>,
 }
 
+/// Reports the status effects currently attached to the first live Grounded 2 player.
+/// Stays here because it interprets this game's component and data-table layouts;
+/// Ueforge owns generic object and map access.
 pub fn snapshot_player_status_effects() -> Option<Vec<StatusEffectEntry>> {
     use crate::rpg::apply;
 
@@ -142,6 +156,8 @@ pub fn snapshot_player_status_effects() -> Option<Vec<StatusEffectEntry>> {
     out
 }
 
+/// Collects Grounded 2 status-effect rows and values from one player character.
+/// Stays here because the component offsets and row metadata are specific to this game.
 fn collect_status_effects(player: &UObject) -> Vec<StatusEffectEntry> {
     const ASC_STATUS_EFFECT_COMPONENT: usize = 0x1378;
     const SEC_STATUS_EFFECTS_TARRAY: usize = 0x01C8;

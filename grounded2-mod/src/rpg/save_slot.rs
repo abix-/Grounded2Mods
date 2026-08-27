@@ -21,6 +21,8 @@ static RESOLVER: SlotKeyResolver = SlotKeyResolver::new("InGameGameState", PLAYT
 
 /// Returns the current playthrough's stable identifier as a 32-char
 /// hex string suitable as a filename. None when not in-world.
+/// Stays here because the game-state class and playthrough GUID offset are Grounded 2 facts;
+/// Ueforge owns the reusable slot-key resolver.
 pub fn current_slot_key() -> Option<String> {
     ueforge::counters::bump(&crate::counters::WORLD_LOADER_GOBJECTS_WALKS);
     RESOLVER.resolve()

@@ -66,6 +66,9 @@ enum KillerKind {
     Other,
 }
 
+/// Classifies a killing controller as the player, a tame Buggy, or another source.
+/// Stays here because Buggy ownership and kill-credit policy are specific to Grounded 2;
+/// Ueforge owns reusable Unreal class and pawn lookup.
 fn classify(instigator: Option<&UObject>) -> KillerKind {
     let Some(controller) = instigator else {
         return KillerKind::Other;
@@ -84,6 +87,9 @@ fn classify(instigator: Option<&UObject>) -> KillerKind {
     KillerKind::Other
 }
 
+/// Builds a readable Grounded 2 controller label for kill diagnostics.
+/// Stays here because it is presentation for this mod's kill-credit log;
+/// Ueforge owns object-name access.
 fn describe_instigator(instigator: Option<&UObject>) -> String {
     let Some(ctrl) = instigator else {
         return "<unresolved>".to_string();
@@ -98,6 +104,9 @@ fn describe_instigator(instigator: Option<&UObject>) -> String {
 struct G2DamageBinder;
 
 impl DamageBinder for G2DamageBinder {
+    /// Records player damage and fires Grounded 2 skill effects before the engine handles the hit.
+    /// Stays here because this mod chooses its diagnostics and pre-damage skill reactions;
+    /// Ueforge owns damage decoding and hook dispatch.
     fn before(&self, event: &DamageEvent) -> Option<f32> {
         ueforge::counters::bump(&crate::counters::KILL_HOOK_FIRES);
 
@@ -122,6 +131,9 @@ impl DamageBinder for G2DamageBinder {
         None
     }
 
+    /// Fires post-damage skills and awards Grounded 2 XP for confirmed creature kills.
+    /// Stays here because creature eligibility, Buggy credit, and XP rewards are game-specific;
+    /// Ueforge owns damage and kill event delivery.
     fn after(&self, event: &DamageEvent) {
         // Fire ON_DAMAGE_TAKEN for player-target hits. Impact
         // Resistance subscribes here (env-damage reversal on
@@ -196,6 +208,9 @@ impl DamageBinder for G2DamageBinder {
     }
 }
 
+/// Saves one Grounded 2 damage event for the debug API and writes its trace log.
+/// Stays here because the recorded function, health offset, and trace policy belong to this mod;
+/// Ueforge owns the reusable damage event and ring buffer.
 fn push_damage_event(event: &DamageEvent) {
     use ueforge::ue::field::read_f32;
     let cd_now = read_f32(event.victim_component, 0x032C);
@@ -223,6 +238,9 @@ fn push_damage_event(event: &DamageEvent) {
     }
 }
 
+/// Installs Grounded 2's health-component damage hook and creature-class filter.
+/// Stays here because the component, function, layout, and creature class are Grounded 2 facts;
+/// Ueforge owns the reusable damage hook.
 pub fn install() -> Result<ProcessEventHook, &'static str> {
     let creature_class = ueforge::ue::ClassRef::new("SurvivalCreature")
         .get()

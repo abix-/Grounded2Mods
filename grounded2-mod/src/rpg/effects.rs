@@ -47,6 +47,9 @@ pub struct BackpackSlotsEffect {
 }
 
 impl Effect<ueforge::rpg::UeEngine> for BackpackSlotsEffect {
+    /// Adds the purchased Backpack bonus to the configured inventory size and refreshes the UI hook.
+    /// Stays here because Grounded 2 defines the backpack patch and inventory widget;
+    /// Modforge owns generic skill-effect dispatch, and Ueforge owns Unreal access.
     fn apply(&self, level: u32, _max_level: u32, _ctx: &ueforge::rpg::TriggerCtx<'_>) {
         let Some(settings) = world_loader::loaded_settings() else {
             return;
@@ -65,6 +68,9 @@ impl Effect<ueforge::rpg::UeEngine> for BackpackSlotsEffect {
         );
     }
 
+    /// Describes how many inventory slots the current Backpack level adds.
+    /// Stays here because the slot bonus is Grounded 2 skill tuning;
+    /// Modforge owns the effect display contract.
     fn format(&self, level: u32, _max_level: u32) -> String {
         let bonus = skills::backpack_bonus_at(level, self.max_bonus_slots);
         format!("+{bonus} slots")
@@ -94,6 +100,9 @@ pub struct SurvivalDrainEffect {
 }
 
 impl Effect<ueforge::rpg::UeEngine> for SurvivalDrainEffect {
+    /// Reduces Grounded 2's hunger or thirst drain from its untouched rate and player setting.
+    /// Stays here because the survival fields and combination with this mod's settings are game-specific;
+    /// Modforge owns effect dispatch and progression math, and Ueforge owns Unreal field access.
     fn apply(&self, level: u32, _max_level: u32, _ctx: &ueforge::rpg::TriggerCtx<'_>) {
         let Some(settings) = world_loader::loaded_settings() else {
             return;
@@ -118,6 +127,9 @@ impl Effect<ueforge::rpg::UeEngine> for SurvivalDrainEffect {
         );
     }
 
+    /// Describes the hunger or thirst reduction granted at the current level.
+    /// Stays here because the maximum reduction is Grounded 2 skill tuning;
+    /// Modforge owns the effect display contract.
     fn format(&self, level: u32, _max_level: u32) -> String {
         let mult = (1.0 - skill_bonus(self.max_reduction, level)).max(0.0);
         let pct = ((1.0 - mult) * 100.0).round() as i32;
@@ -155,6 +167,9 @@ pub struct PlayerFallDamageReductionEffect {
 }
 
 impl Effect<ueforge::rpg::UeEngine> for PlayerFallDamageReductionEffect {
+    /// Reduces Grounded 2 fall damage across player, game-mode, and live survival fields.
+    /// Stays here because this composite operation coordinates several Maine-specific fields;
+    /// Modforge owns effect dispatch, and Ueforge owns Unreal field primitives.
     fn apply(&self, level: u32, _max_level: u32, _ctx: &ueforge::rpg::TriggerCtx<'_>) {
         let reduction = skill_bonus(self.max_reduction, level).min(1.0);
         let cdo_count = apply_to_player_character_cdos(|player_cdo| {
@@ -221,6 +236,9 @@ impl Effect<ueforge::rpg::UeEngine> for PlayerFallDamageReductionEffect {
         );
     }
 
+    /// Describes the fall-damage reduction granted at the current level.
+    /// Stays here because the maximum reduction is Grounded 2 skill tuning;
+    /// Modforge owns reusable percentage formatting.
     fn format(&self, level: u32, _max_level: u32) -> String {
         ueforge::rpg::format::format_pct(
             0.0,
@@ -239,6 +257,8 @@ pub static FALL_DAMAGE: PlayerFallDamageReductionEffect = PlayerFallDamageReduct
     max_reduction: 1.00,
 };
 
+/// Returns the untouched Grounded 2 player fall-damage ratio captured by the skill effect.
+/// Stays here because the baseline belongs to this game's composite fall-damage implementation.
 pub(crate) fn vanilla_fall_damage_ratio() -> Option<f32> {
     VANILLA_FALL_DAMAGE_RATIO.get().copied()
 }
@@ -259,6 +279,9 @@ pub struct LifestealEffect {
 }
 
 impl Effect<ueforge::rpg::UeEngine> for LifestealEffect {
+    /// Heals the player for a level-scaled share of damage dealt to another creature.
+    /// Stays here because it targets Grounded 2's player and health-component layout;
+    /// Modforge owns progression and effect dispatch, and Ueforge owns damage events and field access.
     fn apply(&self, level: u32, max_level: u32, ctx: &ueforge::rpg::TriggerCtx<'_>) {
         let ueforge::rpg::TriggerCtx::Engine(ueforge::rpg::UeEvent::DamageDealt(event)) = ctx
         else {
@@ -310,6 +333,9 @@ impl Effect<ueforge::rpg::UeEngine> for LifestealEffect {
         }
     }
 
+    /// Describes the share of outgoing damage converted into healing.
+    /// Stays here because the maximum lifesteal fraction is Grounded 2 skill tuning;
+    /// Modforge owns reusable percentage formatting.
     fn format(&self, level: u32, max_level: u32) -> String {
         ueforge::rpg::format::format_pct(
             0.0,
@@ -342,6 +368,9 @@ pub struct ImpactReversalEffect {
 }
 
 impl Effect<ueforge::rpg::UeEngine> for ImpactReversalEffect {
+    /// Removes a level-scaled share of environmental damage after Grounded 2 applies it.
+    /// Stays here because the environmental marker and health layout are Maine-specific;
+    /// Modforge owns progression and effect dispatch, and Ueforge owns damage events and field access.
     fn apply(&self, level: u32, max_level: u32, ctx: &ueforge::rpg::TriggerCtx<'_>) {
         let ueforge::rpg::TriggerCtx::Engine(ueforge::rpg::UeEvent::DamageTaken(event)) = ctx
         else {
@@ -381,6 +410,9 @@ impl Effect<ueforge::rpg::UeEngine> for ImpactReversalEffect {
         }
     }
 
+    /// Describes the environmental-damage reduction granted at the current level.
+    /// Stays here because this skill's reduction range is Grounded 2 tuning;
+    /// Modforge owns reusable percentage formatting.
     fn format(&self, level: u32, max_level: u32) -> String {
         ueforge::rpg::format::format_pct(
             0.0,

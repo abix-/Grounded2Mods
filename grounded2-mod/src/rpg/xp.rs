@@ -7,15 +7,21 @@ use ueforge::rpg::{CreatureDef, CreatureRegistry, Curve};
 pub const CURVE: Curve = Curve::new(100.0, 1.8, 50);
 pub const MAX_LEVEL: u32 = CURVE.max_level;
 
+/// Reports the total XP a Grounded 2 character needs to reach a level.
+/// Stays here because it binds Modforge's reusable curve to this mod's tuning constants.
 pub fn cumulative_xp_for_level(level: u32) -> u64 {
     CURVE.cumulative_xp_for_level(level)
 }
+/// Resolves a Grounded 2 character level from accumulated XP.
+/// Stays here because it binds Modforge's reusable curve to this mod's tuning constants.
 pub fn level_for_xp(xp: u64) -> u32 {
     CURVE.level_for_xp(xp)
 }
 
 /// Base XP awarded for killing a creature of `class_name`. Lookup is
 /// case-sensitive on the BP class short name (e.g. "BP_Aphid_C").
+/// Stays here because the creature classes and rewards form Grounded 2's bestiary;
+/// Modforge owns the reusable creature registry.
 pub fn xp_for_creature(class_name: &str) -> u32 {
     CREATURES.lookup(class_name)
 }

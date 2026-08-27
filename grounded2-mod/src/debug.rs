@@ -53,14 +53,23 @@ pub(crate) static PE_QUEUE: GameThread = GameThread::new();
 /// drained by the snapshot endpoint.
 static DAMAGE_RING: DamageRing = DamageRing::new(64);
 
+/// Adds one Grounded 2 damage event to the recent-event debug history.
+/// Stays here because this mod chooses which damage events to expose;
+/// Ueforge owns the reusable bounded ring.
 pub fn record_damage_event(ev: DamageEvent) {
     DAMAGE_RING.record(ev);
 }
 
+/// Reports how many Grounded 2 damage events have entered the debug ring.
+/// Stays here because this counter is part of this mod's diagnostics;
+/// Ueforge owns the reusable ring metrics.
 pub(crate) fn damage_ring_pushes() -> u64 {
     DAMAGE_RING.pushes()
 }
 
+/// Reports the largest Grounded 2 damage-history occupancy observed this session.
+/// Stays here because this counter is part of this mod's diagnostics;
+/// Ueforge owns the reusable ring metrics.
 pub(crate) fn damage_ring_peak() -> usize {
     DAMAGE_RING.peak()
 }
@@ -71,6 +80,8 @@ const PE_TIMEOUT_HINT: &str =
 /// Register every g2rpg op + selector into the workspace
 /// registries. Called once from `worker()` at init, BEFORE the
 /// HTTP listener starts.
+/// Stays here because it assembles Grounded 2's selectors, health binding, tracker, and disabled call;
+/// Ueforge owns the reusable operation registries and handlers.
 fn register_ops() {
     // Selectors first so the resolver this game passes to the op
     // registrars walks a registry that already contains both
@@ -129,6 +140,9 @@ static HEALTH_BINDING: ueforge::rpg::health::HealthBinding =
         set_current_health_function: Some("SetCurrentHealth"),
     };
 
+/// Starts Grounded 2's opt-in local debug endpoint.
+/// Stays here because this mod chooses its endpoint, operations, snapshot, and counters;
+/// Ueforge owns the HTTP server and request envelope.
 pub fn spawn(port: u16) {
     register_ops();
     // Serve the queue from UEngine::Tick, every frame, world or
@@ -153,8 +167,9 @@ pub fn spawn(port: u16) {
         |msg| ueforge::log!("{}", msg),
     );
 }
-
-
+/// Refuses the unsafe Grounded 2 damage simulation while preserving a discoverable debug operation.
+/// Stays here because the failure is caused by this game's damage-replication re-entry path;
+/// Ueforge owns generic operation registration.
 fn op_simulate_apply_damage(_args: &Json) -> Result<Json, String> {
     // Disabled: calling ApplyDamageFromInfo via process_event from
     // any of our current PE trampolines (kill_hook, fall_hook,
@@ -185,8 +200,9 @@ fn op_simulate_apply_damage(_args: &Json) -> Result<Json, String> {
 // process_event with the buffer and returns the (possibly
 // engine-mutated) buffer back as hex. This is the test-side
 // "do anything" surface.
-
-
+/// Resolves the first live Grounded 2 player for a matching debug selector.
+/// Stays here because the selector names this game's player class;
+/// Ueforge owns selector registration and generic resolution.
 fn try_live_player(s: &str) -> Option<Result<&'static UObject, String>> {
     if s != "live_player" {
         return None;
@@ -197,6 +213,9 @@ fn try_live_player(s: &str) -> Option<Result<&'static UObject, String>> {
     )
 }
 
+/// Resolves the live Grounded 2 player's health component for a matching debug selector.
+/// Stays here because the player component offset belongs to this game;
+/// Ueforge owns selector registration and dispatch.
 fn try_live_player_hc(s: &str) -> Option<Result<&'static UObject, String>> {
     if s != "live_player_hc" {
         return None;
@@ -206,6 +225,9 @@ fn try_live_player_hc(s: &str) -> Option<Result<&'static UObject, String>> {
 
 // ---- Game-thread executors. Called from kill_hook trampoline. ----
 
+/// Finds the live Grounded 2 player's health component for game-thread debug operations.
+/// Stays here because the player class and health-component offset are Grounded 2 facts;
+/// Ueforge owns the object access primitives.
 fn live_player_hc() -> Result<&'static UObject, String> {
     // SAFETY: we're on the game thread (inside the kill-hook PE
     // drain). The pawn + its HC live for the duration of the
@@ -218,6 +240,9 @@ fn live_player_hc() -> Result<&'static UObject, String> {
 }
 
 #[allow(dead_code)] // kept as reference; tests should use `call` instead
+/// Invokes Grounded 2's damage function with its mirrored parameter bytes for diagnostics.
+/// Stays here because the function and parameter layout are specific to this game;
+/// Ueforge owns checked ProcessEvent call primitives.
 fn exec_apply_damage(amount: f32, type_flags: u32) -> Result<Json, String> {
     use std::ffi::c_void;
     let hc = live_player_hc()?;
@@ -437,6 +462,9 @@ pub struct SmmcFields {
     pub custom_fall_damage_multiplier: f32,
 }
 
+/// Builds one complete Grounded 2 state snapshot for the debug response.
+/// Stays here because it combines this mod's settings, skills, player fields, and game-specific views;
+/// Ueforge owns reusable process and catalog snapshots.
 fn build_snapshot() -> Snapshot {
     let slot = tracker::current_slot();
     let player_state_view = tracker::with_state(PlayerStateView::from_state);
@@ -507,6 +535,8 @@ fn build_snapshot() -> Snapshot {
     }
 }
 
+/// Captures the first live Grounded 2 player's health, movement, and character fields.
+/// Stays here because the selected fields and offsets support this mod's skills and diagnostics.
 fn collect_live_player() -> Option<LivePlayerView> {
     let mut count = 0usize;
     let mut hc: Option<HcFields> = None;
@@ -541,6 +571,9 @@ fn collect_live_player() -> Option<LivePlayerView> {
     }
 }
 
+/// Reads the Grounded 2 movement values changed by movement-related skills.
+/// Stays here because the selected movement offsets define this mod's verification surface;
+/// Ueforge owns typed field access.
 fn read_cmc_fields(cmc: &UObject) -> CmcFields {
     use crate::rpg::skills::*;
     CmcFields {
@@ -559,6 +592,9 @@ fn read_cmc_fields(cmc: &UObject) -> CmcFields {
     }
 }
 
+/// Reads the Grounded 2 character values changed by combat and fall skills.
+/// Stays here because the selected character offsets define this mod's verification surface;
+/// Ueforge owns typed field access.
 fn read_asc_fields(asc: &UObject) -> AscFields {
     use crate::rpg::skills::*;
     AscFields {
@@ -571,6 +607,9 @@ fn read_asc_fields(asc: &UObject) -> AscFields {
     }
 }
 
+/// Captures Grounded 2 class-default values changed by survival, regeneration, and fall skills.
+/// Stays here because the classes and selected fields belong to this game's skill implementation;
+/// Ueforge owns generic object walking and field reads.
 fn collect_cdo() -> CdoView {
     use crate::rpg::skills::*;
 
@@ -613,6 +652,9 @@ fn collect_cdo() -> CdoView {
     }
 }
 
+/// Reads the Grounded 2 health values changed or observed by combat skills.
+/// Stays here because the selected health offsets define this mod's verification surface;
+/// Ueforge owns typed field access.
 fn read_hc_fields(hc: &UObject) -> HcFields {
     // Offsets verified against Maine_classes.hpp + skills.rs.
     const HC_IMMUNITY_FLAGS: usize = 0x00F8;
@@ -634,6 +676,7 @@ fn read_hc_fields(hc: &UObject) -> HcFields {
 
 /// All registered skill ids in the catalog. Exposed so docs and
 /// tests can iterate the canonical list without re-deriving it.
+/// Stays here because Grounded 2 owns the catalog; Modforge owns the reusable skill registry.
 #[allow(dead_code)]
 pub fn catalog_skill_ids() -> Vec<&'static str> {
     skills::CATALOG.iter().map(|s| s.id).collect()

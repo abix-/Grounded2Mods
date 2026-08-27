@@ -47,4 +47,6 @@ const _: () = {
 
 // Quiet "field is never read" warnings; consumed via raw pointer reads.
 #[allow(dead_code)]
+/// Keeps the raw pointer type used by Grounded 2's mirrored Unreal parameters checked by the compiler.
+/// Stays here because these byte layouts mirror this game's generated SDK, not a reusable Ueforge type.
 fn _force_use(_p: *mut c_void) {}

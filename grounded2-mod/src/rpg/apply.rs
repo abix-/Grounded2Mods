@@ -36,27 +36,40 @@ static VANILLA_HUNGER: OnceLock<f32> = OnceLock::new();
 static VANILLA_THIRST: OnceLock<f32> = OnceLock::new();
 static VANILLA_MAX_HEALTH: OnceLock<f32> = OnceLock::new();
 
+/// Returns the untouched Grounded 2 hunger drain captured before skills are applied.
+/// Stays here because the cache is populated from this game's survival component;
+/// Modforge owns the reusable vanilla-cache primitive.
 pub(crate) fn vanilla_hunger() -> Option<f32> {
     VANILLA_HUNGER.get().copied()
 }
+/// Returns the untouched Grounded 2 thirst drain captured before skills are applied.
+/// Stays here because the cache is populated from this game's survival component;
+/// Modforge owns the reusable vanilla-cache primitive.
 pub(crate) fn vanilla_thirst() -> Option<f32> {
     VANILLA_THIRST.get().copied()
 }
+/// Returns the untouched Grounded 2 fall-damage ratio captured by its composite effect.
+/// Stays here because it exposes this game's field baseline to the Grounded 2 debug snapshot.
 pub(crate) fn vanilla_fall_damage_ratio() -> Option<f32> {
     crate::rpg::effects::vanilla_fall_damage_ratio()
 }
+/// Returns the untouched Grounded 2 maximum health captured before skill changes.
+/// Stays here because it exposes this game's health baseline to the Grounded 2 debug snapshot.
 pub(crate) fn vanilla_max_health() -> Option<f32> {
     VANILLA_MAX_HEALTH.get().copied()
 }
 
 /// Snapshot every captured `(offset, value)` pair we have for the
 /// HC u32 mask family. Used by the debug snapshot endpoint.
+/// Stays here because the offsets describe Grounded 2's health component;
+/// Modforge owns the reusable keyed vanilla cache.
 pub(crate) fn vanilla_hc_masks_snapshot() -> Vec<(usize, u32)> {
     VANILLA_HC_U32_MASK.snapshot()
 }
 
 /// All currently-disabled skill ids. Delegates to the framework
 /// Tracker's canonical `disabled_skills` set.
+/// Stays here because it exposes Grounded 2's catalog state to this mod's debug endpoint.
 pub(crate) fn disabled_skills_snapshot() -> Vec<&'static str> {
     crate::rpg::tracker::TRACKER.disabled_skills().snapshot()
 }
@@ -68,6 +81,7 @@ pub(crate) static VANILLA_HC_U32_MASK: ueforge::rpg::VanillaCache<usize, u32> =
 /// True when the skill should currently apply at its stored level.
 /// Reads through the framework Tracker's internal toggle set.
 /// no separate game-side mirror.
+/// Stays here because it adapts Grounded 2's skill identifiers to its UI callbacks.
 pub fn is_skill_enabled(skill_id: &str) -> bool {
     !crate::rpg::tracker::TRACKER
         .disabled_skills()
@@ -76,6 +90,8 @@ pub fn is_skill_enabled(skill_id: &str) -> bool {
 
 /// Set the enabled flag for `skill_id`. Returns the new state.
 /// Also re-applies the skill so the change is immediate.
+/// Stays here because Grounded 2's UI decides when a catalog skill is toggled;
+/// Modforge owns the toggle state and effect dispatch.
 pub fn set_skill_enabled(skill_id: &'static str, enabled: bool) -> bool {
     let now_disabled = crate::rpg::tracker::TRACKER
         .disabled_skills()
@@ -96,6 +112,8 @@ pub(crate) static MAX_HEALTH_VANILLA: ueforge::rpg::VanillaCache<usize, f32> =
 
 /// Read and store the untouched hunger/thirst drain rates. Run
 /// at init before any patching.
+/// Stays here because the component class and field offsets are Grounded 2 facts;
+/// Ueforge owns object discovery and field reads.
 pub fn capture_vanilla() {
     if VANILLA_HUNGER.get().is_some() && VANILLA_THIRST.get().is_some() {
         return;
@@ -152,26 +170,36 @@ pub(crate) static CLASS_GLOBAL_COMBAT_DATA: ue::ClassRef =
 // it needs.
 // ---------------------------------------------------------------
 
+/// Runs an effect against every Grounded 2 player-character class default.
+/// Stays here because it supplies this game's player-class filter to Ueforge's reusable walker.
 pub(crate) fn apply_to_player_character_cdos(f: impl FnMut(&UObject)) -> usize {
     PLAYER.for_each_cdo(f)
 }
 
+/// Runs an effect against every live Grounded 2 player character.
+/// Stays here because it supplies this game's player-class filter to Ueforge's reusable walker.
 pub(crate) fn apply_to_live_player_characters(f: impl FnMut(&UObject)) -> usize {
     PLAYER.for_each_live(f)
 }
 
+/// Writes a survival value across Grounded 2's survival-component class defaults.
+/// Stays here because the component class belongs to this game; Ueforge owns class walking and writes.
 pub(crate) fn apply_to_survival_component_cdos(offset: usize, value: f32) -> usize {
     CLASS_SURVIVAL_COMPONENT.for_each_cdo_subclass(|obj| {
         write_f32(obj, offset, value);
     })
 }
 
+/// Runs an effect against Grounded 2's live survival-mode manager components.
+/// Stays here because the component class belongs to this game; Ueforge owns instance walking.
 pub(crate) fn apply_to_survival_mode_manager_components(
     f: impl FnMut(&UObject),
 ) -> usize {
     CLASS_SURVIVAL_MODE_MANAGER_COMPONENT.for_each_instance(f)
 }
 
+/// Runs an effect against Grounded 2's survival game-mode settings objects.
+/// Stays here because the settings class belongs to this game; Ueforge owns object walking.
 pub(crate) fn apply_to_survival_game_mode_settings(f: impl FnMut(&UObject)) -> usize {
     CLASS_SURVIVAL_GAME_MODE_SETTINGS.for_each_any(f)
 }

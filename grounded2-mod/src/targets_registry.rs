@@ -90,6 +90,8 @@ pub static GROUNDED2_RESOLVER: Resolver = Resolver::new(&GROUNDED2_TARGETS);
 mod tests {
     use super::*;
 
+    /// Verifies that Grounded 2 declares every Unreal global needed by its runtime binding.
+    /// Stays here because the expected target names describe this game's executable.
     #[test]
     fn registry_declares_five_ue5_globals() {
         for name in ["G_OBJECTS", "G_NAMES", "G_WORLD", "APPEND_STRING", "PROCESS_EVENT"] {
@@ -101,11 +103,15 @@ mod tests {
         assert_eq!(GROUNDED2_TARGETS.entries.len(), 5);
     }
 
+    /// Verifies that target diagnostics identify Grounded 2 as their owning consumer.
+    /// Stays here because the expected registry name belongs to this mod.
     #[test]
     fn registry_name_identifies_consumer() {
         assert_eq!(GROUNDED2_TARGETS.name, "grounded2-mod");
     }
 
+    /// Verifies that Grounded 2's target hints match its active Ueforge platform offsets.
+    /// Stays here because both expected address sets describe this game's Steam executable.
     #[test]
     fn registry_hint_rvas_match_ueforge_steam_offsets() {
         // Lock the data agreement: the registry's hints must equal

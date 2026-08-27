@@ -328,6 +328,8 @@ pub const CATALOG_ENTRIES: &[SkillDef] = &[
 /// Canonical catalog handle.
 pub static CATALOG: SkillRegistry = SkillRegistry::new(CATALOG_ENTRIES);
 
+/// Finds a Grounded 2 skill definition by its stable identifier.
+/// Stays here because this mod owns the skill catalog; Modforge owns the reusable registry lookup.
 pub fn lookup(id: &str) -> Option<&'static SkillDef> {
     CATALOG.def(id)
 }
@@ -336,24 +338,35 @@ pub fn lookup(id: &str) -> Option<&'static SkillDef> {
 // Per-level math.
 // ---------------------------------------------------------------------
 
+/// Converts a Grounded 2 skill level into its curved zero-to-one progress.
+/// Stays here because it binds Modforge's reusable curve to this mod's universal skill cap.
 pub fn level_progress(level: u32) -> f32 {
     ueforge::rpg::progress::sqrt_progress(level, SKILL_MAX_LEVEL)
 }
 
+/// Scales a Grounded 2 skill's maximum bonus by the current level.
+/// Stays here because this convenience binds shared progression math to this mod's skill cap.
 pub fn skill_bonus(max_bonus: f32, level: u32) -> f32 {
     max_bonus * level_progress(level)
 }
 
+/// Calculates how many backpack slots the purchased skill level adds.
+/// Stays here because slot rounding and the maximum bonus are Grounded 2 skill behavior;
+/// Modforge owns the underlying progression curve.
 pub fn backpack_bonus_at(level: u32, max_bonus_slots: i32) -> i32 {
     (max_bonus_slots as f32 * level_progress(level)).round() as i32
 }
 
+/// Calculates a runtime fraction from a Grounded 2 skill level and configured maximum.
+/// Stays here because callers use this mod's skill cap; Modforge owns the progression curve.
 pub fn runtime_fraction(level: u32, max_bonus: f32) -> f32 {
     skill_bonus(max_bonus, level)
 }
 
 /// Format effect text for the ImGui tab. Now a thin wrapper that
 /// delegates to the EffectDef on the catalog row.
+/// Stays here because it resolves Grounded 2's catalog entries;
+/// Modforge owns each effect's reusable formatting contract.
 pub fn format_effect(id: &str, level: u32) -> String {
     let Some(skill) = lookup(id) else {
         return String::new();

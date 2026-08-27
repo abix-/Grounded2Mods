@@ -20,6 +20,9 @@ pub struct PatchStats {
     pub skipped_non_player: usize,
 }
 
+/// Expands player backpacks while leaving mounts and other inventories at their original sizes.
+/// Stays here because the player filter, mount size, and inventory offset are Grounded 2 facts;
+/// Ueforge owns the reusable class-field patching behavior.
 pub fn run(slot_count: i32) -> PatchStats {
     let stats = match SLOTS.apply(
         // Player-owned only. Mount/saddlebag (vanilla 30) and non-

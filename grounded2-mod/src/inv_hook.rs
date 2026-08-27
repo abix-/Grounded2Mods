@@ -66,8 +66,12 @@ unsafe impl Sync for G2Binder {}
 impl ViewportBinder for G2Binder {
     /// Cache the items list once per scroll cycle so we don't
     /// re-call `GetInventoryItems` 40 times per rebind.
+    /// Stays here because the inventory-list function and parameter layout belong to Grounded 2;
+    /// Ueforge owns the reusable viewport rebind cycle.
     type RebindContext = GetInventoryItemsParms;
 
+    /// Reads the items currently exposed by Grounded 2's inventory widget for one rebind cycle.
+    /// Stays here because it invokes Grounded 2's inventory function with its exact parameter layout.
     unsafe fn begin_rebind(&self, widget: &UObject) -> GetInventoryItemsParms {
         let mut items = GetInventoryItemsParms {
             items: ue::TArray::default(),
@@ -79,6 +83,8 @@ impl ViewportBinder for G2Binder {
         items
     }
 
+    /// Converts Grounded 2's mouse-wheel event into the scroll amount used by the shared viewport.
+    /// Stays here because the event layout and Kismet call are specific to this game's widget.
     unsafe fn mouse_wheel_delta(&self, parms: *const c_void) -> Option<f32> {
         if parms.is_null() {
             return None;
@@ -108,6 +114,9 @@ impl ViewportBinder for G2Binder {
         Some(p.return_value)
     }
 
+    /// Binds one visible inventory slot to the item at its absolute backpack position.
+    /// Stays here because Grounded 2 defines both Blueprint calls and their parameter layouts;
+    /// Ueforge owns the page and slot iteration.
     unsafe fn bind_slot(
         &self,
         widget: &UObject,
@@ -153,11 +162,16 @@ impl ViewportBinder for G2Binder {
         }
     }
 
+    /// Reports the backpack size currently configured for Grounded 2.
+    /// Stays here because the value combines this mod's setting and Backpack skill bonus.
     fn capacity(&self) -> i32 {
         CAPACITY.load(Ordering::Acquire)
     }
 }
 
+/// Installs scrolling and rebinding on Grounded 2's inventory widget.
+/// Stays here because the widget classes and Blueprint functions belong to Grounded 2;
+/// Ueforge owns the reusable viewport hook.
 pub fn install(slot_count: i32) -> Result<ProcessEventHook, &'static str> {
     let inv_class = ClassRef::new("WBP_InventoryInterface_C")
         .get()
@@ -206,11 +220,15 @@ pub fn install(slot_count: i32) -> Result<ProcessEventHook, &'static str> {
     })
 }
 
+/// Updates the number of backpack positions exposed by the inventory window.
+/// Stays here because Grounded 2's inventory patch and Backpack skill choose this value.
 pub fn update_slot_count(slot_count: i32) {
     CAPACITY.store(slot_count, Ordering::Release);
     ueforge::log!("inv hook: slot_count updated to {}", slot_count);
 }
 
+/// Reports the backpack size currently presented by the inventory hook.
+/// Stays here because it exposes Grounded 2 mod state to this mod's debug snapshot.
 pub fn current_slot_count() -> i32 {
     CAPACITY.load(Ordering::Acquire)
 }

@@ -48,6 +48,9 @@ static MOD_INFO: ueforge::ModDef = ueforge::ModDef {
 
 ueforge::ue4ss_mod!(MOD_INFO);
 
+/// Starts Grounded 2 mod initialization after Unreal is ready.
+/// Stays here because it is the entry point that assembles this mod's features;
+/// Ueforge owns the worker and UE4SS lifecycle machinery.
 fn bbp_on_unreal_init() {
     // Run heavy init off the engine init thread so any panic doesn't
     // propagate up into UE4SS. ueforge::worker::spawn names the
@@ -55,6 +58,9 @@ fn bbp_on_unreal_init() {
     ueforge::worker::spawn("grounded2_mod/init", || unsafe { worker() });
 }
 
+/// Stops Grounded 2's background world watcher during mod shutdown.
+/// Stays here because this mod decides which of its services must stop;
+/// Ueforge owns the generated UE4SS shutdown entry point.
 fn bbp_on_shutdown() {
     // Hooks are leaked intentionally so they survive worker thread
     // exit (and process teardown). The slot poller, however, owns
@@ -64,6 +70,8 @@ fn bbp_on_shutdown() {
     ueforge::log!("grounded2-mod: shutdown");
 }
 
+/// Loads Grounded 2 settings, discovers the engine, patches gameplay, and installs the mod's hooks.
+/// Stays here because it is the composition root for Grounded 2's features and game-specific bindings.
 unsafe fn worker() {
     // Logger is already initialized by ue4ss_mod!'s on_unreal_init hook
     // (it runs ueforge::log::init before calling MOD_INFO.on_unreal_init).

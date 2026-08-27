@@ -49,17 +49,25 @@ pub struct RpgSettings {
     pub buggy_kill_xp_multiplier: f32,
 }
 
+/// Supplies Grounded 2's default backpack size when the setting is omitted.
+/// Stays here because the default is this mod's balance choice; Modforge owns settings storage.
 fn default_slot_count() -> i32 {
     40
 }
+/// Leaves Grounded 2's hunger or thirst rate unchanged when the setting is omitted.
+/// Stays here because the default is this mod's survival policy; Modforge owns settings storage.
 fn default_survival_multiplier() -> f32 {
     1.0
 }
+/// Gives Buggy kills full XP when the setting is omitted.
+/// Stays here because Buggy kill credit is a Grounded 2 rule; Modforge owns settings storage.
 fn default_buggy_kill_xp_multiplier() -> f32 {
     1.0
 }
 
 impl Default for InventorySettings {
+    /// Builds Grounded 2's default inventory settings.
+    /// Stays here because this type contains this mod's backpack policy.
     fn default() -> Self {
         Self {
             slot_count: default_slot_count(),
@@ -67,6 +75,8 @@ impl Default for InventorySettings {
     }
 }
 impl Default for SurvivalSettings {
+    /// Builds Grounded 2's default hunger and thirst settings.
+    /// Stays here because this type contains this mod's survival policy.
     fn default() -> Self {
         Self {
             thirst_multiplier: default_survival_multiplier(),
@@ -75,6 +85,8 @@ impl Default for SurvivalSettings {
     }
 }
 impl Default for RpgSettings {
+    /// Builds Grounded 2's default RPG settings.
+    /// Stays here because this type contains this mod's Buggy XP policy.
     fn default() -> Self {
         Self {
             buggy_kill_xp_multiplier: default_buggy_kill_xp_multiplier(),
@@ -83,6 +95,9 @@ impl Default for RpgSettings {
 }
 
 impl Settings {
+    /// Writes the effective Grounded 2 settings to the mod log for player diagnosis.
+    /// Stays here because the fields and summary are specific to this mod;
+    /// Modforge owns settings loading; Ueforge owns the game log.
     pub fn log_summary(&self) {
         ueforge::log!(
             "settings: slot_count={}, thirst_mult={:.3}, hunger_mult={:.3}, buggy_xp_mult={:.3}, debug_http_port={:?}",
