@@ -2664,3 +2664,78 @@ The recipe:
 This is the whole mechanism the NPC spawn multiplier needs:
 enumerate a tile's placed hostiles, re-spawn copies of their
 classes nearby.
+
+## 27. The engine's allocator: slot 5, measured (2026-08-26)
+
+Anything the engine will later grow or free MUST be allocated by
+the engine. Hand it a Rust buffer and it works until the engine
+reallocs that array, at which point `FMallocBinned2` looks for its
+marker in the bytes before the block, finds Rust's data, and kills
+the process:
+
+```text
+FMallocBinned2 Attempt to realloc an unrecognized block
+000001F6FA450000  canary == 0x65 != 0xe3
+```
+
+That crash fired on DISCONNECT, long after the write that caused
+it, because disconnect is when the engine tears down the arrays a
+mod grew during play.
+
+Calling the engine's allocator means calling a virtual, which
+means knowing its slot. **Slot 2 was GUESSED** from patternsleuth's
+own pattern bytes and tried live: the call returned null and the
+process died the same second. So `ue::gmalloc::MALLOC_SLOT` was set
+to `None`, and every vendor grow logged `grow failed: engine
+allocator (GMalloc) unavailable` instead of risking it.
+
+### What the binary actually does
+
+```text
+48 8B 0D 3F C1 A0 06   mov rcx, [GMalloc]
+48 8B 01               mov rax, [rcx]      vtable load comes FIRST
+44 8B C3               mov r8d, ebx        alignment
+48 8B D7               mov rdx, rdi        size
+...                    epilogue
+48 FF 60 28            jmp [rax+0x28]      TAIL JUMP, slot 5
+```
+
+`0x28 / 8 = 5`. Three independent call sites agree:
+`0x7ff63c833eea`, `0x7ff63c88b7b0`, `0x7ff63c88b865`.
+
+The two argument registers are the whole discriminator. Every
+`FMalloc` virtual is reached as `mov rax,[rcx]` then a call
+through the vtable, so `Free(void*)` and `Realloc(...)` look
+identical to `Malloc(Count, Alignment)` unless you look at which
+arguments get loaded.
+
+### Two wrong answers first, and the test caught both
+
+`misery-mod/tests/research_gmalloc.rs` and the
+`measure_malloc_slot` control re-derive this from the running
+image at any time, so a game patch that moves it says so.
+
+- **Seven different slots.** Anchoring on the xref to the GMalloc
+  global alone matched every FMalloc virtual. The test asserts
+  every site must agree and FAILED, rather than handing back a
+  number to set. That assertion is the point of the test.
+- **No match at all.** Adding the argument loads as the
+  discriminator, but putting them BEFORE the vtable load. This
+  build does the opposite. Rather than guess a third encoding, a
+  `gmalloc_call_sites` control dumped the bytes and they were read.
+
+### Live proof
+
+```text
+[03:32:48] gmalloc: FMalloc 0x19e29e9f2e0 vtable 0x7ff6416f1938 slot 5 -> 0x7ff63c869200, first alloc 1568 bytes
+[03:32:48] vendor_mirror: added 10 items (10 custom priced)
+[03:32:48] vendor_mirror: added 15 items (15 custom priced)
+[03:32:48] vendor_food: added 18 items (0 custom priced)
+[03:32:48] vendor_sewingkit: added 1 items (1 custom priced)
+```
+
+73 items across seven vendors, and no `grow failed` line.
+
+**Still unproven:** the disconnect. The canary crash appeared on
+disconnect after a vendor pass, so that is the test that matters
+and it has not been run since the slot was set. See the todo.
