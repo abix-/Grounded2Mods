@@ -67,10 +67,11 @@ Extract the remaining engine-independent and Unreal-specific systems from MISERY
 - Audited those function boundaries and recorded the remaining MISERY lifts in `docs/todo.md`: standard asset and game-thread operations, reusable field editing, typed TMap mutation, encounter and phenomenon planning, vendor offer planning, raw TArray append support, checked UFunction calls, transient-object lookup, and live-object hook installation.
 - Moved the unchanged `asset_inventory` and `load_asset` handlers into `ueforge::assets`, routed both through `ueforge::game_thread::run`, migrated MISERY registration, and removed its game-local asset wrapper.
 - Moved the unchanged `call`, `pe_ping`, and `pe_stats` registration and response construction into `ueforge::game_thread::register_ops`; MISERY now owns only its queue, timeout hint, and installation call.
+- Added `FieldEditor` beside Ueforge's existing struct-field access authority and migrated MISERY's cached refresh, numeric sliders, boolean controls, and writes into it; MISERY retains only its catalog, object accessor, ranges, text, and tab wiring.
 
 ## Next steps
 
-- Add the reusable Ueforge struct-field editor and reduce MISERY gameplay.rs to its field data, accessor, ranges, and tab wiring.
+- Expand Ueforge's typed TMap access and migrate MISERY movement speeds off its raw Unreal map helpers.
 
 ## Open questions
 

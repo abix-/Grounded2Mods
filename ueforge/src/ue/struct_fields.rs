@@ -2,6 +2,8 @@
 //! by a static field definition table. Reusable across any mod
 //! that needs to inspect or patch a settings/config struct.
 
+use parking_lot::Mutex;
+
 use crate::ue::{read_at, write_at};
 
 #[derive(Debug, Clone, Copy)]
@@ -90,4 +92,106 @@ impl FieldAccessor {
     pub fn write_bool(&self, field: &FieldDef, value: bool) {
         write_bool(self.ptr, self.base_offset, field, value, self.label);
     }
+}
+
+struct EditorState {
+    loaded: bool,
+    doubles: Vec<f32>,
+    bools: Vec<bool>,
+}
+
+/// Cached ImGui editor for one static field catalog.
+pub struct FieldEditor {
+    id: &'static str,
+    state: Mutex<Option<EditorState>>,
+}
+
+impl FieldEditor {
+    pub const fn new(id: &'static str) -> Self {
+        Self {
+            id,
+            state: Mutex::new(None),
+        }
+    }
+
+    /// Draw refresh, slider, and checkbox controls for `fields`.
+    /// The consumer supplies the live object accessor and the
+    /// useful range for each game-specific numeric field.
+    pub fn render<A, R>(&self, fields: &'static [FieldDef], accessor: A, range: R)
+    where
+        A: Fn() -> Result<FieldAccessor, String> + Copy,
+        R: Fn(&str, f32) -> (f32, f32),
+    {
+        let mut state = self.state.lock();
+        let state = state.get_or_insert_with(|| EditorState {
+            loaded: false,
+            doubles: vec![0.0; fields.len()],
+            bools: vec![false; fields.len()],
+        });
+
+        if crate::ui::button(&format!("Refresh##{}", self.id)) {
+            let _ = load_fields(state, fields, accessor());
+        }
+
+        if !state.loaded {
+            crate::ui::text_disabled("Click Refresh after loading a save.");
+            return;
+        }
+
+        crate::ui::separator();
+        crate::ui::spacing();
+        crate::ui::begin_child(&format!("##{}_scroll", self.id), 0.0, 0.0);
+
+        for (i, field) in fields.iter().enumerate() {
+            match field.ty {
+                FieldType::Double => {
+                    let (lo, hi) = range(field.name, state.doubles[i]);
+                    crate::ui::text(field.name);
+                    crate::ui::same_line();
+                    crate::ui::text_disabled(field.desc);
+                    crate::ui::set_next_item_width(250.0);
+                    if crate::ui::slider_f32(
+                        &format!("##{}_{}", self.id, field.name),
+                        &mut state.doubles[i],
+                        lo,
+                        hi,
+                    ) && let Ok(accessor) = accessor()
+                    {
+                        accessor.write_double(field, state.doubles[i] as f64);
+                    }
+                }
+                FieldType::Bool => {
+                    if crate::ui::checkbox(
+                        &format!("{}##{}_b", field.name, self.id),
+                        &mut state.bools[i],
+                    ) && let Ok(accessor) = accessor()
+                    {
+                        accessor.write_bool(field, state.bools[i]);
+                    }
+                    crate::ui::same_line();
+                    crate::ui::text_disabled(field.desc);
+                }
+            }
+            crate::ui::spacing();
+        }
+
+        crate::ui::dummy(0.0, 40.0);
+        crate::ui::end_child();
+    }
+}
+
+fn load_fields(
+    state: &mut EditorState,
+    fields: &[FieldDef],
+    accessor: Result<FieldAccessor, String>,
+) -> Result<(), String> {
+    let accessor = accessor?;
+    for (i, field) in fields.iter().enumerate() {
+        match accessor.read(field)? {
+            FieldValue::Double(value) => state.doubles[i] = value as f32,
+            FieldValue::Bool(value) => state.bools[i] = value,
+        }
+    }
+    state.loaded = true;
+    Ok(())
 }
