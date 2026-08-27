@@ -8,8 +8,7 @@
 //! Two controls, both proven live before this module existed:
 //! freeze the countdown, and set how many seconds are left.
 
-use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
-use std::time::Instant;
+use std::sync::atomic::{AtomicI32, Ordering};
 
 use ueforge::ue;
 use ueforge::ue::{follow_ptr_chain, read_at, write_at};
@@ -129,30 +128,11 @@ pub fn add_seconds(seconds: f64) -> Result<f64, String> {
 // ---- UI ----
 
 static SET_MINUTES: AtomicI32 = AtomicI32::new(20);
-static EPOCH: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
-static LAST_READ_MS: AtomicU64 = AtomicU64::new(0);
 
-/// Provides the clock used to refresh the Shining display without updating every frame.
-/// Stays here because its refresh schedule is local UI behavior with no reusable framework role.
-fn now_ms() -> u64 {
-    let epoch = EPOCH.get_or_init(Instant::now);
-    epoch.elapsed().as_millis() as u64
-}
-
-struct CachedShining {
-    cached_status: Option<Result<Status, String>>,
-}
-
-static UI_STATE: std::sync::OnceLock<std::sync::Mutex<CachedShining>> =
-    std::sync::OnceLock::new();
-
-/// Stores the last Shining reading used by the mod menu.
-/// Stays here because the cached data is shaped specifically for MISERY's Shining tab.
-fn ui_state() -> &'static std::sync::Mutex<CachedShining> {
-    UI_STATE.get_or_init(|| {
-        std::sync::Mutex::new(CachedShining { cached_status: None })
-    })
-}
+/// The tab redraws every frame; the manager is read once a
+/// second. `modforge::ui::Cached` owns the timing.
+static STATUS: modforge::ui::Cached<Result<Status, String>> = modforge::ui::Cached::new();
+const REFRESH: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Draws the Shining status and countdown controls for the player.
 /// Stays here because it presents a MISERY-only event; Ueforge owns the reusable UI layer.
@@ -169,22 +149,13 @@ pub fn render() {
     ui::separator();
     ui::spacing();
 
-    let Ok(mut s) = ui_state().lock() else { return };
-
-    let now = now_ms();
-    let last = LAST_READ_MS.load(Ordering::Relaxed);
-    if s.cached_status.is_none() || now.saturating_sub(last) >= 1000 {
-        s.cached_status = Some(status());
-        LAST_READ_MS.store(now, Ordering::Relaxed);
-    }
-
-    let st = match s.cached_status.as_ref().unwrap() {
-        Ok(st) => *st,
+    let st = match STATUS.get(REFRESH, status) {
+        Ok(st) => st,
         Err(e) => {
             ui::text_disabled("No expedition running.");
             ui::text_disabled(&format!("({e})"));
             if ui::button("Retry") {
-                s.cached_status = None;
+                STATUS.invalidate();
             }
             return;
         }
@@ -197,7 +168,7 @@ pub fn render() {
     ui::spacing();
 
     if ui::button("Refresh") {
-        s.cached_status = Some(status());
+        STATUS.invalidate();
     }
 
     ui::spacing();
@@ -207,7 +178,7 @@ pub fn render() {
         if let Err(e) = set_frozen(frozen) {
             ueforge::log::log(format_args!("shining: freeze failed: {e}"));
         }
-        s.cached_status = Some(status());
+        STATUS.invalidate();
     }
     if st.frozen {
         ui::text_colored("Paused. The expedition will not end on its own.", (0.4, 0.9, 0.4, 1.0));
@@ -227,7 +198,7 @@ pub fn render() {
         if let Err(e) = set_seconds(f64::from(minutes) * 60.0) {
             ueforge::log::log(format_args!("shining: set failed: {e}"));
         }
-        s.cached_status = Some(status());
+        STATUS.invalidate();
     }
 
     ui::same_line();
@@ -235,7 +206,7 @@ pub fn render() {
         if let Err(e) = set_seconds(10.0) {
             ueforge::log::log(format_args!("shining: set 10s failed: {e}"));
         }
-        s.cached_status = Some(status());
+        STATUS.invalidate();
     }
 
     ui::spacing();
@@ -245,7 +216,7 @@ pub fn render() {
             if let Err(e) = add_seconds(secs) {
                 ueforge::log::log(format_args!("shining: add failed: {e}"));
             }
-            s.cached_status = Some(status());
+            STATUS.invalidate();
         }
         ui::same_line();
     }
