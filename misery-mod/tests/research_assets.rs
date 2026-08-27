@@ -426,7 +426,21 @@ fn studs_of_a_vanilla_square_land_in_parts_json() {
     assert!(r.ok && r.result["loaded"] == json!(true), "load failed: {:?}", r.error);
 
     let path = "C:/Games/Steam/steamapps/common/MISERY/MISERY/Binaries/Win64/ue4ss/Mods/MiseryMod/dlls/parts.json";
-    let r = api.op("level_studs", json!({ "level": "L_Anomaly_House", "path": path }));
+    // Fresh file first, so studs from earlier unfiltered runs do
+    // not linger on parts this pass does not touch.
+    let r = api.op("parts_list", json!({ "class": "StaticMesh", "path": path }));
+    assert!(r.ok, "parts_list failed: {:?}", r.error);
+
+    // Only building parts: the folders the designers file them
+    // under (parts.md "Not building parts").
+    let folders = [
+        "/Game/Meshes/Blockout/Meshes/Architecture",
+        "/Game/Meshes/Structures/Constructor",
+    ];
+    let r = api.op(
+        "level_studs",
+        json!({ "level": "L_Anomaly_House", "path": path, "folders": folders }),
+    );
     assert!(r.ok, "level_studs failed: {:?}", r.error);
     println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
     let updated = r.result["parts_updated"].as_u64().unwrap_or(0);
@@ -468,6 +482,26 @@ fn studs_of_a_vanilla_square_land_in_parts_json() {
     println!("floor studs partnered with a wall: {floor_wall}");
     assert!(wall_floor > 0, "no wall in parts.json carries a stud with a floor");
     assert!(floor_wall > 0, "no floor in parts.json carries the mirror stud");
+
+    // The filter's proof: nothing outside the building folders
+    // appears as a stud partner. Before it, a floor carried
+    // 3,228 studs including trees leaning on the paving.
+    let mut floor_studs = 0usize;
+    for p in &parts {
+        for s in p["studs"].as_array().into_iter().flatten() {
+            if p["name"].as_str() == Some("SM_Floor_400x400") {
+                floor_studs += 1;
+            }
+            for partner in s["with"].as_object().into_iter().flat_map(|w| w.keys()) {
+                assert!(
+                    !partner.contains("Tree") && !partner.contains("Cliff"),
+                    "{} partners with scenery: {partner}",
+                    p["name"]
+                );
+            }
+        }
+    }
+    println!("SM_Floor_400x400 studs after the filter: {floor_studs}");
 }
 
 /// Can a LEVEL asset be read without streaming it into play?

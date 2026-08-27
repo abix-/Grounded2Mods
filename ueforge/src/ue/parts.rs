@@ -443,11 +443,16 @@ pub fn register_ops() {
         ),
         crate::ops::OpDef::new(
             "level_studs",
-            "Every stud in a level: where two placed parts share a border, recorded on both parts (modforge::studs). With a path, merges the studs into parts.json",
-            "{level: str, path?: str, touch_m?: f64, min_seen?: u64}",
+            "Every stud in a level: where two placed parts share a border, recorded on both parts (modforge::studs). `folders` keeps only meshes the designers filed there (building parts); with a path, merges the studs into parts.json",
+            "{level: str, folders?: [str], path?: str, touch_m?: f64, min_seen?: u64}",
             |args| {
                 let level = crate::args::arg_str(args, "level")?.to_string();
                 let path = args.get("path").and_then(|v| v.as_str()).map(str::to_string);
+                let folders: Vec<String> = args
+                    .get("folders")
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                    .unwrap_or_default();
                 let mut how = modforge::studs::Derive::default();
                 if let Some(t) = args.get("touch_m").and_then(|v| v.as_f64()) {
                     how.touch_m = t;
@@ -457,7 +462,19 @@ pub fn register_ops() {
                 }
                 crate::game_thread::run(
                     move || {
-                        let parts = read_level(&level, &[]);
+                        let mut parts = read_level(&level, &[]);
+                        let read = parts.len();
+                        // Only building parts enter the pairing.
+                        // A tree leaning on paving is not a stud,
+                        // and the folder is the designers' own
+                        // answer to what is a building part.
+                        if !folders.is_empty() {
+                            let keep = crate::assets::names_under("StaticMesh", &folders)?;
+                            parts.retain(|p| {
+                                p.asset.as_ref().is_some_and(|a| keep.contains(a))
+                            });
+                        }
+                        let kept = parts.len();
                         let studs = modforge::studs::studs_in(&parts, how);
                         let rows: serde_json::Map<String, serde_json::Value> = studs
                             .iter()
@@ -488,7 +505,8 @@ pub fn register_ops() {
                         };
                         Ok(serde_json::json!({
                             "level": level,
-                            "placed": parts.len(),
+                            "placed": read,
+                            "building_parts": kept,
                             "parts_with_studs": rows.len(),
                             "merged_into": path,
                             "parts_updated": merged,
