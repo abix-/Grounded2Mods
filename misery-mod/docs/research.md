@@ -1720,17 +1720,33 @@ The sell list expansion technique (section 24.9) relies on
 max > num. When there is no slack, the TArray must be grown.
 
 Solved via `tarray_grow` op in the mod's control plane.
-Uses `std::alloc::alloc_zeroed` (Rust standard allocator,
-backed by the Windows process heap) to allocate a new
-buffer, copies the old entries, and updates the TArray
-header. The old buffer is leaked (tiny, harmless).
+It allocates a new buffer, copies the old entries, and
+updates the TArray header. The old buffer is leaked
+(tiny, harmless).
 
-GMalloc was resolved via patternsleuth for future use, but
-the vtable slot layout needs further research (slots 1
-through 4 all resolve to the same address, making the
-`Malloc` slot ambiguous). The Rust allocator works
-reliably for TArray buffers since UE never tries to
-`Free` or `Realloc` vendor list arrays during gameplay.
+**CORRECTED 2026-08-26.** This section used to say the
+Rust allocator "works reliably for TArray buffers since UE
+never tries to `Free` or `Realloc` vendor list arrays
+during gameplay". That is FALSE and it cost two sessions.
+
+The engine does tear those arrays down, on the way to the
+main menu and on disconnect, which is long after the write
+that caused it. A pointer `FMallocBinned2` never handed out
+fails its own canary check and kills the process:
+
+```text
+FMallocBinned2 Attempt to realloc an unrecognized block
+canary == 0x1e != 0xe3
+```
+
+The canary byte is whatever Rust's allocator left in front
+of the block, so it differs run to run (`0x65` and `0x1e`
+both seen).
+
+Anything the engine may later grow or free MUST come from
+`ue::gmalloc::alloc_zeroed`. The slot ambiguity noted here
+is solved: `FMalloc::Malloc` is **slot 5**, measured from
+the running image, section 27.
 
 Proven by growing ResourseSaler's buy list from 14/14 to
 14/30 via `research_vendors::add_sewingkit_to_resourcesaler_buy_list`.
@@ -2736,6 +2752,44 @@ image at any time, so a game patch that moves it says so.
 
 73 items across seven vendors, and no `grow failed` line.
 
-**Still unproven:** the disconnect. The canary crash appeared on
-disconnect after a vendor pass, so that is the test that matters
-and it has not been run since the slot was set. See the todo.
+### The slot was necessary but not sufficient
+
+With slot 5 set, the vendor GROWTH stopped failing and 73 items
+were added. Going to the main menu then STILL crashed the same
+way, `canary == 0x1e != 0xe3`.
+
+A second Rust allocation was hiding in the same feature:
+`vendors.rs::set_custom_price` built each entry's price array
+with `std::alloc::alloc_zeroed` and wrote that pointer into an
+engine structure. It was justified by the claim in 24.12 that UE
+never frees vendor price arrays, which is false.
+
+**The lesson is not about this one line.** Fixing the allocator in
+one place is worth nothing while another place in the same feature
+still hands the engine a Rust buffer.
+
+### How to find the next one
+
+The dangerous shape is narrow: **a buffer WE allocated, whose
+pointer is written into engine memory and left there.** Two greps
+across every crate find it:
+
+```text
+std::alloc | alloc_zeroed | Layout::from_size_align
+as u64).to_le_bytes()      <- a pointer being stored
+```
+
+Audited 2026-08-26 across misery, grounded2, outworld-station,
+schedule1, horsey, survivalist, wwm, ueforge and modforge. One
+site, the one above. What the greps also turn up, and why each is
+FINE:
+
+| Shape | Why it is safe |
+|---|---|
+| `parms.as_mut_ptr()` into `process_event` | a parm block borrowed for one call; the engine reads it and does not keep it |
+| a world-context pointer written into a parm block | that object is the ENGINE's already, not ours |
+| `Box::into_raw` on a detour | our own object; the engine never sees it |
+
+So the rule: passing a Rust buffer to the engine is fine. STORING
+one where the engine keeps it is what kills the process, and it
+kills it later, somewhere else.

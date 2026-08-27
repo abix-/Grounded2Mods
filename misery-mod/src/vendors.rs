@@ -114,16 +114,32 @@ fn buy_costs(comp: *const u8) -> HashMap<String, i32> {
 
 /// Give an entry its own single-element price array paying `qty`
 /// rubles: clone the template's price element and swap the
-/// quantity at +0x10. The allocation is leaked on purpose; UE
-/// never frees vendor price arrays (research.md 24.12).
+/// quantity at +0x10.
+///
+/// The buffer comes from the ENGINE's allocator, not Rust's.
+///
+/// This used to be `std::alloc::alloc_zeroed`, on the belief that
+/// "UE never frees vendor price arrays" (research.md 24.12). That
+/// belief was wrong, and the disproof is a crash: going to the
+/// main menu after a vendor pass killed the game with
+///
+/// ```text
+/// FMallocBinned2 Attempt to realloc an unrecognized block
+/// canary == 0x1e != 0xe3
+/// ```
+///
+/// `0x1e` is whatever Rust's allocator left in front of the
+/// block. The engine DOES tear these arrays down, and a pointer
+/// it never handed out fails its own canary check.
 /// Stays here because this clones MISERY's verified vendor-price layout, not a generic Unreal collection.
 fn set_custom_price(entry: &mut [u8], template_price_ptr: *const u8, qty: i32) {
-    // SAFETY: fixed 0x18-byte layout with 8-byte alignment.
-    let buf =
-        unsafe { std::alloc::alloc_zeroed(std::alloc::Layout::from_size_align(0x18, 8).unwrap()) };
-    if buf.is_null() {
+    // One price element: 0x18 bytes.
+    let Some(buf) = ue::gmalloc::alloc_zeroed(0x18, ue::gmalloc::DEFAULT_ALIGNMENT) else {
+        // The engine allocator is not reachable. Leaving the entry
+        // pointing at the template's price is wrong but harmless;
+        // handing the engine a Rust buffer is what crashes it.
         return;
-    }
+    };
     // SAFETY: template_price_ptr points at a live 0x18-byte price
     // element read from the vendor's own sell list.
     unsafe {
