@@ -98,8 +98,8 @@ pub fn register_ops(queue: &'static GameThread, timeout_hint: &'static str) {
                     // against a 16 ms frame at 60 fps. Always
                     // counted, unlike the named report, because
                     // it is one clock read per drain.
-                    "drain_time_ns": queue.time_ns(),
-                    "drain_time_ms": queue.time_ns() as f64 / 1.0e6,
+                    "queued_work_ns": queue.time_ns(),
+                    "queued_work_ms": queue.time_ns() as f64 / 1.0e6,
                 }))
             },
         ),

@@ -90,7 +90,7 @@ fn what_the_mod_costs() {
 fn drain_ms(api: &common::Api) -> f64 {
     let r = api.op("pe_stats", json!({}));
     assert!(r.ok, "pe_stats failed: {:?}", r.error);
-    r.result["drain_time_ms"].as_f64().unwrap_or(0.0)
+    r.result["queued_work_ms"].as_f64().unwrap_or(0.0)
 }
 
 /// Timing must cost nothing when it is off.

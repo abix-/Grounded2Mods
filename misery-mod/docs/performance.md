@@ -97,7 +97,7 @@ What is measured, and why those places:
 
 **Time on the game thread is always counted**, timing switch or
 not, because it is one clock read per drain. `pe_stats` reports it
-as `drain_time_ms`. Read it twice a second apart and the
+as `queued_work_ms`. Read it twice a second apart and the
 difference is what that second cost, against a 16.7 ms frame at
 60 fps.
 
