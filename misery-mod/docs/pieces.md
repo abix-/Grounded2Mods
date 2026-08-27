@@ -151,6 +151,43 @@ whole units. Good enough to sort a 4 m wall from a 2 m one, which
 is what the parts list needs. Anything needing exact bounds still
 has to load the mesh, and now only that mesh.
 
+### The parts list exists (2026-08-27)
+
+`parts_list` writes every shipped mesh to a file, with nothing
+loaded. Live:
+
+```text
+count 2407, half-extent in metres, y up
+Block 885, Slab 380, Panel 320, Clutter 520, Post 144, Beam 158
+no size: 0
+```
+
+Every one of 2,407 meshes has a size, and the whole pass takes
+under a second.
+
+**The classifier agrees with the names without being told any**,
+which is the point of judging by proportion:
+
+```text
+SM_Wall_400x401      Panel   [0.10, 2.00, 2.00]
+SM_WallDoor_400x300  Panel   [0.10, 1.50, 2.00]
+SM_Floor_400x400     Slab    [2.59, 0.44, 2.87]
+```
+
+A 400x401 wall reads as a Panel 0.1 m thick, 4 m wide and 4 m
+tall. A floor reads as a Slab.
+
+**Careful with the numbers though.** `SM_Floor_400x400` measures
+5.18 by 5.73 m, not 4 by 4. `ApproxSize` is the mesh's BOUNDING
+BOX, so a tile with a lip or a skirt reads larger than its module
+size. Fine for sorting parts; NOT the same as the module grid,
+and the studs must not be placed from the bounding box alone.
+
+Conversion, matching what `ue::pieces` already does: Unreal is
+centimetres with z up, this crate is metres with y up, and
+`PieceDef::extent` is a HALF-extent while `ApproxSize` is a full
+size. So `mf(x,y,z) = ue(y,z,x) / 2 / 100`.
+
 ### How the tag is read
 
 `AssetRegistryHelpers::GetTagValue(FAssetData, FName TagName,
