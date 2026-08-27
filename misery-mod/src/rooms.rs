@@ -53,9 +53,3 @@ pub const KIT: ueforge::ue::rooms::Kit = ueforge::ue::rooms::Kit {
     trace_up: crate::TRACE_UP,
     trace_down: crate::TRACE_DOWN,
 };
-
-/// Adds room-building controls using the wall and floor pieces shipped with MISERY.
-/// Stays here because the kit names and trace distances are game content; Modforge plans rooms and Ueforge spawns them.
-pub fn register_ops() {
-    ueforge::ue::rooms::register_ops(KIT);
-}

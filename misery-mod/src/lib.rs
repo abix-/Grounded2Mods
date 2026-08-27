@@ -135,7 +135,7 @@ fn on_unreal_init() {
         // misery's harvest.rs is deleted; nothing of it was
         // game-specific.
         .once("pieces", ueforge::ue::pieces::register_ops)
-        // .once("rooms", rooms::register_ops)
+        // .once("rooms", || ueforge::ue::rooms::register_ops(rooms::KIT))
         .once("assets", assets::register_ops)
         .once("nag", nag::install)
         // Auto-load is OFF. It called LoadLevel on
