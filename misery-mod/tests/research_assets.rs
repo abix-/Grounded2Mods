@@ -122,3 +122,63 @@ fn load_an_unloaded_piece() {
     assert!(found, "{name} loaded but is not visible in memory");
     println!("{name} is now in memory and usable");
 }
+
+/// What does the registry carry per asset, beyond the name?
+///
+/// `FAssetData` is 0x68 bytes and only its first 0x28 are named
+/// in the dump we have. The rest should hold `TagsAndValues`, the
+/// searchable metadata Unreal cooks in. If a static mesh's bounds
+/// are in there, the parts list needs no loading at all: 1,500
+/// blocking loads become one registry query (pieces.md).
+///
+/// Read-only.
+#[test]
+fn what_the_registry_carries_per_asset() {
+    let Some(api) = api_or_skip() else { return };
+    let r = api.op("asset_data_bytes", serde_json::json!({ "class": "StaticMesh", "count": 4 }));
+    if !r.ok {
+        println!("asset_data_bytes failed: {:?}", r.error);
+        return;
+    }
+    println!("FAssetData stride {}", r.result["stride"]);
+    for a in r.result["assets"].as_array().cloned().unwrap_or_default() {
+        println!("
+{}", a["name"].as_str().unwrap_or("?"));
+        let hex = a["bytes"].as_str().unwrap_or("");
+        // Sixteen bytes a line, with the offset, so fields line up
+        // against the known layout.
+        for (i, chunk) in hex.split(' ').collect::<Vec<_>>().chunks(16).enumerate() {
+            println!("  +{:#04x}  {}", i * 16, chunk.join(" "));
+        }
+    }
+}
+
+/// Does Unreal expose the tag map as a FUNCTION we can call?
+///
+/// `FAssetData` carries `TagsAndValues` as a pointer at +0x38,
+/// and decoding a shared TMap out of raw memory is real work.
+/// `AssetRegistryHelpers` is a Blueprint library, so if it has a
+/// tag getter we can call it through ProcessEvent exactly the way
+/// `GetAssetsByClass` is called, and skip the decoding entirely.
+///
+/// Read-only.
+#[test]
+fn does_the_registry_expose_a_tag_getter() {
+    let Some(api) = api_or_skip() else { return };
+    for class in ["AssetRegistryHelpers", "AssetRegistry"] {
+        // By NAME: these are static Blueprint libraries with no
+        // live instance, so `class_functions` cannot see them.
+        let r = api.op("class_functions_by_name", serde_json::json!({ "class": class }));
+        println!("
+=== {class}");
+        if !r.ok {
+            println!("  failed: {:?}", r.error);
+            continue;
+        }
+        for f in r.result["functions"].as_array().cloned().unwrap_or_default() {
+            let name = f["name"].as_str().unwrap_or("?");
+            let mark = if name.to_lowercase().contains("tag") { ">>" } else { "  " };
+            println!("{mark} {name:<52} parms={} bytes={}", f["num_parms"], f["parms_size"]);
+        }
+    }
+}

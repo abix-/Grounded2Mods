@@ -171,6 +171,64 @@ pub fn assets_of_class(class_name: &str) -> Result<Vec<AssetEntry>, String> {
     Ok(out)
 }
 
+/// The raw bytes of the first few `FAssetData` entries.
+///
+/// For reading what the registry actually carries per asset,
+/// rather than assuming. `FAssetData` is 0x68 bytes and only its
+/// first 0x28 are named in the dump we have; the rest should hold
+/// `TagsAndValues`, the searchable metadata Unreal cooks in. If
+/// that carries a static mesh's bounds, nothing needs loading to
+/// measure it.
+///
+/// Read-only, and it reads only inside the array the registry
+/// itself just returned.
+///
+/// Game thread only.
+pub fn asset_data_bytes(class_name: &str, count: usize) -> Result<Vec<(String, String)>, String> {
+    let reg = registry().ok_or("asset registry unavailable")?;
+    let (pkg_fname, cls_fname) =
+        class_path(class_name).ok_or_else(|| format!("class '{class_name}' not found"))?;
+    let ar = ue::find_class_fast("AssetRegistry").ok_or("AssetRegistry class not found")?;
+    let func = ar
+        .get_function("AssetRegistry", "GetAssetsByClass")
+        .ok_or("GetAssetsByClass not found")?;
+
+    let mut parms = [0u8; 0x28];
+    parms[0x00..0x08].copy_from_slice(&pkg_fname.to_le_bytes());
+    parms[0x08..0x10].copy_from_slice(&cls_fname.to_le_bytes());
+    parms[0x20] = 1;
+    // SAFETY: as `assets_of_class`, which this mirrors.
+    unsafe {
+        reg.process_event(func, parms.as_mut_ptr() as *mut c_void);
+    }
+
+    let data = u64::from_le_bytes(parms[0x10..0x18].try_into().unwrap_or_default());
+    let num = i32::from_le_bytes(parms[0x18..0x1C].try_into().unwrap_or_default());
+    if data == 0 || num <= 0 {
+        return Ok(Vec::new());
+    }
+    if num > IMPLAUSIBLE_ASSET_COUNT {
+        return Err(format!("implausible asset count {num}"));
+    }
+
+    let mut out = Vec::new();
+    for i in 0..(num as usize).min(count) {
+        let entry = (data as usize + i * offsets::ASSET_DATA_STRIDE) as *const u8;
+        // SAFETY: inside the array the registry returned, and
+        // within one entry's own stride.
+        let raw = unsafe { std::slice::from_raw_parts(entry, offsets::ASSET_DATA_STRIDE) };
+        let name = fname_string(fname_at(entry, offsets::ASSET_NAME));
+        out.push((
+            name,
+            raw.iter()
+                .map(|b| format!("{b:02X}"))
+                .collect::<Vec<_>>()
+                .join(" "),
+        ));
+    }
+    Ok(out)
+}
+
 /// Pull an asset into memory by its package and asset FNames, so
 /// something the game has not loaded can still be used. Returns
 /// the loaded object's address, or 0 if the load failed.
@@ -208,6 +266,35 @@ pub fn register_ops() {
             "Every asset of a class the game ships, loaded or not",
             "{class?: str, contains?: str}",
             inventory_op,
+        ),
+        crate::ops::OpDef::new(
+            "asset_data_bytes",
+            "Raw FAssetData bytes for the first few assets of a class, to see what metadata the registry carries",
+            "{class?: str, count?: u64}",
+            |args| {
+                let class = args
+                    .get("class")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("StaticMesh")
+                    .to_string();
+                let count = args.get("count").and_then(|v| v.as_u64()).unwrap_or(3) as usize;
+                let rows = crate::game_thread::run(
+                    move || {
+                        let entries = asset_data_bytes(&class, count)?;
+                        Ok(serde_json::json!(
+                            entries
+                                .iter()
+                                .map(|(name, hex)| serde_json::json!({
+                                    "name": name,
+                                    "bytes": hex,
+                                }))
+                                .collect::<Vec<_>>()
+                        ))
+                    },
+                    ENGINE_TIMEOUT,
+                )?;
+                Ok(serde_json::json!({ "stride": offsets::ASSET_DATA_STRIDE, "assets": rows }))
+            },
         ),
         crate::ops::OpDef::new(
             "load_asset",

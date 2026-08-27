@@ -118,6 +118,12 @@ pub fn register_builtins() {
             |args| on_game_thread(args, class_functions),
         ),
         OpDef::new(
+            "class_functions_by_name",
+            "Every function a class defines, by class name; works for classes with no live instance (static Blueprint libraries, CDO-only)",
+            "{class: str}",
+            |args| on_game_thread(args, class_functions_by_name),
+        ),
+        OpDef::new(
             "fname_to_string",
             "Resolve an FName u64 to its string form",
             "{fname: u64}",
@@ -583,6 +589,41 @@ where
 /// key (`InpActEvt_SpaceBar_...`), and a button handler is named
 /// after the button, so this listing is usually enough to find
 /// the function to call. See misery research.md 26.5.
+/// Every function a class defines, found by CLASS NAME rather
+/// than off a live instance.
+///
+/// For classes that never have an instance: static Blueprint
+/// libraries like `AssetRegistryHelpers`, and anything whose
+/// only object is a CDO. `class_functions` cannot see those.
+///
+/// Also the safe way to ask what a native engine class can do:
+/// `discover_class_detail` CRASHES on one, faulting inside
+/// `iter_native_properties` (worldgen.md 10). Functions are a
+/// different list and iterate cleanly.
+pub fn class_functions_by_name(args: &Json) -> Result<Json, String> {
+    let class_name = arg_str(args, "class")?.to_string();
+    let cls = crate::ue::find_class_fast(&class_name)
+        .ok_or_else(|| format!("class '{class_name}' not found"))?;
+    let mut fns = Vec::new();
+    for (name, flags) in cls.iter_functions() {
+        let entry = match cls.get_function(&class_name, &name) {
+            Some(f) => serde_json::json!({
+                "name": name,
+                "flags": format!("0x{flags:X}"),
+                "parms_size": f.parms_size(),
+                "num_parms": f.num_parms(),
+            }),
+            None => serde_json::json!({ "name": name, "flags": format!("0x{flags:X}") }),
+        };
+        fns.push(entry);
+    }
+    Ok(serde_json::json!({
+        "class": class_name,
+        "count": fns.len(),
+        "functions": fns,
+    }))
+}
+
 pub fn class_functions(args: &Json) -> Result<Json, String> {
     let class_name = arg_str(args, "class")?.to_string();
     let ptr = crate::ue::actor::find_object(&class_name, None, false)
