@@ -40,7 +40,7 @@
 // the same SAFETY comments 40 times across the same shapes.
 #![allow(clippy::undocumented_unsafe_blocks)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
 use std::sync::{Arc, OnceLock};
 
@@ -275,40 +275,28 @@ impl UClass {
         let Some(rt) = try_runtime() else {
             return Vec::new();
         };
-        let mut out = Vec::new();
-        let mut cur: *const u8 = unsafe {
-            (self as *const UClass as *const u8)
-                .add(offsets::ustruct::CHILD_PROPERTIES)
-                .cast::<*const u8>()
-                .read_unaligned()
-        };
-        let mut depth = 0;
-        while !cur.is_null() && depth < 4096 {
-            unsafe {
-                let name_ptr = cur.add(offsets::ffield::NAME_PRIVATE);
-                let name_fname: crate::ue::fname::FName =
-                    (name_ptr as *const crate::ue::fname::FName).read_unaligned();
-                let name = if name_fname.is_none() {
-                    String::from("<none>")
-                } else {
-                    rt.name_resolver.to_string(name_fname)
-                };
-                let offset = (cur.add(offsets::fproperty::OFFSET_INTERNAL) as *const i32)
-                    .read_unaligned() as u32;
-                let elem_size = (cur.add(offsets::fproperty::ELEMENT_SIZE) as *const i32)
-                    .read_unaligned() as u32;
-                let next: *const u8 =
-                    (cur.add(offsets::ffield::NEXT) as *const *const u8).read_unaligned();
-                out.push(NativeProperty {
-                    name,
-                    offset,
-                    element_size: elem_size,
-                });
-                cur = next;
-            }
-            depth += 1;
+        let head_addr = self as *const UClass as usize + offsets::ustruct::CHILD_PROPERTIES;
+        if !crate::winproc::is_addr_readable(head_addr) {
+            return Vec::new();
         }
-        out
+        let head = unsafe { (head_addr as *const *const u8).read_unaligned() };
+        let instance_size = self.properties_size();
+        [
+            (0x18, 0x20, 0x44),
+            (
+                offsets::ffield::NEXT,
+                offsets::ffield::NAME_PRIVATE,
+                offsets::fproperty::OFFSET_INTERNAL,
+            ),
+        ]
+        .into_iter()
+        .map(|(next, name, offset)| {
+            walk_native_properties(head, next, name, offset, instance_size, |fname| unsafe {
+                rt.name_resolver.to_string(fname)
+            })
+        })
+        .max_by_key(Vec::len)
+        .unwrap_or_default()
     }
 
     pub fn super_class(&self) -> Option<&UClass> {
@@ -414,6 +402,85 @@ impl UClass {
             };
         }
         None
+    }
+}
+
+fn walk_native_properties(
+    mut current: *const u8,
+    next_offset: usize,
+    name_offset: usize,
+    value_offset: usize,
+    instance_size: u32,
+    mut resolve_name: impl FnMut(FName) -> String,
+) -> Vec<NativeProperty> {
+    let mut properties = Vec::new();
+    let mut seen = HashSet::with_capacity(64);
+    while !current.is_null() && properties.len() < 4096 {
+        if !seen.insert(current as usize) {
+            break;
+        }
+        let next_addr = current as usize + next_offset;
+        let name_addr = current as usize + name_offset;
+        let offset_addr = current as usize + value_offset;
+        let size_addr = current as usize + offsets::fproperty::ELEMENT_SIZE;
+        if !crate::winproc::is_addr_readable(next_addr)
+            || !crate::winproc::is_addr_readable(name_addr)
+            || !crate::winproc::is_addr_readable(offset_addr)
+            || !crate::winproc::is_addr_readable(size_addr)
+        {
+            break;
+        }
+        let fname = unsafe { (name_addr as *const FName).read_unaligned() };
+        let offset = unsafe { (offset_addr as *const i32).read_unaligned() };
+        let element_size = unsafe { (size_addr as *const i32).read_unaligned() };
+        if offset < 0 || element_size <= 0 || offset as u32 + element_size as u32 > instance_size {
+            break;
+        }
+        properties.push(NativeProperty {
+            name: if fname.is_none() {
+                String::from("<none>")
+            } else {
+                resolve_name(fname)
+            },
+            offset: offset as u32,
+            element_size: element_size as u32,
+        });
+        current = unsafe { (next_addr as *const *const u8).read_unaligned() };
+    }
+    properties
+}
+
+#[cfg(test)]
+mod native_property_tests {
+    use super::*;
+
+    #[test]
+    fn alternate_ffield_layout_is_bounded_and_cycle_safe() {
+        let mut field = vec![0u8; 0x50];
+        let field_ptr = field.as_ptr();
+        field[0x18..0x20].copy_from_slice(&(field_ptr as usize).to_le_bytes());
+        field[0x20..0x24].copy_from_slice(&1i32.to_le_bytes());
+        field[0x24..0x28].copy_from_slice(&0u32.to_le_bytes());
+        field[0x34..0x38].copy_from_slice(&16i32.to_le_bytes());
+        field[0x44..0x48].copy_from_slice(&48i32.to_le_bytes());
+
+        let properties =
+            walk_native_properties(field_ptr, 0x18, 0x20, 0x44, 0x100, |_| "PathPoints".into());
+
+        assert_eq!(properties.len(), 1);
+        assert_eq!(properties[0].name, "PathPoints");
+        assert_eq!(properties[0].offset, 48);
+        assert_eq!(properties[0].element_size, 16);
+    }
+
+    #[test]
+    fn unreadable_ffield_pointer_stops_without_dereferencing() {
+        let properties =
+            walk_native_properties(1usize as *const u8, 0x18, 0x20, 0x44, 0x100, |_| {
+                unreachable!("an unreadable field must not resolve its name")
+            });
+
+        assert!(properties.is_empty());
     }
 }
 
