@@ -1,8 +1,7 @@
 //! Record and replay a short waypoint route against the live MISERY player.
 //!
-//! The game window must be foreground because the first MISERY proof uses
-//! Modforge's L1 input surface. The test returns to its starting position and
-//! facing, and releases W on every exit path.
+//! The test focuses the game viewport, drives held forward and relative mouse
+//! input, then returns to its starting position and facing.
 //!
 //! ```text
 //! MISERY_DEBUG_PORT=17176 k3sc cargo-lock test -p misery-mod \
@@ -25,10 +24,11 @@ use modforge::route::{
 use serde_json::json;
 
 const PLAYER_CHAIN: &str = "BP_SGKMasterCharacter_C";
-const OUTBOUND_CM: f64 = 300.0;
-const ARRIVAL_CM: f64 = 50.0;
-const SAMPLE_CM: f64 = 60.0;
+const OUTBOUND_CM: f64 = 100.0;
+const ARRIVAL_CM: f64 = 30.0;
+const SAMPLE_CM: f64 = 25.0;
 const WAYPOINT_TIMEOUT: Duration = Duration::from_secs(8);
+const HEADING_OFFSETS_DEG: [f64; 4] = [0.0, 90.0, -90.0, 180.0];
 
 struct ReleaseForward<'a>(&'a Api);
 
@@ -48,9 +48,9 @@ impl Drop for RemoveFile {
     }
 }
 
-fn call_vec3(api: &Api, selector: &str, function: &str) -> (f64, f64, f64) {
+fn call_vec3(api: &Api, selector: &str, class: &str, function: &str) -> (f64, f64, f64) {
     let (out, _) = api
-        .call_ufunction("Actor", function, selector, &[0u8; 0x18])
+        .call_ufunction(class, function, selector, &[0u8; 0x18])
         .unwrap_or_else(|error| panic!("{function} failed: {error}"));
     assert_eq!(out.len(), 0x18, "{function} returned the wrong parm size");
     (
@@ -61,29 +61,38 @@ fn call_vec3(api: &Api, selector: &str, function: &str) -> (f64, f64, f64) {
 }
 
 fn pose(api: &Api, selector: &str) -> Pose {
-    let (x, y, z) = call_vec3(api, selector, "K2_GetActorLocation");
-    let (_, yaw, _) = call_vec3(api, selector, "K2_GetActorRotation");
+    let (x, y, z) = call_vec3(api, selector, "Actor", "K2_GetActorLocation");
+    let (_, yaw, _) = call_vec3(api, selector, "Pawn", "GetControlRotation");
     Pose::new(Position::new(x, y, z), yaw)
+}
+
+fn focus_game(api: &Api) {
+    let own = api.op("input.self.hwnd", json!({}));
+    assert!(own.ok, "game hwnd failed: {:?}", own.error);
+    let console_hwnd = isize::from_str_radix(
+        own.result["hwnd"]
+            .as_str()
+            .expect("window handle is a string")
+            .trim_start_matches("0x"),
+        16,
+    )
+    .expect("window handle is hex");
+    let pid = modforge::input::window_pid(console_hwnd).expect("game window has an owning process");
+    let game_hwnd = modforge::input::find_hwnd_by_pid(pid).expect("game viewport exists");
+    assert!(
+        modforge::input::focus_hwnd(game_hwnd),
+        "could not focus the game viewport"
+    );
+    assert_eq!(
+        modforge::input::foreground_hwnd(),
+        Some(game_hwnd),
+        "game viewport did not become foreground"
+    );
 }
 
 fn input(api: &Api, op: &str, args: serde_json::Value) {
     let response = api.op(op, args);
     assert!(response.ok, "{op} failed: {:?}", response.error);
-}
-
-fn require_game_foreground(api: &Api) {
-    let foreground = api.op("input.foreground.hwnd", json!({}));
-    assert!(
-        foreground.ok,
-        "foreground hwnd failed: {:?}",
-        foreground.error
-    );
-    let own = api.op("input.self.hwnd", json!({}));
-    assert!(own.ok, "game hwnd failed: {:?}", own.error);
-    assert_eq!(
-        foreground.result["hwnd"], own.result["hwnd"],
-        "focus the MISERY window before running the route proof"
-    );
 }
 
 fn route_waypoints(route: &RouteGraph, start: &str, goal: &str) -> Vec<Waypoint> {
@@ -101,6 +110,8 @@ fn follow(
     waypoints: &[Waypoint],
     mut trail: Option<&mut TrailRecorder>,
 ) -> Result<(), String> {
+    let _release = ReleaseForward(api);
+    let mut forward_held = false;
     let config = SteeringConfig {
         mouse_units_per_degree: 2.0,
         max_mouse_delta: 120,
@@ -109,6 +120,7 @@ fn follow(
     for waypoint in waypoints {
         let started = Instant::now();
         let mut stuck = StuckDetector::new(10.0, 2_000).unwrap();
+        let mut forward_calls = 0;
         loop {
             let current = pose(api, selector);
             if let Some(recorder) = trail.as_deref_mut() {
@@ -120,14 +132,26 @@ fn follow(
             }
             if started.elapsed() >= WAYPOINT_TIMEOUT {
                 return Err(format!(
-                    "timed out at waypoint '{}' from pose {:?}, distance {:.1} cm",
-                    waypoint.id, current, output.distance
+                    "timed out at waypoint '{}' from pose {:?}, distance {:.1} cm, yaw error {:.1} deg, forward {}, movement calls {}",
+                    waypoint.id,
+                    current,
+                    output.distance,
+                    output.yaw_error_deg,
+                    output.forward,
+                    forward_calls,
                 ));
             }
-            if stuck.observe(started.elapsed().as_millis() as u64, output.distance) {
+            if output.forward
+                && stuck.observe(started.elapsed().as_millis() as u64, output.distance)
+            {
                 return Err(format!(
-                    "stuck at waypoint '{}' from pose {:?}, distance {:.1} cm",
-                    waypoint.id, current, output.distance
+                    "stuck at waypoint '{}' from pose {:?}, distance {:.1} cm, yaw error {:.1} deg, forward {}, movement calls {}",
+                    waypoint.id,
+                    current,
+                    output.distance,
+                    output.yaw_error_deg,
+                    output.forward,
+                    forward_calls,
                 ));
             }
             if output.mouse_dx != 0 {
@@ -137,15 +161,22 @@ fn follow(
                     json!({"dx": output.mouse_dx, "dy": 0, "backend": "l1"}),
                 );
             }
-            if output.forward {
+            if output.forward != forward_held {
                 input(
                     api,
-                    "input.key.press",
-                    json!({"key": "w", "hold_ms": 25, "backend": "l1"}),
+                    if output.forward {
+                        "input.key.down"
+                    } else {
+                        "input.key.up"
+                    },
+                    json!({"key": "w", "backend": "l1"}),
                 );
-            } else {
-                std::thread::sleep(Duration::from_millis(16));
+                forward_held = output.forward;
             }
+            if output.forward {
+                forward_calls += 1;
+            }
+            std::thread::sleep(Duration::from_millis(16));
         }
     }
     Ok(())
@@ -238,6 +269,37 @@ fn arrived(position: Position) -> Observation {
     )
 }
 
+fn record_traversable_route(api: &Api, selector: &str) -> (Pose, Position, RouteGraph) {
+    let mut failures = Vec::new();
+    for heading_offset in HEADING_OFFSETS_DEG {
+        let start = pose(api, selector);
+        let radians = (start.yaw_deg + heading_offset).to_radians();
+        let target = Position::new(
+            start.position.x + radians.cos() * OUTBOUND_CM,
+            start.position.y + radians.sin() * OUTBOUND_CM,
+            start.position.z,
+        );
+        let mut recorder = TrailRecorder::new(SAMPLE_CM, ARRIVAL_CM).unwrap();
+        recorder.observe(start.position);
+        match follow(
+            api,
+            selector,
+            &[Waypoint::new("recording-target", target, ARRIVAL_CM)],
+            Some(&mut recorder),
+        ) {
+            Ok(()) => {
+                let route = recorder.finish("misery short route").unwrap();
+                return (start, target, route);
+            }
+            Err(error) => failures.push(format!("heading {heading_offset:+.0}: {error}")),
+        }
+    }
+    panic!(
+        "no local heading produced a traversable route:\n{}",
+        failures.join("\n")
+    );
+}
+
 fn restore_yaw(api: &Api, selector: &str, target_yaw: f64) {
     let config = SteeringConfig {
         mouse_units_per_degree: 2.0,
@@ -269,31 +331,13 @@ fn restore_yaw(api: &Api, selector: &str, target_yaw: f64) {
 fn misery_records_saves_and_replays_a_waypoint_route() {
     let Some(api) = api_or_skip() else { return };
     assert!(offsets_live(&api), "MISERY offsets are not live");
-    require_game_foreground(&api);
+    focus_game(&api);
 
     let player = client::walk_class_chain_instances(&api, PLAYER_CHAIN, 4)
         .into_iter()
         .next()
         .expect("load a save so the live player exists");
-    let start = pose(&api, &player.addr_selector);
-    let radians = start.yaw_deg.to_radians();
-    let target = Position::new(
-        start.position.x + radians.cos() * OUTBOUND_CM,
-        start.position.y + radians.sin() * OUTBOUND_CM,
-        start.position.z,
-    );
-    let _release = ReleaseForward(&api);
-
-    let mut recorder = TrailRecorder::new(SAMPLE_CM, ARRIVAL_CM).unwrap();
-    recorder.observe(start.position);
-    follow(
-        &api,
-        &player.addr_selector,
-        &[Waypoint::new("recording-target", target, ARRIVAL_CM)],
-        Some(&mut recorder),
-    )
-    .unwrap();
-    let recorded = recorder.finish("misery short route").unwrap();
+    let (start, _target, recorded) = record_traversable_route(&api, &player.addr_selector);
     assert!(
         recorded.waypoints().len() >= 2,
         "route did not retain movement samples"
@@ -310,6 +354,7 @@ fn misery_records_saves_and_replays_a_waypoint_route() {
 
     let first = loaded.first_id().unwrap();
     let last = loaded.last_id().unwrap();
+    let recorded_goal = loaded.waypoint(last).unwrap().position;
     let reverse = loaded.reversed("misery short route return");
     follow(
         &api,
@@ -328,7 +373,7 @@ fn misery_records_saves_and_replays_a_waypoint_route() {
         .action("follow saved route", follow_op(&loaded, first, last))
         .unwrap();
     journal_recorder
-        .wait("saved route arrived", arrived(target), 250, 25)
+        .wait("saved route arrived", arrived(recorded_goal), 250, 25)
         .unwrap();
     journal_recorder
         .action("return on saved route", follow_op(&reverse, last, first))

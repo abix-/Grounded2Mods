@@ -25,6 +25,9 @@ Newest first.
 
 | System | Item | Done when |
 |---|---|---|
+| `modforge::route` | [x] Add versioned world-space waypoint graphs, trail reduction, A* over recorded traversable edges, closed-loop steering, arrival, and stuck evidence | Five route tests prove schema round-trip, reduced trail retention, alternate-edge A*, shortest-turn steering, arrival, and progress-based stuck detection. |
+| `modforge::input` | [x] Select a game's viewport instead of its diagnostics console when one process owns multiple visible windows | The live MISERY proof selected the largest visible client area, transferred focus to the viewport, and Win32 held-key and relative-mouse input reached the game. |
+| `misery-mod` | [x] Make MISERY the first saved waypoint-route and journal replay proof | Live in 9.31 seconds: record a collision-aware local route, save and load it, return, journal-replay outward and back without teleporting, restore facing, release forward input, and wait on the recorded final waypoint. |
 | `modforge::client` | [x] Extend the action journal to injected games with recorded operation actions, condition waits, and assertions in versioned JSON | Five tests prove round-trip, ordered replay, polling to an observed value, replayable recording, operation failure evidence, and assertion failure evidence. |
 | `misery-mod` | [x] Make MISERY the first live action-journal proof | Against the running game, the test recorded a player movement-speed write, waited for the generic memory read, asserted it, restored the exact original bytes, saved and loaded the journal, replayed it, and restored the original value again. |
 | `workspace` | [x] Update Rust and direct dependencies to current stable releases | Rust 1.98 is required, the lockfile is refreshed, ureq 3 and the other major-version updates compile across all workspace targets and features, and the local hudhook fork includes upstream 0.9.2 plus its Present1 patch. |

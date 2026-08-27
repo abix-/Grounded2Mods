@@ -225,25 +225,43 @@ pub fn foreground_hwnd() -> Option<isize> {
     if h.is_null() { None } else { Some(h as isize) }
 }
 
-/// Enumerate top-level windows; return the first one owned by `pid`
-/// that is visible. Useful when the test process and the game process
-/// are separate: pass the game PID, get the game window.
+/// Return the process that owns a top-level window.
+pub fn window_pid(hwnd: isize) -> Option<u32> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+    let mut pid = 0;
+    // SAFETY: Windows accepts any HWND value and writes only to the live `pid` local.
+    unsafe {
+        GetWindowThreadProcessId(
+            hwnd as windows_sys::Win32::Foundation::HWND,
+            &mut pid,
+        )
+    };
+    (pid != 0).then_some(pid)
+}
+
+/// Transfer desktop focus to a top-level window.
+pub fn focus_hwnd(hwnd: isize) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
+    // SAFETY: focus transfer does not dereference the HWND in this process.
+    unsafe { SetForegroundWindow(hwnd as windows_sys::Win32::Foundation::HWND) != 0 }
+}
+
+/// Enumerate top-level windows and return the largest visible client
+/// area owned by `pid`. Games may create a visible diagnostics console
+/// before their viewport, so enumeration order is not authoritative.
 ///
-/// Visibility filter: skips invisible windows (typical message-only
-/// or hidden helper windows). If multiple visible top-level windows
-/// belong to the same PID (rare for games), returns the first
-/// EnumWindows yields.
 pub fn find_hwnd_by_pid(pid: u32) -> Option<isize> {
     use std::ffi::c_void;
     use windows_sys::Win32::Foundation::{HWND, LPARAM};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowThreadProcessId, IsWindowVisible,
+        EnumWindows, GetClientRect, GetWindowThreadProcessId, IsWindowVisible,
     };
     type BOOL = i32;
 
     struct Ctx {
         wanted_pid: u32,
         found: isize,
+        area: i64,
     }
 
     extern "system" fn cb(hwnd: HWND, lparam: LPARAM) -> BOOL {
@@ -251,13 +269,30 @@ pub fn find_hwnd_by_pid(pid: u32) -> Option<isize> {
         let mut pid: u32 = 0;
         let _tid = unsafe { GetWindowThreadProcessId(hwnd, &mut pid) };
         if pid == ctx.wanted_pid && unsafe { IsWindowVisible(hwnd) } != 0 {
-            ctx.found = hwnd as isize;
-            return 0; // stop enumeration
+            let mut rect = windows_sys::Win32::Foundation::RECT {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            };
+            // SAFETY: EnumWindows supplied a live HWND and `rect` is writable here.
+            if unsafe { GetClientRect(hwnd, &mut rect) } != 0 {
+                let area = i64::from((rect.right - rect.left).max(0))
+                    * i64::from((rect.bottom - rect.top).max(0));
+                if area > ctx.area {
+                    ctx.found = hwnd as isize;
+                    ctx.area = area;
+                }
+            }
         }
         1 // continue
     }
 
-    let mut ctx = Ctx { wanted_pid: pid, found: 0 };
+    let mut ctx = Ctx {
+        wanted_pid: pid,
+        found: 0,
+        area: -1,
+    };
     let _ok = unsafe {
         EnumWindows(
             Some(cb),
