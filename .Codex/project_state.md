@@ -2,10 +2,11 @@
 
 ## Current focus
 
-Extract every engine-independent or Unity-specific mechanism identified by the Survivalist source audit into Modforge or Unityforge without changing game behavior.
+Extract the verified reusable Grounded 2 effect and inspection implementations into Ueforge without changing behavior.
 
 ## Design goals
 
+- Every Grounded 2 source function explains its player-facing purpose and its verified ownership boundary with Modforge and Ueforge.
 - Item definitions have one authority: `ItemDef` and `ItemRegistry`.
 - Uniqueness is an `ItemDef` property, not a parallel definition type or registry.
 - Per-save entered and holder state belongs to the item ledger in `modforge::item`.
@@ -42,6 +43,28 @@ Extract every engine-independent or Unity-specific mechanism identified by the S
 
 ## Last session summary
 
+- Moved Grounded 2's existing damage-hook event conversion, UNIX timestamp calculation, and DamageRing recording into `ueforge::debug::DamageRing::record_hook_event`.
+- Grounded 2 now reads only its `CurrentDamage` field, supplies the observed value and configured function name, and keeps its positive-damage trace log and counters.
+- Added no tests and preserved the existing event fields, timestamp fallback, 64-entry ring, snapshot shape, and trace condition.
+- Verified `k3sc cargo-lock check -p ueforge -p grounded2-mod`, `k3sc cargo-lock check -p grounded2-mod --tests`, and all 53 existing Ueforge library tests. The Grounded 2 test check retains its existing unused-field warning.
+- Moved Grounded 2's existing status-effect component, array, row-handle, FName, data-table, Type, and Value traversal into `ueforge::ue::status_effect::read_active`.
+- Grounded 2 now supplies only its six layout values, selects the first live player, and maps the returned entries into its existing debug snapshot view.
+- Added no tests and preserved the existing 64-entry cap and all null and unresolved-row behavior.
+- Verified `k3sc cargo-lock check -p ueforge -p grounded2-mod`, `k3sc cargo-lock check -p grounded2-mod --tests`, and all 53 existing Ueforge library tests. The Grounded 2 test check retains its existing unused-field warning.
+- Moved Grounded 2's existing parameterized ImpactReversalEffect implementation into Ueforge's standard RPG effect library.
+- Grounded 2 now keeps only the IMPACT_REVERSAL damage layout, health offset, environmental marker, reduction tuning, and catalog static.
+- Added no tests. Verified `k3sc cargo-lock check -p ueforge -p grounded2-mod`, `k3sc cargo-lock check -p grounded2-mod --tests`, and all 53 existing Ueforge library tests. The Grounded 2 test check retains its existing unused-field warning.
+- Moved Grounded 2's existing parameterized LifestealEffect implementation into Ueforge's standard RPG effect library.
+- Grounded 2 now keeps only the LIFESTEAL player reference, health offsets, maximum fraction, and catalog static.
+- Added no tests. Verified `k3sc cargo-lock check -p ueforge -p grounded2-mod`, `k3sc cargo-lock check -p grounded2-mod --tests`, and all 53 existing Ueforge library tests. The Grounded 2 test check retains its existing unused-field warning.
+- Documented every function in `grounded2-mod/src` with a concise purpose and a specific reason it remains in the game mod instead of moving to Modforge or Ueforge.
+- Confirmed the current Grounded 2 source already delegates most reusable registries, progression, persistence, hooks, polling, Unreal access, debug transport, and effect dispatch to Modforge or Ueforge.
+- Recorded four concrete Ueforge lifts in `docs/todo.md`: the existing parameterized Lifesteal and Impact Reversal effects, status-effect inspection traversal, and damage-event conversion and ring recording.
+- Verified `k3sc cargo-lock check -p grounded2-mod`. The existing library-test target still cannot link because `ueforge_ui_enable_imgui` is unavailable to the Windows test executable.
+- `k3sc cargo-lock fmt -p grounded2-mod -- --check` remains red on existing rustfmt differences across the crate's source and tests; no unrelated formatting rewrite was applied.
+- Rechecked the remaining proposed mission selection, raid experiment, incursion escalation, cooldown, and live-key work against the direct-extraction rule.
+- Removed those rows from `docs/todo.md`: they were Survivalist policy, standard collection operations, or would require speculative framework abstractions rather than direct code moves.
+- The Survivalist source extraction is complete; no further Modforge or Unityforge lift remains from this audit.
 - Moved Survivalist's existing centroid, spread, radial point, and nearest-destination arithmetic into three small functions in `modforge::storyteller`.
 - Kept all incursion state, random rolls, constants, community observation, spawn behavior, target effects, logging, and chronicle text in Survivalist.
 - Added no tests and did not build, following the direct instruction for this extraction work.
@@ -156,9 +179,9 @@ Extract every engine-independent or Unity-specific mechanism identified by the S
 
 ## Next steps
 
-- Move only the repeated pure mission selection calculations already present in Survivalist; do not add a mission-launch planner or new mission state.
+- Run the existing Grounded 2 in-game smoke checks for the completed extraction batch.
 - Exercise Survivalist's Load/Unload re-init path through a live story switch and confirm `ReinitAfterUnload` works.
 
 ## Open questions
 
-- None for the Survivalist source audit. The extraction order is recorded in `docs/todo.md`.
+- None. The Survivalist source extraction audit is complete.
