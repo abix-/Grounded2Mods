@@ -57,6 +57,7 @@ struct RawPart {
     scale: f64,
     mesh: Option<String>,
     extent: (f64, f64, f64),
+    pivot: (f64, f64, f64),
 }
 
 /// Read every actor in levels whose path contains `path_needle`
@@ -108,9 +109,18 @@ pub fn read_level(path_needle: &str, only: &[String]) -> Vec<PartDef> {
             }
             continue;
         };
-        let (mesh, extent) = match mesh {
-            Some((name, ex, ey, ez)) => (Some(name), (ex, ey, ez)),
-            None => (None, (0.0, 0.0, 0.0)),
+        let (mesh, extent, pivot) = match mesh {
+            Ok(Some(m)) => (Some(m.name), m.extent, m.pivot),
+            // No mesh at all is a normal actor, kept.
+            Ok(None) => (None, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+            // A mesh pointer that does not resolve is a broken
+            // actor: everything read through it would be garbage
+            // (two per square measured at 6.8e36 before this).
+            // Same fate as one that faults.
+            Err(()) => {
+                skipped += 1;
+                continue;
+            }
         };
         raw.push(RawPart {
             class,
@@ -123,6 +133,7 @@ pub fn read_level(path_needle: &str, only: &[String]) -> Vec<PartDef> {
             scale: t.scale_x,
             mesh,
             extent,
+            pivot,
         });
     }
     if skipped > 0 {
@@ -161,6 +172,13 @@ fn to_part(r: &RawPart, cx: f64, cy: f64, base_z: f64) -> PartDef {
             (r.extent.1 / CM_PER_M) as f32,
             (r.extent.2 / CM_PER_M) as f32,
             (r.extent.0 / CM_PER_M) as f32,
+        ),
+        // A pivot is a POSITION, not a size, so it takes the same
+        // axis swap as `offset` above, sign changes and all.
+        pivot: Vec3::new(
+            (r.pivot.1 / CM_PER_M) as f32,
+            (r.pivot.2 / CM_PER_M) as f32,
+            (-r.pivot.0 / CM_PER_M) as f32,
         ),
     }
 }
@@ -312,6 +330,7 @@ fn part_json(p: &PartDef) -> serde_json::Value {
         "roll": p.roll,
         "scale": p.scale,
         "extent": [p.extent.x, p.extent.y, p.extent.z],
+        "pivot": [p.pivot.x, p.pivot.y, p.pivot.z],
     })
 }
 
@@ -342,6 +361,7 @@ fn part_from_json(v: &serde_json::Value) -> Option<PartDef> {
         roll: f("roll", 0.0),
         scale: f("scale", 1.0),
         extent: vec3("extent"),
+        pivot: vec3("pivot"),
     })
 }
 

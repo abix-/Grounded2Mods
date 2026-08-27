@@ -132,6 +132,15 @@ pub struct PartDef {
     /// part is a box in space and its role can be read off its
     /// proportions.
     pub extent: Vec3,
+    /// The middle of that geometry, measured from the point the
+    /// part is placed at, metres.
+    ///
+    /// A size on its own cannot say where a part's faces are: a
+    /// floor tile is placed at a corner and a beam at the middle
+    /// of its base, so two parts of the same size sit differently.
+    /// The faces run from `pivot - extent` to `pivot + extent`,
+    /// which is how two placed parts are told to be touching.
+    pub pivot: Vec3,
 }
 
 /// What a part is, judged by its proportions alone. No names, no
@@ -947,6 +956,7 @@ pub fn room_parts(
             // The builder needs no measurements; the mesh carries
             // its own geometry.
             extent: Vec3::ZERO,
+            pivot: Vec3::ZERO,
         })
         .collect()
 }
@@ -1289,6 +1299,7 @@ mod shape_tests {
             roll: 0.0,
             scale: 10.0,
             extent: e(0.2, 0.15, 0.02),
+            pivot: Vec3::ZERO,
         };
         assert_eq!(p.shape(), PartShape::Panel);
     }
@@ -1391,6 +1402,7 @@ mod shape_tests {
             roll: 0.0,
             scale: 1.0,
             extent: e(0.5, 0.5, 0.5),
+            pivot: Vec3::ZERO,
         }
     }
 
@@ -1566,6 +1578,7 @@ mod shape_tests {
             roll: 0.0,
             scale: 1.0,
             extent: e(2.0, 1.5, 0.1),
+            pivot: Vec3::ZERO,
         };
         let (hx, hz) = p.ground_half_size();
         // Turned 90 degrees, the long axis now runs the other way.

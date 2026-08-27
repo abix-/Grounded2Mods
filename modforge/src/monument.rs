@@ -997,6 +997,7 @@ mod tests {
                     roll: 0.0,
                     scale: 1.0,
                     extent: Vec3::new(0.5, 1.0, 0.5),
+                    pivot: Vec3::ZERO,
                 })
                 .collect(),
         }

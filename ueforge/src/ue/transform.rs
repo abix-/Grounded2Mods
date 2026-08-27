@@ -147,24 +147,68 @@ pub unsafe fn mesh_extent(mesh: *const u8) -> (f64, f64, f64) {
     }
 }
 
-/// The mesh a `AStaticMeshActor` is showing: its name and its
-/// half-extent. `None` when the actor has no mesh component or no
-/// asset on it.
+/// What one placed actor's mesh measures, as the engine stores
+/// it: centimetres on Unreal's axes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MeshMeasure {
+    pub name: String,
+    /// Half-size of the mesh's own geometry.
+    pub extent: (f64, f64, f64),
+    /// The middle of that geometry, measured from the mesh's
+    /// PIVOT, which is the point the actor is placed at.
+    ///
+    /// A size alone cannot say where a part's faces are: a floor
+    /// tile is placed at a corner and a beam at the middle of its
+    /// base, so the same size sits in a different place. The
+    /// faces run from `pivot - extent` to `pivot + extent`.
+    pub pivot: (f64, f64, f64),
+}
+
+/// The mesh a `AStaticMeshActor` is showing: its name, its
+/// half-extent and its pivot.
+///
+/// Both measurements come off the same `ExtendedBounds` on the
+/// same asset, in one read, so nothing can hold a size from one
+/// mesh and a pivot from another.
+///
+/// The three answers mean different things and a caller must not
+/// collapse them: `Ok(None)` is an actor that HAS no mesh, which
+/// is normal; `Err` is a pointer that does not resolve to a
+/// `UStaticMesh`, and everything read through it would be
+/// garbage. Live 2026-08-27, two actors in one square carried
+/// such a pointer and reported an extent of 6.8e36 before this
+/// check existed.
 ///
 /// # Safety
 /// `actor` must be a live `AActor`.
-pub unsafe fn static_mesh(actor: *const u8) -> Option<(String, f64, f64, f64)> {
+pub unsafe fn static_mesh(actor: *const u8) -> Result<Option<MeshMeasure>, ()> {
     // SAFETY: caller guarantees a live actor; the chain is
     // StaticMeshActor -> its component -> the asset.
     unsafe {
         let comp: *const u8 = read_at(actor, offsets::STATIC_MESH_COMPONENT);
         if comp.is_null() {
-            return None;
+            return Ok(None);
         }
         let mesh: *const u8 = read_at(comp, offsets::STATIC_MESH);
-        let name = (mesh as *const UObject).as_ref()?.name();
-        let (ex, ey, ez) = mesh_extent(mesh);
-        Some((name, ex, ey, ez))
+        let Some(obj) = (mesh as *const UObject).as_ref() else {
+            return Ok(None);
+        };
+        // A real mesh's class answers to its name; whatever a bad
+        // pointer lands on does not. Read NOTHING else until this
+        // passes.
+        let is_mesh = obj
+            .class()
+            .map(|c| c.as_object().name() == "StaticMesh")
+            .unwrap_or(false);
+        if !is_mesh {
+            return Err(());
+        }
+        let (pivot, extent) = mesh_bounds(mesh);
+        Ok(Some(MeshMeasure {
+            name: obj.name(),
+            extent,
+            pivot,
+        }))
     }
 }
 

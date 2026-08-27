@@ -351,14 +351,30 @@ pub fn parse_approx_size(text: &str) -> Option<(f64, f64, f64)> {
     }
 }
 
-/// Unreal's axes and centimetres to this crate's: metres, y up.
-/// `mf(x, y, z) = ue(y, z, x) / 100`, the same permutation
-/// `ue::parts` uses.
-fn ue_to_mf(v: (f64, f64, f64)) -> glam::Vec3 {
+/// A SIZE from Unreal's axes and centimetres to this crate's:
+/// metres, y up. `mf(x, y, z) = ue(y, z, x) / 100`.
+///
+/// A half-size has no direction, so the handedness flip between
+/// the two axis maps does not show here. It does in
+/// [`ue_pos_to_mf`], and mixing the two is how a part ends up
+/// mirrored.
+fn ue_size_to_mf(v: (f64, f64, f64)) -> glam::Vec3 {
     glam::Vec3::new(
         (v.1 / CM_PER_M) as f32,
         (v.2 / CM_PER_M) as f32,
         (v.0 / CM_PER_M) as f32,
+    )
+}
+
+/// A POSITION, where the flip does show: Unreal's +x is this
+/// crate's -z. The same map `ue::parts::to_part` uses for a
+/// placed part's offset, because a pivot has to be in the same
+/// frame as everything else in the file.
+fn ue_pos_to_mf(v: (f64, f64, f64)) -> glam::Vec3 {
+    glam::Vec3::new(
+        (v.1 / CM_PER_M) as f32,
+        (v.2 / CM_PER_M) as f32,
+        (-v.0 / CM_PER_M) as f32,
     )
 }
 
@@ -417,7 +433,7 @@ pub fn parts_list(class_name: &str) -> Result<Vec<Part>, String> {
         // half-extent. The permutation is the same one
         // `ue::parts` uses (mf x,y,z = ue y,z,x).
         let extent = match get(APPROX_SIZE).as_deref().and_then(parse_approx_size) {
-            Some(size) => ue_to_mf(size) / 2.0,
+            Some(size) => ue_size_to_mf(size) / 2.0,
             None => glam::Vec3::ZERO,
         };
         let package = entries
@@ -459,7 +475,7 @@ pub fn parts_list(class_name: &str) -> Result<Vec<Part>, String> {
         // SAFETY: the entry is a StaticMesh asset, so what
         // LoadAsset_Blocking returned is a live UStaticMesh.
         let (origin, _) = unsafe { crate::ue::transform::mesh_bounds(addr as *const u8) };
-        part.pivot = Some(ue_to_mf(origin));
+        part.pivot = Some(ue_pos_to_mf(origin));
     }
     Ok(out)
 }
