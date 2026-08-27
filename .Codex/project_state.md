@@ -13,6 +13,7 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 - The first MISERY graph is exactly `spawn -> metal-door -> expedition-door`. The metal-door waypoint opens the bunker door only when closed; the expedition-door waypoint interacts and waits until expedition entry is observed.
 - Modforge A* chooses stop-to-stop edges. Unreal navigation owns detailed movement within each edge; Modforge's closed-loop movement and look follower remains the fallback when the host has no usable navigation surface.
 - A* may select only edges supplied by the live engine navigation path or proven traversable by recording. It never treats an unobserved straight line through the 3D world as walkable.
+- MISERY target discovery runs once through Unreal's world actor enumeration and retains actor, inventory, class, function, and widget pointers for the current world. Navigation, interaction, and observation loops never walk the global UObject list or rediscover function layouts.
 - Generation loading, hot reload, rollback, shutdown, and bridge lifetime have one implementation in `cs-shim-common/GenerationLoader.cs`.
 - Each C# shim retains only its loader integration, logging, backend bridge, and host-specific frame callback.
 - Every Grounded 2 source function explains its player-facing purpose and its verified ownership boundary with Modforge and Ueforge.
@@ -57,6 +58,10 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 
 ## Last session summary
 
+- The latest restarted acceptance reached the bunker metal door but three focused `E` attempts did not open it. The player remained 110.3 cm from the door, so reliable player-input delivery is the first remaining loot-flow task.
+- The zero-global-scan actor path selected a real `BP_WoodenCrate2_C` through `GetAllActorsOfClass`. Unreal reported a complete 6575.8 cm path, but `SimpleMoveToLocation` stopped 773.5 cm from the approach, proving that observed traversal must invalidate a path blocked by geometry the navmesh does not model.
+- Rejected the first loot prototype on performance grounds. It repeatedly walked the 174,000 to 230,000-object global UObject list on the game thread during candidate selection and UI polling, violating `misery-mod/docs/performance.md`. The replacement batch uses one Unreal world-actor enumeration, cached pointers and function layouts, bounded navigation work across frames, event-captured container UI, direct inventory-count observation, and a zero-global-scan acceptance gate.
+- The first loot movement proof correctly failed after choosing by straight-line distance: Unreal stopped 672.4 cm from a box enclosed by building geometry. Target selection must reject invalid or partial engine paths and rank reachable boxes by measured navigation-path cost.
 - Closed the cold three-stop acceptance gap. From a restarted game, the permanent live test saved exactly three waypoints and two edges, opened the bunker metal door once, entered the expedition once, and completed in 23.94 seconds with 75 diagnostic breadcrumbs outside the graph.
 - Added a permanent live loot-box discovery test. In the entered expedition it found placed `BP_WoodenBoxResource_C` actors and selected the nearest at `[32192.64, 96474.68, 67.82]`, 3560.9 cm from the player.
 - Built and round-tripped the exact `spawn -> metal-door -> expedition-door` graph with three waypoints and two edges. The live flow saves it under `target/misery-routes`, while one-meter positions remain diagnostic breadcrumbs outside the graph.
@@ -275,8 +280,11 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 
 ## Next steps
 
-- Cold-start MISERY at spawn and run the combined three-stop acceptance through bunker-door recovery and observed expedition entry.
-- Add one alternate stop-to-stop edge and run the first measured high-level A* reroute.
+- Make cold bunker-door `E` input reliable across three restarted runs.
+- Remove global-object polling from expedition entry and the remaining loot diagnostics.
+- Complete ranked crate fallback, retained-state opening, UI transfer, and inventory-count evidence.
+- Enforce the zero-scan 16.7 ms performance gate and run the cold end-to-end acceptance.
+- Add one alternate stop-to-stop edge and run the first measured high-level A* reroute after looting is complete.
 - Compile the BepInEx IL2CPP shim when a BepInEx 6 IL2CPP reference directory is available.
 - Namespace Unityforge's managed handle table by generation so stale handles cannot collide after a hot swap.
 - Run the existing Grounded 2 in-game smoke checks for the completed extraction batch.
