@@ -330,6 +330,94 @@ pub fn asset_tags(
     Ok(out)
 }
 
+/// Parse Unreal's `ApproxSize` tag: `"320x320x320"`, a FULL size
+/// in centimetres, on Unreal's axes.
+///
+/// A zero is meaningful. `SM_MediaPlateScreen` is `0x100x100`,
+/// which is a flat mesh, not a missing measurement.
+pub fn parse_approx_size(text: &str) -> Option<(f64, f64, f64)> {
+    let mut parts = text.split('x').map(|p| p.trim().parse::<f64>());
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(Ok(x)), Some(Ok(y)), Some(Ok(z))) => Some((x, y, z)),
+        _ => None,
+    }
+}
+
+/// One entry in the parts list: what a mesh is, without loading
+/// it.
+pub struct Part {
+    pub name: String,
+    pub package: String,
+    /// Half-size in this crate's convention: metres, y up.
+    pub extent: glam::Vec3,
+    pub shape: modforge::structure::PieceShape,
+    pub triangles: Option<u32>,
+    pub vertices: Option<u32>,
+    pub materials: Option<u32>,
+    pub lods: Option<u32>,
+}
+
+/// Every mesh the game ships, as a part: size, shape and counts,
+/// read from the cooked registry tags with NOTHING loaded.
+///
+/// The size comes from `ApproxSize`, which is approximate and
+/// rounded to whole units. That is enough to tell a 4 m wall from
+/// a 2 m one, which is what a parts list is for; anything needing
+/// exact bounds loads that one mesh (pieces.md).
+///
+/// Game thread only.
+pub fn parts_list(class_name: &str) -> Result<Vec<Part>, String> {
+    const APPROX_SIZE: &str = "ApproxSize";
+    let wanted: Vec<String> = ["ApproxSize", "Triangles", "Vertices", "Materials", "LODs"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+    let entries = assets_of_class(class_name)?;
+    let mut out = Vec::with_capacity(entries.len());
+    let rows = asset_tags(class_name, &wanted, usize::MAX)?;
+    for (name, tags) in rows {
+        let get = |key: &str| -> Option<String> {
+            tags.iter()
+                .find(|(t, _)| t == key)
+                .and_then(|(_, v)| v.clone())
+        };
+        let num = |key: &str| -> Option<u32> { get(key).and_then(|v| v.parse().ok()) };
+
+        // Unreal's axes and centimetres to this crate's: metres,
+        // y up, and HALF the size because `PieceDef::extent` is a
+        // half-extent. The permutation is the same one
+        // `ue::pieces` uses (mf x,y,z = ue y,z,x).
+        let extent = match get(APPROX_SIZE).as_deref().and_then(parse_approx_size) {
+            Some((ux, uy, uz)) => glam::Vec3::new(
+                (uy / 2.0 / CM_PER_M) as f32,
+                (uz / 2.0 / CM_PER_M) as f32,
+                (ux / 2.0 / CM_PER_M) as f32,
+            ),
+            None => glam::Vec3::ZERO,
+        };
+        let package = entries
+            .iter()
+            .find(|a| a.name == name)
+            .map(|a| a.package.clone())
+            .unwrap_or_default();
+        out.push(Part {
+            name,
+            package,
+            extent,
+            shape: modforge::structure::classify(extent),
+            triangles: num("Triangles"),
+            vertices: num("Vertices"),
+            materials: num("Materials"),
+            lods: num("LODs"),
+        });
+    }
+    Ok(out)
+}
+
+/// Centimetres per metre, as `ue::pieces` uses it.
+const CM_PER_M: f64 = 100.0;
+
 /// Pull an asset into memory by its package and asset FNames, so
 /// something the game has not loaded can still be used. Returns
 /// the loaded object's address, or 0 if the load failed.
@@ -367,6 +455,69 @@ pub fn register_ops() {
             "Every asset of a class the game ships, loaded or not",
             "{class?: str, contains?: str}",
             inventory_op,
+        ),
+        crate::ops::OpDef::new(
+            "parts_list",
+            "Every mesh the game ships as a part: size, shape and counts, read from the cooked registry tags with nothing loaded. Writes it to disk when given a path",
+            "{class?: str, path?: str}",
+            |args| {
+                let class = args
+                    .get("class")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("StaticMesh")
+                    .to_string();
+                let path = args.get("path").and_then(|v| v.as_str()).map(str::to_string);
+                crate::game_thread::run(
+                    move || {
+                        let parts = parts_list(&class)?;
+                        let rows: Vec<serde_json::Value> = parts
+                            .iter()
+                            .map(|p| {
+                                serde_json::json!({
+                                    "name": p.name,
+                                    "package": p.package,
+                                    // Half-size, metres, y up.
+                                    "extent": [p.extent.x, p.extent.y, p.extent.z],
+                                    "shape": format!("{:?}", p.shape),
+                                    "triangles": p.triangles,
+                                    "vertices": p.vertices,
+                                    "materials": p.materials,
+                                    "lods": p.lods,
+                                })
+                            })
+                            .collect();
+                        let doc = serde_json::json!({
+                            "class": class,
+                            "count": rows.len(),
+                            "units": "half-extent in metres, y up",
+                            "source": "ApproxSize registry tag; nothing loaded",
+                            "parts": rows,
+                        });
+                        // Written where the caller asks, because
+                        // the point of this file is that a person
+                        // opens it.
+                        let written = match &path {
+                            Some(p) => match std::fs::write(
+                                p,
+                                serde_json::to_string_pretty(&doc).unwrap_or_default(),
+                            ) {
+                                Ok(()) => Some(p.clone()),
+                                Err(e) => return Err(format!("could not write {p}: {e}")),
+                            },
+                            None => None,
+                        };
+                        Ok(serde_json::json!({
+                            "class": doc["class"],
+                            "count": doc["count"],
+                            "written_to": written,
+                            // The whole list only comes back when
+                            // it is not being written; it is large.
+                            "parts": if written.is_some() { serde_json::Value::Null } else { doc["parts"].clone() },
+                        }))
+                    },
+                    ENGINE_TIMEOUT,
+                )
+            },
         ),
         crate::ops::OpDef::new(
             "asset_tags",

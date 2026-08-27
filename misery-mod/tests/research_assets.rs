@@ -218,3 +218,23 @@ fn do_the_cooked_tags_carry_size() {
     println!("
 {with_size} of {} assets carry a size tag", assets.len());
 }
+
+/// THE PARTS LIST. Every mesh the game ships, with a size and a
+/// shape, written to a file the operator can open.
+///
+/// Nothing is loaded: the size comes from the cooked `ApproxSize`
+/// tag (pieces.md). Writes next to the mod's own log so it sits
+/// with the rest of the mod's output.
+#[test]
+fn write_the_parts_list() {
+    let Some(api) = api_or_skip() else { return };
+    let path = "C:/Games/Steam/steamapps/common/MISERY/MISERY/Binaries/Win64/ue4ss/Mods/MiseryMod/dlls/parts.json";
+    let r = api.op(
+        "parts_list",
+        serde_json::json!({ "class": "StaticMesh", "path": path }),
+    );
+    assert!(r.ok, "parts_list failed: {:?}", r.error);
+    println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+    let count = r.result["count"].as_u64().unwrap_or(0);
+    assert!(count > 2000, "expected every shipped mesh, got {count}");
+}
