@@ -52,7 +52,7 @@ const OBJ_NAME: usize = 0x18;
 /// fields. Generous: the object is bigger than this, but
 /// everything interesting on a UE streaming level sits near the
 /// front.
-const SCAN_BYTES: usize = 0x180;
+const SCAN_BYTES: usize = 0x400;
 
 /// What the generators hold right now.
 ///
@@ -167,11 +167,20 @@ fn the_fields_that_lead_to_a_squares_actors() {
     }
     // The addresses of every live level, and what each is called.
     // The name carries the square.
-    let levels: Vec<(u64, String)> = modforge::client::walk_class_chain_instances(&api, "Level", 128)
-        .into_iter()
-        .map(|w| (w.addr as u64, w.full_name))
+    // The search matches a class-chain SUBSTRING, so "Level"
+    // also brings back LevelStreamingDynamic, LevelBounds and
+    // friends. A real level's full name starts with the class,
+    // so keep only those.
+    let all = modforge::client::walk_class_chain_instances(&api, "Level", 512);
+    let levels: Vec<(u64, String)> = all
+        .iter()
+        .filter(|w| w.full_name.starts_with("Level "))
+        .map(|w| (w.addr as u64, w.full_name.clone()))
         .collect();
-    println!("{} live level(s)", levels.len());
+    println!("{} object(s) matched \"Level\", {} are levels", all.len(), levels.len());
+    for (a, n) in levels.iter().take(6) {
+        println!("   {a:#x}  {n}");
+    }
 
     for i in 0..num.min(8) {
         let entry = read_u64(&api, &format!("addr:0x{ptr:X}"), i * 8);

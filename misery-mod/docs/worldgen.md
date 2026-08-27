@@ -535,10 +535,47 @@ Three findings:
   `LevelStreamingDynamic` objects in total; the active generator's
   array holds only the 4 that are live.
 
-Still unknown: which field on `LevelStreamingDynamic` names its
-square, and which points at the loaded `ULevel` so a square's own
-actors can be read instead of searching the world. See the crash
-below for why that is not yet answered.
+### `LoadedLevel` is at +0x158, and the level names the square
+
+Measured 2026-08-26 by comparing addresses, never by chasing
+pointers (see the rule below):
+
+```text
+-- [0] 0x2a83bae6280
+   +0x158 -> Level /Game/.../LargeFactory/3963_-2_6.L_LF_CoolingTower_B.PersistentLevel
+-- [1] +0x158 -> .../3963_-2_7.L_LF_CoolingTower_A.PersistentLevel
+-- [2] +0x158 -> .../3963_-1_6.L_LF_ElectricFactory.PersistentLevel
+-- [3] +0x158 -> .../3963_-1_7.L_LF_CoolingTower_A.PersistentLevel
+```
+
+The loaded level's own name IS the square name, the same string
+both watchers currently rebuild by reading every object in the
+game and parsing a path out of each one.
+
+**The generator pointers hold still.** Read twice, ten seconds
+apart with the player moving, all four came back identical. So
+the generator is found once and its pointer cached, and the last
+object search disappears with it.
+
+So the whole chain, with no object search in it at all:
+
+```text
+generator            found ONCE, pointer cached
+  -> StreamingLevels 0x2E8, four entries
+  -> +0x158          the loaded level
+  -> its name        the square
+```
+
+Only 7 of the 206 objects matching "Level" are actual levels, and
+three of those are the persistent level, the main terrain and the
+safe hub. The generator's array is exactly the four squares.
+
+Still unknown: the offset of a level's own actor list, which
+would make "the NPCs in this square" a short list rather than a
+search. Finding it means probing candidate pointers, and
+`read_bytes` is NOT guarded against a bad address, so probing can
+kill the game. `modforge::seh::guard` exists and is not used
+there. Guard it first, then probe.
 
 ### Two control-plane operations that do not work here
 
