@@ -10,13 +10,12 @@
 //!           +0xFE8 -> MovementSpeeds TMap
 
 use ueforge::ue;
-use ueforge::ue::{follow_ptr_chain, read_at, write_at};
+use ueforge::ue::follow_ptr_chain;
 
 const ACTOR_CLASS: &str = "BP_SGKMasterCharacter_C";
 const CHAR_COMP_OFFSET: usize = 0x740;
 const INV_PTR_OFFSET: usize = 0x218;
 const MOVEMENT_SPEEDS_MAP: usize = 0xFE8;
-const TMAP_STRIDE: usize = 24;
 
 const BASE_SPEEDS: &[(u8, f64)] = &[
     (2, 250.0),
@@ -32,41 +31,8 @@ const BASE_SPEEDS: &[(u8, f64)] = &[
 /// Finds the player's MISERY inventory component, which owns movement speeds.
 /// Stays here because the player classes and component offsets are specific to this game.
 fn inventory_ptr() -> Result<*const u8, String> {
-    let actor = ue::actor::find_actor(ACTOR_CLASS, None)
-        .ok_or("no live player character found")?;
+    let actor = ue::actor::find_actor(ACTOR_CLASS, None).ok_or("no live player character found")?;
     unsafe { follow_ptr_chain(actor, &[CHAR_COMP_OFFSET, INV_PTR_OFFSET]) }
-}
-
-/// Opens MISERY's movement-speed map and reports how many states it contains.
-/// Stays here because the map offset and value layout come from MISERY's inventory component.
-fn tmap_element_ptr(inv: *const u8) -> Result<(*const u8, i32), String> {
-    let elem_ptr: u64 = unsafe { read_at(inv, MOVEMENT_SPEEDS_MAP) };
-    let num: i32 = unsafe { read_at(inv, MOVEMENT_SPEEDS_MAP + 8) };
-    if elem_ptr == 0 || num <= 0 {
-        return Err("MovementSpeeds map is empty".into());
-    }
-    Ok((elem_ptr as *const u8, num))
-}
-
-/// Finds the speed entry for a MISERY movement state such as walking or sprinting.
-/// Stays here because the state keys and map layout are game facts, not shared engine behavior.
-fn find_slot(elements: *const u8, num: i32, key: u8) -> Option<usize> {
-    (0..num as usize).find(|&s| {
-        let k: u8 = unsafe { read_at(elements, s * TMAP_STRIDE) };
-        k == key
-    })
-}
-
-/// Reads one movement state's current speed for display or scaling.
-/// Stays here because the byte position belongs to MISERY's movement map layout.
-fn read_speed(elements: *const u8, slot: usize) -> f64 {
-    unsafe { read_at(elements, slot * TMAP_STRIDE + 8) }
-}
-
-/// Writes one movement state's speed so the player's multiplier takes effect.
-/// Stays here because the destination layout is MISERY-specific; generic memory access is already shared.
-fn write_speed(elements: *const u8, slot: usize, value: f64) {
-    unsafe { write_at(elements, slot * TMAP_STRIDE + 8, value) }
 }
 
 pub struct MapEntry {
@@ -78,12 +44,18 @@ pub struct MapEntry {
 /// Stays here because it translates MISERY's movement-state map into this feature's values.
 pub fn current_all() -> Result<Vec<MapEntry>, String> {
     let inv = inventory_ptr()?;
-    let (elems, num) = tmap_element_ptr(inv)?;
-    let mut out = Vec::new();
-    for slot in 0..num as usize {
-        let key: u8 = unsafe { read_at(elems, slot * TMAP_STRIDE) };
-        let speed = read_speed(elems, slot);
-        out.push(MapEntry { key, speed });
+    // SAFETY: `inventory_ptr` returns a live BP_PlayerInventory_C object and
+    // MOVEMENT_SPEEDS_MAP is its verified TMap<u8, f64> field.
+    let inventory = unsafe { &*(inv as *const ue::UObject) };
+    let out: Vec<MapEntry> =
+        unsafe { ue::tmap::scalar_entries::<u8, f64>(inventory, MOVEMENT_SPEEDS_MAP) }
+            .map(|entry| MapEntry {
+                key: entry.key(),
+                speed: entry.value(),
+            })
+            .collect();
+    if out.is_empty() {
+        return Err("MovementSpeeds map is empty".into());
     }
     Ok(out)
 }
@@ -92,11 +64,20 @@ pub fn current_all() -> Result<Vec<MapEntry>, String> {
 /// Stays here because the baseline speeds and affected states are this mod's gameplay policy.
 pub fn set_multiplier(mult: f64) -> Result<(), String> {
     let inv = inventory_ptr()?;
-    let (elems, num) = tmap_element_ptr(inv)?;
+    // SAFETY: `inventory_ptr` returns a live BP_PlayerInventory_C object and
+    // MOVEMENT_SPEEDS_MAP is its verified TMap<u8, f64> field.
+    let inventory = unsafe { &*(inv as *const ue::UObject) };
+    let mut entries: Vec<_> =
+        unsafe { ue::tmap::scalar_entries::<u8, f64>(inventory, MOVEMENT_SPEEDS_MAP) }.collect();
+    if entries.is_empty() {
+        return Err("MovementSpeeds map is empty".into());
+    }
 
     for &(key, base) in BASE_SPEEDS {
-        if let Some(s) = find_slot(elems, num, key) {
-            write_speed(elems, s, base * mult);
+        if let Some(entry) = entries.iter_mut().find(|entry| entry.key() == key) {
+            // SAFETY: the map is not structurally changed while its values are
+            // updated, so the captured slots remain valid for this loop.
+            unsafe { entry.write_value(base * mult) };
         }
     }
 

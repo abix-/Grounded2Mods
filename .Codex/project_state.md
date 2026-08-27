@@ -68,10 +68,11 @@ Extract the remaining engine-independent and Unreal-specific systems from MISERY
 - Moved the unchanged `asset_inventory` and `load_asset` handlers into `ueforge::assets`, routed both through `ueforge::game_thread::run`, migrated MISERY registration, and removed its game-local asset wrapper.
 - Moved the unchanged `call`, `pe_ping`, and `pe_stats` registration and response construction into `ueforge::game_thread::register_ops`; MISERY now owns only its queue, timeout hint, and installation call.
 - Added `FieldEditor` beside Ueforge's existing struct-field access authority and migrated MISERY's cached refresh, numeric sliders, boolean controls, and writes into it; MISERY retains only its catalog, object accessor, ranges, text, and tab wiring.
+- Added typed scalar key/value entries and live value mutation to `ueforge::ue::tmap`, then removed MISERY's raw map header, stride, slot lookup, read, and write helpers while preserving its movement keys, baseline speeds, multiplier, and UI.
 
 ## Next steps
 
-- Expand Ueforge's typed TMap access and migrate MISERY movement speeds off its raw Unreal map helpers.
+- Move MISERY's engine-independent adaptive encounter planning into Modforge while retaining Unreal observation and execution in MISERY and Ueforge.
 
 ## Open questions
 

@@ -20,6 +20,86 @@
 use crate::ue::UObject;
 use crate::ue::offsets::tmap as off;
 
+/// A scalar whose every bit pattern is valid when read from a live map slot.
+///
+/// # Safety
+/// Implementors must be `Copy`, fit in eight bytes, and accept every possible
+/// bit pattern. This is required because [`slots`] includes free sparse-array
+/// entries whose bytes do not satisfy richer Rust type invariants.
+pub unsafe trait TMapScalar: Copy {}
+
+macro_rules! impl_tmap_scalar {
+    ($($ty:ty),+ $(,)?) => {
+        $(unsafe impl TMapScalar for $ty {})+
+    };
+}
+
+impl_tmap_scalar!(u8, u16, u32, u64, i8, i16, i32, i64, f32, f64);
+
+/// One scalar key/value pair read from a live Unreal `TMap` slot.
+pub struct TMapEntry<K, V> {
+    element: *mut u8,
+    key: K,
+    value: V,
+}
+
+impl<K: TMapScalar, V: TMapScalar> TMapEntry<K, V> {
+    /// Return the key captured when this entry was read.
+    pub fn key(&self) -> K {
+        self.key
+    }
+
+    /// Return the value captured when this entry was read or last written.
+    pub fn value(&self) -> V {
+        self.value
+    }
+
+    /// Write a new value into this entry's live Unreal map slot.
+    ///
+    /// # Safety
+    /// The owning `TMap` must still be live and must not have reallocated
+    /// since this entry was returned by [`scalar_entries`].
+    pub unsafe fn write_value(&mut self, value: V) {
+        // SAFETY: the caller guarantees that the captured slot remains live.
+        // `scalar_entries` checked that V fits in the fixed value half.
+        unsafe {
+            (self.element.add(off::PAIR_VALUE) as *mut V).write_unaligned(value);
+        }
+        self.value = value;
+    }
+}
+
+/// Read scalar keys and values from every slot in a `TMap` field.
+///
+/// Both types must fit in the fixed eight-byte halves of Unreal's pair
+/// layout. As with [`slots`], free sparse-array slots are included, so callers
+/// must identify the entries they own by key.
+///
+/// # Safety
+/// `obj` must be live, `offset` must identify a valid `TMap<K, V>`, and the
+/// supplied Rust types must match the map's actual scalar key and value types.
+pub unsafe fn scalar_entries<K: TMapScalar, V: TMapScalar>(
+    obj: &UObject,
+    offset: usize,
+) -> impl Iterator<Item = TMapEntry<K, V>> {
+    assert!(std::mem::size_of::<K>() <= off::PAIR_VALUE);
+    assert!(std::mem::size_of::<V>() <= off::PAIR_VALUE);
+
+    // SAFETY: the caller supplies the same live object and valid map offset
+    // required by `slots`.
+    unsafe { slots(obj, offset) }.map(|(_, element)| {
+        // SAFETY: each pointer is a full map slot. The size checks above keep
+        // both scalar reads inside their respective pair halves.
+        unsafe {
+            TMapEntry {
+                element: element.cast_mut(),
+                key: (element as *const K).read_unaligned(),
+                value: (element.add(off::PAIR_VALUE) as *const V).read_unaligned(),
+            }
+        }
+    })
+}
+
 /// Walk every `TPair<K, V>` slot in a `TMap` field stored at
 /// `offset` inside the given object. Yields `(slot_index, slot_ptr)`
 /// pairs. Each `slot_ptr` is the start of the 24-byte
