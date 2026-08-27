@@ -37,15 +37,21 @@ struct HitRing {
 }
 
 impl HitRing {
+    /// Creates Schedule 1's fixed-size recent-hit ledger without heap allocation.
+    /// Stays here because its capacity and use windows belong to this game's kill-credit policy; Modforge owns progression recording.
     const fn new() -> Self {
         Self { buf: [None; RING_CAP], next: 0 }
     }
 
+    /// Remembers when a specific Schedule 1 NPC was hit or credited.
+    /// Stays here because native NPC pointers are this mod's attribution key; Unityforge owns callback handle delivery.
     fn remember(&mut self, ptr: i64) {
         self.buf[self.next] = Some((ptr, Instant::now()));
         self.next = (self.next + 1) % RING_CAP;
     }
 
+    /// Checks whether the same NPC appeared within a Schedule 1 attribution window.
+    /// Stays here because the pointer identity and window policy belong to this mod, not the framework.
     fn recent(&self, ptr: i64, window: Duration) -> bool {
         let now = Instant::now();
         self.buf.iter().any(|slot| {
@@ -57,6 +63,8 @@ impl HitRing {
 static PLAYER_HITS: Mutex<HitRing> = Mutex::new(HitRing::new());
 static CREDITED: Mutex<HitRing> = Mutex::new(HitRing::new());
 
+/// Hooks Schedule 1's player-hit, death, and knockout signals used for kill rewards.
+/// Stays here because the target class and signal combination are game facts; Unityforge owns Harmony hook installation.
 pub fn install() {
     let targets: [(&str, extern "C" fn(*const c_void) -> i32); 3] = [
         ("NotifyAttackedByPlayer", on_player_hit),
@@ -87,12 +95,14 @@ use crate::loot::parse_vec3;
 
 /// The NPC's stable native pointer from an NPCHealth ctx handle
 /// (releases every handle it takes).
+/// Stays here because Schedule 1's NPCHealth-to-NPC field path defines the attribution identity; Unityforge owns managed reads.
 fn npc_ptr(health_h: i32) -> Option<i64> {
     npc_info(health_h).map(|(ptr, _, _)| ptr)
 }
 
 /// Pointer, world position, and max health of the NPC behind an
 /// NPCHealth ctx handle (releases every handle it takes).
+/// Stays here because these exact fields feed Schedule 1's rewards and war; Unityforge owns object invocation and handle lifetime.
 fn npc_info(health_h: i32) -> Option<(i64, Option<(f64, f64, f64)>, f32)> {
     if health_h == 0 {
         return None;
@@ -129,6 +139,7 @@ fn npc_info(health_h: i32) -> Option<(i64, Option<(f64, f64, f64)>, f32)> {
 /// Inert until the loaded game settles (crash guard: never touch
 /// half-initialized instances during a save load). The ctx
 /// handle must still be released or the table leaks.
+/// Stays here because the settling policy protects this mod's Schedule 1 callbacks; Unityforge owns the managed handle wrapper.
 fn release_only(health_h: i32) {
     if health_h != 0 {
         // SAFETY: the shim acquired this handle for this callback
@@ -137,10 +148,14 @@ fn release_only(health_h: i32) {
     }
 }
 
+/// Reports whether Schedule 1's current save is old enough for game-object access.
+/// Stays here because it reads this mod's load guard; a framework cannot choose the game's safe settling window.
 fn settled() -> bool {
     crate::skills::SETTLED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Marks an NPC as recently damaged by the player when Schedule 1 emits its player-hit signal.
+/// Stays here because this callback implements the game's verified attribution rule; Unityforge owns callback plumbing.
 extern "C" fn on_player_hit(ctx: *const c_void) -> i32 {
     if !settled() {
         release_only(ctx as isize as i32);
@@ -152,6 +167,8 @@ extern "C" fn on_player_hit(ctx: *const c_void) -> i32 {
     0
 }
 
+/// Pays XP and loot once when a recently player-hit Schedule 1 NPC is knocked out or dies.
+/// Stays here because reward values, war integration, and knockout semantics are game behavior; the frameworks supply primitives.
 extern "C" fn on_down(ctx: *const c_void) -> i32 {
     if !settled() {
         release_only(ctx as isize as i32);

@@ -35,6 +35,8 @@ static EVENTS: Mutex<Vec<Json>> = Mutex::new(Vec::new());
 static HOOKS: Mutex<Vec<Hook>> = Mutex::new(Vec::new());
 static STARTED: Mutex<Option<Instant>> = Mutex::new(None);
 
+/// Registers Schedule 1's start, report, and stop operations for live combat research.
+/// Stays here because the operation set investigates this game's kill signals; Modforge owns the operation registry.
 pub fn register_ops() {
     OP_REGISTRY.register_many([
         OpDef::new(
@@ -61,6 +63,7 @@ pub fn register_ops() {
 /// Record one firing. Runs inside the Harmony prefix on the
 /// game's thread: read the NPC identity off the NPCHealth
 /// instance, then release every handle taken.
+/// Stays here because the event fields and NPCHealth layout answer a Schedule 1 research question; Unityforge owns managed access.
 fn record(event: &str, health_h: i32) {
     let started = *STARTED.lock();
     let ms = started.map_or(0, |t| t.elapsed().as_millis() as u64);
@@ -92,23 +95,36 @@ fn record(event: &str, health_h: i32) {
     }));
 }
 
+/// Records Schedule 1's raw damage signal for the current NPC.
+/// Stays here because it labels a game-specific hook target; Unityforge owns callback context delivery.
 extern "C" fn on_take_damage(ctx: *const c_void) -> i32 {
     record("TakeDamage", ctx as isize as i32);
     0
 }
+
+/// Records Schedule 1's explicit player-attack notification for kill-attribution research.
+/// Stays here because the signal is a verified game fact; Unityforge owns callback context delivery.
 extern "C" fn on_notify_attacked_by_player(ctx: *const c_void) -> i32 {
     record("NotifyAttackedByPlayer", ctx as isize as i32);
     0
 }
+
+/// Records Schedule 1's NPC death signal for comparison with other combat events.
+/// Stays here because the trace labels this game's event; Unityforge owns callback context delivery.
 extern "C" fn on_die(ctx: *const c_void) -> i32 {
     record("Die", ctx as isize as i32);
     0
 }
+
+/// Records Schedule 1's NPC knockout signal, which melee defeats use instead of death.
+/// Stays here because that distinction is game behavior; Unityforge owns callback context delivery.
 extern "C" fn on_knock_out(ctx: *const c_void) -> i32 {
     record("KnockOut", ctx as isize as i32);
     0
 }
 
+/// Installs the four Schedule 1 NPCHealth trace hooks and reports which targets resolved.
+/// Stays here because the class, methods, and event labels are game-specific; Unityforge owns main-thread hook installation.
 fn combat_trace_start(_args: &Json) -> Result<Json, String> {
     // Patching goes through Harmony on the game's main thread,
     // same as every game-touching op.
@@ -138,6 +154,8 @@ fn combat_trace_start(_args: &Json) -> Result<Json, String> {
     })?
 }
 
+/// Returns the bounded Schedule 1 combat trace and optionally clears its recorded events.
+/// Stays here because the response is this mod's research presentation; Modforge owns only generic operation transport.
 fn combat_trace_report(args: &Json) -> Result<Json, String> {
     let clear = args.get("clear").and_then(Json::as_bool).unwrap_or(false);
     let mut events = EVENTS.lock();
@@ -148,6 +166,8 @@ fn combat_trace_report(args: &Json) -> Result<Json, String> {
     Ok(out)
 }
 
+/// Removes Schedule 1's temporary combat hooks while retaining their observations.
+/// Stays here because it controls this mod's research session; Unityforge owns hook teardown through `Hook` lifetime.
 fn combat_trace_stop(_args: &Json) -> Result<Json, String> {
     // Unpatching (Hook::drop) is a Harmony call: main thread.
     MAIN_QUEUE.run("combat_trace_stop", Duration::from_secs(5), || {

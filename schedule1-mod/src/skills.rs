@@ -44,6 +44,8 @@ use unityforge::rpg::{
 /// effects_enable op can still disarm for future bisections.
 static EFFECTS_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
+/// Reports whether Schedule 1's researched skill writes are armed.
+/// Stays here because this switch isolates crashes in this game's effects; Modforge owns effects and Unityforge owns Unity writes.
 fn effects_enabled() -> bool {
     EFFECTS_ENABLED.load(std::sync::atomic::Ordering::Relaxed)
 }
@@ -57,6 +59,8 @@ struct Il2CppGuardedEffect<E: Effect<UnityEngine> + Sync> {
 }
 
 impl<E: Effect<UnityEngine> + Sync> Effect<UnityEngine> for Il2CppGuardedEffect<E> {
+    /// Applies a Schedule 1 skill effect on Unity's main thread when the local crash guard is armed.
+    /// Stays here because the guard and timeout are Schedule 1 research policy; Unityforge owns the queue and inner Unity effect.
     fn apply(&self, level: u32, max_level: u32, _ctx: &TriggerCtx<'_, UnityEngine>) {
         if !effects_enabled() {
             return;
@@ -67,6 +71,8 @@ impl<E: Effect<UnityEngine> + Sync> Effect<UnityEngine> for Il2CppGuardedEffect<
         });
     }
 
+    /// Shows the underlying skill effect's player-facing value without touching the game.
+    /// Stays here as part of Schedule 1's guarded wrapper; Modforge owns the shared effect display contract.
     fn format(&self, level: u32, max_level: u32) -> String {
         self.inner.format(level, max_level)
     }
@@ -148,6 +154,7 @@ pub static TRACKER: Tracker = Tracker::new(&CATALOG, Curve::new(50.0, 1.3, 1024)
 /// Spend earned points automatically, each on the currently
 /// lowest-level skill (operator's choice: zero friction while
 /// farming; the phone app replaces this later).
+/// Stays here because automatic spending is Schedule 1 progression policy; Modforge owns the tracker and skill registry.
 pub fn auto_spend(points: u32) {
     for _ in 0..points {
         let lowest = TRACKER.with_state(|s| {
@@ -176,6 +183,7 @@ pub static SETTLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBoo
 /// The loaded save's folder name ("SaveGame_2") from the
 /// LoadManager singleton, main-thread queued; None at the menu
 /// and during the first 10s after a load.
+/// Stays here because the class, fields, folder identity, and settling delay are Schedule 1 facts; Unityforge owns managed access.
 fn resolve_slot() -> Option<String> {
     let slot = MAIN_QUEUE
         .run("slot_resolve", Duration::from_secs(2), || {
@@ -209,6 +217,8 @@ fn resolve_slot() -> Option<String> {
 
 // ---- Install --------------------------------------------------------
 
+/// Seeds Schedule 1's proven stat baselines and starts its persistent skill tracker.
+/// Stays here because the values, save resolver, and selected catalog are game-specific; the frameworks own tracking and polling.
 pub fn install() {
     // Seed the proven vanilla values (live-read 2026-08-08 on
     // 0.4.6f12) so a hot reload never recaptures already-boosted
@@ -229,6 +239,8 @@ pub fn install() {
     let _ = POLLER.set(handle);
 }
 
+/// Exposes Schedule 1's crash-bisection switch through the shared control plane.
+/// Stays here because the operation controls this mod's local safety guard; Modforge owns operation registration.
 fn register_ops() {
     OP_REGISTRY.register_many([OpDef::new(
         "effects_enable",

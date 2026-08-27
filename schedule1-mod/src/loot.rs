@@ -31,6 +31,7 @@ static SERVER_MGR_HANDLE: AtomicI32 = AtomicI32::new(0);
 
 /// Queue a cash drop at the downed NPC's feet. `toughness` is
 /// the NPC's max health; the payout rolls off it.
+/// Stays here because Schedule 1 defines the payout and cash pickup recipe; Unityforge owns main-thread dispatch and managed calls.
 pub fn drop_cash_at(x: f64, y: f64, z: f64, toughness: f32) {
     // Spoiler firewall: payout roll.
     let base = (toughness.max(20.0) * 0.35) as f64;
@@ -44,11 +45,14 @@ pub fn drop_cash_at(x: f64, y: f64, z: f64, toughness: f32) {
     });
 }
 
+/// Reads a managed-object handle from the JSON shape returned by Schedule 1's Unity shim.
+/// Should move to Unityforge because bridge-value handle decoding is Unity integration, not Schedule 1 behavior.
 pub(crate) fn handle_of(v: &Json) -> Option<i64> {
     v.get("handle").and_then(Json::as_i64)
 }
 
 /// Vector3 arrives as the shim's ToString "(x, y, z)".
+/// Should move to Unityforge because decoding Unity coordinates from bridge values is engine integration, not game behavior.
 pub(crate) fn parse_vec3(v: &Json) -> Option<(f64, f64, f64)> {
     let s = v.as_str().or_else(|| v.get("str").and_then(Json::as_str))?;
     let s = s.trim().trim_start_matches('(').trim_end_matches(')');
@@ -60,12 +64,15 @@ pub(crate) fn parse_vec3(v: &Json) -> Option<(f64, f64, f64)> {
 }
 
 /// SAFETY wrapper: own a handle so Drop releases it.
+/// Should move to Unityforge because managed-handle ownership and release behavior are framework responsibilities.
 pub(crate) fn own(h: i64) -> MonoObject {
     // SAFETY: caller passes a handle just acquired from the shim
     // for this call path; ownership transfers here.
     unsafe { MonoObject::from_handle(MonoHandle(h as i32)) }
 }
 
+/// Finds and retains Schedule 1's inactive cash-pickup template for later drops.
+/// Stays here because the concrete class and template name are game content; Unityforge owns type walking and managed handles.
 fn cached_template() -> Result<i32, String> {
     let h = TEMPLATE_HANDLE.load(Ordering::Relaxed);
     if h != 0 {
@@ -90,6 +97,8 @@ fn cached_template() -> Result<i32, String> {
     Ok(th)
 }
 
+/// Finds and retains FishNet's live server manager so Schedule 1 cash clones can enter the networked world.
+/// Stays here because this cache serves the game's cash-spawn recipe; Unityforge owns static invocation and handle wrappers.
 fn cached_server_mgr() -> Result<ManuallyDrop<MonoObject>, String> {
     let h = SERVER_MGR_HANDLE.load(Ordering::Relaxed);
     if h != 0 {
@@ -101,6 +110,8 @@ fn cached_server_mgr() -> Result<ManuallyDrop<MonoObject>, String> {
     Ok(ManuallyDrop::new(unsafe { MonoObject::from_handle(MonoHandle(sh)) }))
 }
 
+/// Clones, positions, network-spawns, prices, and refreshes one Schedule 1 cash pickup.
+/// Stays here because every class, method, field, and ordering rule is game-specific; Unityforge owns generic managed operations.
 fn spawn_cash(x: f64, y: f64, z: f64, amount: f64) -> Result<(), String> {
     let template_h = cached_template()?;
 

@@ -77,6 +77,7 @@ const AFFIX_DELAY: Duration = Duration::from_secs(8);
 const FACTORY: &str = "Unityforge.Shim.Schedule1.NpcFactory";
 
 /// The factory answers with a JSON STRING; parse it.
+/// Stays here because the factory and its response contract are Schedule 1 shim details; Unityforge owns generic static invocation.
 fn factory_call(method: &str, args: serde_json::Value) -> Result<serde_json::Value, String> {
     let v = mono::invoke_static(FACTORY, method, &args)?;
     let s = v.as_str().ok_or_else(|| format!("{method}: non-string factory result: {v}"))?;
@@ -105,12 +106,16 @@ const INFLUENCE_PER_KILL: (f64, f64) = (0.03, 0.06);
 /// Verbose war logging (set false to quiet down once proven).
 const WAR_VERBOSE: bool = true;
 
+/// Writes an optional Schedule 1 war diagnostic with a consistent label.
+/// Stays here because verbosity and message context are local presentation; Unityforge owns the log sink.
 fn vlog(msg: &str) {
     if WAR_VERBOSE {
         mono::log(LogLevel::Info, &format!("schedule1-mod [war]: {msg}"));
     }
 }
 
+/// Advances Schedule 1's regional war at a throttled rate once the loaded save is safe.
+/// Stays here because reset timing, regions, influence, and garrisons are game behavior; Unityforge owns the frame callback.
 pub fn tick() {
     if !crate::skills::SETTLED.load(std::sync::atomic::Ordering::Relaxed) {
         FORCES.lock().clear();
@@ -146,6 +151,7 @@ pub fn tick() {
 /// The mob's rolled multipliers, consumed on down. Also the
 /// influence engine: a garrison death costs the owner influence
 /// in that zone, and may trigger the takeover.
+/// Stays here because Schedule 1 defines factions, influence loss, takeover, and reward rolls; Modforge owns only shared primitives.
 pub fn on_mob_down(npc_ptr: i64) -> Option<(f32, f32, String)> {
     let mut forces = FORCES.lock();
     let i = forces.iter().position(|m| m.npc_ptr == npc_ptr)?;
@@ -216,11 +222,14 @@ pub fn on_mob_down(npc_ptr: i64) -> Option<(f32, f32, String)> {
 }
 
 /// Kill tally per region since load.
+/// Stays here because the tally reports this mod's regional war state; Modforge owns no Schedule 1 region identity.
 #[allow(dead_code)]
 pub fn kills_by_region() -> Vec<(String, u32)> {
     KILLS_BY_REGION.lock().clone()
 }
 
+/// Rolls Schedule 1's delay before a defeated regional garrison can reinforce.
+/// Stays here because the range and random pacing are game tuning, not framework behavior.
 fn roll_reinforce() -> Duration {
     Duration::from_secs(fastrand::u64(REINFORCE_SECS.0..=REINFORCE_SECS.1))
 }
@@ -233,6 +242,8 @@ fn roll_reinforce() -> Duration {
 /// not settled / scene change).
 static INFLUENCE_HANDLE: AtomicI32 = AtomicI32::new(0);
 
+/// Finds and retains Schedule 1's live cartel-influence service for the current scene.
+/// Stays here because the concrete class and scene lifetime are game facts; Unityforge owns type walking and handles.
 fn cartel_influence_cached() -> Result<ManuallyDrop<MonoObject>, String> {
     let h = INFLUENCE_HANDLE.load(Ordering::Relaxed);
     if h != 0 {
@@ -250,6 +261,8 @@ fn cartel_influence_cached() -> Result<ManuallyDrop<MonoObject>, String> {
     Ok(ManuallyDrop::new(unsafe { MonoObject::from_handle(MonoHandle(ih as i32)) }))
 }
 
+/// Reads the cartel's current influence value for one Schedule 1 region.
+/// Stays here because the service method and region indexing belong to the game; Unityforge owns managed invocation.
 fn get_influence(region_idx: usize) -> Result<f64, String> {
     let inst = cartel_influence_cached()?;
     Ok(inst
@@ -263,6 +276,7 @@ fn get_influence(region_idx: usize) -> Result<f64, String> {
 /// because the public ChangeInfluence is a FishNet ServerRpc
 /// stub whose serialization round-trip silently drops our
 /// invoke (the value never moves).
+/// Stays here because the verified RpcLogic method is specific to Schedule 1; Unityforge owns generic method invocation.
 fn change_influence(region_idx: usize, delta: f64) -> Result<f64, String> {
     let inst = cartel_influence_cached()?;
     inst.invoke(
@@ -272,6 +286,8 @@ fn change_influence(region_idx: usize, delta: f64) -> Result<f64, String> {
     get_influence(region_idx)
 }
 
+/// Discovers Schedule 1's regions, ranks, delivery anchors, owners, and initial garrison posts.
+/// Stays here because every field and ownership threshold belongs to the game's war design; Unityforge owns collection access.
 fn load_regions() -> Result<usize, String> {
     let map_ty = MonoType::find("Il2CppScheduleOne.Map.Map").ok_or("Map type not found")?;
     let map = map_ty.singleton_instance().ok_or("no Map singleton")?;
@@ -352,6 +368,7 @@ fn load_regions() -> Result<usize, String> {
 
 /// A region's garrison target from its CURRENT influence (kills
 /// compound: less influence, thinner garrison).
+/// Stays here because the influence and rank formula is Schedule 1 balance tuning, not a reusable framework rule.
 fn strength_target(influence: f64, rank: i64) -> usize {
     if influence <= 0.05 {
         0
@@ -363,6 +380,7 @@ fn strength_target(influence: f64, rank: i64) -> usize {
 /// One throttled pass of the standing war: fill garrisons up to
 /// their influence-derived targets everywhere (a few spawns per
 /// pass), run reinforcement timers, hold posts, aggro.
+/// Stays here because it composes Schedule 1 regions, cartel ownership, player position, and spawn policy; frameworks supply access.
 fn war_pass() -> Result<(), String> {
     // Player position (for aggro checks only; garrisons do not
     // care where the player is).
@@ -454,6 +472,7 @@ fn war_pass() -> Result<(), String> {
 /// through the factory (minted NPCs idle at their posts;
 /// BaseEmployee stock does not exit-walk like cartel goons, so
 /// no hold orders needed).
+/// Stays here because affix timing, attack range, and factory orders are Schedule 1 NPC behavior; Unityforge owns invocation.
 fn hold_posts(px: f64, pz: f64) {
     let now = Instant::now();
     let mut orders: Vec<(usize, i64, String)> = Vec::new();
@@ -505,6 +524,7 @@ fn hold_posts(px: f64, pz: f64) {
 /// Spawn one cartel mob at a post via the minted-NPC factory.
 /// Returns true when it was a reinforcement (the region already
 /// took casualties).
+/// Stays here because mob types, weapons, rewards, labels, and garrison membership are Schedule 1 content and balance.
 fn spawn_mob(region_idx: usize, region_name: &str, post: (f64, f64, f64)) -> Result<bool, String> {
     let spawn = factory_call("SpawnGoon", json!([post.0, post.1, post.2]))?;
     let minted_index = spawn["index"].as_i64().ok_or("no mint index")?;
@@ -606,6 +626,7 @@ fn spawn_mob(region_idx: usize, region_name: &str, post: (f64, f64, f64)) -> Res
 
 /// Observability op. Counts, owners, and positions only:
 /// rolled specifics stay behind the spoiler firewall.
+/// Stays here because the response presents Schedule 1's private war state; Modforge owns only operation registration and transport.
 pub fn register_ops() {
     modforge::ops::OP_REGISTRY.register(modforge::ops::OpDef::new(
         "farm_state",

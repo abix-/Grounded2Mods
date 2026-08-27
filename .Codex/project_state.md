@@ -2,11 +2,12 @@
 
 ## Current focus
 
-Extract the verified reusable Grounded 2 effect and inspection implementations into Ueforge without changing behavior.
+Document Schedule 1's current game-mod functions and make their Modforge and Unityforge ownership boundaries explicit.
 
 ## Design goals
 
 - Every Grounded 2 source function explains its player-facing purpose and its verified ownership boundary with Modforge and Ueforge.
+- Every Schedule 1 source function explains its player-facing purpose and its verified ownership boundary with Modforge and Unityforge.
 - Item definitions have one authority: `ItemDef` and `ItemRegistry`.
 - Uniqueness is an `ItemDef` property, not a parallel definition type or registry.
 - Per-save entered and holder state belongs to the item ledger in `modforge::item`.
@@ -43,6 +44,11 @@ Extract the verified reusable Grounded 2 effect and inspection implementations i
 
 ## Last session summary
 
+- Documented every named function in `schedule1-mod/src` with a concise player-readable purpose and an explicit Modforge or Unityforge ownership boundary.
+- Marked Schedule 1's local bridge-handle decoder, Unity coordinate decoder, and owned-handle wrapper as Unityforge extraction candidates instead of defending them as game code.
+- Changed comments only. Added no tests and made no behavior changes.
+- Verified `k3sc cargo-lock check -p schedule1-mod`.
+- `k3sc cargo-lock fmt -p schedule1-mod -- --check` remains red on existing rustfmt differences throughout Schedule 1 source and research tests; no unrelated formatting rewrite was applied.
 - Moved Grounded 2's existing parameterized survival-drain effect into Ueforge's standard RPG effect library.
 - Grounded 2 now keeps only the SurvivalComponent class reference, hunger and thirst offsets, captured vanilla access, settings access, reduction tuning, and catalog statics.
 - Added no tests and preserved the existing settings-first early return, vanilla fallback, reduction curve, target calculation, class-default writes, log text, and effect text.
@@ -187,6 +193,7 @@ Extract the verified reusable Grounded 2 effect and inspection implementations i
 
 ## Next steps
 
+- Audit the documented Schedule 1 functions for direct extraction candidates without inventing new framework systems.
 - Run the existing Grounded 2 in-game smoke checks for the completed extraction batch.
 - Exercise Survivalist's Load/Unload re-init path through a live story switch and confirm `ReinitAfterUnload` works.
 

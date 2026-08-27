@@ -40,6 +40,8 @@ static MOD_INFO: ModDef = ModDef {
 
 unityforge::unityforge_mod!(MOD_INFO);
 
+/// Starts Schedule 1's progression, combat, war, and research features.
+/// Stays here because this is the mod's composition root; Unityforge owns the shared runtime and operation registries.
 fn on_init() {
     unityforge::ops::register_builtins();
     unityforge::selector::register_builtins();
@@ -57,10 +59,14 @@ fn on_init() {
     );
 }
 
+/// Advances Schedule 1's regional war simulation once per Unity update.
+/// Stays here because the mod chooses which game system receives ticks; Unityforge owns tick delivery.
 fn on_tick(_now: f32) {
     farming::tick();
 }
 
+/// Reports that Schedule 1's mod generation is shutting down.
+/// Stays here because it is this mod's lifecycle message; Unityforge owns shared shutdown handling.
 fn on_shutdown() {
     unityforge::mono::log(unityforge::mono::LogLevel::Info, "schedule1-mod: shutdown");
 }
