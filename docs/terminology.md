@@ -8,7 +8,7 @@
 | Word | Means | Never say |
 |---|---|---|
 | part | One building mesh the game ships: a wall, a floor, a post. `PartDef`, `parts.json`, `ue::parts`. | piece |
-| building part | RETIRED 2026-08-27. There is no such distinction: EVERY placed mesh enters the catalog, decoration included, and the border test keeps scenery out. Do not filter by folder, name or shape. | kit, kit part, building kit, folder filter |
+| building part | A part the designers filed under the building folders, the ones buildings are made of. The folder decides, not the name or the shape. NOT a filter: every placed mesh enters the catalog regardless. | kit, kit part, building kit |
 | stud | The place where two placed parts share coordinates on a border; recorded on BOTH parts, in each part's own frame. | edge, point, connection point, attachment point, join |
 | pivot | The point the game places a part at, wherever the artist put it. Measured and recorded per part; with the extent it says where an asset-loaded part's geometry sits. | marker, origin offset |
 | extent | Half-size of a part's own geometry, metres, y up. | bounds, half-extent (in prose) |
