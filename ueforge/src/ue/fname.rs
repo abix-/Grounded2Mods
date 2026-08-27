@@ -52,6 +52,53 @@ const _: () = {
 /// FName" garbage cases that crash `AppendString`.
 const FNAME_INDEX_SANITY_MAX: i32 = 16 * 1024 * 1024;
 
+/// Read an `FName` field and resolve it to its text.
+///
+/// An `FName` in memory is two 32-bit halves, a comparison index
+/// then a number. Reading one and resolving it is five lines, and
+/// those five lines were written out longhand at every call site
+/// that touches a struct holding a name. MISERY's vendor code
+/// alone had it eight times.
+///
+/// `None` when the runtime is not up or the value is not a
+/// plausible name, so a garbage read returns nothing rather than
+/// reaching `AppendString` with rubbish, which crashes.
+///
+/// # Safety
+///
+/// `base + offset` must be inside a live object, and the caller
+/// must be on the game thread.
+pub unsafe fn read_at(base: *const u8, offset: usize) -> Option<String> {
+    // SAFETY: forwarded from the caller.
+    unsafe { read_with_id(base, offset) }.map(|(_, name)| name)
+}
+
+/// The same, keeping the comparison index as well as the text.
+///
+/// Some structures store that index as the item's id, so a caller
+/// that is going to write one back needs both halves.
+///
+/// # Safety
+///
+/// As [`read_at`].
+pub unsafe fn read_with_id(base: *const u8, offset: usize) -> Option<(u32, String)> {
+    let rt = crate::ue::try_runtime()?;
+    // SAFETY: the caller's promise about base + offset.
+    let (index, number) = unsafe {
+        (
+            crate::ue::read_at::<u32>(base, offset),
+            crate::ue::read_at::<u32>(base, offset + 4),
+        )
+    };
+    let name = FName::from_u64((index as u64) | ((number as u64) << 32));
+    if !name.is_plausible() {
+        return None;
+    }
+    // SAFETY: the name passed the plausibility check the resolver
+    // needs.
+    Some((index, unsafe { rt.name_resolver.to_string(name) }))
+}
+
 impl FName {
     pub fn from_u64(raw: u64) -> Self {
         Self {

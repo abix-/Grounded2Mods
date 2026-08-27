@@ -21,6 +21,14 @@ const BUY_STRIDE: usize = 0x40;
 /// cost on the same vendor. Vanilla pays 15 to 50 percent.
 const SELL_PRICE_PCT: i32 = 40;
 
+/// Every vendor entry, sell or buy or price, starts with an
+/// `FName` naming the item at this offset.
+const ITEM_NAME_OFFSET: usize = 0x08;
+
+/// The currency a ruble price is paid in. The Technician barters
+/// in weapon parts instead, and those entries are skipped.
+const RUBLES: &str = "Resource_Rubles";
+
 const ALL_FOOD_SELLABLE: &[&str] = &[
     "Food_BankaCucumber",
     "Food_BankaTomaatos",
@@ -67,17 +75,11 @@ fn sell_list_ptr(actor: *const u8) -> Option<*mut u8> {
 /// Stays here because the entry layout and item naming come from this game's vendor data.
 fn current_sell_names(comp: *const u8) -> HashSet<String> {
     let mut names = HashSet::new();
-    let rt = match ue::try_runtime() {
-        Some(r) => r,
-        None => return names,
-    };
     let header = unsafe { comp.add(SELL_LIST_OFFSET) };
     for (_i, elem) in unsafe { tarray::iter_stride(header, SELL_STRIDE) } {
-        let fname_idx: u32 = unsafe { read_at(elem, 0x08) };
-        let fname_num: u32 = unsafe { read_at(elem, 0x0C) };
-        let raw: u64 = (fname_idx as u64) | ((fname_num as u64) << 32);
-        let fname = ue::FName::from_u64(raw);
-        names.insert(unsafe { rt.name_resolver.to_string(fname) });
+        if let Some(name) = unsafe { ue::fname::read_at(elem, ITEM_NAME_OFFSET) } {
+            names.insert(name);
+        }
     }
     names
 }
@@ -87,26 +89,19 @@ fn current_sell_names(comp: *const u8) -> HashSet<String> {
 /// Stays here because rubles and the buy-entry offsets are MISERY economy facts.
 fn buy_costs(comp: *const u8) -> HashMap<String, i32> {
     let mut costs = HashMap::new();
-    let Some(rt) = ue::try_runtime() else {
-        return costs;
-    };
     let header = unsafe { comp.add(BUY_LIST_OFFSET) };
     for (_i, elem) in unsafe { tarray::iter_stride(header, BUY_STRIDE) } {
-        let fname_idx: u32 = unsafe { read_at(elem, 0x08) };
-        let fname_num: u32 = unsafe { read_at(elem, 0x0C) };
-        let raw = (fname_idx as u64) | ((fname_num as u64) << 32);
-        let name = unsafe { rt.name_resolver.to_string(ue::FName::from_u64(raw)) };
+        let Some(name) = (unsafe { ue::fname::read_at(elem, ITEM_NAME_OFFSET) }) else {
+            continue;
+        };
         let price_ptr: *const u8 = unsafe { read_at(elem, 0x18) };
         let price_num: i32 = unsafe { read_at(elem, 0x20) };
         if price_ptr.is_null() || price_num < 1 {
             continue;
         }
         // Skip barter prices (Technician pays in weapon parts).
-        let cur_idx: u32 = unsafe { read_at(price_ptr, 0x08) };
-        let cur_num: u32 = unsafe { read_at(price_ptr, 0x0C) };
-        let cur_raw = (cur_idx as u64) | ((cur_num as u64) << 32);
-        let currency = unsafe { rt.name_resolver.to_string(ue::FName::from_u64(cur_raw)) };
-        if currency != "Resource_Rubles" {
+        let currency = unsafe { ue::fname::read_at(price_ptr, ITEM_NAME_OFFSET) };
+        if currency.as_deref() != Some(RUBLES) {
             continue;
         }
         let qty: i32 = unsafe { read_at(price_ptr, 0x10) };
@@ -276,16 +271,11 @@ fn add_sewing_kit(comp: *mut u8) {
 /// Stays here because it reads MISERY's verified vendor-entry layout.
 fn buy_entry_names(comp: *const u8) -> Vec<(String, u32)> {
     let mut items = Vec::new();
-    let Some(rt) = ue::try_runtime() else {
-        return items;
-    };
     let header = unsafe { comp.add(BUY_LIST_OFFSET) };
     for (_i, elem) in unsafe { tarray::iter_stride(header, BUY_STRIDE) } {
-        let fname_idx: u32 = unsafe { read_at(elem, 0x08) };
-        let fname_num: u32 = unsafe { read_at(elem, 0x0C) };
-        let raw = (fname_idx as u64) | ((fname_num as u64) << 32);
-        let name = unsafe { rt.name_resolver.to_string(ue::FName::from_u64(raw)) };
-        items.push((name, fname_idx));
+        if let Some((id, name)) = unsafe { ue::fname::read_with_id(elem, ITEM_NAME_OFFSET) } {
+            items.push((name, id));
+        }
     }
     items
 }
