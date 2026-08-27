@@ -104,7 +104,7 @@ part's geometry sits is COMPUTED").
 |---|---|
 | the parts list | DONE. 2,407 meshes on disk with size, shape and pivot, every one of them. |
 | the stud reading | DONE and proven live: `modforge::studs::studs_in` finds shared borders, four unit tests, and one square's studs landed on both parts in `parts.json` (54 wall studs partnered with floors, 64 the mirror). The superseded distance design (`joins_in`, `Join`, the `joins` op) is deleted. |
-| the catalog | DONE, first full run 2026-08-27: all 123 level assets loaded and read in 71 s, zero failures, 2,818 studs confirmed 4+ times across 94 parts, merged into `parts.json`. The 4 m wall's commonest studs read as a kit: a wall stacks on top seen 190, the next wall along seen 157, and a door wall substitutes at the same stud. |
+| the catalog | DONE, first full run 2026-08-27: all 123 level assets loaded and read in 71 s, zero failures, 2,818 studs confirmed 4+ times across 94 parts, merged into `parts.json`. The 4 m wall's commonest studs read like real building: a wall stacks on top seen 190, the next wall along seen 157, and a door wall substitutes at the same stud. |
 | the noise | A floor tile still carries 888 studs after the cull: road paving follows terrain, and irregular seams recur enough to survive min_seen 4. Open row. |
 
 ### The shape
@@ -126,11 +126,9 @@ SM_WallDoor_400x300  Panel   [0.10, 1.50, 2.00]
 SM_Floor_400x400     Slab    [2.59, 0.44, 2.87]
 ```
 
-The shape is for sorting and reading, not for deciding what is a
-building part. Names and proportions both lie: `SM_WallClock` is
-decoration, a road slab measures like a floor. What IS a building
-part is decided by the folder the designers filed the mesh under
-(see "Not building parts" at the bottom).
+The shape is for sorting and reading, nothing more. It decides
+NOTHING about what enters the catalog: every placed mesh does
+(see "Rules for the pass that reads the levels").
 
 **2. The studs, and they come from the VANILLA BUILDINGS.**
 
@@ -248,9 +246,14 @@ never say that.
 
 ### Rules for the pass that reads the levels
 
-- **Only building parts enter.** Which meshes those are is
-  decided by their folder in `parts.json` (see "Not building
-  parts"), not by name and not by shape.
+- **EVERY placed mesh enters. NO FILTER.** We consume ALL the
+  vanilla buildings, decoration included: a lamp that really
+  sits on a table is exactly what the catalog is for. The border
+  test itself keeps scenery out, because a cliff standing NEAR a
+  rock shares no border and produces nothing. (A folder filter
+  existed briefly on 2026-08-27; it was a carryover from the
+  superseded distance design and threw away all but 143 of 2,407
+  meshes. Do not bring it back.)
 - **A write past a size cap stops and says so** rather than
   filling the disk. Pairing every actor within 9 m, the old
   wrong test, wrote a 900 MB file on 2026-08-27 (research.md 30).
@@ -572,11 +575,12 @@ mesh, which can only be placed, never assembled:
 `SM_WoodenCabit_02` (6.3 x 6.6 x 8.3 m),
 `SM_WatchTower_SM_ContainerHouse1`, `SM_House01_Var_A_Stairs`,
 and the `SM_BrikGarage_*` family (garage, closed garage, left and
-right doors, two tarps) which is a kit for one building type.
+right doors, two tarps) which together make one building type.
 
-## Not building parts
+## Names lie
 
-The name prefixes overlap with props, so filter by folder rather
-than by name where it matters: `SM_WallClock`, `SM_WallLamp`,
-`SM_WallpaperRoll1` to `7`, `SM_WallZaslavFlag` all begin with
-`SM_Wall` but are decoration.
+The name prefixes overlap with props: `SM_WallClock`,
+`SM_WallLamp`, `SM_WallpaperRoll1` to `7`, `SM_WallZaslavFlag`
+all begin with `SM_Wall` but are decoration. Never conclude what
+a mesh IS from its name. All of them enter the catalog anyway;
+their studs simply record where decoration really goes.
