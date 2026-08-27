@@ -53,6 +53,10 @@ Build a recordable and replayable live action journal, with MISERY as the first 
 
 ## Last session summary
 
+- Added `modforge::client::live_journal`, a versioned JSON journal for injected games that records control-plane actions, waits for observed JSON values, and asserts resulting state with precise step and value evidence on failure.
+- Added five behavioral tests covering round-trip, ordered replay, condition polling, recording, operation failure, and assertion failure.
+- Made MISERY the first live proof without adding a game-specific operation: the permanent test uses the existing `walk_class`, `read_bytes`, and `write_bytes` controls to change player movement speed, wait for observation, assert it, restore it, save and load the journal, replay it, and restore it again.
+- Verified the live MISERY proof against the running game on port 17176. It passed in 0.56 seconds and asserted the original movement-speed bytes were restored.
 - Updated the installed stable toolchain and workspace minimum to Rust 1.98.
 - Refreshed the workspace lockfile and migrated direct dependencies including ureq 3, glam 0.33, zip 8, sha2 0.11, region 4, socket2 0.6, and winreg 0.56.
 - Migrated Modforge's blocking HTTP client and harness to the ureq 3 request and response APIs.
@@ -249,6 +253,7 @@ Build a recordable and replayable live action journal, with MISERY as the first 
 
 ## Next steps
 
+- Record the first user-visible MISERY interaction through the same journal so input, operations, and observed completion share one replay path.
 - Compile the BepInEx IL2CPP shim when a BepInEx 6 IL2CPP reference directory is available.
 - Namespace Unityforge's managed handle table by generation so stale handles cannot collide after a hot swap.
 - Run the existing Grounded 2 in-game smoke checks for the completed extraction batch.

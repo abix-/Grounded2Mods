@@ -54,8 +54,16 @@ fn live_journal_round_trips_its_versioned_steps() {
         "set movement speed",
         RecordedOp::new("write_bytes", json!({"bytes_hex": "0000000000008940"})),
     );
-    journal.record_wait("movement speed applied", read_equals("0000000000008940"), 250, 10);
-    journal.record_assertion("movement speed remains applied", read_equals("0000000000008940"));
+    journal.record_wait(
+        "movement speed applied",
+        read_equals("0000000000008940"),
+        250,
+        10,
+    );
+    journal.record_assertion(
+        "movement speed remains applied",
+        read_equals("0000000000008940"),
+    );
 
     let json = journal.to_json().unwrap();
     assert!(json.contains("modforge.live-journal@v1"));
@@ -81,7 +89,11 @@ fn replay_executes_actions_then_waits_for_an_observed_value() {
     assert_eq!(report.wait_polls, 2);
     assert_eq!(report.assertions, 1);
     assert_eq!(
-        executor.calls().iter().map(|call| call.op.as_str()).collect::<Vec<_>>(),
+        executor
+            .calls()
+            .iter()
+            .map(|call| call.op.as_str())
+            .collect::<Vec<_>>(),
         ["write_bytes", "read_bytes", "read_bytes", "read_bytes"]
     );
 }

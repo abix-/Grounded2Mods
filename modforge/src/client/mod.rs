@@ -27,6 +27,7 @@ use serde_json::{Value, json};
 use crate::envelope::OpResponse;
 
 pub mod diff;
+pub mod live_journal;
 pub mod perf;
 pub mod scenario;
 
