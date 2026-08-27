@@ -1,9 +1,73 @@
 # MISERY building pieces
 
-> **Authoritative on:** every piece the game can build with, what
-> it measures, and where its position marker sits. `worldgen.md`
-> covers how areas and squares are generated and how pieces get
-> assembled into rooms; this file is the parts list.
+> **Authoritative on:** the goal, and every piece the game can
+> build with: what it measures and where its position marker
+> sits. `worldgen.md` covers how areas and squares are generated;
+> this file is the plan and the parts list.
+
+## The goal: super configurable Lego
+
+An area in MISERY is made of pieces. We want the mod to discover
+every one of them, understand how they can attach, learn how the
+game's own designers put them together, and then build new things
+the same way.
+
+A real Lego system has three parts, and so does this. In order,
+because each one needs the one before it.
+
+**1. The parts list.** Every mesh the game ships, measured: its
+size, where its position marker sits, and what it is. The game's
+own asset registry is the source, and it reports 2,398 static
+meshes while a memory walk sees about a third of them. A piece
+whose size is unknown cannot be attached to anything, so nothing
+downstream works until this is complete.
+
+**2. The studs.** Where a piece can attach. Derived from its
+measured bounds and its marker: which face, where on it, which
+way it faces. A 4 m wall has an end at each side and a top; a
+floor has four edges.
+
+Then the rule that says when two of those points may join. Kinds
+that are allowed to meet, facings that must oppose, sizes that
+must match. Two pieces connect ONLY through a legal pair. That is
+what stops a generated building from being a pile of meshes
+sharing a coordinate.
+
+**3. The instructions.** Read the vanilla buildings back and
+record which pieces the designers actually place against which,
+at what offset and facing. Two uses: it tells us what looks like
+this game rather than like a grid, and it CHECKS the rule. Every
+join the game itself makes should be a join our rule allows.
+Where the game does something the rule forbids, the rule is
+wrong, not the game.
+
+**Then assembly.** Build a structure by choosing pieces whose
+points fit, biased toward the pairings the designers actually
+use.
+
+## Everything that happens goes through the storyteller
+
+Generated buildings, NPC spawning, and anything added later are
+`Rule`s that `modforge::storyteller`'s `Director` picks and
+paces. They are NOT features with their own timers.
+
+This is a correction, not a preference. Two features written with
+their own watchers, `strange` and `spawning`, each ended up
+searching the whole object list on a clock and between them held
+the game thread for 126 ms of every second
+(`performance.md`). One director deciding when things happen is
+also the only way the pacing of the whole world can be reasoned
+about at once.
+
+## What is written down where
+
+| Question | Doc |
+|---|---|
+| What can we build with, and how does it attach? | this file |
+| How are areas, squares and levels generated? | `worldgen.md` |
+| How does anything in the engine work? | `research.md` |
+| What does the mod cost per frame? | `performance.md` |
+| What is next? | `todo.md` |
 
 **The game's own asset index is the real inventory.** Unreal
 keeps a registry of every shipped asset, queryable without
