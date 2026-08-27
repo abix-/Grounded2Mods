@@ -48,6 +48,11 @@ Move Schedule 1's verified engine-independent and Unity-specific helper implemen
 
 ## Last session summary
 
+- Replaced Schedule 1's manually capped combat-trace vector with the existing Modforge `Ring`.
+- Kept the 512-entry cap, JSON event shape, event recording policy, drop-oldest order, report output, and optional clear behavior in Schedule 1. Added no tests and made no game behavior changes.
+- Verified `k3sc cargo-lock check -p modforge -p schedule1-mod`.
+- Verified `k3sc cargo-lock check -p schedule1-mod --tests`; it retains three existing warnings in research tests.
+- Verified `k3sc cargo-lock test -p schedule1-mod --lib`; its library target has zero tests.
 - Replaced Schedule 1's two local timestamped arrays, rotation logic, and recent-window lookup with the existing Modforge `RecentRing`.
 - Kept the 32-entry capacity, NPC pointer identity, 15-second hit window, and 60-second credit cooldown in Schedule 1. Added no tests and made no game behavior changes.
 - Verified `k3sc cargo-lock check -p modforge -p schedule1-mod`.
@@ -215,7 +220,7 @@ Move Schedule 1's verified engine-independent and Unity-specific helper implemen
 
 ## Next steps
 
-- Replace Schedule 1's manual capped combat-trace vector with the existing Modforge ring implementation.
+- Move Schedule 1's existing guarded main-thread Effect wrapper into Unityforge.
 - Run the existing Grounded 2 in-game smoke checks for the completed extraction batch.
 - Exercise Survivalist's Load/Unload re-init path through a live story switch and confirm `ReinitAfterUnload` works.
 

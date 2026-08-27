@@ -23,6 +23,7 @@ use parking_lot::Mutex;
 use serde_json::{Value as Json, json};
 
 use modforge::ops::{OP_REGISTRY, OpDef};
+use modforge::ring::Ring;
 use unityforge::hook::{self, Hook, HookCtx};
 use unityforge::main_thread_queue::MAIN_QUEUE;
 use unityforge::mono;
@@ -30,7 +31,7 @@ use unityforge::mono;
 const CLASS: &str = "Il2CppScheduleOne.NPCs.NPCHealth";
 const MAX_EVENTS: usize = 512;
 
-static EVENTS: Mutex<Vec<Json>> = Mutex::new(Vec::new());
+static EVENTS: Ring<Json> = Ring::new(MAX_EVENTS);
 static HOOKS: Mutex<Vec<Hook>> = Mutex::new(Vec::new());
 static STARTED: Mutex<Option<Instant>> = Mutex::new(None);
 
@@ -81,11 +82,7 @@ fn record(event: &str, health_h: i32) {
         }
         drop(obj);
     }
-    let mut events = EVENTS.lock();
-    if events.len() >= MAX_EVENTS {
-        events.remove(0);
-    }
-    events.push(json!({
+    EVENTS.push(json!({
         "event": event, "ms": ms,
         "npc": npc, "npc_ptr": npc_ptr, "health": health,
     }));
@@ -151,15 +148,15 @@ fn combat_trace_start(_args: &Json) -> Result<Json, String> {
 }
 
 /// Returns the bounded Schedule 1 combat trace and optionally clears its recorded events.
-/// Stays here because the response is this mod's research presentation; Modforge owns only generic operation transport.
+/// Stays here because the response is this mod's research presentation; Modforge owns the bounded storage.
 fn combat_trace_report(args: &Json) -> Result<Json, String> {
     let clear = args.get("clear").and_then(Json::as_bool).unwrap_or(false);
-    let mut events = EVENTS.lock();
-    let out = json!({"tracing": !HOOKS.lock().is_empty(), "events": *events});
-    if clear {
-        events.clear();
-    }
-    Ok(out)
+    let events = if clear {
+        EVENTS.snapshot_and_clear()
+    } else {
+        EVENTS.snapshot()
+    };
+    Ok(json!({"tracing": !HOOKS.lock().is_empty(), "events": events}))
 }
 
 /// Removes Schedule 1's temporary combat hooks while retaining their observations.
