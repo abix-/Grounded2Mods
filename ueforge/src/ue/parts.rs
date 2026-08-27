@@ -373,43 +373,36 @@ fn part_from_json(v: &serde_json::Value) -> Option<PartDef> {
 /// Every one of these enters the engine, so a consumer must route
 /// them through its game-thread queue. They are registered here
 /// as plain ops; wrapping them is the consumer's job.
-/// Every pair of placed parts near enough to be joined, in one
-/// or more levels.
+/// Put a level's studs onto their parts in `parts.json`.
 ///
-/// This is EVIDENCE, not conclusions: the raw sightings, for
-/// `modforge::studs::derive` to turn into per-part studs. A
-/// threshold changed later re-derives from the same sightings
-/// rather than needing the game running again.
-///
-/// Game thread only.
-pub fn joins_in(levels: &[String], touching: f64) -> Vec<modforge::studs::Join> {
-    let mut out = Vec::new();
-    for level in levels {
-        let placed: Vec<PartDef> = read_level(level, &[]);
-        for a in &placed {
-            let Some(from) = a.asset.as_ref() else { continue };
-            for b in &placed {
-                let Some(to) = b.asset.as_ref() else { continue };
-                let d = (
-                    (b.offset.x - a.offset.x) as f64,
-                    (b.offset.y - a.offset.y) as f64,
-                    (b.offset.z - a.offset.z) as f64,
-                );
-                let far = (d.0 * d.0 + d.1 * d.1 + d.2 * d.2).sqrt();
-                if far <= 0.0 || far > touching {
-                    continue;
-                }
-                out.push(modforge::studs::Join {
-                    from: from.clone(),
-                    to: to.clone(),
-                    offset: d,
-                    from_yaw: a.yaw as f64,
-                    to_yaw: b.yaw as f64,
-                });
-            }
+/// ONE FILE: everything the mod learns about a part is metadata
+/// on that part in that file. A part's studs are REPLACED by the
+/// merge for the studs found this pass, and parts the pass did
+/// not see keep theirs. Returns how many part entries changed.
+fn merge_studs(
+    path: &str,
+    studs: &serde_json::Map<String, serde_json::Value>,
+) -> Result<usize, String> {
+    let text =
+        std::fs::read_to_string(path).map_err(|e| format!("could not read {path}: {e}"))?;
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("{path} is not JSON: {e}"))?;
+    let Some(parts) = doc.get_mut("parts").and_then(|p| p.as_array_mut()) else {
+        return Err(format!("{path} has no parts array"));
+    };
+    let mut updated = 0usize;
+    for part in parts.iter_mut() {
+        let Some(name) = part.get("name").and_then(|n| n.as_str()) else {
+            continue;
+        };
+        if let Some(list) = studs.get(name) {
+            part["studs"] = list.clone();
+            updated += 1;
         }
     }
-    out
+    std::fs::write(path, serde_json::to_string_pretty(&doc).unwrap_or_default())
+        .map_err(|e| format!("could not write {path}: {e}"))?;
+    Ok(updated)
 }
 
 pub fn register_ops() {
@@ -449,52 +442,57 @@ pub fn register_ops() {
             },
         ),
         crate::ops::OpDef::new(
-            "joins",
-            "Write every pair of placed parts near enough to be joined to a file, as raw sightings for stud derivation",
-            "{levels: [str], path: str, touching?: f64}",
+            "level_studs",
+            "Every stud in a level: where two placed parts share a border, recorded on both parts (modforge::studs). With a path, merges the studs into parts.json",
+            "{level: str, path?: str, touch_m?: f64, min_seen?: u64}",
             |args| {
-                let levels: Vec<String> = args
-                    .get("levels")
-                    .and_then(|v| v.as_array())
-                    .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
-                    .unwrap_or_default();
-                if levels.is_empty() {
-                    return Err("need {levels: [str]}".to_string());
+                let level = crate::args::arg_str(args, "level")?.to_string();
+                let path = args.get("path").and_then(|v| v.as_str()).map(str::to_string);
+                let mut how = modforge::studs::Derive::default();
+                if let Some(t) = args.get("touch_m").and_then(|v| v.as_f64()) {
+                    how.touch_m = t;
                 }
-                let touching = args.get("touching").and_then(|v| v.as_f64()).unwrap_or(9.0);
-                let path = crate::args::arg_str(args, "path")?.to_string();
+                if let Some(m) = args.get("min_seen").and_then(|v| v.as_u64()) {
+                    how.min_seen = m as usize;
+                }
                 crate::game_thread::run(
                     move || {
-                        let joins = joins_in(&levels, touching);
-                        // Written, not returned. A single pass over
-                        // eleven squares is 50,000 sightings and
-                        // 12 MB of JSON, which times out on the way
-                        // back. Evidence belongs on disk anyway: it
-                        // accumulates across sessions, and deriving
-                        // studs from it needs no game running.
-                        let rows: Vec<serde_json::Value> = joins
+                        let parts = read_level(&level, &[]);
+                        let studs = modforge::studs::studs_in(&parts, how);
+                        let rows: serde_json::Map<String, serde_json::Value> = studs
                             .iter()
-                            .map(|j| serde_json::json!({
-                                "from": j.from,
-                                "to": j.to,
-                                "offset": [j.offset.0, j.offset.1, j.offset.2],
-                                "from_yaw": j.from_yaw,
-                                "to_yaw": j.to_yaw,
-                            }))
+                            .map(|(name, list)| {
+                                (
+                                    name.clone(),
+                                    serde_json::Value::Array(
+                                        list.iter()
+                                            .map(|s| {
+                                                serde_json::json!({
+                                                    "at": [s.at.0, s.at.1, s.at.2],
+                                                    "turn": s.turn,
+                                                    "seen": s.seen,
+                                                    "with": s.with,
+                                                })
+                                            })
+                                            .collect(),
+                                    ),
+                                )
+                            })
                             .collect();
-                        let doc = serde_json::json!({
-                            "levels": levels,
-                            "touching_m": touching,
-                            "units": "offsets in metres, y up; yaw in radians",
-                            "sightings": rows.len(),
-                            "joins": rows,
-                        });
-                        std::fs::write(&path, serde_json::to_string(&doc).unwrap_or_default())
-                            .map_err(|e| format!("could not write {path}: {e}"))?;
+                        // ONE FILE: the studs land on each part's
+                        // entry in parts.json, and nothing else is
+                        // written.
+                        let merged = match &path {
+                            Some(p) => Some(merge_studs(p, &rows)?),
+                            None => None,
+                        };
                         Ok(serde_json::json!({
-                            "levels": levels.len(),
-                            "sightings": rows.len(),
-                            "written_to": path,
+                            "level": level,
+                            "placed": parts.len(),
+                            "parts_with_studs": rows.len(),
+                            "merged_into": path,
+                            "parts_updated": merged,
+                            "studs": if path.is_some() { serde_json::Value::Null } else { serde_json::Value::Object(rows) },
                         }))
                     },
                     ENGINE_TIMEOUT,

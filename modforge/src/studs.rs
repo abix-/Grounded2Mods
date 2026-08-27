@@ -1,64 +1,40 @@
-//! Where a part can attach, learned from how a game's own
-//! designers put parts together.
+//! Where a part can attach, cataloged from the game's own
+//! buildings.
 //!
-//! A part's size does not say where it attaches. A mesh's
-//! bounding box is not its module: a floor tile measured 5.18 by
-//! 5.73 m while sitting on a 3 by 4 m grid, because it has a lip
-//! and the lip is really there. Its NAME is not evidence either.
+//! The designers already built everything, and each part in a
+//! building is CONNECTED to another part where the two meshes
+//! share coordinates on a border: the bottom of a wall occupies
+//! the same coordinates as the rim of its floor. **That shared
+//! border is a STUD.** This module finds them.
 //!
-//! What is evidence is where the designers put things. Two parts
-//! that keep turning up at the same offset from each other are
-//! joined, and that offset is the attachment.
+//! Two measured facts shape the test (misery parts.md):
 //!
-//! **A join is evidence. A stud is the model.** One observed join
-//! yields TWO studs, one on each part, each in THAT PART'S OWN
-//! local frame. Measured in MISERY, a wall sits 350 cm above a
-//! floor tile turned 90 degrees, 231 times, which gives:
+//! - Connected parts OVERLAP slightly rather than meeting
+//!   exactly: a wall sinks 2 cm into its floor. Shared
+//!   coordinates means within a tolerance, not equality.
+//! - Placed parts sit at an angle, so borders are compared in
+//!   the parts' OWN turned frame, never on world axes.
 //!
-//! ```text
-//! the FLOOR  a stud at local (0, +3.5, 0)   something attaches above me
-//! the WALL   a stud at local (0, -3.5, 0)   I attach to something below me
-//! ```
-//!
-//! Local frames are the point. Two parts placed at different
-//! angles are only comparable once each is read in its own, and
-//! comparability is what lets ANY part with a matching stud take
-//! the other's place. That is how Lego works, and an edge list of
-//! "this wall meets this floor" cannot express it.
-//!
-//! Prior art: Wave Function Collapse learns which tiles were
-//! observed adjacent to which in an example, then generates from
-//! that. This is the same idea in three dimensions with a real
-//! building as the example.
+//! Each stud is recorded on BOTH parts, in each part's own
+//! frame. Per part, never per pair: any part with a matching
+//! stud can substitute. The same idea as Wave Function Collapse,
+//! learning which parts sit against which from a real example.
 
 use std::collections::HashMap;
 
-/// One sighting: two parts, where each was, and which way each
-/// faced. Raw evidence, never edited, because the rules derived
-/// from it will change and the sightings will not.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Join {
-    pub from: String,
-    pub to: String,
-    /// World offset from `from`'s origin to `to`'s, metres.
-    pub offset: (f64, f64, f64),
-    /// Facing of each part, radians, as placed.
-    pub from_yaw: f64,
-    pub to_yaw: f64,
-}
+use crate::structure::PartDef;
 
 /// One place a part can be attached to, in ITS OWN local frame.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Stud {
-    /// Local position, metres, y up. Same units and axes as a
-    /// `PartDef`'s extent.
+    /// Local position of the shared border's middle, metres,
+    /// y up. Same units and axes as a `PartDef`'s extent.
     pub at: (f64, f64, f64),
     /// How far the attached part is turned relative to this one,
     /// degrees. Position alone is not enough: a wall laid across
     /// a floor and one stood along it sit at the same spot.
     pub turn: i64,
-    /// How many times this was seen. Left visible rather than
-    /// collapsed into a boolean, because 231 is a rule and 4 is a
+    /// How many placements confirmed this. 231 is a rule, 4 is a
     /// maybe.
     pub seen: usize,
     /// Which parts were actually seen here, counted. Answers
@@ -68,58 +44,89 @@ pub struct Stud {
     pub with: HashMap<String, usize>,
 }
 
-/// Turn an offset measured in the world into one part's local
-/// frame, by undoing that part's own facing.
-///
-/// Only the turn about the up axis is undone: kit parts stand
-/// upright, and a part that is tilted is not something a stud
-/// model describes anyway.
-fn into_local(offset: (f64, f64, f64), yaw: f64) -> (f64, f64, f64) {
-    let (s, c) = (-yaw).sin_cos();
-    let (x, y, z) = offset;
-    (x * c - z * s, y, x * s + z * c)
-}
-
-/// Round a position so a hand-nudged placement does not invent a
-/// new stud. Centimetres in, metres out.
-fn snap(v: f64, round_cm: f64) -> f64 {
-    ((v * 100.0 / round_cm).round() * round_cm) / 100.0
-}
-
-/// Relative turn to degrees, snapped and folded into 0..360.
-fn turn_of(radians: f64, snap_deg: f64) -> i64 {
-    let deg = radians.to_degrees();
-    let snapped = (deg / snap_deg).round() * snap_deg;
-    ((snapped as i64 % 360) + 360) % 360
-}
-
-/// How the sightings are read.
+/// How borders are read.
 #[derive(Clone, Copy, Debug)]
 pub struct Derive {
-    /// Positions round to this, centimetres.
+    /// Two borders this close, metres, share coordinates. Covers
+    /// the measured interlock (a wall sinks 2 cm into its floor)
+    /// and hand-nudged placements.
+    pub touch_m: f64,
+    /// Stud positions round to this, centimetres, so a nudged
+    /// placement does not invent a new stud.
     pub round_cm: f64,
-    /// Turns snap to this, degrees.
+    /// Kit parts join at quarter turns. A pair whose relative
+    /// turn is further than this, degrees, from a quarter is not
+    /// compared at all.
     pub snap_deg: f64,
-    /// A stud needs this many sightings before it counts as one
-    /// rather than as a coincidence.
+    /// A stud needs this many confirmations. One placed room is
+    /// already a correct catalog entry, so the default is 1.
     pub min_seen: usize,
 }
 
 impl Default for Derive {
     fn default() -> Self {
-        Self { round_cm: 1.0, snap_deg: 15.0, min_seen: 4 }
+        Self {
+            touch_m: 0.05,
+            round_cm: 1.0,
+            snap_deg: 15.0,
+            min_seen: 1,
+        }
     }
 }
 
-/// Derive every part's studs from the sightings.
+/// A part's own box: pivot and extent, scaled. Metres, y up, in
+/// the part's local frame.
+fn own_box(p: &PartDef) -> ((f64, f64, f64), (f64, f64, f64)) {
+    let s = p.scale.abs() as f64;
+    let pv = (
+        p.pivot.x as f64 * s,
+        p.pivot.y as f64 * s,
+        p.pivot.z as f64 * s,
+    );
+    let ex = (
+        p.extent.x as f64 * s,
+        p.extent.y as f64 * s,
+        p.extent.z as f64 * s,
+    );
+    (
+        (pv.0 - ex.0, pv.1 - ex.1, pv.2 - ex.2),
+        (pv.0 + ex.0, pv.1 + ex.1, pv.2 + ex.2),
+    )
+}
+
+/// Turn a vector about the up axis.
+fn about_up(v: (f64, f64, f64), radians: f64) -> (f64, f64, f64) {
+    let (s, c) = radians.sin_cos();
+    (v.0 * c - v.2 * s, v.1, v.0 * s + v.2 * c)
+}
+
+/// Relative turn to degrees, snapped to the given step and
+/// folded into 0..360.
+fn turn_of(radians: f64, step_deg: f64) -> i64 {
+    let deg = radians.to_degrees();
+    let snapped = (deg / step_deg).round() * step_deg;
+    ((snapped as i64 % 360) + 360) % 360
+}
+
+fn snap(v: f64, round_cm: f64) -> f64 {
+    ((v * 100.0 / round_cm).round() * round_cm) / 100.0
+}
+
+/// The name a stud is filed under: the mesh where there is one,
+/// the class otherwise.
+fn name_of(p: &PartDef) -> &str {
+    p.asset.as_deref().unwrap_or(&p.class)
+}
+
+/// Every stud in one set of placed parts.
 ///
-/// Each join contributes to BOTH parts: the `from` part learns
-/// that something attaches at that offset, and the `to` part
-/// learns that it attaches at the mirror of it. Both are recorded
-/// in their own local frame, which is what makes them comparable
-/// between parts placed at different angles.
-pub fn derive(joins: &[Join], how: Derive) -> HashMap<String, Vec<Stud>> {
-    // part -> (rounded local position, turn) -> (count, who)
+/// For each pair whose relative turn is a quarter (within
+/// `snap_deg`), part B's box is carried into part A's own frame.
+/// If the boxes meet or overlap within `touch_m` on every axis,
+/// the parts share a border, and the middle of the shared region
+/// becomes a stud on each part, in each part's own frame.
+pub fn studs_in(parts: &[PartDef], how: Derive) -> HashMap<String, Vec<Stud>> {
+    // part name -> (rounded local position, turn) -> (count, who)
     type Key = (i64, i64, i64, i64);
     let mut acc: HashMap<String, HashMap<Key, (usize, HashMap<String, usize>)>> = HashMap::new();
 
@@ -139,29 +146,82 @@ pub fn derive(joins: &[Join], how: Derive) -> HashMap<String, Vec<Stud>> {
         *entry.1.entry(other.to_string()).or_default() += 1;
     };
 
-    for j in joins {
-        let relative = j.to_yaw - j.from_yaw;
+    for (i, a) in parts.iter().enumerate() {
+        for b in parts.iter().skip(i + 1) {
+            let rel = (b.yaw - a.yaw) as f64;
+            // Kit parts join at quarter turns; anything else is
+            // scenery leaning near scenery.
+            let quarter = (rel.to_degrees() / 90.0).round() * 90.0;
+            if (rel.to_degrees() - quarter).abs() > how.snap_deg {
+                continue;
+            }
 
-        // On `from`: something attaches over there, turned so.
-        let at = into_local(j.offset, j.from_yaw);
-        let at = (
-            snap(at.0, how.round_cm),
-            snap(at.1, how.round_cm),
-            snap(at.2, how.round_cm),
-        );
-        note(&j.from, at, turn_of(relative, how.snap_deg), &j.to);
+            // B's box, in A's own frame: B's corners turned by
+            // the relative yaw, then moved by the offset between
+            // the two placements read in A's frame.
+            let d = (
+                (b.offset.x - a.offset.x) as f64,
+                (b.offset.y - a.offset.y) as f64,
+                (b.offset.z - a.offset.z) as f64,
+            );
+            let d = about_up(d, -(a.yaw as f64));
+            let (bmin, bmax) = own_box(b);
+            let mut lo = (f64::MAX, f64::MAX, f64::MAX);
+            let mut hi = (f64::MIN, f64::MIN, f64::MIN);
+            for cx in [bmin.0, bmax.0] {
+                for cy in [bmin.1, bmax.1] {
+                    for cz in [bmin.2, bmax.2] {
+                        let w = about_up((cx, cy, cz), rel);
+                        let w = (w.0 + d.0, w.1 + d.1, w.2 + d.2);
+                        lo = (lo.0.min(w.0), lo.1.min(w.1), lo.2.min(w.2));
+                        hi = (hi.0.max(w.0), hi.1.max(w.1), hi.2.max(w.2));
+                    }
+                }
+            }
+            let (amin, amax) = own_box(a);
 
-        // On `to`: I attach to something back that way. The
-        // mirror, read in the OTHER part's frame, which is not
-        // simply the negated vector once the two face differently.
-        let back = (-j.offset.0, -j.offset.1, -j.offset.2);
-        let at = into_local(back, j.to_yaw);
-        let at = (
-            snap(at.0, how.round_cm),
-            snap(at.1, how.round_cm),
-            snap(at.2, how.round_cm),
-        );
-        note(&j.to, at, turn_of(-relative, how.snap_deg), &j.from);
+            // Sharing a border: on every axis the two boxes meet,
+            // overlap, or miss by no more than the tolerance.
+            let gap = [
+                (amin.0 - hi.0).max(lo.0 - amax.0),
+                (amin.1 - hi.1).max(lo.1 - amax.1),
+                (amin.2 - hi.2).max(lo.2 - amax.2),
+            ];
+            if gap.iter().any(|g| *g > how.touch_m) {
+                continue;
+            }
+
+            // The middle of the shared region, in A's frame.
+            let mid =
+                |alo: f64, ahi: f64, blo: f64, bhi: f64| (alo.max(blo) + ahi.min(bhi)) / 2.0;
+            let c = (
+                mid(amin.0, amax.0, lo.0, hi.0),
+                mid(amin.1, amax.1, lo.1, hi.1),
+                mid(amin.2, amax.2, lo.2, hi.2),
+            );
+            let at_a = (
+                snap(c.0, how.round_cm),
+                snap(c.1, how.round_cm),
+                snap(c.2, how.round_cm),
+            );
+            note(name_of(a), at_a, turn_of(rel, how.snap_deg), name_of(b));
+
+            // The same point in B's frame: out of A's frame into
+            // the shared placement space, then into B's.
+            let w = about_up(c, a.yaw as f64);
+            let w = (
+                w.0 + a.offset.x as f64 - b.offset.x as f64,
+                w.1 + a.offset.y as f64 - b.offset.y as f64,
+                w.2 + a.offset.z as f64 - b.offset.z as f64,
+            );
+            let cb = about_up(w, -(b.yaw as f64));
+            let at_b = (
+                snap(cb.0, how.round_cm),
+                snap(cb.1, how.round_cm),
+                snap(cb.2, how.round_cm),
+            );
+            note(name_of(b), at_b, turn_of(-rel, how.snap_deg), name_of(a));
+        }
     }
 
     acc.into_iter()
@@ -177,8 +237,7 @@ pub fn derive(joins: &[Join], how: Derive) -> HashMap<String, Vec<Stud>> {
                 })
                 .collect();
             // Commonest first: the way the game usually does it
-            // should be the first thing read, and the first thing
-            // reached for.
+            // is the first thing read, and the first reached for.
             studs.sort_by(|a, b| b.seen.cmp(&a.seen));
             (part, studs)
         })
@@ -189,101 +248,107 @@ pub fn derive(joins: &[Join], how: Derive) -> HashMap<String, Vec<Stud>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use glam::Vec3;
 
-    fn join(from: &str, to: &str, offset: (f64, f64, f64), from_yaw: f64, to_yaw: f64) -> Join {
-        Join {
-            from: from.into(),
-            to: to.into(),
-            offset,
-            from_yaw,
-            to_yaw,
+    /// A part at a spot: floor tiles are 2 m half-wide slabs with
+    /// the pivot at a corner (the real SM_Floor_400x400 numbers);
+    /// walls are thin tall panels with the pivot at the bottom
+    /// edge (the real SM_Wall numbers).
+    fn place(asset: &str, x: f32, y: f32, z: f32, yaw: f32) -> PartDef {
+        let (extent, pivot) = match asset {
+            a if a.starts_with("floor") => {
+                (Vec3::new(2.0, 0.11, 2.0), Vec3::new(2.0, -0.09, -2.0))
+            }
+            a if a.starts_with("wall") => (Vec3::new(0.1, 2.0, 2.0), Vec3::new(0.0, 2.0, -2.0)),
+            _ => (Vec3::new(0.5, 0.5, 0.5), Vec3::ZERO),
+        };
+        PartDef {
+            class: "StaticMeshActor".into(),
+            asset: Some(asset.into()),
+            offset: Vec3::new(x, y, z),
+            yaw,
+            pitch: 0.0,
+            roll: 0.0,
+            scale: 1.0,
+            extent,
+            pivot,
         }
     }
 
-    /// The measured case: a wall 3.5 m above a floor, turned 90.
-    /// Both parts must come out of it, each in its own frame.
+    /// Two floor tiles laid side by side share a border and each
+    /// gets a stud; the same two a whole tile apart get nothing.
     #[test]
-    fn one_join_gives_both_parts_a_stud() {
-        let quarter = std::f64::consts::FRAC_PI_2;
-        let joins: Vec<Join> = (0..5)
-            .map(|_| join("floor", "wall", (0.0, 3.5, 0.0), 0.0, quarter))
-            .collect();
-        let studs = derive(&joins, Derive::default());
+    fn neighbours_share_a_border_and_strangers_do_not() {
+        let side_by_side = vec![
+            place("floor", 0.0, 0.0, 0.0, 0.0),
+            place("floor", 4.0, 0.0, 0.0, 0.0),
+        ];
+        let studs = studs_in(&side_by_side, Derive::default());
+        assert_eq!(studs["floor"].len(), 2, "a stud on each side of the seam");
 
-        let floor = &studs["floor"][0];
-        assert_eq!(floor.at, (0.0, 3.5, 0.0), "something attaches above the floor");
-        assert_eq!(floor.turn, 90, "turned a quarter from the floor");
-        assert_eq!(floor.seen, 5);
-        assert_eq!(floor.with["wall"], 5);
+        let apart = vec![
+            place("floor", 0.0, 0.0, 0.0, 0.0),
+            place("floor", 8.5, 0.0, 0.0, 0.0),
+        ];
+        assert!(
+            studs_in(&apart, Derive::default()).is_empty(),
+            "a tile apart is not a border"
+        );
+    }
 
+    /// The measured interlock: a wall standing on a floor sits
+    /// with its base 2 cm below the walking surface, overlapping
+    /// the floor's box. It still shares the border; that is what
+    /// the tolerance is for.
+    #[test]
+    fn the_interlock_overlap_still_counts() {
+        let parts = vec![
+            place("floor", 0.0, 0.0, 0.0, 0.0),
+            place("wall", 1.0, 0.0, 0.0, 0.0),
+        ];
+        let studs = studs_in(&parts, Derive::default());
+        assert!(studs.contains_key("wall"), "the wall carries a stud");
+        assert!(studs.contains_key("floor"), "and so does the floor");
         let wall = &studs["wall"][0];
-        assert_eq!(wall.at.1, -3.5, "the wall attaches to something below it");
-        assert_eq!(wall.turn, 270, "and the floor is a quarter back the other way");
+        assert!(
+            wall.at.1 < 0.5,
+            "the wall's stud is at its base, got {:?}",
+            wall.at
+        );
+        assert_eq!(studs["floor"][0].with["wall"], 1);
     }
 
-    /// The whole point: a stud is comparable BETWEEN parts, so a
-    /// third part seen in the same place gets the same stud and
-    /// can therefore substitute.
-    #[test]
-    fn a_different_part_in_the_same_place_gets_the_same_stud() {
-        let quarter = std::f64::consts::FRAC_PI_2;
-        let mut joins: Vec<Join> = (0..5)
-            .map(|_| join("floor", "wall", (0.0, 3.5, 0.0), 0.0, quarter))
-            .collect();
-        joins.extend((0..5).map(|_| join("floor", "window", (0.0, 3.5, 0.0), 0.0, quarter)));
-        let studs = derive(&joins, Derive::default());
-
-        // One stud on the floor, used by two different parts.
-        assert_eq!(studs["floor"].len(), 1);
-        assert_eq!(studs["floor"][0].seen, 10);
-        assert_eq!(studs["floor"][0].with["wall"], 5);
-        assert_eq!(studs["floor"][0].with["window"], 5);
-
-        // And both of those parts have the SAME stud, which is
-        // what makes them interchangeable there.
-        assert_eq!(studs["wall"][0].at, studs["window"][0].at);
-        assert_eq!(studs["wall"][0].turn, studs["window"][0].turn);
-    }
-
-    /// The same join seen with the floor turned reads as the same
-    /// stud, because each part is read in its own frame. Without
-    /// that, every rotation of a building would invent new studs.
+    /// Turning the whole assembly must not invent studs: each
+    /// part is read in its own frame.
     #[test]
     fn turning_the_whole_thing_does_not_invent_studs() {
-        let quarter = std::f64::consts::FRAC_PI_2;
-        let upright: Vec<Join> = (0..5)
-            .map(|_| join("floor", "wall", (0.0, 3.5, 0.0), 0.0, quarter))
-            .collect();
-        // The same pair, the whole assembly turned a quarter: the
-        // world offset rotates with it.
-        let turned: Vec<Join> = (0..5)
-            .map(|_| join("floor", "wall", (0.0, 3.5, 0.0), quarter, quarter + quarter))
-            .collect();
-
-        let a = derive(&upright, Derive::default());
-        let b = derive(&turned, Derive::default());
+        let quarter = std::f32::consts::FRAC_PI_2;
+        let upright = vec![
+            place("floor", 0.0, 0.0, 0.0, 0.0),
+            place("wall", 1.0, 0.0, 0.0, 0.0),
+        ];
+        // The same pair, the whole thing turned a quarter about
+        // the floor's spot: the wall's offset turns with it.
+        let w = about_up((1.0, 0.0, 0.0), quarter as f64);
+        let turned = vec![
+            place("floor", 0.0, 0.0, 0.0, quarter),
+            place("wall", w.0 as f32, w.1 as f32, w.2 as f32, quarter),
+        ];
+        let a = studs_in(&upright, Derive::default());
+        let b = studs_in(&turned, Derive::default());
         assert_eq!(a["floor"][0].at, b["floor"][0].at);
         assert_eq!(a["floor"][0].turn, b["floor"][0].turn);
+        assert_eq!(a["wall"][0].at, b["wall"][0].at);
     }
 
-    /// A one-off is not a rule.
+    /// A pair at a non-quarter relative turn is scenery, not a
+    /// connection.
     #[test]
-    fn a_coincidence_is_not_a_stud() {
-        let joins = vec![join("floor", "oddity", (1.7, 0.3, 0.9), 0.0, 0.0)];
-        let studs = derive(&joins, Derive::default());
-        assert!(studs.is_empty(), "one sighting should not become a stud");
-    }
-
-    /// Two parts a whole tile apart are not joined; they are
-    /// neighbours of neighbours. The caller decides what counts as
-    /// touching, but distinct offsets must stay distinct here.
-    #[test]
-    fn distinct_offsets_stay_distinct() {
-        let mut joins: Vec<Join> = (0..5)
-            .map(|_| join("floor", "wall", (0.0, 3.5, 0.0), 0.0, 0.0))
-            .collect();
-        joins.extend((0..5).map(|_| join("floor", "wall", (3.0, 3.5, 0.0), 0.0, 0.0)));
-        let studs = derive(&joins, Derive::default());
-        assert_eq!(studs["floor"].len(), 2, "two places, two studs");
+    fn odd_angles_are_not_compared() {
+        let parts = vec![
+            place("floor", 0.0, 0.0, 0.0, 0.0),
+            place("floor", 4.0, 0.0, 0.0, 0.6),
+        ];
+        assert!(studs_in(&parts, Derive::default()).is_empty());
     }
 }

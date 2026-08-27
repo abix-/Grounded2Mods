@@ -400,6 +400,76 @@ fn do_vanilla_neighbours_share_borders() {
     assert!(printed > 0, "no wall stands within 50 cm of any floor tile's top");
 }
 
+/// THE STUDS, read from a vanilla square into `parts.json`.
+///
+/// A stud is where two placed parts share a border
+/// (`modforge::studs`). This loads one square's level asset,
+/// reads its studs, merges them into `parts.json`, and shows the
+/// wall-on-floor stud on both parts, which is the row's proof.
+#[test]
+#[ignore = "loads a level asset into the live game and writes parts.json"]
+fn studs_of_a_vanilla_square_land_in_parts_json() {
+    let Some(api) = api_or_skip() else { return };
+    let api = api.with_timeout(std::time::Duration::from_secs(120));
+    // Load in the same breath: an unreferenced level is let go by
+    // the GC within seconds.
+    let inv = api.op(
+        "asset_inventory",
+        json!({ "class": "World", "contains": "L_Anomaly_House" }),
+    );
+    let a = inv.result["assets"][0].clone();
+    assert!(a.is_object(), "L_Anomaly_House not in the registry");
+    let r = api.op(
+        "load_asset",
+        json!({ "package_fname": a["package_fname"], "asset_fname": a["asset_fname"] }),
+    );
+    assert!(r.ok && r.result["loaded"] == json!(true), "load failed: {:?}", r.error);
+
+    let path = "C:/Games/Steam/steamapps/common/MISERY/MISERY/Binaries/Win64/ue4ss/Mods/MiseryMod/dlls/parts.json";
+    let r = api.op("level_studs", json!({ "level": "L_Anomaly_House", "path": path }));
+    assert!(r.ok, "level_studs failed: {:?}", r.error);
+    println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+    let updated = r.result["parts_updated"].as_u64().unwrap_or(0);
+    assert!(updated > 0, "no part in parts.json gained a stud");
+
+    // The proof read back OUT of the file: a wall carries a stud
+    // whose partners include a floor, and that floor carries the
+    // mirror.
+    let text = std::fs::read_to_string(path).expect("parts.json unreadable");
+    let doc: serde_json::Value = serde_json::from_str(&text).expect("parts.json not JSON");
+    let parts = doc["parts"].as_array().cloned().unwrap_or_default();
+    let studs_of = |name_starts: &str| -> Vec<serde_json::Value> {
+        parts
+            .iter()
+            .filter(|p| {
+                p["name"].as_str().unwrap_or("").starts_with(name_starts)
+                    && p["studs"].is_array()
+            })
+            .flat_map(|p| p["studs"].as_array().cloned().unwrap_or_default())
+            .collect()
+    };
+    let wall_floor = studs_of("SM_Wall")
+        .iter()
+        .filter(|s| {
+            s["with"]
+                .as_object()
+                .is_some_and(|w| w.keys().any(|k| k.starts_with("SM_Floor")))
+        })
+        .count();
+    let floor_wall = studs_of("SM_Floor")
+        .iter()
+        .filter(|s| {
+            s["with"]
+                .as_object()
+                .is_some_and(|w| w.keys().any(|k| k.starts_with("SM_Wall")))
+        })
+        .count();
+    println!("wall studs partnered with a floor: {wall_floor}");
+    println!("floor studs partnered with a wall: {floor_wall}");
+    assert!(wall_floor > 0, "no wall in parts.json carries a stud with a floor");
+    assert!(floor_wall > 0, "no floor in parts.json carries the mirror stud");
+}
+
 /// Can a LEVEL asset be read without streaming it into play?
 ///
 /// The yes/no on the whole in-process extraction route: load one
