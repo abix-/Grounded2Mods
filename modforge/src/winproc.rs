@@ -877,4 +877,3 @@ pub fn process_memory_json() -> serde_json::Value {
         "quota_peak_non_paged_pool_usage": info.QuotaPeakNonPagedPoolUsage as u64,
     })
 }
-

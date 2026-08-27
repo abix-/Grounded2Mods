@@ -129,6 +129,9 @@ fn on_unreal_init() {
     // ones to restore first.
     ueforge::features()
         .once("pe_dispatch", dispatch::install)
+        .once("input", || {
+            ueforge::ops::OP_REGISTRY.register_many(modforge::input::ops::all())
+        })
         .once("spawning", spawning::install)
         // `strange` is DELETED (2026-08-26). It spawned up to 48
         // actors into every square that streamed in, eleven kinds

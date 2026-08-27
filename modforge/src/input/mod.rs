@@ -63,6 +63,26 @@ pub enum Button {
     XButton2,
 }
 
+/// Relative look axes used by first-person and third-person cameras.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Axis {
+    MouseX,
+    MouseY,
+}
+
+impl Axis {
+    pub fn parse(value: &str) -> Result<Self, String> {
+        match value.to_ascii_lowercase().as_str() {
+            "mouse_x" | "mousex" | "x" => Ok(Self::MouseX),
+            "mouse_y" | "mousey" | "y" => Ok(Self::MouseY),
+            other => Err(format!(
+                "unknown input axis '{other}' (expected mouse_x|mouse_y)"
+            )),
+        }
+    }
+}
+
 impl Button {
     pub fn parse(s: &str) -> Result<Button, String> {
         match s.to_ascii_lowercase().as_str() {
@@ -164,6 +184,7 @@ pub trait InputSurface: Send + Sync + 'static {
     fn click(&self, button: Button, x: i32, y: i32) -> Result<(), String>;
     fn move_abs(&self, x: i32, y: i32) -> Result<(), String>;
     fn key(&self, key: Key, down: bool) -> Result<(), String>;
+    fn axis(&self, axis: Axis, value: f32, delta_time: f32) -> Result<(), String>;
 }
 
 /// Global slot for the registered per-game [`InputSurface`]. First
@@ -259,13 +280,21 @@ mod tests {
         assert_eq!(Backend::parse("l2").unwrap(), Backend::L2);
         assert_eq!(Backend::parse("postmessage").unwrap(), Backend::L2);
         assert_eq!(Backend::parse("WindowMessage").unwrap(), Backend::L2);
+        assert_eq!(Backend::parse("l3").unwrap(), Backend::L3);
+        assert_eq!(Backend::parse("game_internal").unwrap(), Backend::L3);
     }
 
     #[test]
     fn backend_parse_rejects_garbage() {
-        assert!(Backend::parse("l3").is_err());
         assert!(Backend::parse("").is_err());
         assert!(Backend::parse("foo").is_err());
+    }
+
+    #[test]
+    fn axis_parse() {
+        assert_eq!(Axis::parse("mouse_x").unwrap(), Axis::MouseX);
+        assert_eq!(Axis::parse("MouseY").unwrap(), Axis::MouseY);
+        assert!(Axis::parse("throttle").is_err());
     }
 
     #[test]

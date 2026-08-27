@@ -283,6 +283,123 @@ fn every_level_asset_in_the_game() {
     }
 }
 
+/// What does the engine offer for reading a PLACED part's
+/// world-space box? A stud is where two placed meshes share
+/// coordinates on a border, so the first question is what a
+/// placed mesh exposes about where its geometry sits.
+///
+/// The hope is a callable function, the way `GetTagValue` gave
+/// the registry tags without decoding a TMap. Candidates live on
+/// `KismetSystemLibrary` and the component classes.
+#[test]
+fn what_reports_a_placed_parts_world_box() {
+    let Some(api) = api_or_skip() else { return };
+    for class in ["KismetSystemLibrary", "SceneComponent", "PrimitiveComponent", "StaticMeshComponent"] {
+        let r = api.op("class_functions_by_name", json!({ "class": class }));
+        println!("\n=== {class}");
+        if !r.ok {
+            println!("  failed: {:?}", r.error);
+            continue;
+        }
+        for f in r.result["functions"].as_array().cloned().unwrap_or_default() {
+            let name = f["name"].as_str().unwrap_or("?");
+            if name.to_lowercase().contains("bound") {
+                println!(
+                    "  {name:<44} parms={} bytes={}",
+                    f["num_parms"], f["parms_size"]
+                );
+            }
+        }
+    }
+}
+
+/// Do vanilla neighbours literally share border coordinates?
+///
+/// The stud design stands on it: two placed meshes sharing
+/// coordinates on a border. This reads every floor tile's and
+/// wall's WORLD box out of the asset-loaded square and prints
+/// the walls sitting on each floor tile's rim, so the claim is
+/// looked at in real numbers instead of assumed.
+#[test]
+#[ignore = "loads a level asset into the live game"]
+fn do_vanilla_neighbours_share_borders() {
+    let Some(api) = api_or_skip() else { return };
+    let level = "L_Anomaly_House";
+    // Load it HERE. A loaded level nothing references is let go
+    // by the garbage collector within seconds, so loading in one
+    // test and reading in another reads an empty level.
+    let inv = api.op(
+        "asset_inventory",
+        json!({ "class": "World", "contains": "L_Anomaly_House" }),
+    );
+    let a = inv.result["assets"][0].clone();
+    assert!(a.is_object(), "L_Anomaly_House not in the registry");
+    let r = api.op(
+        "load_asset",
+        json!({ "package_fname": a["package_fname"], "asset_fname": a["asset_fname"] }),
+    );
+    assert!(r.ok && r.result["loaded"] == json!(true), "load failed: {:?}", r.error);
+    let r = api.op("level_boxes", json!({ "level": level, "contains": "SM_" }));
+    assert!(r.ok, "level_boxes failed: {:?}", r.error);
+    let parts = r.result["parts"].as_array().cloned().unwrap_or_default();
+    println!(
+        "{} boxed parts in {level}, {} skipped",
+        parts.len(),
+        r.result["skipped"]
+    );
+
+    let boxes: Vec<(String, [f64; 3], [f64; 3])> = parts
+        .iter()
+        .filter_map(|p| {
+            let v = |k: &str| -> Option<[f64; 3]> {
+                let a = p[k].as_array()?;
+                Some([a[0].as_f64()?, a[1].as_f64()?, a[2].as_f64()?])
+            };
+            Some((p["asset"].as_str()?.to_string(), v("min")?, v("max")?))
+        })
+        .collect();
+
+    let floors = boxes.iter().filter(|(n, _, _)| n.starts_with("SM_Floor")).count();
+    let walls = boxes.iter().filter(|(n, _, _)| n.starts_with("SM_Wall")).count();
+    println!("{floors} SM_Floor part(s), {walls} SM_Wall part(s)");
+    for (n, min, max) in boxes
+        .iter()
+        .filter(|(n, _, _)| n.starts_with("SM_Floor") || n.starts_with("SM_Wall"))
+        .take(8)
+    {
+        println!("  {n:<28} min {min:?} max {max:?}");
+    }
+
+    // Every wall against every floor tile: print the gap between
+    // the wall's bottom and the floor's top, and whether their
+    // ground rectangles overlap. Shared border means gap 0 at
+    // some coordinate the two have in common.
+    let mut printed = 0;
+    for (fname, fmin, fmax) in boxes.iter().filter(|(n, _, _)| n.starts_with("SM_Floor")) {
+        for (wname, wmin, wmax) in boxes.iter().filter(|(n, _, _)| n.starts_with("SM_Wall")) {
+            let overlap_x = wmin[0] < fmax[0] && wmax[0] > fmin[0];
+            let overlap_y = wmin[1] < fmax[1] && wmax[1] > fmin[1];
+            if !(overlap_x && overlap_y) {
+                continue;
+            }
+            // Unreal z is up: the wall's bottom against the
+            // floor's top.
+            let gap = wmin[2] - fmax[2];
+            if gap.abs() > 50.0 {
+                continue;
+            }
+            println!(
+                "  {wname:<28} bottom z {:>9.2} on {fname:<20} top z {:>9.2}  gap {gap:>7.2} cm"
+            , wmin[2], fmax[2]);
+            printed += 1;
+            if printed >= 25 {
+                return;
+            }
+        }
+    }
+    assert!(printed > 0, "no wall stands within 50 cm of any floor tile's top");
+}
+
 /// Can a LEVEL asset be read without streaming it into play?
 ///
 /// The yes/no on the whole in-process extraction route: load one

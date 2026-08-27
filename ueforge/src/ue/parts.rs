@@ -502,6 +502,59 @@ pub fn register_ops() {
             },
         ),
         crate::ops::OpDef::new(
+            "level_boxes",
+            "Each placed part's box in world coordinates, computed from its transform and its mesh's local box (the engine only computes bounds for streamed levels). Ground truth for where two parts share a border",
+            "{level: str, contains?: str}",
+            |args| {
+                let level = crate::args::arg_str(args, "level")?.to_string();
+                let contains = args
+                    .get("contains")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                crate::game_thread::run(
+                    move || {
+                        let mut rows = Vec::new();
+                        let mut skipped = 0usize;
+                        for (_, ptr) in super::actor::actors_in_levels(&level) {
+                            let read = modforge::seh::guard(|| {
+                                // SAFETY: ptr came from this
+                                // call's own iteration; faults
+                                // are caught by the guard.
+                                let m = unsafe { transform::static_mesh(ptr) }.ok()??;
+                                let b = unsafe { transform::world_box(ptr) }?;
+                                Some((m.name, b))
+                            });
+                            match read {
+                                Ok(Some((name, (min, max)))) => {
+                                    if !contains.is_empty() && !name.contains(&contains) {
+                                        continue;
+                                    }
+                                    rows.push(serde_json::json!({
+                                        "asset": name,
+                                        // World centimetres,
+                                        // Unreal axes.
+                                        "min": [min.0, min.1, min.2],
+                                        "max": [max.0, max.1, max.2],
+                                    }));
+                                }
+                                Ok(None) => {}
+                                Err(_) => skipped += 1,
+                            }
+                        }
+                        Ok(serde_json::json!({
+                            "level": level,
+                            "units": "world centimetres, Unreal axes, box min/max",
+                            "count": rows.len(),
+                            "skipped": skipped,
+                            "parts": rows,
+                        }))
+                    },
+                    ENGINE_TIMEOUT,
+                )
+            },
+        ),
+        crate::ops::OpDef::new(
             "level_classes",
             "What a level is made of: how many actors of each class",
             "{level: str}",

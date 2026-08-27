@@ -37,6 +37,7 @@ pub mod read_once;
 pub mod research;
 pub mod ring;
 pub mod roll;
+pub mod route;
 pub mod rpg;
 pub mod scanner;
 pub mod seh;

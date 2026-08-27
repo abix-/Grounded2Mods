@@ -212,6 +212,53 @@ pub unsafe fn static_mesh(actor: *const u8) -> Result<Option<MeshMeasure>, ()> {
     }
 }
 
+/// A placed part's box in WORLD coordinates, computed.
+///
+/// The engine only knows where a component's geometry sits after
+/// the level is streamed into play; on an asset-loaded level
+/// `GetComponentBounds` answers zero for every part (measured
+/// 2026-08-27, all 2,306 parts of L_Anomaly_House). What the
+/// asset DOES hold is each actor's transform and its mesh, and
+/// the mesh holds its own local box. So the world box is
+/// computed: the mesh's local box, scaled, turned by the actor's
+/// yaw, and moved to where the actor is placed.
+///
+/// Only the turn about the up axis is applied. Kit parts stand
+/// upright; a tilted part's box comes out wrong here, and studs
+/// do not describe tilted parts anyway.
+///
+/// Centimetres on Unreal's axes, min corner and max corner.
+///
+/// # Safety
+/// `actor` must be a live `AActor`. Game thread only.
+pub unsafe fn world_box(actor: *const u8) -> Option<((f64, f64, f64), (f64, f64, f64))> {
+    // SAFETY: caller guarantees a live actor.
+    let t = unsafe { read(actor) }?;
+    // SAFETY: as above.
+    let m = unsafe { static_mesh(actor) }.ok()??;
+    let (pivot, extent) = (m.pivot, m.extent);
+
+    let (s, c) = t.yaw.to_radians().sin_cos();
+    let scale = t.scale_x;
+    let mut min = (f64::MAX, f64::MAX, f64::MAX);
+    let mut max = (f64::MIN, f64::MIN, f64::MIN);
+    for dx in [-1.0, 1.0] {
+        for dy in [-1.0, 1.0] {
+            for dz in [-1.0, 1.0] {
+                let lx = (pivot.0 + dx * extent.0) * scale;
+                let ly = (pivot.1 + dy * extent.1) * scale;
+                let lz = (pivot.2 + dz * extent.2) * scale;
+                let wx = t.x + lx * c - ly * s;
+                let wy = t.y + lx * s + ly * c;
+                let wz = t.z + lz;
+                min = (min.0.min(wx), min.1.min(wy), min.2.min(wz));
+                max = (max.0.max(wx), max.1.max(wy), max.2.max(wz));
+            }
+        }
+    }
+    Some((min, max))
+}
+
 /// Every loaded static mesh, by name.
 ///
 /// Built in one pass. A caller placing many parts resolves each

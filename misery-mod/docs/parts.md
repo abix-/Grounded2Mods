@@ -81,20 +81,22 @@ in 129 bytes:
 The tag name must be an `FName`; `ue::fname::from_str` builds one
 from a string (research.md 28).
 
-### The pivot does not matter
+### The pivot
 
 A mesh's pivot (the point the game places it at) sits wherever
 the artist put it: a wall's at the bottom of its starting edge, a
-floor's at a corner. It is recorded per part because it was
-measured (`UStaticMesh::ExtendedBounds.Origin`, off the loaded
-mesh, all 2,407 in 2.41 s live 2026-08-27, agreeing with the
-tables at the bottom of this file), but NOTHING in this design
-uses it.
+floor's at a corner. Recorded per part, measured off every loaded
+mesh (`UStaticMesh::ExtendedBounds.Origin`, all 2,407 in 2.41 s
+live 2026-08-27, agreeing with the tables at the bottom of this
+file).
 
-It does not matter because we never work out where a mesh sits
-from its placement point. The placed mesh is already in the
-world, and the engine knows exactly where its geometry is. Where
-two parts connect is read off the placed meshes directly.
+On a STREAMED level it is not needed: the engine knows where the
+placed geometry is and can be asked. On an ASSET-LOADED level the
+engine knows nothing (measured: zero for every part), and the
+pivot plus the extent is the only source of where a part's
+geometry sits around its placement. The extraction runs on
+asset-loaded levels, so it computes with the pivot (see "Where a
+part's geometry sits is COMPUTED").
 
 ### Where this stands, 2026-08-27
 
@@ -182,6 +184,43 @@ too.** The panel houses are level instances
 (`LI_HouseVar1_01` under `/Game/Meshes/Structures/PanelHouses/`),
 so a single house is itself a level of placed parts, and those
 are among the 121.
+
+### Where a part's geometry sits is COMPUTED (2026-08-27)
+
+On a streamed level the engine knows where every part's geometry
+is. On an asset-loaded level it does not: `GetComponentBounds`
+answered zero for all 2,306 parts of `L_Anomaly_House`. The
+asset holds each part's placement and its mesh, nothing more.
+
+So `level_boxes` computes it: the mesh's own box (extent and
+pivot, the same numbers `parts.json` carries), scaled, turned by
+the part's yaw, moved to its placement. Proven against the same
+square:
+
+```text
+2306 boxed parts, 230 SM_Floor, 54 SM_Wall, 23 skipped
+SM_Wall_200x400  bottom z 320.00 on SM_Floor_400x400  top z 322.00  gap -2.00 cm
+```
+
+Floors come out exactly 22 cm thick (z 300 to 322), matching the
+tables below, and walls stand on them. This is also where the
+pivot earns its place after all: on asset-loaded levels it is the
+only source of where geometry sits around the placement point.
+
+Two facts the stud reading must respect, both measured:
+
+- **Connected parts OVERLAP slightly; they do not meet exactly.**
+  A wall's bottom sits 2 cm below the floor's walking surface,
+  sunk into it. That is the interlock. Shared coordinates means
+  within a tolerance of a few centimetres, not exact equality.
+- **Parts in a level are placed at an angle**, so world-axis
+  boxes inflate (a 4 m floor spans 4.9 m). Borders must be
+  compared in the parts' own turned frame. Up is unaffected.
+
+The GC answers the memory question by itself: a loaded level
+nothing references is let go within seconds, so the extraction
+loop must load and read a level in one breath, and 121 levels
+never sit in memory together.
 
 ### Two meshes, same coordinates, shared border
 

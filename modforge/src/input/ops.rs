@@ -21,7 +21,7 @@ use serde_json::{json, Value as Json};
 
 use crate::ops::OpDef;
 
-use super::{l1, l2, Backend, Button, InputSurface, Key};
+use super::{l1, l2, Axis, Backend, Button, InputSurface, Key};
 
 /// Run an action through the registered L3 [`InputSurface`] if any;
 /// otherwise log a one-line warning and run `fallback` (typically L1).
@@ -123,6 +123,76 @@ pub fn all() -> Vec<OpDef> {
                     )?,
                 }
                 Ok(json!({"ok": true, "backend": backend, "x": x, "y": y}))
+            },
+        ),
+        OpDef::new(
+            "input.mouse.move_rel",
+            "Move the mouse by relative device units for camera look.",
+            "{dx: i32, dy: i32, backend?: l1|l3}",
+            |args| {
+                let dx = arg_i32(args, "dx")?;
+                let dy = arg_i32(args, "dy")?;
+                let backend = parse_backend(args)?;
+                match backend {
+                    Backend::L1 => l1::move_rel(dx, dy)?,
+                    Backend::L2 => {
+                        return Err(
+                            "relative mouse movement is unavailable through window messages"
+                                .into(),
+                        );
+                    }
+                    Backend::L3 => l3_or_fallback(
+                        "mouse.move_rel",
+                        |surface| {
+                            surface.axis(Axis::MouseX, dx as f32, 0.0)?;
+                            surface.axis(Axis::MouseY, dy as f32, 0.0)
+                        },
+                        || l1::move_rel(dx, dy),
+                    )?,
+                }
+                Ok(json!({"ok": true, "backend": backend, "dx": dx, "dy": dy}))
+            },
+        ),
+        OpDef::new(
+            "input.axis",
+            "Submit one relative look-axis sample.",
+            "{axis: mouse_x|mouse_y, value: f32, delta_time?: f32, backend?: l1|l3}",
+            |args| {
+                let axis_text = arg_str_opt(args, "axis").ok_or("missing arg 'axis' (str)")?;
+                let axis = Axis::parse(axis_text)?;
+                let value = args
+                    .get("value")
+                    .and_then(Json::as_f64)
+                    .ok_or("missing arg 'value' (f32)")? as f32;
+                let delta_time = args
+                    .get("delta_time")
+                    .and_then(Json::as_f64)
+                    .unwrap_or(0.0) as f32;
+                let backend = parse_backend(args)?;
+                match backend {
+                    Backend::L1 => match axis {
+                        Axis::MouseX => l1::move_rel(value.round() as i32, 0)?,
+                        Axis::MouseY => l1::move_rel(0, value.round() as i32)?,
+                    },
+                    Backend::L2 => {
+                        return Err("look axes are unavailable through window messages".into());
+                    }
+                    Backend::L3 => l3_or_fallback(
+                        "axis",
+                        |surface| surface.axis(axis, value, delta_time),
+                        || match axis {
+                            Axis::MouseX => l1::move_rel(value.round() as i32, 0),
+                            Axis::MouseY => l1::move_rel(0, value.round() as i32),
+                        },
+                    )?,
+                }
+                Ok(json!({
+                    "ok": true,
+                    "backend": backend,
+                    "axis": axis,
+                    "value": value,
+                    "delta_time": delta_time,
+                }))
             },
         ),
         OpDef::new(

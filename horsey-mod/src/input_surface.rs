@@ -18,7 +18,7 @@
 //! `modforge::input::set_input_surface(HorseyInputSurface)` so any
 //! `input.*` cmdlet with `backend: "l3"` lands here.
 
-use modforge::input::{Button, InputSurface, Key};
+use modforge::input::{Axis, Button, InputSurface, Key};
 use windows_sys::Win32::Foundation::POINT;
 use windows_sys::Win32::Graphics::Gdi::ScreenToClient;
 
@@ -105,6 +105,14 @@ impl InputSurface for HorseyInputSurface {
             modforge::input::l1::key_down(key)
         } else {
             modforge::input::l1::key_up(key)
+        }
+    }
+
+    fn axis(&self, axis: Axis, value: f32, _delta_time: f32) -> Result<(), String> {
+        let delta = value.round() as i32;
+        match axis {
+            Axis::MouseX => modforge::input::l1::move_rel(delta, 0),
+            Axis::MouseY => modforge::input::l1::move_rel(0, delta),
         }
     }
 }

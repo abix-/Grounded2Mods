@@ -77,6 +77,25 @@ pub fn move_abs(x: i32, y: i32) -> Result<(), String> {
     send(&input)
 }
 
+/// Move the mouse by relative device units. First-person games consume these
+/// as look-axis input rather than as a cursor position.
+pub fn move_rel(dx: i32, dy: i32) -> Result<(), String> {
+    let input = INPUT {
+        r#type: INPUT_MOUSE,
+        Anonymous: INPUT_0 {
+            mi: MOUSEINPUT {
+                dx,
+                dy,
+                mouseData: 0,
+                dwFlags: MOUSEEVENTF_MOVE,
+                time: 0,
+                dwExtraInfo: SYNTHETIC_EXTRA_INFO,
+            },
+        },
+    };
+    send(&input)
+}
+
 fn button_flags(b: Button, down: bool) -> (u32, u32) {
     match b {
         Button::Left => (
