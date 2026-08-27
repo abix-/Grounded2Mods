@@ -70,16 +70,44 @@ struct RawPiece {
 /// Game thread only: it reads live objects.
 pub fn read_level(path_needle: &str, only: &[String]) -> Vec<PieceDef> {
     let mut raw: Vec<RawPiece> = Vec::new();
+    // Actors whose read faulted. Counted rather than ignored: a
+    // level that skips half its actors is telling us something.
+    let mut skipped = 0usize;
     for (class, ptr) in super::actor::actors_in_levels(path_needle) {
         if !only.is_empty() && !only.iter().any(|c| class.contains(c.as_str())) {
             continue;
         }
-        // SAFETY: ptr came from that call's own object iteration.
-        let Some(t) = (unsafe { transform::read(ptr) }) else {
+        // GUARDED, because not every actor survives being read.
+        //
+        // Reading an actor means following its transform and then
+        // its mesh component to the mesh. Some actors in a
+        // streamed level have a component pointer that does not
+        // resolve, and dereferencing one takes the whole process
+        // down. That is not hypothetical: it killed the game on
+        // 2026-08-27 with an access violation at 0x8000000018,
+        // seven frames deep in here.
+        //
+        // The clue was already in the output. Actors were coming
+        // back named `<bogus-fname>` and `<none>`, which is the
+        // FName side already refusing to trust what it read. The
+        // mesh side had no such refusal.
+        //
+        // So: one bad actor becomes one skipped actor, counted and
+        // reported, rather than a dump.
+        let read = modforge::seh::guard(|| {
+            // SAFETY: ptr came from that call's own object
+            // iteration, and anything it faults on is caught here.
+            let t = unsafe { transform::read(ptr) }?;
+            // SAFETY: as above.
+            let mesh = unsafe { transform::static_mesh(ptr) };
+            Some((t, mesh))
+        });
+        let Ok(Some((t, mesh))) = read else {
+            if read.is_err() {
+                skipped += 1;
+            }
             continue;
         };
-        // SAFETY: as above.
-        let mesh = unsafe { transform::static_mesh(ptr) };
         let (mesh, extent) = match mesh {
             Some((name, ex, ey, ez)) => (Some(name), (ex, ey, ez)),
             None => (None, (0.0, 0.0, 0.0)),
@@ -96,6 +124,9 @@ pub fn read_level(path_needle: &str, only: &[String]) -> Vec<PieceDef> {
             mesh,
             extent,
         });
+    }
+    if skipped > 0 {
+        crate::log!("read_level: skipped {skipped} actor(s) that could not be read in {path_needle}");
     }
     if raw.is_empty() {
         return Vec::new();
