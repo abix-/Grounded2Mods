@@ -15,9 +15,7 @@ use std::time::{Duration, Instant};
 
 use common::{Api, api_or_skip, offsets_live};
 use modforge::client::{self, ClassInstance};
-use modforge::route::{
-    Position, RouteEdge, RouteGraph, SteeringConfig, StuckDetector, Waypoint, steer_yaw,
-};
+use modforge::route::{Position, RouteEdge, RouteGraph, StuckDetector, Waypoint};
 use serde_json::{Value, json};
 
 const PLAYER_CLASS: &str = "BP_SGKMasterCharacter_C";
@@ -51,6 +49,9 @@ struct NavigationCalls {
     find_path: Value,
     get_controller: Value,
     simple_move: Value,
+    add_yaw_input: Value,
+    add_pitch_input: Value,
+    interact: Value,
 }
 
 struct ReachableLootBox {
@@ -70,6 +71,13 @@ impl NavigationCalls {
             ),
             get_controller: function_layout(api, "Pawn", "GetController"),
             simple_move: function_layout(api, "AIBlueprintHelperLibrary", "SimpleMoveToLocation"),
+            add_yaw_input: function_layout(api, "PlayerController", "AddYawInput"),
+            add_pitch_input: function_layout(api, "PlayerController", "AddPitchInput"),
+            interact: function_layout(
+                api,
+                PLAYER_CLASS,
+                "InpActEvt_InteractInput_K2Node_EnhancedInputActionEvent_0",
+            ),
         }
     }
 }
@@ -328,34 +336,6 @@ fn expedition_entry_observed(expedition_door: [f64; 3], player: [f64; 3]) -> boo
     distance(expedition_door, player) >= EXPEDITION_ENTRY_DISTANCE_CM
 }
 
-fn game_viewport(api: &Api) -> isize {
-    let own = api.op("input.self.hwnd", json!({}));
-    assert!(own.ok, "game hwnd failed: {:?}", own.error);
-    let own_hwnd = isize::from_str_radix(
-        own.result["hwnd"]
-            .as_str()
-            .expect("window handle is a string")
-            .trim_start_matches("0x"),
-        16,
-    )
-    .expect("window handle is hex");
-    let pid = modforge::input::window_pid(own_hwnd).expect("game window has an owning process");
-    modforge::input::find_hwnd_by_pid(pid).expect("game viewport exists")
-}
-
-fn focus_game(api: &Api) {
-    let viewport = game_viewport(api);
-    assert!(
-        modforge::input::focus_hwnd(viewport),
-        "could not focus the game viewport"
-    );
-    assert_eq!(
-        modforge::input::foreground_hwnd(),
-        Some(viewport),
-        "game viewport did not become foreground"
-    );
-}
-
 fn control_rotation(api: &Api, player_selector: &str) -> [f64; 3] {
     let (out, _) = api
         .call_ufunction("Pawn", "GetControlRotation", player_selector, &[0u8; 0x18])
@@ -371,14 +351,34 @@ fn signed_degrees(degrees: f64) -> f64 {
     (degrees + 180.0).rem_euclid(360.0) - 180.0
 }
 
-fn aim_at(api: &Api, player_selector: &str, target: [f64; 3]) {
-    focus_game(api);
-    let config = SteeringConfig {
-        mouse_units_per_degree: 2.0,
-        max_mouse_delta: 120,
-        move_yaw_tolerance_deg: 2.0,
-    };
+fn look_command(yaw_error: f64, pitch_error: f64) -> (f32, f32) {
+    (
+        (yaw_error * 0.25).clamp(-10.0, 10.0) as f32,
+        (-pitch_error * 0.25).clamp(-10.0, 10.0) as f32,
+    )
+}
+
+fn controller_axis_input(api: &Api, layout: &Value, function: &str, controller: u64, value: f32) {
+    let mut parms = vec![0u8; layout["parms_size"].as_u64().unwrap() as usize];
+    put_f32(&mut parms, parameter_offset(layout, "Val"), value);
+    api.call_ufunction(
+        "PlayerController",
+        function,
+        &format!("addr:0x{controller:X}"),
+        &parms,
+    )
+    .unwrap_or_else(|error| panic!("PlayerController::{function} failed: {error}"));
+}
+
+fn aim_at(
+    api: &Api,
+    calls: &NavigationCalls,
+    player_selector: &str,
+    controller: u64,
+    target: [f64; 3],
+) {
     let started = Instant::now();
+    let mut unchanged_steps = 0;
     loop {
         let view = pawn_view_location(api, player_selector);
         let rotation = control_rotation(api, player_selector);
@@ -387,23 +387,48 @@ fn aim_at(api: &Api, player_selector: &str, target: [f64; 3]) {
         let horizontal = (dx * dx + dy * dy).sqrt();
         let target_yaw = dy.atan2(dx).to_degrees();
         let target_pitch = -(target[2] - view[2]).atan2(horizontal).to_degrees();
-        let mouse_dx = steer_yaw(rotation[1], target_yaw, config);
+        let yaw_error = signed_degrees(target_yaw - rotation[1]);
         let pitch_error = signed_degrees(target_pitch - signed_degrees(rotation[0]));
-        let mouse_dy = (-(pitch_error * config.mouse_units_per_degree).round() as i32)
-            .clamp(-config.max_mouse_delta, config.max_mouse_delta);
-        if mouse_dx.abs() <= 1 && mouse_dy.abs() <= 1 {
+        if yaw_error.abs() <= 1.0 && pitch_error.abs() <= 1.0 {
             return;
         }
         assert!(
             started.elapsed() < Duration::from_secs(4),
-            "could not aim at loot box: rotation={rotation:?} target_yaw={target_yaw:.1} target_pitch={target_pitch:.1} mouse=({mouse_dx},{mouse_dy})"
+            "could not aim at target: rotation={rotation:?} target_yaw={target_yaw:.1} target_pitch={target_pitch:.1} error=({yaw_error:.1},{pitch_error:.1})"
         );
-        let response = api.op(
-            "input.mouse.move_rel",
-            json!({"dx": mouse_dx, "dy": mouse_dy, "backend": "l1"}),
-        );
-        assert!(response.ok, "mouse look failed: {:?}", response.error);
+        if yaw_error.abs() > 1.0 {
+            let (yaw_input, _) = look_command(yaw_error, pitch_error);
+            controller_axis_input(
+                api,
+                &calls.add_yaw_input,
+                "AddYawInput",
+                controller,
+                yaw_input,
+            );
+        }
+        if pitch_error.abs() > 1.0 {
+            let (_, pitch_input) = look_command(yaw_error, pitch_error);
+            controller_axis_input(
+                api,
+                &calls.add_pitch_input,
+                "AddPitchInput",
+                controller,
+                pitch_input,
+            );
+        }
         std::thread::sleep(Duration::from_millis(16));
+        let after = control_rotation(api, player_selector);
+        if signed_degrees(after[1] - rotation[1]).abs() < 0.01
+            && signed_degrees(after[0] - rotation[0]).abs() < 0.01
+        {
+            unchanged_steps += 1;
+            assert!(
+                unchanged_steps < 10,
+                "player controller ignored ten consecutive look commands"
+            );
+        } else {
+            unchanged_steps = 0;
+        }
     }
 }
 
@@ -431,6 +456,10 @@ fn put_u64(bytes: &mut [u8], offset: usize, value: u64) {
 
 fn put_f64(bytes: &mut [u8], offset: usize, value: f64) {
     bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+}
+
+fn put_f32(bytes: &mut [u8], offset: usize, value: f32) {
+    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }
 
 fn function_layout(api: &Api, class: &str, function: &str) -> Value {
@@ -626,21 +655,15 @@ fn stop_movement(api: &Api, controller: u64) {
     .expect("Controller::StopMovement failed");
 }
 
-fn interact(api: &Api) {
-    focus_game(api);
-    let response = api.op(
-        "input.key.press",
-        json!({
-            "key": "e",
-            "hold_ms": 80,
-            "backend": "l1",
-        }),
-    );
-    assert!(
-        response.ok,
-        "interaction keypress failed: {:?}",
-        response.error
-    );
+fn interact(api: &Api, calls: &NavigationCalls, player_selector: &str) {
+    let parms = vec![0u8; calls.interact["parms_size"].as_u64().unwrap() as usize];
+    api.call_ufunction(
+        PLAYER_CLASS,
+        "InpActEvt_InteractInput_K2Node_EnhancedInputActionEvent_0",
+        player_selector,
+        &parms,
+    )
+    .expect("player interaction action failed");
 }
 
 fn nearest_loot_box(
@@ -754,10 +777,15 @@ fn player_inventory(api: &Api, player: u64) -> u64 {
     inventory
 }
 
-fn open_loot_box(api: &Api, storage_inventory: u64) -> usize {
+fn open_loot_box(
+    api: &Api,
+    calls: &NavigationCalls,
+    player_selector: &str,
+    storage_inventory: u64,
+) -> usize {
     for attempt in 1..=3 {
         println!("loot_box_interact attempt={attempt}");
-        interact(api);
+        interact(api, calls, player_selector);
         let started = Instant::now();
         while started.elapsed() < ENTRY_TIMEOUT {
             if client::read_i32(api, storage_inventory, INVENTORY_USING_PLAYERS_NUM_OFFSET) > 0 {
@@ -813,7 +841,7 @@ fn walk_edge(
             println!("bunker_door_interact attempt={interactions} location={current:?}");
             stop_movement(api, controller);
             let (interaction_point, extent) = actor_bounds(api, &blocking_door.addr_selector);
-            aim_at(api, player_selector, interaction_point);
+            aim_at(api, calls, player_selector, controller, interaction_point);
             let view = pawn_view_location(api, player_selector);
             let in_range = interaction_in_range(view, interaction_point, extent);
             let allowed = interaction_allowed(api, blocking_door);
@@ -829,7 +857,7 @@ fn walk_edge(
             if !allowed {
                 return Err("door does not currently allow interaction".into());
             }
-            interact(api);
+            interact(api, calls, player_selector);
             println!(
                 "bunker_door_interaction_sent target={}",
                 blocking_door.full_name
@@ -851,12 +879,13 @@ fn walk_edge(
 
 fn enter_expedition(
     api: &Api,
+    calls: &NavigationCalls,
     player_selector: &str,
     expedition_door: [f64; 3],
 ) -> ([f64; 3], usize) {
     for attempt in 1..=3 {
         println!("expedition_door_interact attempt={attempt}");
-        interact(api);
+        interact(api, calls, player_selector);
         let started = Instant::now();
         loop {
             let current = actor_location(api, player_selector);
@@ -1068,8 +1097,15 @@ fn unreal_navigation_opens_nearest_expedition_loot_box() {
         client::read_i32(&api, storage_inventory, INVENTORY_ITEM_COUNT_OFFSET);
     let mut live_loot_box_location = actor_location(&api, &loot_box.actor.addr_selector);
     live_loot_box_location[2] += 150.0;
-    aim_at(&api, &player.addr_selector, live_loot_box_location);
-    let interaction_attempts = open_loot_box(&api, storage_inventory);
+    aim_at(
+        &api,
+        &calls,
+        &player.addr_selector,
+        controller,
+        live_loot_box_location,
+    );
+    let interaction_attempts =
+        open_loot_box(&api, &calls, &player.addr_selector, storage_inventory);
     let timing_report = timing.finish();
     println!(
         "loot_box_opened elapsed_s={:.2} target={} path_cost={:.1} interaction_attempts={interaction_attempts} storage_inventory=0x{storage_inventory:X} storage_items={storage_items_before} player_inventory=0x{player_inventory:X} player_items={player_items_before} waypoints={} edges={} breadcrumbs={}",
@@ -1118,7 +1154,7 @@ fn unreal_navigation_enters_expedition_through_three_stops() {
     if distance(start, goal) <= ARRIVAL_CM {
         let started = Instant::now();
         let (entered_location, expedition_door_interactions) =
-            enter_expedition(&api, &player.addr_selector, goal);
+            enter_expedition(&api, &calls, &player.addr_selector, goal);
         println!(
             "expedition_entered_from_existing_stop elapsed_s={:.2} location={entered_location:?} expedition_door_interactions={expedition_door_interactions}",
             started.elapsed().as_secs_f64(),
@@ -1236,7 +1272,7 @@ fn unreal_navigation_enters_expedition_through_three_stops() {
     .expect("metal door to expedition door traversal failed");
     stop_movement(&api, controller);
     let (entered_location, expedition_door_interactions) =
-        enter_expedition(&api, &player.addr_selector, projected_goal);
+        enter_expedition(&api, &calls, &player.addr_selector, projected_goal);
     println!(
         "expedition_entered elapsed_s={:.2} location={entered_location:?} waypoints={} edges={} breadcrumbs={} bunker_door_interactions={bunker_door_interactions} expedition_door_interactions={expedition_door_interactions}",
         started.elapsed().as_secs_f64(),
@@ -1297,6 +1333,13 @@ fn interaction_range_uses_the_nearest_point_on_actor_bounds() {
         [500.0, 0.0, 0.0],
         [100.0, 50.0, 50.0]
     ));
+}
+
+#[test]
+fn look_commands_are_bounded_and_follow_control_rotation_errors() {
+    assert_eq!(look_command(20.0, -8.0), (5.0, 2.0));
+    assert_eq!(look_command(100.0, -100.0), (10.0, 10.0));
+    assert_eq!(look_command(-100.0, 100.0), (-10.0, -10.0));
 }
 
 #[test]
