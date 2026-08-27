@@ -216,6 +216,8 @@ pub fn forget_all() {
     for a in ALL_LIVE.lock().iter() {
         a.forget();
     }
+    // Anything else read out of that world is stale too.
+    modforge::read_once::forget_all();
 }
 
 /// How many actors are remembered right now. For diagnostics.

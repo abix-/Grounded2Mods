@@ -33,6 +33,7 @@ pub mod monument;
 pub mod ops;
 pub mod patterns;
 pub mod quality;
+pub mod read_once;
 pub mod research;
 pub mod ring;
 pub mod roll;

@@ -39,10 +39,23 @@ fn inventory_ptr() -> Result<*const u8, String> {
     unsafe { follow_ptr_chain(actor, &[CHAR_COMP_OFFSET, INV_PTR_OFFSET]) }
 }
 
+#[derive(Clone)]
 pub struct MapEntry {
     pub key: u8,
     pub speed: f64,
 }
+
+/// What the tab shows.
+///
+/// Nothing but this mod changes these numbers, so the tab does
+/// not read them. They are read once, when the tab first has a
+/// world to read from, and replaced when `set_multiplier` writes
+/// new ones. A frame with the tab open then does no work at all.
+///
+/// Cleared when the world ends, along with the player pointer, so
+/// the next world reads its own.
+static SHOWN: modforge::read_once::ReadOnce<Vec<MapEntry>> =
+    modforge::read_once::ReadOnce::new();
 
 /// Returns every player movement speed currently active in MISERY.
 /// Stays here because it translates MISERY's movement-state map into this feature's values.
@@ -85,6 +98,10 @@ pub fn set_multiplier(mult: f64) -> Result<(), String> {
         }
     }
 
+    // We just changed them, so what the tab shows is now wrong.
+    // Reading them back would be asking the game to tell us what
+    // we told it.
+    SHOWN.forget();
     ueforge::log::log(format_args!("speed: {mult}x applied to all entries"));
     Ok(())
 }
@@ -105,17 +122,15 @@ pub fn render() {
     ui::separator();
     ui::spacing();
 
-    match current_all() {
-        Ok(entries) => {
-            for e in &entries {
-                ui::text(&format!("  key {:2}  {:.0}", e.key, e.speed));
-            }
-        }
-        Err(e) => {
-            ui::text_disabled("No player loaded.");
-            ui::text_disabled(&format!("({e})"));
-            return;
-        }
+    // Registered so the world ending clears it along with
+    // everything else read out of that world.
+    SHOWN.forget_with(|| SHOWN.forget());
+    let Some(shown) = SHOWN.get(|| current_all().ok()) else {
+        ui::text_disabled("No player loaded.");
+        return;
+    };
+    for e in &shown {
+        ui::text(&format!("  key {:2}  {:.0}", e.key, e.speed));
     }
 
     ui::spacing();
