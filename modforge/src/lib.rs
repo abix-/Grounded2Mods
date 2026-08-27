@@ -45,6 +45,7 @@ pub mod settings;
 pub mod shutdown;
 pub mod storyteller;
 pub mod structure;
+pub mod studs;
 pub mod survival;
 pub mod snapshots;
 pub mod testkit;
