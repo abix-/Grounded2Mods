@@ -203,10 +203,31 @@ FString& OutValue) -> bool`, 4 parms in 129 bytes:
 The tag name must be an `FName`, which is why none of this was
 reachable until `ue::fname::from_str` landed (research.md 28).
 
-**2. The studs.** Where a piece can attach. Derived from its
-measured bounds and its marker: which face, where on it, which
-way it faces. A 4 m wall has an end at each side and a top; a
-floor has four edges.
+**2. The studs, and they come from the VANILLA BUILDINGS.**
+
+The first plan was to derive attachment points from a piece's
+measured bounds. That is wrong, and the parts list proved it:
+`SM_Floor_400x400` measures 5.18 by 5.73 m because `ApproxSize`
+is a bounding box and that tile has a lip. Measuring the mesh
+more precisely does not help, because the lip is really there.
+**A mesh has no field that says "I am a 4 metre module".** That
+is not a property of its geometry.
+
+It is a property of how the game PLACES them. Two adjacent floor
+tiles sit 4 m apart while each is 5.18 m across, because they
+interlock. So the module size is the SPACING BETWEEN NEIGHBOURS,
+and the only place that exists is in real placements.
+
+**The vanilla buildings give us the attachment points.** Read a
+level's placed pieces with their transforms, group by mesh, and
+the common distances between neighbours ARE the module. A tile
+that always sits 400 cm from the next one is a 4 m module
+whatever its box says and whatever it is called. The offsets
+between DIFFERENT meshes are the attachment points, and the pairs
+that occur are the instructions.
+
+We cannot trust the names and we cannot trust the boxes. We can
+trust where the designers put things.
 
 Then the rule that says when two of those points may join. Kinds
 that are allowed to meet, facings that must oppose, sizes that
