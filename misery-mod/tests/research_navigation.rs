@@ -51,7 +51,7 @@ const CHARACTER_PLAYER_INVENTORY_OFFSET: u64 = 0x218;
 struct NavigationCalls {
     project: Value,
     find_path: Value,
-    get_path_points: Value,
+    path_points_offset: usize,
 }
 
 struct ReachableLootBox {
@@ -69,7 +69,7 @@ impl NavigationCalls {
                 "NavigationSystemV1",
                 "FindPathToLocationSynchronously",
             ),
-            get_path_points: function_layout(api, "NavigationPath", "GetPathPoints"),
+            path_points_offset: class_field_offset(api, "NavigationPath", "PathPoints"),
         }
     }
 }
@@ -495,6 +495,26 @@ fn function_layout(api: &Api, class: &str, function: &str) -> Value {
     layout.result
 }
 
+fn class_field_offset(api: &Api, class: &str, field: &str) -> usize {
+    let detail = api.op("discover_class_detail", json!({"name": class}));
+    assert!(detail.ok, "{class} detail failed: {:?}", detail.error);
+    let offset = reflected_field_offset(&detail.result, field)
+        .unwrap_or_else(|error| panic!("{class}.{field}: {error}"));
+    println!("navigation_field_offset={class}.{field}@0x{offset:X}");
+    offset
+}
+
+fn reflected_field_offset(detail: &Value, field: &str) -> Result<usize, String> {
+    detail["fields"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|candidate| candidate["name"] == field)
+        .and_then(|candidate| candidate["offset"].as_u64())
+        .map(|offset| offset as usize)
+        .ok_or_else(|| format!("reflected field '{field}' not found"))
+}
+
 fn parameter_offset(layout: &Value, name: &str) -> usize {
     layout["parameters"]
         .as_array()
@@ -622,20 +642,10 @@ fn navigation_path_points(
 ) -> Option<Vec<[f64; 3]>> {
     let (path, _) =
         find_navigation_path(api, calls, world_context, pathfinding_context, start, goal)?;
-    let layout = &calls.get_path_points;
-    let parms = vec![0u8; layout["parms_size"].as_u64().unwrap() as usize];
-    let (out, _) = api
-        .call_ufunction(
-            "NavigationPath",
-            "GetPathPoints",
-            &format!("addr:0x{path:X}"),
-            &parms,
-        )
-        .expect("NavigationPath::GetPathPoints failed");
-    let returned = parameter_offset(layout, "ReturnValue");
-    let data = client::from_le_u64(&out, returned);
-    let count = client::from_le_i32(&out, returned + 8);
-    let capacity = client::from_le_i32(&out, returned + 12);
+    let header = client::read_bytes(api, path, calls.path_points_offset as u64, 16);
+    let data = client::from_le_u64(&header, 0);
+    let count = client::from_le_i32(&header, 8);
+    let capacity = client::from_le_i32(&header, 12);
     if data == 0 || count < 2 || capacity < count || count > 4_096 {
         return None;
     }
@@ -1385,8 +1395,25 @@ fn expedition_loot_route_adds_only_the_discovered_target() {
 #[test]
 fn navigation_path_points_use_the_reflected_unavigationpath_field() {
     let source = include_str!("research_navigation.rs");
-    assert!(!source.contains("\"GetPathPoints\""));
+    let native_method = ["GetPath", "Points"].concat();
+    assert!(!source.contains(&format!("\"{native_method}\"")));
     assert!(source.contains("\"PathPoints\""));
+}
+
+#[test]
+fn reflected_navigation_path_field_resolves_by_name() {
+    let detail = json!({
+        "fields": [
+            {"name": "PathPoints", "offset": 48, "element_size": 16},
+            {"name": "RecalculateOnInvalidation", "offset": 64, "element_size": 1}
+        ]
+    });
+
+    assert_eq!(reflected_field_offset(&detail, "PathPoints"), Ok(48));
+    assert_eq!(
+        reflected_field_offset(&detail, "Missing"),
+        Err("reflected field 'Missing' not found".to_string())
+    );
 }
 
 #[test]
