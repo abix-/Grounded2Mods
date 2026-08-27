@@ -2,12 +2,15 @@
 
 ## Current focus
 
-Document Schedule 1's current game-mod functions and make their Modforge and Unityforge ownership boundaries explicit.
+Move Schedule 1's verified engine-independent and Unity-specific helper implementations into Modforge and Unityforge without changing game behavior.
 
 ## Design goals
 
 - Every Grounded 2 source function explains its player-facing purpose and its verified ownership boundary with Modforge and Ueforge.
 - Every Schedule 1 source function explains its player-facing purpose and its verified ownership boundary with Modforge and Unityforge.
+- Modforge owns lowest-level automatic skill spending, timestamped recent-key tracking, and bounded trace storage.
+- Unityforge owns managed bridge-value decoding, managed-handle wrapping, Unity coordinate decoding, and guarded main-thread Effect dispatch.
+- Schedule 1 retains its class and field names, NPC identity, timing windows, crash-bisection flag, labels, effect configuration, rewards, and war policy.
 - Item definitions have one authority: `ItemDef` and `ItemRegistry`.
 - Uniqueness is an `ItemDef` property, not a parallel definition type or registry.
 - Per-save entered and holder state belongs to the item ledger in `modforge::item`.
