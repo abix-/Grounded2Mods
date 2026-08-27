@@ -208,25 +208,13 @@ impl DamageBinder for G2DamageBinder {
     }
 }
 
-/// Saves one Grounded 2 damage event for the debug API and writes its trace log.
-/// Stays here because the recorded function, health offset, and trace policy belong to this mod;
-/// Ueforge owns the reusable damage event and ring buffer.
+/// Supplies Grounded 2's live health observation and writes its trace log.
+/// Stays here because the health offset and trace policy belong to this mod;
+/// Ueforge owns event conversion, timestamping, and ring recording.
 fn push_damage_event(event: &DamageEvent) {
     use ueforge::ue::field::read_f32;
     let cd_now = read_f32(event.victim_component, 0x032C);
-    let now_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    crate::debug::record_damage_event(crate::debug::DamageEvent {
-        at_secs: now_secs,
-        function: "MulticastHandleEffectsWithDamageFlags".to_string(),
-        damage: event.damage,
-        damage_flags: event.damage_flags,
-        type_flags: event.type_flags,
-        current_damage_before: Some(cd_now),
-        current_damage_after: None,
-    });
+    crate::debug::DAMAGE_RING.record_hook_event(CONFIG.damage_fn, event, Some(cd_now), None);
     if event.damage > 0.0 {
         ueforge::counters::bump(&crate::counters::KILL_HOOK_LOG_LINES);
         ueforge::log!(

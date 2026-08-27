@@ -25,6 +25,7 @@ Newest first.
 
 | System | Item | Done when |
 |---|---|---|
+| `ueforge` | [x] Move damage-hook event conversion, timestamping, and ring recording out of Grounded 2 | Grounded 2 supplies its live CurrentDamage observation and keeps its trace logging policy without constructing or timestamping the shared debug event. |
 | `ueforge` | [x] Move Grounded 2's existing active status-effect traversal into Ueforge | Ueforge walks the component and effect array, resolves row handles and FNames, looks up data-table rows, and reads Type and Value while Grounded 2 keeps every layout offset, first-player selection, and snapshot presentation. |
 | `ueforge` | [x] Move the existing parameterized ImpactReversalEffect out of Grounded 2 and into Ueforge's standard RPG effects | Ueforge owns the unchanged damage-event filtering, level scaling, post-damage health reversal, log, and formatting while Grounded 2 keeps its damage layout, health offset, marker, tuning, and catalog static. |
 | `ueforge` | [x] Move the existing parameterized LifestealEffect out of Grounded 2 and into Ueforge's standard RPG effects | Ueforge owns the unchanged damage-event filtering, level scaling, health-component write, log, and formatting while Grounded 2 keeps its player reference, offsets, tuning, and catalog static. |

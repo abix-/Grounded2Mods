@@ -49,16 +49,8 @@ static HEALTH_CLASS: ClassRef = ClassRef::new("HealthComponent");
 pub(crate) static PE_QUEUE: GameThread = GameThread::new();
 
 /// Ring buffer of recent damage / multicast events captured by
-/// the `kill_hook` trampoline. Populated via [`record_damage_event`];
-/// drained by the snapshot endpoint.
-static DAMAGE_RING: DamageRing = DamageRing::new(64);
-
-/// Adds one Grounded 2 damage event to the recent-event debug history.
-/// Stays here because this mod chooses which damage events to expose;
-/// Ueforge owns the reusable bounded ring.
-pub fn record_damage_event(ev: DamageEvent) {
-    DAMAGE_RING.record(ev);
-}
+/// the `kill_hook` trampoline and read by the snapshot endpoint.
+pub(crate) static DAMAGE_RING: DamageRing = DamageRing::new(64);
 
 /// Reports how many Grounded 2 damage events have entered the debug ring.
 /// Stays here because this counter is part of this mod's diagnostics;

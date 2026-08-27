@@ -27,7 +27,7 @@
 //! }
 //! ```
 
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use serde_json::Value as Json;
@@ -45,8 +45,8 @@ pub use modforge::debug::{CatalogEntry, PlayerStateView, catalog_view};
 
 /// Recent damage / multicast PE event captured by a damage hook.
 /// Universal shape: every UE5 RPG mod that observes damage wants
-/// the same fields. Game crates push entries from their kill_hook
-/// trampoline; the snapshot endpoint reads + serializes the ring.
+/// the same fields. [`DamageRing::record_hook_event`] converts the
+/// hook event; the snapshot endpoint reads and serializes the ring.
 #[derive(Clone, Serialize)]
 pub struct DamageEvent {
     /// Wall-clock seconds since UNIX epoch. Sequences events in
@@ -62,8 +62,8 @@ pub struct DamageEvent {
 
 /// Bounded drop-oldest ring of `DamageEvent`s. Wraps `EventRing`
 /// with the standard observer accessors so game crates declare
-/// `static RING: DamageRing = DamageRing::new(64);` and call
-/// `RING.record(ev)` / `RING.snapshot()` directly.
+/// `static RING: DamageRing = DamageRing::new(64);` and call its
+/// recording and snapshot methods directly.
 pub struct DamageRing {
     inner: EventRing<DamageEvent>,
 }
@@ -76,6 +76,29 @@ impl DamageRing {
     }
     pub fn record(&self, ev: DamageEvent) {
         self.inner.record(ev);
+    }
+    /// Convert a decoded damage-hook event into the shared debug shape,
+    /// timestamp it, and append it to this ring.
+    pub fn record_hook_event(
+        &self,
+        function: &str,
+        event: &crate::damage::DamageEvent<'_>,
+        current_damage_before: Option<f32>,
+        current_damage_after: Option<f32>,
+    ) {
+        let at_secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0);
+        self.record(DamageEvent {
+            at_secs,
+            function: function.to_string(),
+            damage: event.damage,
+            damage_flags: event.damage_flags,
+            type_flags: event.type_flags,
+            current_damage_before,
+            current_damage_after,
+        });
     }
     pub fn snapshot(&self) -> Vec<DamageEvent> {
         self.inner.snapshot()
