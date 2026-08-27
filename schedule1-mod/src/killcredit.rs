@@ -13,12 +13,12 @@
 //! main thread; reads are safe there.
 
 use std::ffi::c_void;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use parking_lot::Mutex;
 use serde_json::Value as Json;
 
 use modforge::client::parse_vec3;
+use modforge::ring::RecentRing;
 use unityforge::hook::{self, HOOK_REGISTRY, HookCtx};
 use unityforge::mono::{self, LogLevel};
 
@@ -31,37 +31,8 @@ const CREDIT_COOLDOWN: Duration = Duration::from_secs(60);
 const XP_PER_DOWN: u64 = 25;
 const RING_CAP: usize = 32;
 
-struct HitRing {
-    buf: [Option<(i64, Instant)>; RING_CAP],
-    next: usize,
-}
-
-impl HitRing {
-    /// Creates Schedule 1's fixed-size recent-hit ledger without heap allocation.
-    /// Stays here because its capacity and use windows belong to this game's kill-credit policy; Modforge owns progression recording.
-    const fn new() -> Self {
-        Self { buf: [None; RING_CAP], next: 0 }
-    }
-
-    /// Remembers when a specific Schedule 1 NPC was hit or credited.
-    /// Stays here because native NPC pointers are this mod's attribution key; Unityforge owns callback handle delivery.
-    fn remember(&mut self, ptr: i64) {
-        self.buf[self.next] = Some((ptr, Instant::now()));
-        self.next = (self.next + 1) % RING_CAP;
-    }
-
-    /// Checks whether the same NPC appeared within a Schedule 1 attribution window.
-    /// Stays here because the pointer identity and window policy belong to this mod, not the framework.
-    fn recent(&self, ptr: i64, window: Duration) -> bool {
-        let now = Instant::now();
-        self.buf.iter().any(|slot| {
-            slot.is_some_and(|(p, t)| p == ptr && now.duration_since(t) < window)
-        })
-    }
-}
-
-static PLAYER_HITS: Mutex<HitRing> = Mutex::new(HitRing::new());
-static CREDITED: Mutex<HitRing> = Mutex::new(HitRing::new());
+static PLAYER_HITS: RecentRing<i64, RING_CAP> = RecentRing::new();
+static CREDITED: RecentRing<i64, RING_CAP> = RecentRing::new();
 
 /// Hooks Schedule 1's player-hit, death, and knockout signals used for kill rewards.
 /// Stays here because the target class and signal combination are game facts; Unityforge owns Harmony hook installation.
@@ -154,7 +125,7 @@ extern "C" fn on_player_hit(ctx: *const c_void) -> i32 {
         return 0;
     }
     if let Some(ptr) = npc_ptr(ctx as isize as i32) {
-        PLAYER_HITS.lock().remember(ptr);
+        PLAYER_HITS.remember(ptr);
     }
     0
 }
@@ -169,8 +140,8 @@ extern "C" fn on_down(ctx: *const c_void) -> i32 {
     let Some((ptr, pos, max_health)) = npc_info(ctx as isize as i32) else {
         return 0;
     };
-    let player_hit = PLAYER_HITS.lock().recent(ptr, HIT_WINDOW);
-    let already_credited = CREDITED.lock().recent(ptr, CREDIT_COOLDOWN);
+    let player_hit = PLAYER_HITS.recent(ptr, HIT_WINDOW);
+    let already_credited = CREDITED.recent(ptr, CREDIT_COOLDOWN);
     mono::log(
         LogLevel::Info,
         &format!(
@@ -183,7 +154,7 @@ extern "C" fn on_down(ctx: *const c_void) -> i32 {
     if already_credited {
         return 0;
     }
-    CREDITED.lock().remember(ptr);
+    CREDITED.remember(ptr);
     let (xp_mult, loot_mult) = match crate::farming::on_mob_down(ptr) {
         Some((xm, lm, label)) => {
             mono::log(LogLevel::Info, &format!("schedule1-mod: {label} is down"));
