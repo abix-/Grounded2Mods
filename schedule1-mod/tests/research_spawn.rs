@@ -12,21 +12,8 @@
 //! SKIPs (prints why and passes) when the game is not running.
 
 mod common;
-use common::{api, count_of, first_handle, handle_of, ping_or_skip};
-use serde_json::{Value, json};
-
-/// Vector3 values come back as ToString "(x, y, z)" (Newtonsoft
-/// cannot serialize UnityEngine.Vector3; the shim falls back to
-/// ToString). Parse that.
-fn parse_vec3(v: &Value) -> Option<(f64, f64, f64)> {
-    let s = v.as_str().or_else(|| v.get("str").and_then(Value::as_str))?;
-    let s = s.trim().trim_start_matches('(').trim_end_matches(')');
-    let mut parts = s.split(',').map(|p| p.trim().parse::<f64>());
-    match (parts.next(), parts.next(), parts.next()) {
-        (Some(Ok(x)), Some(Ok(y)), Some(Ok(z))) => Some((x, y, z)),
-        _ => None,
-    }
-}
+use common::{api, count_of, first_handle, handle_of, parse_vec3, ping_or_skip};
+use serde_json::json;
 
 #[test]
 fn spawn_one_goon_near_player() {

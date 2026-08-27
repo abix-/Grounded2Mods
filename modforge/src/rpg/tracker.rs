@@ -225,6 +225,28 @@ impl<E: Engine> Tracker<E> {
         spend
     }
 
+    /// Spend up to `count` points, one at a time, on the
+    /// currently lowest-level skill that has room to advance.
+    pub fn spend_lowest_skill_points(&self, count: u32) -> u32 {
+        let mut spent = 0;
+        for _ in 0..count {
+            let lowest = self.with_state(|state| {
+                self.catalog
+                    .iter()
+                    .filter(|skill| state.level_of(skill.id) < skill.max_level)
+                    .min_by_key(|skill| state.level_of(skill.id))
+                    .map(|skill| skill.id)
+            });
+            let Some(Some(id)) = lowest else { break };
+            let applied = self.spend_skill_points(id, 1);
+            if applied == 0 {
+                break;
+            }
+            spent += applied;
+        }
+        spent
+    }
+
     /// Refund up to `count` points from `skill_id`. Save-first;
     /// rolls back on save fail.
     pub fn refund_skill_points(&self, skill_id: &str, count: u32) -> u32 {

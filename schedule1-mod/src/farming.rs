@@ -28,10 +28,11 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 use serde_json::json;
 
+use modforge::client::parse_vec3;
 use unityforge::bridge::MonoHandle;
 use unityforge::mono::{self, LogLevel, MonoObject, MonoType};
 
-use crate::loot::{handle_of, own, parse_vec3};
+use crate::loot::{handle_of, own};
 
 #[derive(Clone, Copy, PartialEq)]
 enum Faction {

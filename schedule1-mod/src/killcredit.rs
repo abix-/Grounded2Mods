@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 use serde_json::Value as Json;
 
+use modforge::client::parse_vec3;
 use unityforge::bridge::MonoHandle;
 use unityforge::hook::{self, HOOK_REGISTRY, HookCtx};
 use unityforge::mono::{self, LogLevel, MonoObject};
@@ -90,8 +91,6 @@ pub fn install() {
         "schedule1-mod: killcredit hooks installed (NotifyAttackedByPlayer + Die + KnockOut)",
     );
 }
-
-use crate::loot::parse_vec3;
 
 /// The NPC's stable native pointer from an NPCHealth ctx handle
 /// (releases every handle it takes).

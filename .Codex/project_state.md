@@ -8,8 +8,8 @@ Move Schedule 1's verified engine-independent and Unity-specific helper implemen
 
 - Every Grounded 2 source function explains its player-facing purpose and its verified ownership boundary with Modforge and Ueforge.
 - Every Schedule 1 source function explains its player-facing purpose and its verified ownership boundary with Modforge and Unityforge.
-- Modforge owns lowest-level automatic skill spending, timestamped recent-key tracking, and bounded trace storage.
-- Unityforge owns managed bridge-value decoding, managed-handle wrapping, Unity coordinate decoding, and guarded main-thread Effect dispatch.
+- Modforge owns engine-independent coordinate decoding, lowest-level automatic skill spending, timestamped recent-key tracking, and bounded trace storage.
+- Unityforge owns managed bridge-value decoding, managed-handle wrapping, and guarded main-thread Effect dispatch.
 - Schedule 1 retains its class and field names, NPC identity, timing windows, crash-bisection flag, labels, effect configuration, rewards, and war policy.
 - Item definitions have one authority: `ItemDef` and `ItemRegistry`.
 - Uniqueness is an `ItemDef` property, not a parallel definition type or registry.
@@ -37,7 +37,8 @@ Move Schedule 1's verified engine-independent and Unity-specific helper implemen
 - Live non-CDO and transient-object lookup, checked raw UFunction parameter calls, zeroed parameter allocation, and game-thread live-object hook installation and completed-hook teardown belong to Ueforge.
 - MISERY retains its autoload save checks, Blueprint names, parameter layouts, notice filtering, re-entry guard, dismissal function, diagnostics, and logs.
 - The root README is a concise workspace map with capability tables; detailed framework and decompilation material stays in the owning crate documentation.
-- Managed handle ownership, bridge-value decoding, managed-list traversal, Unity coordinate decoding, synchronous main-thread dispatch, and Rust/C# pointer and string plumbing belong to Unityforge.
+- Engine-independent coordinate decoding belongs to Modforge.
+- Managed handle ownership, bridge-value decoding, managed-list traversal, synchronous main-thread dispatch, and Rust/C# pointer and string plumbing belong to Unityforge.
 - Survivalist retains its game class and field names, object selection, gameplay policy, Unity actions, content, logging, and presentation.
 - Rectangular annex geometry and deterministic identity-based selection belong to Modforge; Survivalist retains construction and encounter policy plus game observation and execution.
 - Delayed craft-result collection advancement belongs to one small function in `modforge::crafting`; Survivalist retains CraftJob, its queue, timing fields, Harmony observation, Unity result lookup, quality policy, and item replacement.
@@ -47,8 +48,10 @@ Move Schedule 1's verified engine-independent and Unity-specific helper implemen
 
 ## Last session summary
 
+- Removed Schedule 1's two duplicate Vector3 parsers and routed production and research callers to the existing `modforge::client::parse_vec3` authority.
+- Preserved the accepted string and tagged-string inputs, f64 output, and failure behavior. Added no tests and made no game behavior changes.
 - Documented every named function in `schedule1-mod/src` with a concise player-readable purpose and an explicit Modforge or Unityforge ownership boundary.
-- Marked Schedule 1's local bridge-handle decoder, Unity coordinate decoder, and owned-handle wrapper as Unityforge extraction candidates instead of defending them as game code.
+- Marked Schedule 1's local coordinate decoder as a Modforge extraction candidate and its bridge-handle decoder and owned-handle wrapper as Unityforge extraction candidates.
 - Changed comments only. Added no tests and made no behavior changes.
 - Verified `k3sc cargo-lock check -p schedule1-mod`.
 - `k3sc cargo-lock fmt -p schedule1-mod -- --check` remains red on existing rustfmt differences throughout Schedule 1 source and research tests; no unrelated formatting rewrite was applied.
@@ -196,7 +199,7 @@ Move Schedule 1's verified engine-independent and Unity-specific helper implemen
 
 ## Next steps
 
-- Audit the documented Schedule 1 functions for direct extraction candidates without inventing new framework systems.
+- Migrate Schedule 1's local managed-handle decoding and wrappers to Unityforge.
 - Run the existing Grounded 2 in-game smoke checks for the completed extraction batch.
 - Exercise Survivalist's Load/Unload re-init path through a live story switch and confirm `ReinitAfterUnload` works.
 

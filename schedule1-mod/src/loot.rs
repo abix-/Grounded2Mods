@@ -51,18 +51,6 @@ pub(crate) fn handle_of(v: &Json) -> Option<i64> {
     v.get("handle").and_then(Json::as_i64)
 }
 
-/// Vector3 arrives as the shim's ToString "(x, y, z)".
-/// Should move to Unityforge because decoding Unity coordinates from bridge values is engine integration, not game behavior.
-pub(crate) fn parse_vec3(v: &Json) -> Option<(f64, f64, f64)> {
-    let s = v.as_str().or_else(|| v.get("str").and_then(Json::as_str))?;
-    let s = s.trim().trim_start_matches('(').trim_end_matches(')');
-    let mut parts = s.split(',').map(|p| p.trim().parse::<f64>());
-    match (parts.next(), parts.next(), parts.next()) {
-        (Some(Ok(x)), Some(Ok(y)), Some(Ok(z))) => Some((x, y, z)),
-        _ => None,
-    }
-}
-
 /// SAFETY wrapper: own a handle so Drop releases it.
 /// Should move to Unityforge because managed-handle ownership and release behavior are framework responsibilities.
 pub(crate) fn own(h: i64) -> MonoObject {
