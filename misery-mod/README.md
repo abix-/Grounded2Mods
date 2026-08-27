@@ -56,6 +56,7 @@ Installs to `MISERY\Binaries\Win64\ue4ss\Mods\MiseryMod\dlls\main.dll`.
 
 - [Research](docs/research.md)
 - [Open issues](docs/todo.md)
+- [Performance](docs/performance.md)
 - [Pieces](docs/pieces.md)
 - [World generation](docs/worldgen.md)
 - [RPG direction](docs/rpg.md)
