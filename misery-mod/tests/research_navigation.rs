@@ -1316,6 +1316,24 @@ fn navigation_and_looting_use_no_global_object_scans() {
 }
 
 #[test]
+fn navigation_and_looting_use_only_in_process_commands() {
+    let source = include_str!("research_navigation.rs");
+    for forbidden in [
+        concat!("input.", "mouse"),
+        concat!("input.", "key"),
+        concat!("focus_", "hwnd"),
+        concat!("foreground_", "hwnd"),
+        concat!("find_", "hwnd_by_pid"),
+        concat!("input.", "self.hwnd"),
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "bot flow still depends on OS input path {forbidden}"
+        );
+    }
+}
+
+#[test]
 fn performance_report_accepts_zero_scan_sub_frame_operations() {
     assert_performance_report(&json!({
         "entries": [

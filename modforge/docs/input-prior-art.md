@@ -71,6 +71,8 @@ input.cursor.get    input.foreground.hwnd    input.find_hwnd_by_pid    input.sel
 
 **Live target discovery:** a discovered world target such as a loot box is itself a semantic waypoint. The game adapter finds live actors, projects their positions onto the navigation surface, and rejects invalid or partial paths. Straight-line proximity does not prove reachability. It does not author intermediate graph nodes. Modforge A* selects an available stop-to-target edge by the host's measured complete-path cost, the host navigation system resolves the detailed path, and completion requires an observed gameplay result after player-like interaction.
 
+**Injected-game command boundary:** a bot command is delivered inside the game process. Movement uses the player controller or navigation system, looking uses the player controller's yaw and pitch input, interaction uses the player's input action, and inventory commands use the game's UI action path. Bot execution must not focus a window, capture or move the physical cursor, or send OS-global keyboard input. L1 `SendInput` remains available for desktop-level operations such as UE4SS hot reload and explicit input smoke tests, but it is not a MISERY bot backend.
+
 **Anti-cheat:** all current targets are LOW risk. Tag `dwExtraInfo` and restore foreground anyway (cheap insurance).
 
 **Implementation path forward:** I-1 (modforge::input scaffolding with `enigo` + `windows-sys::PostMessage`) is unblocked; I-4 (L3 poke) gets defined per consumer mod, with horsey-mod's I-R steps (per-game) driving the first concrete `InputSurface` impl.

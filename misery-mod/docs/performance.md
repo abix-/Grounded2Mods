@@ -59,8 +59,9 @@ measured 0.09 ms worst, both far below the 16.7 ms frame budget.
 From the entered expedition, the same build rejected two unreachable crates,
 selected the lowest-cost reachable `BP_StashMid_C`, and traversed to its one
 new semantic waypoint in about eight seconds. The run stopped at aiming because
-the foreground viewport had lost mouse capture. That is now an input task, not
-a navigation or performance failure.
+the prototype depended on OS mouse capture. That dependency is rejected: the
+bot must send look, interaction, and inventory commands inside the game process
+without touching the operator's physical mouse or keyboard.
 
 ```text
 === game thread ===

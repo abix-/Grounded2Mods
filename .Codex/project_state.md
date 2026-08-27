@@ -14,6 +14,7 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 - Modforge A* chooses stop-to-stop edges. Unreal navigation owns detailed movement within each edge; Modforge's closed-loop movement and look follower remains the fallback when the host has no usable navigation surface.
 - A* may select only edges supplied by the live engine navigation path or proven traversable by recording. It never treats an unobserved straight line through the 3D world as walkable.
 - MISERY target discovery runs once through Unreal's world actor enumeration and retains actor, inventory, class, function, and widget pointers for the current world. Navigation, interaction, and observation loops never walk the global UObject list or rediscover function layouts.
+- Every MISERY bot command runs inside the game process. Movement uses Unreal navigation, looking uses player-controller yaw and pitch input, interaction uses the player's input action, and inventory uses the game's UI action path. The bot never focuses a window or sends OS mouse and keyboard input.
 - Generation loading, hot reload, rollback, shutdown, and bridge lifetime have one implementation in `cs-shim-common/GenerationLoader.cs`.
 - Each C# shim retains only its loader integration, logging, backend bridge, and host-specific frame callback.
 - Every Grounded 2 source function explains its player-facing purpose and its verified ownership boundary with Modforge and Ueforge.
