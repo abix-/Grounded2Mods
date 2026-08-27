@@ -45,9 +45,9 @@ pub mod xp;
 
 pub use disabled::DisabledSkills;
 pub use effect::{
-    ClassFieldsMultiplyEffect, Effect, EffectDef, LifestealEffect, PlayerFloatEffect,
-    RuntimeEffect, StatusEffectApply, SubcomponentAdditiveEffect, SubcomponentFloatEffect,
-    SubcomponentMultiplyEffect, SubcomponentU32MaskEffect,
+    ClassFieldsMultiplyEffect, Effect, EffectDef, ImpactReversalEffect, LifestealEffect,
+    PlayerFloatEffect, RuntimeEffect, StatusEffectApply, SubcomponentAdditiveEffect,
+    SubcomponentFloatEffect, SubcomponentMultiplyEffect, SubcomponentU32MaskEffect,
 };
 pub use format::PercentFormat;
 pub use poller::{PollerHandle, SlotPoller, spawn_interval};

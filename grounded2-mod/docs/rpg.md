@@ -247,9 +247,9 @@ or `&ON_DAMAGE_TAKEN`; the framework `Tracker::fire(ctx)` fans
 events out to subscribed Effects. `G2DamageBinder` in
 `kill_hook.rs` calls `TRACKER.fire(DamageDealt)` in `before` and
 `TRACKER.fire(DamageTaken)` in `after`; the Effect impl
-(`ueforge::rpg::LifestealEffect`, `ImpactReversalEffect`) does
-the actual heal / mutate / reflect via TypedField writes on the
-resolved component.
+(`ueforge::rpg::LifestealEffect`,
+`ueforge::rpg::ImpactReversalEffect`) does the actual heal /
+mutate / reflect via TypedField writes on the resolved component.
 
 CDO writes propagate to newly-spawned instances. Movement skills
 also mirror the same writes onto the *current* player pawn (the
@@ -309,7 +309,8 @@ mechanisms because the underlying damage paths differ. See
   forwarding to the original BP event. Native `ApplyFallDamage`
   reads the mutated velocity live and produces scaled / zero damage.
   Validated: -3431 cm/s landing at level 100 -> zero damage.
-- **Impact Damage Resistance** uses `ImpactReversalEffect`
+- **Impact Damage Resistance** uses
+  `ueforge::rpg::ImpactReversalEffect`
   subscribed to `&ON_DAMAGE_TAKEN`. No CDO write. The
   `damage::DamageHook` binder fires `TriggerCtx::DamageTaken`
   via `TRACKER.fire`; the Effect identifies environmental events
@@ -373,7 +374,7 @@ tested without grinding XP.
 | `rpg/tracker.rs`                        | Thin shim over `ueforge::rpg::Tracker<A>`. |
 | `rpg/world_loader.rs`                   | Thin shim over `ueforge::rpg::SlotPoller`. |
 | `rpg/save_slot.rs`                      | Resolves the playthrough GUID for the active save.   |
-| `rpg/kill_hook.rs`                      | `damage::DamageBinder` impl: kill credit + damage trace + impact-resistance reversal + lifesteal post-heal. |
+| `rpg/kill_hook.rs`                      | `damage::DamageBinder` impl: kill credit, damage trace, and trigger dispatch. |
 | `rpg/fall_hook.rs`                      | OnLanded velocity-stomp + status-effect row reads.   |
 | `rpg/xp.rs`                             | `xp::CURVE` + `BESTIARY` (table data only; framework owns the lookup). |
 | `rpg/applier.rs`                        | `impl RpgApplier for GameApplier`. |

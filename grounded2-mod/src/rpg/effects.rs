@@ -272,80 +272,12 @@ pub static LIFESTEAL: ueforge::rpg::LifestealEffect = ueforge::rpg::LifestealEff
     max_fraction: 0.90,
 };
 
-// ---------------------------------------------------------------
-// ImpactReversalEffect. After the engine applies damage to the
-// player, subtract the env-damage portion from HC.CurrentDamage.
-// Subscribed to ON_DAMAGE_TAKEN; filters by damage-type name
-// containing "Environmental".
-// ---------------------------------------------------------------
-
-pub struct ImpactReversalEffect {
-    pub damage_info: ueforge::ue::damage_info::DamageInfoLayout,
-    pub current_damage_offset: usize,
-    pub damage_type_marker: &'static str,
-}
-
-impl Effect<ueforge::rpg::UeEngine> for ImpactReversalEffect {
-    /// Removes a level-scaled share of environmental damage after Grounded 2 applies it.
-    /// Stays here because the environmental marker and health layout are Maine-specific;
-    /// Modforge owns progression and effect dispatch, and Ueforge owns damage events and field access.
-    fn apply(&self, level: u32, max_level: u32, ctx: &ueforge::rpg::TriggerCtx<'_>) {
-        let ueforge::rpg::TriggerCtx::Engine(ueforge::rpg::UeEvent::DamageTaken(event)) = ctx
-        else {
-            return;
-        };
-        if !event.victim_is_player || event.damage <= 0.0 {
-            return;
-        }
-        let damage_type_name = self.damage_info.damage_type_name(event.victim_component);
-        if !damage_type_name.contains(self.damage_type_marker) {
-            return;
-        }
-        let progress =
-            ueforge::rpg::progress::sqrt_progress(level, max_level);
-        let to_reverse = event.damage * progress;
-        let cd_field: ueforge::ue::TypedField<f32> =
-            ueforge::ue::TypedField::at(self.current_damage_offset);
-        // SAFETY: event.victim_component is the player HC reference
-        // decoded by ueforge::damage::DamageHook from the live
-        // ProcessEvent call; CurrentDamage is a valid f32 field on
-        // UHealthComponent at the configured offset. We are on the
-        // game thread inside the trampoline after the engine's
-        // damage application; rewriting CurrentDamage here lands
-        // before any other reader sees the post-damage value.
-        unsafe {
-            let cd_now = cd_field.read(event.victim_component);
-            let new_cd = (cd_now - to_reverse).max(0.0);
-            cd_field.write(event.victim_component, new_cd);
-            ueforge::log!(
-                "rpg/impact: reversed env damage {:.2} (raw={:.2}, level={}); CurrentDamage {:.2} -> {:.2}",
-                to_reverse,
-                event.damage,
-                level,
-                cd_now,
-                new_cd
-            );
-        }
-    }
-
-    /// Describes the environmental-damage reduction granted at the current level.
-    /// Stays here because this skill's reduction range is Grounded 2 tuning;
-    /// Modforge owns reusable percentage formatting.
-    fn format(&self, level: u32, max_level: u32) -> String {
-        ueforge::rpg::format::format_pct(
-            0.0,
-            1.0,
-            level,
-            max_level,
-            &ueforge::rpg::PercentFormat::MinusPercent {
-                word: "environmental damage",
-            },
-        )
-    }
-}
-
-pub static IMPACT_REVERSAL: ImpactReversalEffect = ImpactReversalEffect {
-    damage_info: crate::rpg::kill_hook::DAMAGE_INFO,
-    current_damage_offset: 0x032C, // UHealthComponent.CurrentDamage
-    damage_type_marker: "Environmental",
-};
+/// Configures Ueforge's reusable post-damage reversal effect for
+/// Grounded 2's environmental damage and health layout.
+pub static IMPACT_REVERSAL: ueforge::rpg::ImpactReversalEffect =
+    ueforge::rpg::ImpactReversalEffect {
+        damage_info: crate::rpg::kill_hook::DAMAGE_INFO,
+        current_damage_offset: 0x032C, // UHealthComponent.CurrentDamage
+        damage_type_marker: "Environmental",
+        max_reduction: 1.0,
+    };

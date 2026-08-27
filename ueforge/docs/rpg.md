@@ -60,7 +60,7 @@ trigger is event-driven; CDO-write effects receive
 
 ## Standard Effect types (framework-shipped)
 
-Nine types in `ueforge::rpg::effect` cover the common UE5 RPG
+Ten types in `ueforge::rpg::effect` cover the common UE5 RPG
 operations. Game catalogs reference them via static instances
 + `EffectDef::new(kind, &INSTANCE)`:
 
@@ -74,6 +74,7 @@ operations. Game catalogs reference them via static instances
 | `ClassFieldsMultiplyEffect` | Same shape on every instance of a class (regen / global-data) |
 | `RuntimeEffect` | No CDO write; hot-path callback owns the effect |
 | `LifestealEffect` | Heal the player for a scaled fraction of outgoing player damage |
+| `ImpactReversalEffect` | Reverse matching player damage after engine application |
 | `StatusEffectApply` | UE5 row-driven status effect via UFunction |
 
 Adding a skill that uses one of these is two declarations:

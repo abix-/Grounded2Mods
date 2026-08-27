@@ -25,7 +25,7 @@
 //!
 //! Standard operations the framework ships are below
 //! ([`PlayerFloatEffect`], [`SubcomponentMultiplyEffect`],
-//! [`LifestealEffect`], etc.).
+//! [`LifestealEffect`], [`ImpactReversalEffect`], etc.).
 //! Game-specific operations live in the game crate and follow
 //! the same pattern.
 
@@ -380,6 +380,63 @@ impl Effect<UeEngine> for LifestealEffect {
             level,
             max_level,
             &PercentFormat::PlusPercent { word: "lifesteal" },
+        )
+    }
+}
+
+/// Reverse a level-scaled fraction of matching damage after the
+/// engine applies it to the player's health component.
+pub struct ImpactReversalEffect {
+    pub damage_info: crate::ue::damage_info::DamageInfoLayout,
+    pub current_damage_offset: usize,
+    pub damage_type_marker: &'static str,
+    pub max_reduction: f32,
+}
+
+impl Effect<UeEngine> for ImpactReversalEffect {
+    fn apply(&self, level: u32, max_level: u32, ctx: &crate::rpg::TriggerCtx<'_>) {
+        let crate::rpg::TriggerCtx::Engine(crate::rpg::UeEvent::DamageTaken(event)) = ctx else {
+            return;
+        };
+        if !event.victim_is_player || event.damage <= 0.0 {
+            return;
+        }
+        let damage_type_name = self.damage_info.damage_type_name(event.victim_component);
+        if !damage_type_name.contains(self.damage_type_marker) {
+            return;
+        }
+        let progress = sqrt_progress(level, max_level);
+        let to_reverse = event.damage * self.max_reduction * progress;
+        let current_damage_field: TypedField<f32> = TypedField::at(self.current_damage_offset);
+        // SAFETY: event.victim_component is the player health
+        // component decoded by DamageHook from the live
+        // ProcessEvent call. The consumer supplies a valid f32
+        // accumulated-damage offset. DamageTaken fires on the game
+        // thread after the engine applies the damage.
+        unsafe {
+            let current_damage = current_damage_field.read(event.victim_component);
+            let new_damage = (current_damage - to_reverse).max(0.0);
+            current_damage_field.write(event.victim_component, new_damage);
+            crate::log!(
+                "rpg/impact: reversed env damage {:.2} (raw={:.2}, level={}); CurrentDamage {:.2} -> {:.2}",
+                to_reverse,
+                event.damage,
+                level,
+                current_damage,
+                new_damage
+            );
+        }
+    }
+
+    fn format(&self, level: u32, max_level: u32) -> String {
+        format_pct(
+            0.0,
+            self.max_reduction,
+            level,
+            max_level,
+            &PercentFormat::MinusPercent {
+                word: "environmental damage",
+            },
         )
     }
 }
