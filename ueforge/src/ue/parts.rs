@@ -450,17 +450,9 @@ pub fn register_ops() {
         ),
         crate::ops::OpDef::new(
             "catalog_studs",
-            "THE CATALOG: every level asset the game ships, loaded in turn, its building parts' studs accumulated across all of them and merged into parts.json once. The game stops for the whole pass",
-            "{folders: [str], path: str, min_seen?: u64, touch_m?: f64}",
+            "THE CATALOG: every level asset the game ships, loaded in turn, every placed mesh's studs accumulated across all of them and merged into parts.json once. No filter: the border test keeps scenery out on its own. The game stops for the whole pass",
+            "{path: str, min_seen?: u64, touch_m?: f64}",
             |args| {
-                let folders: Vec<String> = args
-                    .get("folders")
-                    .and_then(|v| v.as_array())
-                    .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
-                    .unwrap_or_default();
-                if folders.is_empty() {
-                    return Err("need {folders: [str]}".to_string());
-                }
                 let path = crate::args::arg_str(args, "path")?.to_string();
                 // A real attachment recurs across levels; a
                 // one-off paving seam does not. The cull runs
@@ -473,7 +465,6 @@ pub fn register_ops() {
                 }
                 crate::game_thread::run(
                     move || {
-                        let keep = crate::assets::names_under("StaticMesh", &folders)?;
                         let mut worlds = crate::assets::assets_of_class("World")?;
                         worlds.sort_by(|a, b| a.package.cmp(&b.package));
                         worlds.dedup_by(|a, b| a.package == b.package);
@@ -490,10 +481,7 @@ pub fn register_ops() {
                                 failed.push(w.name.clone());
                                 continue;
                             }
-                            let mut parts = read_level(&w.package, &[]);
-                            parts.retain(|p| {
-                                p.asset.as_ref().is_some_and(|a| keep.contains(a))
-                            });
+                            let parts = read_level(&w.package, &[]);
                             levels_read += 1;
                             modforge::studs::merge(
                                 &mut acc,
@@ -540,16 +528,11 @@ pub fn register_ops() {
         ),
         crate::ops::OpDef::new(
             "level_studs",
-            "Every stud in a level: where two placed parts share a border, recorded on both parts (modforge::studs). `folders` keeps only meshes the designers filed there (building parts); with a path, merges the studs into parts.json",
-            "{level: str, folders?: [str], path?: str, touch_m?: f64, min_seen?: u64}",
+            "Every stud in a level: where two placed parts share a border, recorded on both parts (modforge::studs). With a path, merges the studs into parts.json",
+            "{level: str, path?: str, touch_m?: f64, min_seen?: u64}",
             |args| {
                 let level = crate::args::arg_str(args, "level")?.to_string();
                 let path = args.get("path").and_then(|v| v.as_str()).map(str::to_string);
-                let folders: Vec<String> = args
-                    .get("folders")
-                    .and_then(|v| v.as_array())
-                    .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
-                    .unwrap_or_default();
                 let mut how = modforge::studs::Derive::default();
                 if let Some(t) = args.get("touch_m").and_then(|v| v.as_f64()) {
                     how.touch_m = t;
@@ -559,19 +542,7 @@ pub fn register_ops() {
                 }
                 crate::game_thread::run(
                     move || {
-                        let mut parts = read_level(&level, &[]);
-                        let read = parts.len();
-                        // Only building parts enter the pairing.
-                        // A tree leaning on paving is not a stud,
-                        // and the folder is the designers' own
-                        // answer to what is a building part.
-                        if !folders.is_empty() {
-                            let keep = crate::assets::names_under("StaticMesh", &folders)?;
-                            parts.retain(|p| {
-                                p.asset.as_ref().is_some_and(|a| keep.contains(a))
-                            });
-                        }
-                        let kept = parts.len();
+                        let parts = read_level(&level, &[]);
                         let studs = modforge::studs::studs_in(&parts, how);
                         let rows: serde_json::Map<String, serde_json::Value> = studs
                             .iter()
@@ -602,8 +573,7 @@ pub fn register_ops() {
                         };
                         Ok(serde_json::json!({
                             "level": level,
-                            "placed": read,
-                            "building_parts": kept,
+                            "placed": parts.len(),
                             "parts_with_studs": rows.len(),
                             "merged_into": path,
                             "parts_updated": merged,

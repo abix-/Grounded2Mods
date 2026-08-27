@@ -378,24 +378,6 @@ fn ue_pos_to_mf(v: (f64, f64, f64)) -> glam::Vec3 {
     )
 }
 
-/// The names of every asset filed under one of the given
-/// folders. Which meshes are BUILDING parts is decided by the
-/// folder the designers filed them under: names lie
-/// (`SM_WallClock` is decoration) and proportions lie (a road
-/// slab measures like a floor); the folder does not.
-///
-/// Game thread only.
-pub fn names_under(
-    class_name: &str,
-    folders: &[String],
-) -> Result<std::collections::HashSet<String>, String> {
-    Ok(assets_of_class(class_name)?
-        .into_iter()
-        .filter(|a| folders.iter().any(|f| a.package.starts_with(f.as_str())))
-        .map(|a| a.name)
-        .collect())
-}
-
 /// One entry in the parts list: what a mesh is, without loading
 /// it.
 pub struct Part {
