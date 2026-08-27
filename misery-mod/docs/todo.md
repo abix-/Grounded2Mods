@@ -11,6 +11,8 @@
 | 2 | `lib.rs` | [ ] Restore `stack_10x`, whose block was lost in the feature bisect and never put back (`STACK_TWEAK` is the unused-static warning on every build) | The feature is back and confirmed working live or named as broken. |
 | 2 | `spawning.rs` | [ ] Record whether the hub spawn point re-reads count and class after `set_spawn_point` writes | Observation from the tamed dwarf spot written into research.md 25.4. |
 | 1 | `ops` | [ ] Stop `discover_class_detail` crashing the game on a native engine class: it faults in `UClass::iter_native_properties` reading a tiny address (worldgen.md 10) | Pointing it at `LevelStreamingDynamic` returns its fields instead of killing the process. |
+| 1 | `ops` | [ ] Stop `fname_to_string` killing the game when handed a value that is not a real name: it panics and the panic unwinds out of the mod (worldgen.md 10) | A bogus FName returns an error over the control plane and the game keeps running. |
+| 2 | `ops` | [ ] Make NO control-plane call able to kill the game: catch panics at the op boundary the way the hook trampolines already do | A deliberately bad argument to every registered op returns an error, proven by a test. |
 | 2 | `research` | [ ] Find which `LevelStreamingDynamic` field names its square and which points at the loaded `ULevel`, without `discover_class_detail` | A square's own actors can be read without searching the object list. |
 | 3 | `ops` | [ ] Fix `inspect_address` answering `found: false` for live widget and streaming-level addresses | Inspecting one returns its fields. |
 | 3 | `strange.rs` | [ ] Make a rolled phenomenon that places nothing say why: `teleport_nest` logged `rolls [...]` then `placed 0 prop(s)` | Every roll either places a prop or logs the reason it could not. |

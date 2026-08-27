@@ -562,6 +562,26 @@ so the walk is reading through garbage.
 as for the menu widgets (research.md 26.9). Read the object header
 directly instead.
 
+**`fname_to_string` KILLS the game when handed a value that is
+not a real name.** It panics, and the panic unwinds out of the
+mod rather than being caught, so the process dies in
+`__rust_start_panic`. Confirmed 2026-08-26.
+
+### How to find a field without crashing anything
+
+Three crashes in one evening, all caused by one research test.
+The rule that came out of it:
+
+**Never dereference a pointer found in memory.** Offset 0 of any
+UObject is its VTABLE, and reading it as an object address is how
+the third crash happened.
+
+Do this instead: collect the addresses of the live objects you are
+looking for FIRST, with a normal class search, then read the
+candidate object's bytes once and COMPARE. A match is the field.
+Comparison cannot fault. This is how the loaded-level field is
+found in `tests/research_streaming.rs`.
+
 ## 11. Open questions
 
 - Why GenerateCustomBiom(1) does nothing when Factory

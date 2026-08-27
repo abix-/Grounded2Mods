@@ -142,13 +142,18 @@ fn object_name(api: &common::Api, sel: &str) -> String {
 /// it is safe from the eager-walk crash; it is not, for a native
 /// engine class (worldgen.md 10).
 ///
-/// So the fields are found by reading, not by asking: every
-/// 8-byte slot in the object that looks like a pointer to a live
-/// UObject, labelled with what it points at. `LoadedLevel` is the
-/// one whose class is `Level`. Same method that measured the
-/// impact-point offset for the ground trace.
+/// **And do NOT chase pointers found in memory.** The first
+/// attempt at this test read each 8-byte slot and asked what it
+/// pointed at. Offset 0 of any UObject is its VTABLE, so that
+/// asked `fname_to_string` about garbage, which panicked, and the
+/// panic took the process down. Third crash of the evening, all
+/// three caused by this test.
 ///
-/// Read-only, and it touches nothing but this one object.
+/// So: nothing is dereferenced. The addresses of every live level
+/// are collected first, then the streaming object's bytes are
+/// read ONCE and compared against that list. A match is the field
+/// pointing at that square's loaded level. Comparison only, so
+/// there is nothing here that can fault.
 #[test]
 fn the_fields_that_lead_to_a_squares_actors() {
     let Some(api) = api_or_skip() else { return };
@@ -160,35 +165,27 @@ fn the_fields_that_lead_to_a_squares_actors() {
     if num == 0 {
         return;
     }
-    let entry = read_u64(&api, &format!("addr:0x{ptr:X}"), 0);
-    let sel = format!("addr:0x{entry:X}");
-    println!("reading {entry:#x}, a LevelStreamingDynamic\n");
+    // The addresses of every live level, and what each is called.
+    // The name carries the square.
+    let levels: Vec<(u64, String)> = modforge::client::walk_class_chain_instances(&api, "Level", 128)
+        .into_iter()
+        .map(|w| (w.addr as u64, w.full_name))
+        .collect();
+    println!("{} live level(s)", levels.len());
 
-    // Every 8 bytes that could be a pointer to a live UObject,
-    // named by what it points at. `LoadedLevel` shows up as the
-    // one whose class is `Level`.
-    for off in (0..SCAN_BYTES).step_by(8) {
-        let v = read_u64(&api, &sel, off);
-        if v == 0 {
+    for i in 0..num.min(8) {
+        let entry = read_u64(&api, &format!("addr:0x{ptr:X}"), i * 8);
+        if entry == 0 {
             continue;
         }
-        // A real object pointer is 8-aligned and well above the
-        // low addresses a small integer or a packed FName lands
-        // in.
-        if v % 8 != 0 || v < 0x1_0000_0000 {
-            println!("  +{off:#05x}  {v:#x}");
-            continue;
+        println!("\n-- [{i}] {entry:#x}");
+        let bytes = read_bytes(&api, &format!("addr:0x{entry:X}"), 0, SCAN_BYTES);
+        for off in (0..bytes.len().saturating_sub(8)).step_by(8) {
+            let v = u64::from_le_bytes(bytes[off..off + 8].try_into().unwrap());
+            if let Some((_, name)) = levels.iter().find(|(a, _)| *a == v) {
+                println!("   +{off:#05x} -> {name}");
+            }
         }
-        let class_ptr = read_u64(&api, &format!("addr:0x{v:X}"), OBJ_CLASS);
-        if class_ptr == 0 || class_ptr % 8 != 0 || class_ptr < 0x1_0000_0000 {
-            println!("  +{off:#05x}  {v:#x}  (not an object)");
-            continue;
-        }
-        println!(
-            "  +{off:#05x}  {v:#x}  {} : {}",
-            object_name(&api, &format!("addr:0x{v:X}")),
-            object_name(&api, &format!("addr:0x{class_ptr:X}"))
-        );
     }
 }
 
