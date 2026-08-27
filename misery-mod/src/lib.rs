@@ -14,7 +14,6 @@ pub mod gameplay;
 
 pub mod autoload;
 pub mod nag;
-pub mod rooms;
 pub mod shining;
 pub mod spawning;
 pub mod speed;
@@ -121,9 +120,9 @@ fn on_unreal_init() {
     // spawning, no props, no vendor writes, no data-table
     // changes, no notice press.
     //
-    // Re-enable ONE at a time. The ops for harvest, rooms and
-    // assets only register endpoints, so they are inert until
-    // called and are the safe ones to restore first.
+    // Re-enable ONE at a time. The asset ops only register
+    // endpoints, so they are inert until called and are the safe
+    // ones to restore first.
     ueforge::features()
         .once("pe_dispatch", dispatch::install)
         .once("spawning", spawning::install)
@@ -135,7 +134,6 @@ fn on_unreal_init() {
         // misery's harvest.rs is deleted; nothing of it was
         // game-specific.
         .once("pieces", ueforge::ue::pieces::register_ops)
-        // .once("rooms", || ueforge::ue::rooms::register_ops(rooms::KIT))
         .once("assets", assets::register_ops)
         .once("nag", nag::install)
         // Auto-load is OFF. It called LoadLevel on

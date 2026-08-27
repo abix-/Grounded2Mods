@@ -6,11 +6,8 @@
 | 1 | `assets.rs` | [ ] Load each unloaded mesh with `load_asset` before measuring it, so measurements cover every shipped mesh and not only the loaded third | Every mesh in the parts list has a non-zero size. |
 | 1 | `ue::gmalloc` | [ ] Read the `imm8` from `mov rax,[rcx]; call [rax+imm8]` inside `FMemory::Malloc` and set `MALLOC_SLOT` to it | Vendor lists grow with no `grow failed` line, and disconnecting after a vendor pass does not crash. |
 | 1 | `autoload.rs` | [ ] Call what the rows under `BP_SinglePlayerLoadSaveMenu` call, instead of `LoadLevel` on `BP_HostLoadGameServer` | Auto-load reaches the operator's own save, with the same world number on two launches. |
-| 1 | `strange.rs` | [ ] Run a world and check props, monuments and rooms sit on the ground after the move to `ue::spawn` and `ue::trace` | Operator confirms props are on the ground, not floating or buried. |
-| 2 | `rooms.rs` | [ ] Pick each slot's mesh from the parts list instead of `format!("SM_Wall_{w}x{h}")` and its special cases | No mesh name is written by hand in rooms.rs. |
-| 2 | `lib.rs` | [ ] Re-enable `rooms`, `assets` and `stack_10x` one at a time and record which work | Each of the three is confirmed working live or named as broken. |
-| 2 | `rooms.rs` | [ ] Generate a building of several rooms sharing walls, with a roof | A generated multi-room building stands and is walkable, verified live. |
-| 2 | `rooms.rs` | [ ] Record which kit pieces the designers place adjacent and at what offsets, and bias generation toward those pairings | Adjacency counts captured from vanilla buildings and used when choosing pieces. |
+| 1 | `strange.rs` | [ ] Run a world and check props and monuments sit on the ground after the move to `ue::spawn` and `ue::trace` | Operator confirms props are on the ground, not floating or buried. |
+| 2 | `lib.rs` | [ ] Re-enable `assets` and `stack_10x` one at a time and record which work | Both are confirmed working live or named as broken. |
 | 2 | `spawning.rs` | [ ] Record whether the hub spawn point re-reads count and class after `set_spawn_point` writes | Observation from the tamed dwarf spot written into research.md 25.4. |
 | 3 | `strange.rs` | [ ] Make a rolled phenomenon that places nothing say why: `teleport_nest` logged `rolls [...]` then `placed 0 prop(s)` | Every roll either places a prop or logs the reason it could not. |
 | 3 | `nag.rs` | [ ] Move the find-the-live-object and checked-parm-block helpers duplicated in nag.rs and autoload.rs into ueforge | Neither file defines its own; both call ueforge. |
