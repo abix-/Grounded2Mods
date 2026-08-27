@@ -48,6 +48,11 @@ Move Schedule 1's verified engine-independent and Unity-specific helper implemen
 
 ## Last session summary
 
+- Replaced Schedule 1's local lowest-level skill selection and one-point spending loop with the existing Modforge RPG tracker operation.
+- Kept the decision to auto-spend newly earned points in Schedule 1 and preserved catalog order, max-level filtering, one-point application, early stopping, and tracker persistence behavior. Added no tests and made no game behavior changes.
+- Verified `k3sc cargo-lock check -p modforge -p schedule1-mod`.
+- Verified `k3sc cargo-lock check -p schedule1-mod --tests`; it retains three existing warnings in research tests.
+- Verified `k3sc cargo-lock test -p schedule1-mod --lib`; its library target has zero tests.
 - Removed Schedule 1's local managed-handle decoder, unsafe owned-object wrapper, and manual borrowed-object wrappers from loot, farming, kill credit, and combat tracing.
 - Routed transient handles through Unityforge's owned-object helper and retained singleton handles through its borrowed-object helper, preserving release and cache lifetimes.
 - Kept all Schedule 1 classes, fields, cash spawning, influence behavior, kill attribution, and combat trace policy in the mod. Added no tests and made no game behavior changes.
@@ -205,7 +210,7 @@ Move Schedule 1's verified engine-independent and Unity-specific helper implemen
 
 ## Next steps
 
-- Migrate Schedule 1's lowest-level automatic skill spending loop to the existing Modforge RPG tracker operation.
+- Migrate Schedule 1's fixed-capacity timestamped recent-key tracking to the existing Modforge ring implementation.
 - Run the existing Grounded 2 in-game smoke checks for the completed extraction batch.
 - Exercise Survivalist's Load/Unload re-init path through a live story switch and confirm `ReinitAfterUnload` works.
 

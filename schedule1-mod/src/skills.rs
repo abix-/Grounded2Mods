@@ -156,19 +156,7 @@ pub static TRACKER: Tracker = Tracker::new(&CATALOG, Curve::new(50.0, 1.3, 1024)
 /// farming; the phone app replaces this later).
 /// Stays here because automatic spending is Schedule 1 progression policy; Modforge owns the tracker and skill registry.
 pub fn auto_spend(points: u32) {
-    for _ in 0..points {
-        let lowest = TRACKER.with_state(|s| {
-            CATALOG
-                .iter()
-                .filter(|sk| s.level_of(sk.id) < sk.max_level)
-                .min_by_key(|sk| s.level_of(sk.id))
-                .map(|sk| sk.id)
-        });
-        let Some(Some(id)) = lowest else { return };
-        if TRACKER.spend_skill_points(id, 1) == 0 {
-            return;
-        }
-    }
+    TRACKER.spend_lowest_skill_points(points);
 }
 
 // ---- Slot poller ----------------------------------------------------
