@@ -19,6 +19,7 @@ use std::time::Duration;
 use modforge::storyteller::{
     EncounterAnchor, EncounterChance, EncounterConfig, EncounterPlan, EncounterPlanner,
 };
+use ueforge::ue::streaming::NewLevels;
 use ueforge::ue::{self, UObject, read_at};
 
 /// One knob for overall intensity; multiplies the budget curve.
@@ -62,9 +63,9 @@ pub const STREAMER: ueforge::ue::streaming::LevelStreamer =
         loaded_level: 0x158,
     };
 
-/// Squares already planned for, so a tick with nothing new does
-/// no work at all.
-static SEEN: std::sync::Mutex<Option<modforge::worldgen::Seen>> = std::sync::Mutex::new(None);
+/// Which squares have appeared since the last check. The shared
+/// watcher does the remembering.
+static WATCH: std::sync::Mutex<Option<NewLevels>> = std::sync::Mutex::new(None);
 
 /// Classes never used as escalations (harmless or friendly).
 const NO_ESCALATE: &[&str] = &["Tamed", "DeerNeutral", "Boar"];
@@ -84,44 +85,19 @@ fn emission_level() -> i32 {
     if ov >= 0 {
         return ov;
     }
-    ueforge::ue::actor::find_actors_by_chain("BP_WorldGeneration_Base_C")
-        .into_iter()
-        .map(|p| unsafe { read_at::<i32>(p, EMISSIONS_PAST_OFFSET) })
-        .max()
-        .unwrap_or(0)
+    // Off the cached streamer pointer. This used to SEARCH the
+    // whole object list, 100 ms, to read one i32 off an object
+    // we already had (docs/performance.md).
+    STREAMER.field::<i32>(EMISSIONS_PAST_OFFSET).unwrap_or(0)
 }
 
-/// Live hostile NPCs grouped by the map square that owns them.
-/// Squares are identified by the level path before
-/// ".PersistentLevel"; only WorldPresets squares count (the hub
-/// and anything we spawned live elsewhere and are excluded).
-/// Counts hostile creatures already present in each loaded MISERY map square.
-/// Stays here because the hostile classes and WorldPresets square naming are game content.
-fn census() -> HashMap<String, usize> {
-    let mut squares: HashMap<String, usize> = HashMap::new();
-    for p in ueforge::ue::actor::find_actors_by_chain("BP_MasterAICharacter_C") {
-        // SAFETY: p came from the GObjects iteration this call.
-        let obj = unsafe { &*(p as *const UObject) };
-        if let Some(square) = square_of(&obj.full_name()) {
-            *squares.entry(square).or_default() += 1;
-        }
-    }
-    squares
-}
-
-/// The map square that owns an actor, from its full name.
+/// The hostile NPCs each loaded square already has.
 ///
-/// A square IS the streamed level that owns the actor
-/// (`ue::actor::level_of`); MISERY's part is only that squares
-/// live under WorldPresets, which excludes the hub.
-/// Extracts the MISERY map-square name from a live actor's Unreal object path.
-/// Stays here because the WorldPresets package convention is specific to this game's maps.
-fn square_of(full_name: &str) -> Option<String> {
-    let level = ueforge::ue::actor::level_of(full_name)?;
-    if !level.contains("WorldPresets") {
-        return None;
-    }
-    Some(level.to_string())
+/// `WorldPresets` is MISERY's package for its map squares, which
+/// excludes the hub and anything the mod spawned itself. The
+/// counting is `ue::actor::count_by_level`.
+fn census() -> HashMap<String, usize> {
+    ueforge::ue::actor::count_by_level("BP_MasterAICharacter_C", Some("WorldPresets"))
 }
 
 /// Extras per square, as a share of what the square already has:
@@ -178,12 +154,20 @@ fn watcher() {
         return;
     }
 
-    // Which squares are loaded, asked of the generator rather
-    // than worked out by reading every object in the game. A
-    // cached pointer and two array reads instead of 174,000
-    // objects and 132 ms (worldgen.md 10).
-    let live = STREAMER.loaded_levels();
-    if live.is_empty() {
+    // Which squares appeared since last time. Asked of the
+    // generator, not worked out by reading every object in the
+    // game: a cached pointer and two array reads instead of
+    // 174,000 objects and 132 ms (worldgen.md 10).
+    //
+    // A tick with nothing new stops here, and that is the whole
+    // point.
+    let (live, fresh) = {
+        let mut guard = WATCH.lock().unwrap_or_else(|e| e.into_inner());
+        let watch = guard.get_or_insert_with(|| NewLevels::new(STREAMER));
+        let fresh = watch.since_last();
+        (watch.all(), fresh)
+    };
+    if fresh.is_empty() {
         return;
     }
     {
@@ -193,21 +177,6 @@ fn watcher() {
         if planner.is_full() {
             return;
         }
-    }
-
-    // Nothing streamed in since last time, so nothing has
-    // changed and there is nothing to do. THIS is the whole
-    // point: a tick while the player stands still does no
-    // searching at all.
-    let fresh: Vec<String> = {
-        let mut guard = SEEN.lock().unwrap_or_else(|e| e.into_inner());
-        let seen = guard.get_or_insert_with(modforge::worldgen::Seen::new);
-        // A square that unloaded is allowed to come back.
-        seen.forget_gone(&live);
-        live.iter().filter(|s| seen.is_new(s)).cloned().collect()
-    };
-    if fresh.is_empty() {
-        return;
     }
 
     // Only now is a search worth paying for, and only for the
@@ -229,7 +198,7 @@ fn watcher() {
         let total = plan.copies + plan.escalations + plan.pack;
         ueforge::log::log(format_args!(
             "spawning: {} vanilla={vanilla} emissions={emissions} copies={} escalations={} pack={}",
-            short(square),
+            ueforge::ue::actor::short_name(square),
             plan.copies,
             plan.escalations,
             plan.pack,
@@ -246,12 +215,6 @@ fn watcher() {
             ueforge::log::log(format_args!("spawning: plan failed: {e}"));
         }
     }
-}
-
-/// Shortens a MISERY square path into a readable name for logs and status output.
-/// Stays here because it formats this game's WorldPresets naming convention.
-fn short(square: &str) -> &str {
-    square.rsplit('/').next().unwrap_or(square)
 }
 
 /// Runs on the game thread. Re-censuses the square (pointers
@@ -283,11 +246,14 @@ fn execute_plan(plan: &EncounterPlan<String>) -> Result<serde_json::Value, Strin
         if class_ptr != 0 && !NO_ESCALATE.iter().any(|n| class_name.contains(n)) {
             pool.push(class.clone().expect("non-null class was captured"));
         }
-        if square_of(&obj.full_name()).as_deref() == Some(plan.place.as_str()) {
+        let full = obj.full_name();
+        let in_this_square = ueforge::ue::actor::level_of(&full) == Some(plan.place.as_str());
+        if in_this_square {
             anchors.push(EncounterAnchor {
                 value: p,
                 class,
-                position: actor_location(p),
+                // SAFETY: p is a live actor on the game thread.
+                position: unsafe { ueforge::ue::transform::world_location(p) },
             });
         }
     }
@@ -312,40 +278,33 @@ fn execute_plan(plan: &EncounterPlan<String>) -> Result<serde_json::Value, Strin
             ueforge::log::log(format_args!(
                 "spawning: PACK of {count} x {} at {}",
                 class.name,
-                short(&plan.place)
+                ueforge::ue::actor::short_name(&plan.place)
             ));
         },
         |request| {
             let (x, y, z) = request.position;
-            spawn_class(world_ctx, request.class.ptr, x, y, z) != 0
+            // SAFETY: world_ctx is a live actor and the class
+            // came from this frame's search; game thread.
+            // Collision checking off, so a blocked spot does not
+            // silently swallow the spawn.
+            let actor = unsafe {
+                ueforge::ue::spawn::spawn_ai_from_class(
+                    world_ctx,
+                    request.class.ptr,
+                    (x, y, z),
+                    0.0,
+                    true,
+                )
+            };
+            actor != 0
         },
     );
 
     ueforge::log::log(format_args!(
         "spawning: {} spawned {spawned} extra NPC(s)",
-        short(&plan.place)
+        ueforge::ue::actor::short_name(&plan.place)
     ));
     Ok(serde_json::json!({"spawned": spawned}))
-}
-
-/// Actor:K2_GetActorLocation via ProcessEvent. Game thread only.
-/// Reads a live MISERY actor's world position for encounter placement.
-/// Stays here as the feature's narrow adapter to Ueforge's shared transform reader.
-fn actor_location(actor: *const u8) -> Option<(f64, f64, f64)> {
-    // SAFETY: actor is a live UObject on the game thread.
-    unsafe { ueforge::ue::transform::world_location(actor) }
-}
-
-/// Spawn one NPC. The engine call lives in
-/// `ueforge::ue::spawn`; what is MISERY's here is only that
-/// extras are spawned with collision checking off, so a blocked
-/// spot does not silently swallow the spawn.
-/// Spawns one planned enemy using the collision behavior chosen for MISERY encounters.
-/// Stays here because Ueforge owns generic spawning while this mod chooses the game's spawn policy.
-fn spawn_class(world_ctx: *const u8, class_ptr: u64, x: f64, y: f64, z: f64) -> u64 {
-    // SAFETY: world_ctx is a live actor and class_ptr a live
-    // UClass, both from this frame's GObjects walk; game thread.
-    unsafe { ueforge::ue::spawn::spawn_ai_from_class(world_ctx, class_ptr, (x, y, z), 0.0, true) }
 }
 
 /// Adds adaptive-spawning status and override commands to the MISERY debug API.

@@ -170,6 +170,27 @@ impl LevelStreamer {
     pub fn forget(&self) {
         STREAMER.store(0, Ordering::Relaxed);
     }
+
+    /// Read one of the streamer's own fields.
+    ///
+    /// A streamer usually carries the numbers a consumer wants
+    /// alongside the level list: a tile size, a difficulty
+    /// counter, a seed. Reading them off the cached pointer costs
+    /// nothing.
+    ///
+    /// Before this existed, MISERY searched the whole object list
+    /// TWICE a pass, 100 ms each, to read one `i32` and one `f64`
+    /// off an object it already had (`docs/performance.md`).
+    ///
+    /// `None` when the streamer has not been found. Game thread
+    /// only.
+    pub fn field<T: Copy>(&self, offset: usize) -> Option<T> {
+        let streamer = self.streamer()?;
+        let ptr = streamer as *const UObject as *const u8;
+        // SAFETY: the consumer's measured offset on the object it
+        // named, found through a GObjects search on this thread.
+        Some(unsafe { read_at::<T>(ptr, offset) })
+    }
 }
 
 /// Watches a streamer and reports only what is NEW.

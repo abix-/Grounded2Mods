@@ -187,6 +187,49 @@ pub fn find_actors_by_chain(class_needle: &str) -> Vec<*const u8> {
         .collect()
 }
 
+/// Count the live actors of a class, grouped by the level that
+/// owns them.
+///
+/// The shape every "what is in each streamed region" question
+/// takes. `class_needle` matches the class chain, so a Blueprint
+/// base class counts every subclass. `in_package` keeps only
+/// levels whose path contains it, which is how a game excludes
+/// its hub, its menu level, or anything it spawned itself.
+///
+/// This IS a full object search, so call it when a region has
+/// actually streamed in, never on a timer. See
+/// [`super::streaming`] for the cheap way to know that.
+///
+/// Game thread only.
+pub fn count_by_level(
+    class_needle: &str,
+    in_package: Option<&str>,
+) -> std::collections::HashMap<String, usize> {
+    let mut out: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for p in find_actors_by_chain(class_needle) {
+        // SAFETY: p came from that call's own GObjects iteration.
+        let obj = unsafe { &*(p as *const UObject) };
+        // `full_name` builds a String, so it has to outlive the
+        // borrow `level_of` takes out of it.
+        let full = obj.full_name();
+        let Some(level) = level_of(&full) else {
+            continue;
+        };
+        if let Some(pkg) = in_package {
+            if !level.contains(pkg) {
+                continue;
+            }
+        }
+        *out.entry(level.to_string()).or_default() += 1;
+    }
+    out
+}
+
+/// The last segment of a path, for a log line. `/a/b/c` is `c`.
+pub fn short_name(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
+}
+
 /// The object path out of a full name.
 ///
 /// A UE full name is `"ClassName /Game/path/Level.PersistentLevel.Actor"`.
