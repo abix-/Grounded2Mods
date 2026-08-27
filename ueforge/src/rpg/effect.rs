@@ -25,11 +25,12 @@
 //!
 //! Standard operations the framework ships are below
 //! ([`PlayerFloatEffect`], [`SubcomponentMultiplyEffect`],
-//! [`LifestealEffect`], [`ImpactReversalEffect`], etc.).
+//! [`FallDamageReductionEffect`], [`LifestealEffect`],
+//! [`ImpactReversalEffect`], etc.).
 //! Game-specific operations live in the game crate and follow
 //! the same pattern.
 
-use std::ffi::c_void;
+use std::{ffi::c_void, sync::OnceLock};
 
 use crate::rpg::format::{self, PercentFormat, format_pct};
 use crate::rpg::progress::sqrt_progress;
@@ -167,12 +168,7 @@ impl Effect<UeEngine> for SubcomponentAdditiveEffect {
     }
 
     fn format(&self, level: u32, max_level: u32) -> String {
-        format::format_additive_f32_as_int(
-            self.max_bonus,
-            level,
-            max_level,
-            self.format_word,
-        )
+        format::format_additive_f32_as_int(self.max_bonus, level, max_level, self.format_word)
     }
 }
 
@@ -309,6 +305,115 @@ impl Effect<UeEngine> for ClassFieldsMultiplyEffect {
 
     fn format(&self, level: u32, max_level: u32) -> String {
         format::format_multiplier(self.max_bonus, level, max_level, self.format_word)
+    }
+}
+
+/// Reduce fall damage by updating the related player and game-mode
+/// fields from their captured vanilla values.
+pub struct FallDamageReductionEffect {
+    pub player: &'static PlayerRef,
+    pub ratio_offset: usize,
+    pub take_fall_damage_offset: usize,
+    pub min_velocity_offset: usize,
+    pub game_mode_settings: &'static ClassRef,
+    pub game_mode_multiplier_offset: usize,
+    pub mode_manager_components: &'static ClassRef,
+    pub mode_manager_multiplier_offset: usize,
+    pub max_reduction: f32,
+    pub min_velocity_multiplier_at_max: f32,
+    pub disable_damage_at: f32,
+    pub vanilla_ratio: &'static OnceLock<f32>,
+    pub vanilla_min_velocity: &'static OnceLock<f32>,
+    pub vanilla_game_mode_multiplier: &'static OnceLock<f32>,
+    pub vanilla_mode_manager_multiplier: &'static OnceLock<f32>,
+}
+
+impl Effect<UeEngine> for FallDamageReductionEffect {
+    fn apply(&self, level: u32, max_level: u32, _ctx: &crate::rpg::TriggerCtx<'_>) {
+        let reduction = (self.max_reduction * sqrt_progress(level, max_level)).min(1.0);
+        let cdo_count = self.player.for_each_cdo(|player_cdo| {
+            let cur = crate::ue::field::read_f32(player_cdo, self.ratio_offset);
+            if cur.is_finite() && cur > 0.0 {
+                let _ = self.vanilla_ratio.set(cur);
+            }
+            let cur_min_velocity = crate::ue::field::read_f32(player_cdo, self.min_velocity_offset);
+            if cur_min_velocity.is_finite() && cur_min_velocity > 0.0 {
+                let _ = self.vanilla_min_velocity.set(cur_min_velocity);
+            }
+            if let Some(v) = self.vanilla_ratio.get().copied() {
+                crate::ue::field::write_f32(player_cdo, self.ratio_offset, v * (1.0 - reduction));
+            }
+            if let Some(v) = self.vanilla_min_velocity.get().copied() {
+                let boosted = v * (1.0 + reduction * (self.min_velocity_multiplier_at_max - 1.0));
+                crate::ue::field::write_f32(player_cdo, self.min_velocity_offset, boosted);
+            }
+            crate::ue::field::write_bool(
+                player_cdo,
+                self.take_fall_damage_offset,
+                reduction < self.disable_damage_at,
+            );
+        });
+        let live_count = self.player.for_each_live(|player| {
+            if let Some(v) = self.vanilla_ratio.get().copied() {
+                crate::ue::field::write_f32(player, self.ratio_offset, v * (1.0 - reduction));
+            }
+            if let Some(v) = self.vanilla_min_velocity.get().copied() {
+                let boosted = v * (1.0 + reduction * (self.min_velocity_multiplier_at_max - 1.0));
+                crate::ue::field::write_f32(player, self.min_velocity_offset, boosted);
+            }
+            crate::ue::field::write_bool(
+                player,
+                self.take_fall_damage_offset,
+                reduction < self.disable_damage_at,
+            );
+        });
+        let gms_count = self.game_mode_settings.for_each_any(|settings| {
+            let cur = crate::ue::field::read_f32(settings, self.game_mode_multiplier_offset);
+            if cur.is_finite() && cur > 0.0 {
+                let _ = self.vanilla_game_mode_multiplier.set(cur);
+            }
+            if let Some(v) = self.vanilla_game_mode_multiplier.get().copied() {
+                crate::ue::field::write_f32(
+                    settings,
+                    self.game_mode_multiplier_offset,
+                    v * (1.0 - reduction),
+                );
+            }
+        });
+        let smmc_count = self.mode_manager_components.for_each_instance(|component| {
+            let cur = crate::ue::field::read_f32(component, self.mode_manager_multiplier_offset);
+            if cur.is_finite() && cur > 0.0 {
+                let _ = self.vanilla_mode_manager_multiplier.set(cur);
+            }
+            if let Some(v) = self.vanilla_mode_manager_multiplier.get().copied() {
+                crate::ue::field::write_f32(
+                    component,
+                    self.mode_manager_multiplier_offset,
+                    v * (1.0 - reduction),
+                );
+            }
+        });
+        crate::log!(
+            "rpg/effects: fall_damage level={} reduction={:.3} written to {} player CDO(s), {} live pawn(s), {} game-mode setting(s), {} mode-manager component(s)",
+            level,
+            reduction,
+            cdo_count,
+            live_count,
+            gms_count,
+            smmc_count
+        );
+    }
+
+    fn format(&self, level: u32, max_level: u32) -> String {
+        format::format_pct(
+            0.0,
+            self.max_reduction,
+            level,
+            max_level,
+            &PercentFormat::MinusPercent {
+                word: "fall damage",
+            },
+        )
     }
 }
 
@@ -494,10 +599,12 @@ impl Effect<UeEngine> for StatusEffectApply {
         // SAFETY: row_ptr was returned by the engine's data-table
         // walk; offset is the configured value-offset within the
         // row struct.
-        let cur_val = unsafe {
-            crate::ue::status_effect::read_row_value(row_ptr, self.status.value_offset)
-        };
-        let baseline = self.status.vanilla.get_or_init(self.status.row_fname, cur_val);
+        let cur_val =
+            unsafe { crate::ue::status_effect::read_row_value(row_ptr, self.status.value_offset) };
+        let baseline = self
+            .status
+            .vanilla
+            .get_or_init(self.status.row_fname, cur_val);
 
         let target = if level > 0 {
             baseline + (self.value_at_max - baseline) * progress
@@ -506,15 +613,10 @@ impl Effect<UeEngine> for StatusEffectApply {
         };
         // SAFETY: see read above; same row_ptr + offset.
         unsafe {
-            crate::ue::status_effect::write_row_value(
-                row_ptr,
-                self.status.value_offset,
-                target,
-            );
+            crate::ue::status_effect::write_row_value(row_ptr, self.status.value_offset, target);
         }
 
-        let Some(function) = self.component_class.find_function(self.function_name)
-        else {
+        let Some(function) = self.component_class.find_function(self.function_name) else {
             crate::log!(
                 "rpg/effect: status-effect: {} not found on {}",
                 self.function_name,

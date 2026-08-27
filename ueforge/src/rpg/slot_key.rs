@@ -44,16 +44,13 @@ impl SlotKeyResolver {
     /// active (main menu / between saves), or the GUID is zero
     /// (not yet populated).
     pub fn resolve(&self) -> Option<String> {
-        self.class.with_first_instance(|obj| read_guid(obj, self.guid_offset))?
+        self.class
+            .with_first_instance(|obj| read_guid(obj, self.guid_offset))?
     }
 }
 
 fn read_guid(obj: &UObject, offset: usize) -> Option<String> {
-    let guid: FGuid = unsafe {
-        obj.field_ptr(offset)
-            .cast::<FGuid>()
-            .read_unaligned()
-    };
+    let guid: FGuid = unsafe { obj.field_ptr(offset).cast::<FGuid>().read_unaligned() };
     if guid.is_zero() {
         None
     } else {

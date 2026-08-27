@@ -43,6 +43,10 @@ Extract the verified reusable Grounded 2 effect and inspection implementations i
 
 ## Last session summary
 
+- Moved Grounded 2's existing parameterized fall-damage effect into Ueforge's standard RPG effect library.
+- Grounded 2 now keeps only its player and related class references, field offsets, four vanilla caches, minimum-velocity and disable thresholds, maximum reduction, and catalog static.
+- Added no tests and preserved the existing vanilla capture rules, reduction curve, write order, target objects, log text, and effect text.
+- Verified `k3sc cargo-lock check -p ueforge -p grounded2-mod`, `k3sc cargo-lock check -p grounded2-mod --tests`, and all 53 existing Ueforge library tests. The Grounded 2 test check retains its existing unused-field warning.
 - Moved Grounded 2's existing damage-hook event conversion, UNIX timestamp calculation, and DamageRing recording into `ueforge::debug::DamageRing::record_hook_event`.
 - Grounded 2 now reads only its `CurrentDamage` field, supplies the observed value and configured function name, and keeps its positive-damage trace log and counters.
 - Added no tests and preserved the existing event fields, timestamp fallback, 64-entry ring, snapshot shape, and trace condition.

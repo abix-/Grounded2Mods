@@ -303,8 +303,8 @@ mechanisms because the underlying damage paths differ. See
 [`damage.md`](damage.md)):
 
 - **Fall Damage Resistance** uses
-  `PlayerFallDamageReductionEffect` (in effects.rs) plus a PE hook in
-  `fall_hook.rs`. On player `OnLanded`, scales
+  Ueforge's `FallDamageReductionEffect`, configured in `effects.rs`,
+  plus a PE hook in `fall_hook.rs`. On player `OnLanded`, scales
   `CharMovementComponent.Velocity.Z` by `(1 - reduction)` before
   forwarding to the original BP event. Native `ApplyFallDamage`
   reads the mutated velocity live and produces scaled / zero damage.

@@ -374,11 +374,11 @@ What changed concretely:
   dropped.
 - `Tracker` now owns `DisabledSkills` internally; toggle ops
   drive it directly.
-- g2rpg's `SkillEffect` enum. DELETED. Three game-specific
-  Effects (`BackpackSlotsEffect`, `SurvivalDrainEffect`,
-  `PlayerFallDamageReductionEffect`) live in
+- g2rpg's `SkillEffect` enum. DELETED. Two game-specific
+  Effects (`BackpackSlotsEffect`, `SurvivalDrainEffect`) live in
   `grounded2-mod::rpg::effects`; the catalog rows reference them
-  the same way they reference framework Effects.
+  the same way they reference framework Effects. The reusable
+  fall-damage operation now lives in Ueforge.
 - g2rpg's `applier.rs` (the GameApplier). DELETED.
 - g2rpg's `apply.rs`. The giant `apply_skill` dispatch match
   is GONE. The file now holds only shared helpers

@@ -127,9 +127,7 @@ pub fn register(
             "simulate_set_current_health",
             "Force the live HC's CurrentHealth to `value`",
             "{value: f32}",
-            move |args| {
-                op_set_current_health(args, binding, pe_queue, pe_timeout_hint, func_name)
-            },
+            move |args| op_set_current_health(args, binding, pe_queue, pe_timeout_hint, func_name),
         ));
     }
 }

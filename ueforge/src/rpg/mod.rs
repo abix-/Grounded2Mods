@@ -45,9 +45,10 @@ pub mod xp;
 
 pub use disabled::DisabledSkills;
 pub use effect::{
-    ClassFieldsMultiplyEffect, Effect, EffectDef, ImpactReversalEffect, LifestealEffect,
-    PlayerFloatEffect, RuntimeEffect, StatusEffectApply, SubcomponentAdditiveEffect,
-    SubcomponentFloatEffect, SubcomponentMultiplyEffect, SubcomponentU32MaskEffect,
+    ClassFieldsMultiplyEffect, Effect, EffectDef, FallDamageReductionEffect, ImpactReversalEffect,
+    LifestealEffect, PlayerFloatEffect, RuntimeEffect, StatusEffectApply,
+    SubcomponentAdditiveEffect, SubcomponentFloatEffect, SubcomponentMultiplyEffect,
+    SubcomponentU32MaskEffect,
 };
 pub use format::PercentFormat;
 pub use poller::{PollerHandle, SlotPoller, spawn_interval};
@@ -58,9 +59,9 @@ pub use status::{StatusDef, StatusRegistry};
 pub use store::SlotStore;
 pub use tracker::{Tracker, XpResult};
 pub use trigger::{
-    FallEvent, KillEvent, OnDamageDealtTrigger, OnDamageTakenTrigger, OnFallTrigger,
-    OnKillTrigger, OnSlotChangeTrigger, Trigger, TriggerCtx, TriggerDef, UeEngine,
-    UeEvent, ON_DAMAGE_DEALT, ON_DAMAGE_TAKEN, ON_FALL, ON_KILL, ON_SLOT_CHANGE,
+    FallEvent, KillEvent, ON_DAMAGE_DEALT, ON_DAMAGE_TAKEN, ON_FALL, ON_KILL, ON_SLOT_CHANGE,
+    OnDamageDealtTrigger, OnDamageTakenTrigger, OnFallTrigger, OnKillTrigger, OnSlotChangeTrigger,
+    Trigger, TriggerCtx, TriggerDef, UeEngine, UeEvent,
 };
 pub use vanilla::VanillaCache;
 pub use xp::{CreatureDef, CreatureRegistry, Curve};
