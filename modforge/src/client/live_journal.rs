@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::Api;
+use crate::envelope::OpResponse;
 
 pub const SCHEMA: &str = "modforge.live-journal@v1";
 
@@ -167,64 +168,21 @@ pub struct ReplayReport {
     pub assertions: usize,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Observed {
-    pub ok: bool,
-    pub error: Option<String>,
-    pub result: Value,
-    pub state: Value,
-}
-
-impl Observed {
-    pub fn ok(result: Value, state: Value) -> Self {
-        Self {
-            ok: true,
-            error: None,
-            result,
-            state,
-        }
-    }
-
-    pub fn error(error: impl Into<String>, state: Value) -> Self {
-        Self {
-            ok: false,
-            error: Some(error.into()),
-            result: Value::Null,
-            state,
-        }
-    }
-
-    fn value(&self, pointer: &str) -> Option<&Value> {
-        match pointer {
-            "/result" => Some(&self.result),
-            "/state" => Some(&self.state),
-            _ => {
-                if let Some(rest) = pointer.strip_prefix("/result") {
-                    return self.result.pointer(rest);
-                }
-                if let Some(rest) = pointer.strip_prefix("/state") {
-                    return self.state.pointer(rest);
-                }
-                None
-            }
-        }
-    }
-}
-
 pub trait OpExecutor {
-    fn execute(&self, operation: &RecordedOp) -> Result<Observed, String>;
+    fn execute(&self, operation: &RecordedOp) -> Result<OpResponse<Value>, String>;
 }
 
 impl<S> OpExecutor for Api<S>
 where
     S: DeserializeOwned + Serialize,
 {
-    fn execute(&self, operation: &RecordedOp) -> Result<Observed, String> {
+    fn execute(&self, operation: &RecordedOp) -> Result<OpResponse<Value>, String> {
         let response = self.try_op(&operation.op, operation.args.clone())?;
         let state = serde_json::to_value(response.state)
             .map_err(|e| format!("serialize {} state: {e}", operation.op))?;
-        Ok(Observed {
+        Ok(OpResponse {
             ok: response.ok,
+            op: response.op,
             error: response.error,
             result: response.result,
             state,
@@ -328,7 +286,7 @@ fn execute_checked(
     step: usize,
     label: &str,
     operation: &RecordedOp,
-) -> Result<Observed, ReplayError> {
+) -> Result<OpResponse<Value>, ReplayError> {
     let observed = executor.execute(operation).map_err(|message| ReplayError {
         step,
         label: label.to_string(),
@@ -365,7 +323,7 @@ fn wait_for(
     loop {
         polls += 1;
         let observed = execute_checked(executor, step, label, &observation.operation)?;
-        let actual = observed.value(&observation.pointer).cloned();
+        let actual = observed_value(&observed, &observation.pointer).cloned();
         if actual.as_ref() == Some(&observation.equals) {
             return Ok(polls);
         }
@@ -383,7 +341,7 @@ fn assert_observation(
     observation: &Observation,
 ) -> Result<(), ReplayError> {
     let observed = execute_checked(executor, step, label, &observation.operation)?;
-    let actual = observed.value(&observation.pointer).cloned();
+    let actual = observed_value(&observed, &observation.pointer).cloned();
     if actual.as_ref() == Some(&observation.equals) {
         return Ok(());
     }
@@ -411,5 +369,21 @@ fn mismatch(
             json!(observation.equals),
             observation.pointer
         ),
+    }
+}
+
+fn observed_value<'a>(response: &'a OpResponse<Value>, pointer: &str) -> Option<&'a Value> {
+    match pointer {
+        "/result" => Some(&response.result),
+        "/state" => Some(&response.state),
+        _ => {
+            if let Some(rest) = pointer.strip_prefix("/result") {
+                return response.result.pointer(rest);
+            }
+            if let Some(rest) = pointer.strip_prefix("/state") {
+                return response.state.pointer(rest);
+            }
+            None
+        }
     }
 }

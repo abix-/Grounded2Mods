@@ -2,17 +2,20 @@ use std::collections::VecDeque;
 use std::sync::Mutex;
 
 use modforge::client::live_journal::{
-    Entry, LiveJournal, Observation, Observed, OpExecutor, RecordedOp, Recorder,
+    Entry, LiveJournal, Observation, OpExecutor, RecordedOp, Recorder,
 };
+use modforge::envelope::OpResponse;
 use serde_json::json;
 
 struct FakeExecutor {
-    responses: Mutex<VecDeque<Result<Observed, String>>>,
+    responses: Mutex<VecDeque<Result<OpResponse<serde_json::Value>, String>>>,
     calls: Mutex<Vec<RecordedOp>>,
 }
 
 impl FakeExecutor {
-    fn new(responses: impl IntoIterator<Item = Result<Observed, String>>) -> Self {
+    fn new(
+        responses: impl IntoIterator<Item = Result<OpResponse<serde_json::Value>, String>>,
+    ) -> Self {
         Self {
             responses: Mutex::new(responses.into_iter().collect()),
             calls: Mutex::new(Vec::new()),
@@ -25,7 +28,7 @@ impl FakeExecutor {
 }
 
 impl OpExecutor for FakeExecutor {
-    fn execute(&self, op: &RecordedOp) -> Result<Observed, String> {
+    fn execute(&self, op: &RecordedOp) -> Result<OpResponse<serde_json::Value>, String> {
         self.calls.lock().unwrap().push(op.clone());
         self.responses
             .lock()
@@ -35,8 +38,12 @@ impl OpExecutor for FakeExecutor {
     }
 }
 
-fn ok(result: serde_json::Value) -> Result<Observed, String> {
-    Ok(Observed::ok(result, json!({"runtime_ready": true})))
+fn ok(result: serde_json::Value) -> Result<OpResponse<serde_json::Value>, String> {
+    Ok(OpResponse::ok(
+        "test",
+        result,
+        json!({"runtime_ready": true}),
+    ))
 }
 
 fn read_equals(value: &str) -> Observation {
@@ -133,7 +140,11 @@ fn recorder_executes_and_keeps_the_steps_that_can_be_replayed() {
 fn replay_reports_the_failed_action_and_host_error() {
     let mut journal = LiveJournal::new("failure evidence");
     journal.record_action("dangerous write", RecordedOp::new("write_bytes", json!({})));
-    let executor = FakeExecutor::new([Ok(Observed::error("address is not writable", json!(true)))]);
+    let executor = FakeExecutor::new([Ok(OpResponse::err(
+        "write_bytes",
+        "address is not writable",
+        json!(true),
+    ))]);
 
     let error = journal.replay(&executor).unwrap_err();
     assert_eq!(error.step, 0);

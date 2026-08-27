@@ -23,6 +23,7 @@ End state after the 2026-05-16 session: **all three layers shipped + smoke green
 | I-2d-recon: HK1 calibration probe | `8803ee0c` | `horsey-mod/tests/input_hk1_calibration.rs`. 5-point screen<->game-coord mapping capture; runs in-save. |
 | I-4: L3 surface + HorseyInputSurface | `6796b7bc` | `Backend::L3` + `set_input_surface`/`input_surface` slot + per-cmdlet `l3_or_fallback`. `HorseyInputSurface` v1 writes `LOC+0x174`/`+0x178` cursor floats directly. Graceful degrade when no save loaded. |
 | Unit tests | `054053d3` | 8 parser tests (`Backend`/`Button`/`Key`). |
+| I-6: live action journal | `d18f3726` | Versioned operation actions, observed-value waits, and assertions in `modforge::client::live_journal`; recorded, saved, loaded, replayed, and restored live against MISERY movement speed. |
 
 **Cmdlets shipped** (12 total under `input.*`):
 
@@ -47,7 +48,6 @@ input.cursor.get    input.foreground.hwnd    input.find_hwnd_by_pid    input.sel
 - HorseyInputSurface v2: direct mouse-state struct writes + direct keyboard buffer writes (per the engine-internal findings above).
 - HK1 Shift+Click transfer migration. Now unblocked by L3; pending an in-save smoke run.
 - Cross-game proof: grounded2-mod or schedule1 ships its own `InputSurface` impl.
-- I-6 live action journal. Active with MISERY as the first proof: record a movement-speed operation, wait for the generic memory read to observe it, assert it, restore it, and replay the saved journal.
 
 ## TL;DR
 
