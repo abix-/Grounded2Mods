@@ -366,6 +366,54 @@ pub fn register_builtins() {
             |_args| inspect_gmalloc(),
         ),
         OpDef::new(
+            "gmalloc_call_sites",
+            "Dump the bytes at every instruction referencing GMalloc (read-only)",
+            "{bytes?: u64}",
+            |args| {
+                let n = arg_u64(args, "bytes", Some(32))? as usize;
+                let sites = crate::ue::gmalloc::gmalloc_call_sites(n)?;
+                Ok(serde_json::json!({
+                    "count": sites.len(),
+                    "sites": sites
+                        .iter()
+                        .map(|(at, hex)| serde_json::json!({
+                            "at": format!("{at:#x}"),
+                            "bytes": hex,
+                        }))
+                        .collect::<Vec<_>>(),
+                }))
+            },
+        ),
+        OpDef::new(
+            "measure_malloc_slot",
+            "Read FMalloc::Malloc's vtable slot out of the running image (read-only, calls nothing)",
+            "{}",
+            |_args| {
+                let sites = crate::ue::gmalloc::measure_malloc_slot()?;
+                let agreed: Vec<usize> = {
+                    let mut s: Vec<usize> = sites.iter().map(|(slot, _, _)| *slot).collect();
+                    s.sort_unstable();
+                    s.dedup();
+                    s
+                };
+                Ok(serde_json::json!({
+                    "configured": crate::ue::gmalloc::configured_slot(),
+                    // One value here means every call site agrees,
+                    // which is the answer. More than one means the
+                    // scan matched something it should not have.
+                    "slots_found": agreed,
+                    "sites": sites
+                        .iter()
+                        .map(|(slot, imm8, at)| serde_json::json!({
+                            "slot": slot,
+                            "imm8": format!("{imm8:#04x}"),
+                            "at": format!("{at:#x}"),
+                        }))
+                        .collect::<Vec<_>>(),
+                }))
+            },
+        ),
+        OpDef::new(
             "list_ops",
             "Auto-generated catalog of every registered debug op",
             "{}",
