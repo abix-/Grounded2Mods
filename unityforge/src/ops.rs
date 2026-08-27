@@ -126,23 +126,7 @@ fn on_main<T: Send + 'static>(
     timeout: std::time::Duration,
     f: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, String> {
-    use parking_lot::Mutex;
-    use std::sync::Arc;
-    let result: Arc<Mutex<Option<T>>> = Arc::new(Mutex::new(None));
-    let r2 = result.clone();
-    MAIN_QUEUE.push(move || {
-        *r2.lock() = Some(f());
-    });
-    let deadline = std::time::Instant::now() + timeout;
-    loop {
-        if let Some(r) = result.lock().take() {
-            return Ok(r);
-        }
-        if std::time::Instant::now() >= deadline {
-            return Err(format!("{op_name}: main-thread queue timed out"));
-        }
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
+    MAIN_QUEUE.run(op_name, timeout, f)
 }
 
 fn walk_class(args: &Json) -> Result<Json, String> {
@@ -179,15 +163,19 @@ fn list_methods(args: &Json) -> Result<Json, String> {
 
 fn inspect_object(args: &Json) -> Result<Json, String> {
     let h = arg_u64(args, "handle", None)? as i32;
-    on_main("inspect_object", std::time::Duration::from_secs(2), move || {
-        // SAFETY: caller asserts handle is live; if not, the shim's
-        // dictionary lookup returns null and the op surfaces an
-        // error.
-        let obj = unsafe { MonoObject::from_handle(MonoHandle(h)) };
-        let r = obj.dump();
-        std::mem::forget(obj); // don't release; caller may reuse the handle
-        r
-    })?
+    on_main(
+        "inspect_object",
+        std::time::Duration::from_secs(2),
+        move || {
+            // SAFETY: caller asserts handle is live; if not, the shim's
+            // dictionary lookup returns null and the op surfaces an
+            // error.
+            let obj = unsafe { MonoObject::from_handle(MonoHandle(h)) };
+            let r = obj.dump();
+            std::mem::forget(obj); // don't release; caller may reuse the handle
+            r
+        },
+    )?
 }
 
 fn read_field(args: &Json) -> Result<Json, String> {
@@ -205,12 +193,16 @@ fn write_field(args: &Json) -> Result<Json, String> {
     let h = arg_u64(args, "handle", None)? as i32;
     let field = arg_str(args, "field")?.to_string();
     let value = args.get("value").cloned().unwrap_or(Json::Null);
-    on_main("write_field", std::time::Duration::from_secs(1), move || {
-        let obj = unsafe { MonoObject::from_handle(MonoHandle(h)) };
-        let res = obj.write_field(&field, &value);
-        std::mem::forget(obj);
-        res.map(|_| json!({"written": true}))
-    })?
+    on_main(
+        "write_field",
+        std::time::Duration::from_secs(1),
+        move || {
+            let obj = unsafe { MonoObject::from_handle(MonoHandle(h)) };
+            let res = obj.write_field(&field, &value);
+            std::mem::forget(obj);
+            res.map(|_| json!({"written": true}))
+        },
+    )?
 }
 
 extern "C" fn probe_prefix_noop(ctx: *const c_void) -> i32 {
@@ -231,52 +223,70 @@ fn harmony_probe(args: &Json) -> Result<Json, String> {
     let method = arg_str(args, "method")?.to_string();
     let ctx_kind = args.get("ctx_kind").and_then(Json::as_i64);
 
-    on_main("harmony_probe", std::time::Duration::from_secs(5), move || {
-        let res = match ctx_kind {
-            Some(0) => hook::patch_prefix_ctx(&class, &method, HookCtx::Instance, probe_prefix_noop),
-            Some(1) => hook::patch_prefix_ctx(&class, &method, HookCtx::Arg0, probe_prefix_noop),
-            _ => hook::patch_prefix(&class, &method, probe_prefix_noop),
-        };
-        match res {
-            Ok(hook) => {
-                drop(hook); // unpatch immediately; the probe only tests applicability
-                Ok(json!({"patched": true, "unpatched": true}))
+    on_main(
+        "harmony_probe",
+        std::time::Duration::from_secs(5),
+        move || {
+            let res = match ctx_kind {
+                Some(0) => {
+                    hook::patch_prefix_ctx(&class, &method, HookCtx::Instance, probe_prefix_noop)
+                }
+                Some(1) => {
+                    hook::patch_prefix_ctx(&class, &method, HookCtx::Arg0, probe_prefix_noop)
+                }
+                _ => hook::patch_prefix(&class, &method, probe_prefix_noop),
+            };
+            match res {
+                Ok(hook) => {
+                    drop(hook); // unpatch immediately; the probe only tests applicability
+                    Ok(json!({"patched": true, "unpatched": true}))
+                }
+                Err(e) => Err(format!("{e} (full exception in the player log)")),
             }
-            Err(e) => Err(format!("{e} (full exception in the player log)")),
-        }
-    })?
+        },
+    )?
 }
 
 fn invoke_method(args: &Json) -> Result<Json, String> {
     let h = arg_u64(args, "handle", None)? as i32;
     let method = arg_str(args, "method")?.to_string();
     let m_args = args.get("args").cloned().unwrap_or(Json::Array(vec![]));
-    on_main("invoke_method", std::time::Duration::from_secs(2), move || {
-        let obj = unsafe { MonoObject::from_handle(MonoHandle(h)) };
-        let res = obj.invoke(&method, &m_args);
-        std::mem::forget(obj);
-        res
-    })?
+    on_main(
+        "invoke_method",
+        std::time::Duration::from_secs(2),
+        move || {
+            let obj = unsafe { MonoObject::from_handle(MonoHandle(h)) };
+            let res = obj.invoke(&method, &m_args);
+            std::mem::forget(obj);
+            res
+        },
+    )?
 }
 
 fn invoke_static(args: &Json) -> Result<Json, String> {
     let class = arg_str(args, "class")?.to_string();
     let method = arg_str(args, "method")?.to_string();
     let m_args = args.get("args").cloned().unwrap_or(Json::Array(vec![]));
-    on_main("invoke_static", std::time::Duration::from_secs(2), move || {
-        crate::mono::invoke_static(&class, &method, &m_args)
-    })?
+    on_main(
+        "invoke_static",
+        std::time::Duration::from_secs(2),
+        move || crate::mono::invoke_static(&class, &method, &m_args),
+    )?
 }
 
 fn release_handle(args: &Json) -> Result<Json, String> {
     let h = arg_u64(args, "handle", None)? as i32;
-    on_main("release_handle", std::time::Duration::from_secs(1), move || {
-        // SAFETY: releasing is what Drop does; a stale handle is a
-        // no-op in the shim's table.
-        let obj = unsafe { MonoObject::from_handle(MonoHandle(h)) };
-        drop(obj);
-        Ok(json!({"released": true}))
-    })?
+    on_main(
+        "release_handle",
+        std::time::Duration::from_secs(1),
+        move || {
+            // SAFETY: releasing is what Drop does; a stale handle is a
+            // no-op in the shim's table.
+            let obj = unsafe { MonoObject::from_handle(MonoHandle(h)) };
+            drop(obj);
+            Ok(json!({"released": true}))
+        },
+    )?
 }
 
 fn list_singletons(args: &Json) -> Result<Json, String> {
@@ -285,25 +295,29 @@ fn list_singletons(args: &Json) -> Result<Json, String> {
         .and_then(Json::as_array)
         .cloned()
         .ok_or("missing arg 'types' (array of class names)")?;
-    on_main("list_singletons", std::time::Duration::from_secs(2), move || {
-        let mut out = Vec::with_capacity(types.len());
-        for t in &types {
-            let Some(name) = t.as_str() else {
-                continue;
-            };
-            let entry = match MonoType::find(name) {
-                None => json!({"class": name, "found": false}),
-                Some(ty) => match ty.singleton_instance() {
-                    None => json!({"class": name, "found": false, "type_found": true}),
-                    Some(obj) => {
-                        let h = obj.handle();
-                        std::mem::forget(obj); // keep alive; caller may inspect_object
-                        json!({"class": name, "found": true, "handle": h.0})
-                    }
-                },
-            };
-            out.push(entry);
-        }
-        Ok(json!({"singletons": out}))
-    })?
+    on_main(
+        "list_singletons",
+        std::time::Duration::from_secs(2),
+        move || {
+            let mut out = Vec::with_capacity(types.len());
+            for t in &types {
+                let Some(name) = t.as_str() else {
+                    continue;
+                };
+                let entry = match MonoType::find(name) {
+                    None => json!({"class": name, "found": false}),
+                    Some(ty) => match ty.singleton_instance() {
+                        None => json!({"class": name, "found": false, "type_found": true}),
+                        Some(obj) => {
+                            let h = obj.handle();
+                            std::mem::forget(obj); // keep alive; caller may inspect_object
+                            json!({"class": name, "found": true, "handle": h.0})
+                        }
+                    },
+                };
+                out.push(entry);
+            }
+            Ok(json!({"singletons": out}))
+        },
+    )?
 }

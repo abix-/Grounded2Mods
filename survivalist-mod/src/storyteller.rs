@@ -10,9 +10,10 @@ use serde_json::{Value as Json, json};
 
 use modforge::ops::{OP_REGISTRY, OpDef};
 use modforge::storyteller::{Config, Director};
+use unityforge::main_thread_queue::MAIN_QUEUE;
 use unityforge::mono::{self, LogLevel};
 
-use crate::common::{on_main_thread, session_seed, with};
+use crate::common::{session_seed, with};
 
 static RULES: &[Rule] = &[
     crate::horde::RULE,
@@ -87,36 +88,40 @@ pub fn register_ops() {
 /// Report the current warning, horde, vendor, and stranger activity.
 /// Stays here because it applies Survivalist's storyteller pacing rules through the game's classes, fields, content, and actions.
 fn storyteller_status(_args: &Json) -> Result<Json, String> {
-    on_main_thread(|| {
-        let mut status = DIRECTOR.status();
-        let alpha = crate::horde::alpha_view()?
-            .map(|(name, members)| json!({"name": name, "members": members}));
-        if let Some(obj) = status.as_object_mut() {
-            obj.insert("guard_max_threats".to_string(), json!(guard_max_threats()));
-            obj.insert(
-                "packs_live".to_string(),
-                json!(crate::horde::live_pack_count()),
-            );
-            obj.insert(
-                "vendors_live".to_string(),
-                json!(crate::vendor::active_count()),
-            );
-            obj.insert(
-                "strangers_live".to_string(),
-                json!(crate::stranger::active_count()),
-            );
-            obj.insert(
-                "settlers_live".to_string(),
-                json!(crate::settler::active_count()),
-            );
-            obj.insert(
-                "incursion_pending".to_string(),
-                json!(crate::incursion::pending()),
-            );
-            obj.insert("alpha".to_string(), alpha.unwrap_or(Json::Null));
-        }
-        Ok(status)
-    })
+    MAIN_QUEUE.run_result(
+        "storyteller_status",
+        std::time::Duration::from_secs(5),
+        || {
+            let mut status = DIRECTOR.status();
+            let alpha = crate::horde::alpha_view()?
+                .map(|(name, members)| json!({"name": name, "members": members}));
+            if let Some(obj) = status.as_object_mut() {
+                obj.insert("guard_max_threats".to_string(), json!(guard_max_threats()));
+                obj.insert(
+                    "packs_live".to_string(),
+                    json!(crate::horde::live_pack_count()),
+                );
+                obj.insert(
+                    "vendors_live".to_string(),
+                    json!(crate::vendor::active_count()),
+                );
+                obj.insert(
+                    "strangers_live".to_string(),
+                    json!(crate::stranger::active_count()),
+                );
+                obj.insert(
+                    "settlers_live".to_string(),
+                    json!(crate::settler::active_count()),
+                );
+                obj.insert(
+                    "incursion_pending".to_string(),
+                    json!(crate::incursion::pending()),
+                );
+                obj.insert("alpha".to_string(), alpha.unwrap_or(Json::Null));
+            }
+            Ok(status)
+        },
+    )
 }
 
 /// Read or change the maximum threats allowed before pressure pauses.

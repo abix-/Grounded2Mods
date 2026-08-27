@@ -113,10 +113,16 @@ Extract every engine-independent or Unity-specific mechanism identified by the S
 - Verified `k3sc cargo-lock check -p ueforge -p misery-mod`; both crates compile with only MISERY's existing unused `STACK_TWEAK` warning.
 - Verified `k3sc cargo-lock test -p ueforge --lib`: all 53 existing tests pass. Rechecked `k3sc cargo-lock check -p misery-mod` after the hook-lifecycle completion; it still compiles with only the existing warning.
 - Verified the changed Modforge poller through `k3sc cargo-lock test -p modforge --lib`: its existing tests pass within the 312 passing tests. The full target remains red only on the existing `input::tests::backend_parse_rejects_garbage` mismatch where `l3` is accepted.
+- Added `MainThreadQueue::run_result` as Unityforge's fallible synchronous main-thread authority and routed Unityforge's own operation adapter through `MainThreadQueue::run`.
+- Migrated all 15 Survivalist blocking main-thread operations to Unityforge with the existing five-second timeout and removed Survivalist's local oneshot, polling, sleep, and timeout loop.
+- Kept the requested rustfmt normalization in the changed Rust files. Added no tests.
+- Verified `k3sc cargo-lock check -p unityforge -p survivalist-mod`.
+- Verified `k3sc cargo-lock test -p unityforge --lib`: all 6 existing tests pass.
+- Verified `k3sc cargo-lock test -p survivalist-mod --lib`: build passes with the two existing unused genome-helper warnings; its library target has zero tests.
 
 ## Next steps
 
-- Replace Survivalist's local blocking main-thread helper with the existing `MainThreadQueue::run` authority.
+- Add checked Rust/C# boundary helpers for UTF-8 strings, UTF-16 paths, returned strings, panic containment, and result conversion; migrate Survivalist's upgrade exports.
 
 ## Open questions
 

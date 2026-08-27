@@ -21,10 +21,10 @@ use modforge::ops::{OP_REGISTRY, OpDef};
 use unityforge::mono::{self, LogLevel, MonoObject};
 
 use crate::common::{
-    GoodsFilter, count_stored_goods, ctype, display_name, for_each_community, handle_of,
-    on_main_thread, own, with,
+    GoodsFilter, count_stored_goods, ctype, display_name, for_each_community, handle_of, own, with,
 };
 use crate::{board, courier};
+use unityforge::main_thread_queue::MAIN_QUEUE;
 
 /// Seconds between offer scans; work is a slow drumbeat, offset
 /// from murder (240) and trade (150) so the acts interleave.
@@ -117,7 +117,12 @@ impl Contract for Bounty {
                     })
                 }
             }
-            Bounty::Owed { hirer_h, hirer_name, mark_name, waiting_logged } => {
+            Bounty::Owed {
+                hirer_h,
+                hirer_name,
+                mark_name,
+                waiting_logged,
+            } => {
                 match courier::launch(
                     hirer_h,
                     &hirer_name,
@@ -174,7 +179,10 @@ pub fn tick(now: f32) {
     LAST_NOW_BITS.store(now.to_bits(), Ordering::Relaxed);
     if mission::should_tick(now, MISSION_TICK_SECS, &LAST_TICK_BITS) {
         mission::advance_contract(&BOUNTY, now, |e| {
-            mono::log(LogLevel::Warn, &format!("survivalist-mod: bounty advance failed: {e}"));
+            mono::log(
+                LogLevel::Warn,
+                &format!("survivalist-mod: bounty advance failed: {e}"),
+            );
         });
     }
     if mission::should_tick(now, BOUNTY_SCAN_PERIOD_SECS, &LAST_SCAN_BITS) {
@@ -183,7 +191,10 @@ pub fn tick(now: f32) {
         }
         if let Err(e) = offer_scan(now) {
             if !e.contains("not found") {
-                mono::log(LogLevel::Warn, &format!("survivalist-mod: bounty scan failed: {e}"));
+                mono::log(
+                    LogLevel::Warn,
+                    &format!("survivalist-mod: bounty scan failed: {e}"),
+                );
             }
         }
     }
@@ -208,7 +219,9 @@ fn offer_scan(now: f32) -> Result<(), String> {
         }
         Ok(true)
     })?;
-    let Some(player_h) = player_h else { return Ok(()) };
+    let Some(player_h) = player_h else {
+        return Ok(());
+    };
 
     // The hirer: at war with another AI camp, friendly enough to
     // the player, able to pay; the smallest camp first (the side
@@ -294,7 +307,10 @@ fn post_offer(hirer_h: i32, hirer_name: String, enemy_h: i32, now: f32) -> Resul
     };
     let (mark_id, mark_name) = with(mark_h, |v| {
         (
-            v.read_field("Id").ok().and_then(|x| x.as_i64()).unwrap_or(-1),
+            v.read_field("Id")
+                .ok()
+                .and_then(|x| x.as_i64())
+                .unwrap_or(-1),
             v.invoke("GetDisplayNameString", &json!([]))
                 .ok()
                 .and_then(|x| x.as_str().map(str::to_string))
@@ -373,8 +389,15 @@ pub fn on_death(member: &MonoObject) {
         Some(ctype(&own(ch)) == "Player")
     })()
     .unwrap_or(false);
-    let Some(Bounty::Offered { hirer_h, hirer_name, mark_h, mark_name, enemy_name, quest_h, .. }) =
-        slot.take()
+    let Some(Bounty::Offered {
+        hirer_h,
+        hirer_name,
+        mark_h,
+        mark_name,
+        enemy_name,
+        quest_h,
+        ..
+    }) = slot.take()
     else {
         return;
     };
@@ -390,7 +413,12 @@ pub fn on_death(member: &MonoObject) {
                 "survivalist-mod: bounty: {mark_name} of {enemy_name} fell to the player; {hirer_name} owes payment"
             ),
         );
-        *slot = Some(Bounty::Owed { hirer_h, hirer_name, mark_name, waiting_logged: false });
+        *slot = Some(Bounty::Owed {
+            hirer_h,
+            hirer_name,
+            mark_name,
+            waiting_logged: false,
+        });
     } else {
         board::close(quest_h, false);
         mono::log(
@@ -489,7 +517,15 @@ fn bounty_status(_args: &Json) -> Result<Json, String> {
     let slot = BOUNTY.lock();
     Ok(match slot.as_ref() {
         None => json!({ "bounty": null }),
-        Some(Bounty::Offered { hirer_name, mark_name, enemy_name, pays, quest_h, expires, .. }) => {
+        Some(Bounty::Offered {
+            hirer_name,
+            mark_name,
+            enemy_name,
+            pays,
+            quest_h,
+            expires,
+            ..
+        }) => {
             json!({
                 "bounty": {
                     "stage": "offered",
@@ -502,7 +538,11 @@ fn bounty_status(_args: &Json) -> Result<Json, String> {
                 }
             })
         }
-        Some(Bounty::Owed { hirer_name, mark_name, .. }) => json!({
+        Some(Bounty::Owed {
+            hirer_name,
+            mark_name,
+            ..
+        }) => json!({
             "bounty": { "stage": "owed", "hirer": hirer_name, "mark": mark_name }
         }),
         Some(Bounty::Paying(c)) => json!({
@@ -528,41 +568,50 @@ fn bounty_post(args: &Json) -> Result<Json, String> {
         .and_then(Json::as_str)
         .ok_or("missing arg 'hirer' (community display name)")?
         .to_string();
-    on_main_thread(move || {
-        if BOUNTY.lock().is_some() {
-            return Err("a bounty is already open (bounty_status)".into());
-        }
-        board::sweep_orphans();
-        let now = f32::from_bits(LAST_NOW_BITS.load(Ordering::Relaxed));
-        let mut found: Option<(i32, String, i32)> = None;
-        for_each_community(|com| {
-            if display_name(&com).eq_ignore_ascii_case(&hirer) {
-                let enemy_h = handle_of(&com.read_field("InvasionTarget")?);
-                let name = display_name(&com);
-                let h = com.handle().0;
-                match enemy_h {
-                    Some(e) => {
-                        found = Some((h, name, e));
-                        std::mem::forget(com);
-                    }
-                    None => return Err(format!("'{name}' is not at war (no InvasionTarget)")),
-                }
-                return Ok(false);
+    MAIN_QUEUE.run_result(
+        "bounty_post",
+        std::time::Duration::from_secs(5),
+        move || {
+            if BOUNTY.lock().is_some() {
+                return Err("a bounty is already open (bounty_status)".into());
             }
-            Ok(true)
-        })?;
-        let Some((hirer_h, hirer_name, enemy_h)) = found else {
-            return Err(format!("hirer community '{hirer}' not found"));
-        };
-        post_offer(hirer_h, hirer_name.clone(), enemy_h, now)?;
-        match &*BOUNTY.lock() {
-            Some(Bounty::Offered { mark_name, enemy_name, pays, .. }) => Ok(json!({
-                "posted": true, "hirer": hirer_name, "mark": mark_name, "of": enemy_name,
-                "pays": pays,
-            })),
-            _ => Err(format!(
-                "'{hirer_name}' posted nothing (no living enemy leader, or empty stores)"
-            )),
-        }
-    })
+            board::sweep_orphans();
+            let now = f32::from_bits(LAST_NOW_BITS.load(Ordering::Relaxed));
+            let mut found: Option<(i32, String, i32)> = None;
+            for_each_community(|com| {
+                if display_name(&com).eq_ignore_ascii_case(&hirer) {
+                    let enemy_h = handle_of(&com.read_field("InvasionTarget")?);
+                    let name = display_name(&com);
+                    let h = com.handle().0;
+                    match enemy_h {
+                        Some(e) => {
+                            found = Some((h, name, e));
+                            std::mem::forget(com);
+                        }
+                        None => return Err(format!("'{name}' is not at war (no InvasionTarget)")),
+                    }
+                    return Ok(false);
+                }
+                Ok(true)
+            })?;
+            let Some((hirer_h, hirer_name, enemy_h)) = found else {
+                return Err(format!("hirer community '{hirer}' not found"));
+            };
+            post_offer(hirer_h, hirer_name.clone(), enemy_h, now)?;
+            match &*BOUNTY.lock() {
+                Some(Bounty::Offered {
+                    mark_name,
+                    enemy_name,
+                    pays,
+                    ..
+                }) => Ok(json!({
+                    "posted": true, "hirer": hirer_name, "mark": mark_name, "of": enemy_name,
+                    "pays": pays,
+                })),
+                _ => Err(format!(
+                    "'{hirer_name}' posted nothing (no living enemy leader, or empty stores)"
+                )),
+            }
+        },
+    )
 }

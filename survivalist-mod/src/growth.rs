@@ -419,7 +419,11 @@ fn absorb_group(group: &MonoObject, door: &mut OpenDoor) -> Result<i64, String> 
 /// Return the current faction-growth report.
 /// Stays here because it applies Survivalist's faction growth rules through the game's classes, fields, content, and actions.
 fn growth_status(_args: &Json) -> Result<Json, String> {
-    crate::common::on_main_thread(collect_growth_status)
+    unityforge::main_thread_queue::MAIN_QUEUE.run_result(
+        "growth_status",
+        std::time::Duration::from_secs(5),
+        collect_growth_status,
+    )
 }
 
 /// Count surviving camps, population, beds, and blocked free respawns.

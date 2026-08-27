@@ -38,9 +38,10 @@ use serde_json::{Value as Json, json};
 use modforge::ops::{OP_REGISTRY, OpDef};
 use modforge::quality::{roll_sibling, roll_tier};
 use unityforge::hook::{self, HOOK_REGISTRY, HookCtx};
+use unityforge::main_thread_queue::MAIN_QUEUE;
 use unityforge::mono::{self, LogLevel, MonoObject, MonoType};
 
-use crate::common::{ctype, for_each_community, handle_of, on_main_thread, own, with};
+use crate::common::{ctype, for_each_community, handle_of, own, with};
 
 /// Tier names, best first (Factorio naming). Must match the
 /// generator's $Tiers.
@@ -627,7 +628,7 @@ pub fn register_ops() {
 /// Report loaded variants, quality swaps, rolled traders, and pending craft rolls.
 /// Stays here because Survivalist owns the tier catalog, crafting odds, prototype names, and inventory swaps; Modforge owns the quality rolls.
 fn quality_status(_args: &Json) -> Result<Json, String> {
-    on_main_thread(|| {
+    MAIN_QUEUE.run_result("quality_status", std::time::Duration::from_secs(5), || {
         let loaded = match find_prototype(CANARY) {
             Ok(Some(h)) => {
                 drop(own(h));

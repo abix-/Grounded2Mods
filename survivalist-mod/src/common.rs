@@ -466,30 +466,3 @@ pub fn remove_squad_and_drop(com_h: i32, squad_id: i64, handles: &[i32]) {
         drop(own(h));
     }
 }
-
-/// Run `f` on the Unity main thread and wait for its result
-/// (same oneshot shape as unityforge's write_field op).
-/// Extraction candidate: Unityforge should own synchronous main-thread dispatch and timeout handling; Survivalist should only supply the game operation.
-pub fn on_main_thread<F>(f: F) -> Result<Json, String>
-where
-    F: FnOnce() -> Result<Json, String> + Send + 'static,
-{
-    use std::sync::Arc;
-
-    use parking_lot::Mutex;
-    let result: Arc<Mutex<Option<Result<Json, String>>>> = Arc::new(Mutex::new(None));
-    let r2 = result.clone();
-    unityforge::main_thread_queue::MAIN_QUEUE.push(move || {
-        *r2.lock() = Some(f());
-    });
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    loop {
-        if let Some(r) = result.lock().take() {
-            return r;
-        }
-        if std::time::Instant::now() >= deadline {
-            return Err("op: main-thread queue timed out".into());
-        }
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
-}

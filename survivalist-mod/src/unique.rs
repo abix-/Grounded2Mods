@@ -21,9 +21,10 @@ use serde_json::{Value as Json, json};
 
 use modforge::item::ItemLedger;
 use modforge::ops::{OP_REGISTRY, OpDef};
+use unityforge::main_thread_queue::MAIN_QUEUE;
 use unityforge::mono::{self, LogLevel};
 
-use crate::common::{for_each_community, handle_of, on_main_thread, own, session_seed, with};
+use crate::common::{for_each_community, handle_of, own, session_seed, with};
 use modforge::unknown::rng;
 
 use crate::quality::find_prototype;
@@ -370,7 +371,7 @@ pub fn register_ops() {
 /// Report whether the unique entered and where it was last seen.
 /// Stays here because it applies Survivalist's unique items rules through the game's classes, fields, content, and actions.
 fn unique_status(_args: &Json) -> Result<Json, String> {
-    on_main_thread(|| {
+    MAIN_QUEUE.run_result("unique_status", std::time::Duration::from_secs(5), || {
         let loaded = match find_prototype(COLONELS_RIFLE) {
             Ok(Some(h)) => {
                 drop(own(h));

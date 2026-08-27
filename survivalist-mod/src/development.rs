@@ -26,9 +26,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use serde_json::{Value as Json, json};
 
 use modforge::ops::{OP_REGISTRY, OpDef};
+use unityforge::main_thread_queue::MAIN_QUEUE;
 use unityforge::mono::{self, LogLevel, MonoObject};
 
-use crate::common::{ctype, display_name, for_each_community, handle_of, on_main_thread, own};
+use crate::common::{ctype, display_name, for_each_community, handle_of, own};
 
 /// Seconds between annex-planning scans (real time).
 const ANNEX_SCAN_PERIOD_SECS: f32 = 120.0;
@@ -119,7 +120,7 @@ fn base_centre(com: &MonoObject) -> Option<(i32, i32)> {
 /// Report which camps can expand and what they are already building.
 /// Stays here because it applies Survivalist's build recipes, camp rules, terrain fields, and construction calls.
 fn dev_status(_args: &Json) -> Result<Json, String> {
-    on_main_thread(|| {
+    MAIN_QUEUE.run_result("dev_status", std::time::Duration::from_secs(5), || {
         let gi = game_impl()?;
         // Probe prototype availability once (global, not per community).
         let mut protos = Vec::new();
@@ -470,7 +471,7 @@ fn dev_place(args: &Json) -> Result<Json, String> {
         .unwrap_or("Deg0")
         .to_string();
 
-    on_main_thread(move || {
+    MAIN_QUEUE.run_result("dev_place", std::time::Duration::from_secs(5), move || {
         let gi = game_impl()?;
         let (proto_h, has_recipe) = resolve_buildable(&gi, &prototype)?
             .ok_or(format!("prototype '{prototype}' not found"))?;

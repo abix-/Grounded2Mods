@@ -25,10 +25,10 @@ use modforge::ops::{OP_REGISTRY, OpDef};
 use unityforge::mono::{self, LogLevel, MonoObject};
 
 use crate::common::{
-    GoodsFilter, count_stored_goods, ctype, display_name, for_each_community, handle_of,
-    on_main_thread, own, with,
+    GoodsFilter, count_stored_goods, ctype, display_name, for_each_community, handle_of, own, with,
 };
 use crate::{board, courier};
+use unityforge::main_thread_queue::MAIN_QUEUE;
 
 /// Seconds between offer scans; offset from the bounty (300) so
 /// the work kinds interleave.
@@ -590,7 +590,7 @@ fn threat_post(args: &Json) -> Result<Json, String> {
         .and_then(Json::as_str)
         .ok_or("missing arg 'hirer' (community display name)")?
         .to_string();
-    on_main_thread(move || {
+    MAIN_QUEUE.run_result("threat_post", std::time::Duration::from_secs(5), move || {
         if STATE.lock().is_some() {
             return Err("a clear-the-threat job is already open (threat_status)".into());
         }

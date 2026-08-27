@@ -28,11 +28,10 @@ use serde_json::{Value as Json, json};
 
 use modforge::ops::{OP_REGISTRY, OpDef};
 use unityforge::hook::{self, HOOK_REGISTRY, HookCtx};
+use unityforge::main_thread_queue::MAIN_QUEUE;
 use unityforge::mono::{self, LogLevel, MonoObject};
 
-use crate::common::{
-    community_manager, ctype, display_name, for_each_community, handle_of, on_main_thread, own,
-};
+use crate::common::{community_manager, ctype, display_name, for_each_community, handle_of, own};
 
 /// Install the game hooks that activate this system.
 /// Stays here because it applies Survivalist's faction war rules through the game's classes, fields, content, and actions.
@@ -173,7 +172,7 @@ fn try_ai_revenge(member: &MonoObject) -> Result<(), String> {
 /// Report every living faction and its current enemies.
 /// Stays here because it applies Survivalist's faction war rules through the game's classes, fields, content, and actions.
 fn war_status(_args: &Json) -> Result<Json, String> {
-    on_main_thread(|| {
+    MAIN_QUEUE.run_result("war_status", std::time::Duration::from_secs(5), || {
         let mut out = Vec::new();
         for_each_community(|com| {
             let com = &com;
@@ -240,7 +239,7 @@ fn war_ignite(args: &Json) -> Result<Json, String> {
         .to_string();
     let days = args.get("days").and_then(Json::as_f64).unwrap_or(7.0);
 
-    on_main_thread(move || {
+    MAIN_QUEUE.run_result("war_ignite", std::time::Duration::from_secs(5), move || {
         let mut attacker_h: Option<i32> = None;
         let mut defender_h: Option<i32> = None;
         for_each_community(|com| {
@@ -292,7 +291,7 @@ fn war_end(args: &Json) -> Result<Json, String> {
         .and_then(Json::as_str)
         .ok_or("war_end: needs `winner`")?
         .to_string();
-    on_main_thread(move || {
+    MAIN_QUEUE.run_result("war_end", std::time::Duration::from_secs(5), move || {
         let mut loser_h: Option<i32> = None;
         let mut winner_h: Option<i32> = None;
         for_each_community(|com| {

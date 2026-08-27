@@ -34,11 +34,10 @@ use serde_json::{Value as Json, json};
 use modforge::genome::Ballot;
 use modforge::ops::{OP_REGISTRY, OpDef};
 use modforge::survival::{SettlementRung as Rung, SettlementThresholds, settlement_rung};
+use unityforge::main_thread_queue::MAIN_QUEUE;
 use unityforge::mono::{self, LogLevel, MonoObject};
 
-use crate::common::{
-    base_centre, ctype, display_name, for_each_community, handle_of, on_main_thread, own,
-};
+use crate::common::{base_centre, ctype, display_name, for_each_community, handle_of, own};
 use crate::genome;
 
 /// Seconds between survival scans (real time). Slower than the
@@ -258,22 +257,23 @@ pub fn register_ops() {
 /// Stays here because it applies Survivalist's settlement survival rules through the game's classes, fields, content, and actions.
 fn genome_status(_args: &Json) -> Result<Json, String> {
     // Name each id via a live pass; genomes are held Rust-side.
-    let names: std::collections::HashMap<i64, (String, String)> = on_main_thread(|| {
-        let mut m = std::collections::HashMap::new();
-        for_each_community(|com| {
-            let t = ctype(&com);
-            if t == "Normal" || t == "Looter" {
-                if let Some(id) = com.read_field("Id").ok().and_then(|v| v.as_i64()) {
-                    m.insert(id, (display_name(&com), t));
+    let names: std::collections::HashMap<i64, (String, String)> = MAIN_QUEUE
+        .run_result("genome_status", std::time::Duration::from_secs(5), || {
+            let mut m = std::collections::HashMap::new();
+            for_each_community(|com| {
+                let t = ctype(&com);
+                if t == "Normal" || t == "Looter" {
+                    if let Some(id) = com.read_field("Id").ok().and_then(|v| v.as_i64()) {
+                        m.insert(id, (display_name(&com), t));
+                    }
                 }
-            }
-            Ok(true)
-        })?;
-        Ok(serde_json::to_value(m).unwrap_or(json!({})))
-    })
-    .ok()
-    .and_then(|v| serde_json::from_value(v).ok())
-    .unwrap_or_default();
+                Ok(true)
+            })?;
+            Ok(serde_json::to_value(m).unwrap_or(json!({})))
+        })
+        .ok()
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default();
 
     let mut out = Vec::new();
     for (id, g) in genome::snapshot() {
@@ -1132,7 +1132,7 @@ fn release_camps(camps: &[Camp]) {
 /// Report each camp survival rung, active acts, votes, and learned outcomes.
 /// Stays here because it applies Survivalist's settlement survival rules through the game's classes, fields, content, and actions.
 fn survival_status(_args: &Json) -> Result<Json, String> {
-    on_main_thread(|| {
+    MAIN_QUEUE.run_result("survival_status", std::time::Duration::from_secs(5), || {
         let mut out = Vec::new();
         for_each_community(|com| {
             let t = ctype(&com);

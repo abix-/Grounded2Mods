@@ -7,9 +7,8 @@ use serde_json::{Value as Json, json};
 
 use modforge::ops::{OP_REGISTRY, OpDef};
 use modforge::upgrade::UpgradeStore;
+use unityforge::main_thread_queue::MAIN_QUEUE;
 use unityforge::mono;
-
-use crate::common::on_main_thread;
 
 const PROPS: &str = "props";
 const COMMUNITIES: &str = "communities";
@@ -268,20 +267,24 @@ fn upgrade_probe(args: &Json) -> Result<Json, String> {
         .ok_or("missing arg 'type' (prop prototype name, e.g. WoodenChest)")?
         .to_string();
     let level = args.get("level").and_then(Json::as_i64).unwrap_or(1);
-    on_main_thread(move || {
-        let v = mono::invoke_static(
-            "SettlementUpgrades",
-            "UpgradeProbe",
-            &json!([type_name, level]),
-        )?;
-        parse_report(v)
-    })
+    MAIN_QUEUE.run_result(
+        "upgrade_probe",
+        std::time::Duration::from_secs(5),
+        move || {
+            let v = mono::invoke_static(
+                "SettlementUpgrades",
+                "UpgradeProbe",
+                &json!([type_name, level]),
+            )?;
+            parse_report(v)
+        },
+    )
 }
 
 /// Report structure and settlement upgrade effects from the C# shim.
 /// Stays here because it implements Survivalist upgrade scopes and the exact C# shim contract; Modforge owns upgrade state and math.
 fn upgrade_status(_args: &Json) -> Result<Json, String> {
-    on_main_thread(|| {
+    MAIN_QUEUE.run_result("upgrade_status", std::time::Duration::from_secs(5), || {
         let v = mono::invoke_static("SettlementUpgrades", "Status", &json!([]))?;
         parse_report(v)
     })

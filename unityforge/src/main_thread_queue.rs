@@ -92,6 +92,20 @@ impl MainThreadQueue {
         }
     }
 
+    /// Run a fallible main-thread operation and flatten its result.
+    pub fn run_result<T, F>(
+        &self,
+        label: &str,
+        timeout: std::time::Duration,
+        f: F,
+    ) -> Result<T, String>
+    where
+        T: Send + 'static,
+        F: FnOnce() -> Result<T, String> + Send + 'static,
+    {
+        self.run(label, timeout, f)?
+    }
+
     pub fn len(&self) -> usize {
         self.pending.load(Ordering::Relaxed)
     }
