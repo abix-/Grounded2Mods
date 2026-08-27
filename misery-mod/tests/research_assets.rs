@@ -400,6 +400,76 @@ fn do_vanilla_neighbours_share_borders() {
     assert!(printed > 0, "no wall stands within 50 cm of any floor tile's top");
 }
 
+/// THE LEGO RULE against the real catalog: what the game does is
+/// legal, what it never does is refused with the reason named.
+///
+/// Needs no game at all: `parts.json` opens without one, which
+/// was the point of the file. Skips if the catalog has not been
+/// extracted on this machine.
+#[test]
+fn the_rule_reads_from_the_real_catalog() {
+    let path = "C:/Games/Steam/steamapps/common/MISERY/MISERY/Binaries/Win64/ue4ss/Mods/MiseryMod/dlls/parts.json";
+    let Ok(text) = std::fs::read_to_string(path) else {
+        println!("SKIP: no parts.json at {path}; run catalog_all_the_vanilla_buildings");
+        return;
+    };
+    let doc: serde_json::Value = serde_json::from_str(&text).expect("parts.json not JSON");
+
+    // The catalog as modforge::studs reads it.
+    let mut catalog: std::collections::HashMap<String, Vec<modforge::studs::Stud>> =
+        std::collections::HashMap::new();
+    for p in doc["parts"].as_array().cloned().unwrap_or_default() {
+        let Some(name) = p["name"].as_str() else { continue };
+        let studs: Vec<modforge::studs::Stud> = p["studs"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|s| {
+                let a = s["at"].as_array()?;
+                Some(modforge::studs::Stud {
+                    at: (a[0].as_f64()?, a[1].as_f64()?, a[2].as_f64()?),
+                    turn: s["turn"].as_i64()?,
+                    seen: s["seen"].as_u64()? as usize,
+                    with: s["with"]
+                        .as_object()?
+                        .iter()
+                        .filter_map(|(k, v)| Some((k.clone(), v.as_u64()? as usize)))
+                        .collect(),
+                })
+            })
+            .collect();
+        if !studs.is_empty() {
+            catalog.insert(name.to_string(), studs);
+        }
+    }
+    println!("{} parts carry studs in the catalog", catalog.len());
+
+    // A floor stud the game actually uses for a wall.
+    let (floor, stud) = catalog
+        .iter()
+        .filter(|(n, _)| n.starts_with("SM_Floor"))
+        .flat_map(|(n, list)| list.iter().map(move |s| (n, s)))
+        .find(|(_, s)| s.with.keys().any(|k| k.starts_with("SM_Wall")))
+        .expect("no floor stud partners a wall");
+    let wall = stud
+        .with
+        .keys()
+        .find(|k| k.starts_with("SM_Wall"))
+        .unwrap()
+        .clone();
+
+    let legal = modforge::studs::may_join(&catalog, floor, stud.at, stud.turn, &wall, 1);
+    println!("{floor} + {wall} at {:?}: {legal:?}", stud.at);
+    assert_eq!(legal, Ok(()), "the game puts that wall there");
+
+    let refused =
+        modforge::studs::may_join(&catalog, floor, stud.at, stud.turn, "SM_WindowsFrame", 1);
+    println!("{floor} + SM_WindowsFrame: {refused:?}");
+    assert!(refused.is_err(), "the game never puts a window frame there");
+    println!("refusal reads: {}", refused.unwrap_err());
+}
+
 /// THE CATALOG: all the vanilla building data, extracted.
 ///
 /// Every level asset the game ships, loaded in turn, its

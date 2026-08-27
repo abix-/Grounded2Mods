@@ -276,6 +276,67 @@ pub fn cull(map: &mut HashMap<String, Vec<Stud>>, min_seen: usize) {
     map.retain(|_, list| !list.is_empty());
 }
 
+/// Why a join is refused, in words a person can read back.
+#[derive(Debug, PartialEq)]
+pub enum Refusal {
+    /// The first part has no such stud.
+    NoStud,
+    /// The game never puts the second part at this stud, or not
+    /// often enough.
+    NeverSeenHere { seen: usize },
+    /// The second part never carries the mirror stud pointing
+    /// back. One-sided evidence is a reading error, not a rule.
+    NoMirror,
+}
+
+impl std::fmt::Display for Refusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Refusal::NoStud => write!(f, "no stud at that spot"),
+            Refusal::NeverSeenHere { seen } => {
+                write!(f, "the game puts that part here {seen} time(s), fewer than required")
+            }
+            Refusal::NoMirror => write!(f, "the other part never carries the mirror stud"),
+        }
+    }
+}
+
+/// THE LEGO RULE: may `other` join `part` at the stud at `at`
+/// (part's own frame) turned `turn`?
+///
+/// The catalog IS the rule. Legal means the game itself does it:
+/// the stud's partners include `other` at least `min_seen` times,
+/// AND `other` carries a mirror stud that lists `part` back.
+/// Both sides must agree; that is what recording every stud on
+/// both parts was for. No kinds, no taxonomy: where the game
+/// does something a rule forbids, the rule is wrong.
+pub fn may_join(
+    catalog: &HashMap<String, Vec<Stud>>,
+    part: &str,
+    at: (f64, f64, f64),
+    turn: i64,
+    other: &str,
+    min_seen: usize,
+) -> Result<(), Refusal> {
+    let Some(stud) = catalog
+        .get(part)
+        .and_then(|list| list.iter().find(|s| s.at == at && s.turn == turn))
+    else {
+        return Err(Refusal::NoStud);
+    };
+    let seen = stud.with.get(other).copied().unwrap_or(0);
+    if seen < min_seen.max(1) {
+        return Err(Refusal::NeverSeenHere { seen });
+    }
+    let mirrored = catalog
+        .get(other)
+        .is_some_and(|list| list.iter().any(|s| s.with.contains_key(part)));
+    if !mirrored {
+        return Err(Refusal::NoMirror);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -396,6 +457,54 @@ mod tests {
         assert!(
             acc["floor"].iter().all(|s| s.seen >= 3),
             "the one-off paving seam fell to the cull"
+        );
+    }
+
+    /// THE LEGO RULE, on a catalog built from real placements: a
+    /// wall joins its floor, a window frame is refused with the
+    /// reason named, and the substitution the design promises
+    /// (a door wall at a plain wall's stud) is legal for free.
+    #[test]
+    fn the_rule_allows_what_the_game_does_and_refuses_the_rest() {
+        let room = vec![
+            place("floor", 0.0, 0.0, 0.0, 0.0),
+            place("wall", 1.0, 0.0, 0.0, 0.0),
+            place("wall_door", 3.0, 0.0, 0.0, 0.0),
+        ];
+        let catalog = studs_in(&room, Derive::default());
+
+        let stud = catalog["floor"]
+            .iter()
+            .find(|s| s.with.contains_key("wall"))
+            .expect("the wall was seen on the floor");
+        assert_eq!(
+            may_join(&catalog, "floor", stud.at, stud.turn, "wall", 1),
+            Ok(()),
+            "the game puts walls on floors"
+        );
+        // The wall's seam and the door wall's seam are different
+        // studs, so at the WALL'S stud a window frame was seen
+        // zero times.
+        assert_eq!(
+            may_join(&catalog, "floor", stud.at, stud.turn, "window_frame", 1),
+            Err(Refusal::NeverSeenHere { seen: 0 }),
+            "the game never puts a window frame there"
+        );
+        assert_eq!(
+            may_join(&catalog, "floor", (9.0, 9.0, 9.0), 0, "wall", 1),
+            Err(Refusal::NoStud),
+            "no stud at a made-up spot"
+        );
+
+        // Substitution: wherever the floor's stud saw a door
+        // wall, the door wall is legal exactly like the wall.
+        let door_stud = catalog["floor"]
+            .iter()
+            .find(|s| s.with.contains_key("wall_door"))
+            .expect("the door wall was seen on the floor");
+        assert_eq!(
+            may_join(&catalog, "floor", door_stud.at, door_stud.turn, "wall_door", 1),
+            Ok(())
         );
     }
 
