@@ -83,6 +83,9 @@ fn manager_ptr() -> Result<*const u8, String> {
 /// Reads the next Shining countdown, state, area, and seed for display and controls.
 /// Stays here because these fields use MISERY's manager layout; Ueforge supplies generic memory access.
 pub fn status() -> Result<Status, String> {
+    // Counted so the cost is a number, not a guess. The manager
+    // pointer is remembered now, so this is five field reads.
+    let _m = modforge::counters::measure("misery-shining-read");
     let m = manager_ptr()?;
     Ok(Status {
         seconds_left: unsafe { read_at(m, offset::TIME_UNTIL_EMMISION) },
@@ -134,7 +137,15 @@ pub fn add_seconds(seconds: f64) -> Result<f64, String> {
 static SET_MINUTES: AtomicI32 = AtomicI32::new(20);
 
 /// The tab redraws every frame; the manager is read once a
-/// second. `modforge::ui::Cached` owns the timing.
+/// second, because the countdown is DISPLAYED in whole seconds.
+/// Reading it sixty times a second renders the same text sixty
+/// times.
+///
+/// Not a cache hiding an expensive read: measured at 0.5
+/// microseconds against a 16,700 microsecond frame, now that the
+/// manager pointer is remembered rather than searched for
+/// (`misery-shining-read` in `timing_report`). It is the
+/// display's own resolution.
 static STATUS: modforge::ui::Cached<Result<Status, String>> = modforge::ui::Cached::new();
 const REFRESH: std::time::Duration = std::time::Duration::from_secs(1);
 
@@ -182,6 +193,8 @@ pub fn render() {
         if let Err(e) = set_frozen(frozen) {
             ueforge::log::log(format_args!("shining: freeze failed: {e}"));
         }
+        // The numbers just changed; do not make the player wait
+        // up to a second to see it.
         STATUS.invalidate();
     }
     if st.frozen {
@@ -202,6 +215,8 @@ pub fn render() {
         if let Err(e) = set_seconds(f64::from(minutes) * 60.0) {
             ueforge::log::log(format_args!("shining: set failed: {e}"));
         }
+        // The numbers just changed; do not make the player wait
+        // up to a second to see it.
         STATUS.invalidate();
     }
 
@@ -210,6 +225,8 @@ pub fn render() {
         if let Err(e) = set_seconds(10.0) {
             ueforge::log::log(format_args!("shining: set 10s failed: {e}"));
         }
+        // The numbers just changed; do not make the player wait
+        // up to a second to see it.
         STATUS.invalidate();
     }
 
@@ -221,7 +238,7 @@ pub fn render() {
                 ueforge::log::log(format_args!("shining: add failed: {e}"));
             }
             STATUS.invalidate();
-        }
+            }
         ui::same_line();
     }
     ui::new_line();
