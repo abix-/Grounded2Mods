@@ -20,12 +20,15 @@
 //! DIRECTOR.tick(now, || session_seed());
 //! ```
 
+use std::collections::HashSet;
+use std::hash::Hash;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use parking_lot::Mutex;
 use serde_json::{Value as Json, json};
 
 use crate::ops::{OP_REGISTRY, OpDef};
+use crate::roll::Budget;
 
 /// One thing the director can make happen.
 pub struct Rule {
@@ -38,6 +41,212 @@ pub struct Rule {
 pub enum Outcome {
     Fired,
     Passed,
+}
+
+/// A chance that rises with progression until it reaches a cap.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EncounterChance {
+    pub base: f64,
+    pub per_level: f64,
+    pub max: f64,
+}
+
+impl EncounterChance {
+    pub fn at(&self, level: f64) -> f64 {
+        (self.base + self.per_level * level).min(self.max)
+    }
+}
+
+/// Engine-independent policy for adaptive encounters.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EncounterConfig {
+    pub budget: Budget,
+    pub escalation: EncounterChance,
+    pub pack: EncounterChance,
+    pub pack_min: usize,
+    pub pack_max: usize,
+    pub session_cap: usize,
+    pub scatter_min: f64,
+    pub scatter_max: f64,
+    pub height_offset: f64,
+}
+
+/// The encounter composition selected for one place.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EncounterPlan<P> {
+    pub place: P,
+    pub copies: usize,
+    pub escalations: usize,
+    pub pack: usize,
+}
+
+/// One caller-observed anchor available to an encounter.
+pub struct EncounterAnchor<A, C> {
+    pub value: A,
+    pub class: Option<C>,
+    pub position: Option<(f64, f64, f64)>,
+}
+
+/// Why a particular spawn was selected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EncounterSpawnKind {
+    Copy,
+    Escalation,
+    Pack,
+}
+
+/// One engine-independent spawn request returned to the caller.
+pub struct EncounterSpawn<A, C> {
+    pub kind: EncounterSpawnKind,
+    pub anchor: A,
+    pub class: C,
+    pub position: (f64, f64, f64),
+}
+
+/// Adaptive encounter state, selection, placement, and session caps.
+pub struct EncounterPlanner<P> {
+    config: EncounterConfig,
+    processed: HashSet<P>,
+    processed_total: usize,
+    spawned_total: usize,
+}
+
+impl<P> EncounterPlanner<P>
+where
+    P: Clone + Eq + Hash,
+{
+    pub fn new(config: EncounterConfig) -> Self {
+        Self {
+            config,
+            processed: HashSet::new(),
+            processed_total: 0,
+            spawned_total: 0,
+        }
+    }
+
+    /// Forget places that are no longer loaded so they can roll again later.
+    pub fn retain_places(&mut self, mut is_loaded: impl FnMut(&P) -> bool) {
+        self.processed.retain(|place| is_loaded(place));
+    }
+
+    /// Claim a newly loaded place and select its encounter composition.
+    pub fn plan_place(
+        &mut self,
+        place: P,
+        existing_count: usize,
+        level: f64,
+    ) -> Option<EncounterPlan<P>> {
+        if !self.processed.insert(place.clone()) {
+            return None;
+        }
+        self.processed_total += 1;
+
+        let mut plan = EncounterPlan {
+            place,
+            copies: 0,
+            escalations: 0,
+            pack: 0,
+        };
+        if self.config.budget.is_quiet() {
+            return Some(plan);
+        }
+
+        let extras = self.config.budget.roll_scaled(level, existing_count as f64);
+        let escalation_chance = self.config.escalation.at(level);
+        for _ in 0..extras {
+            if fastrand::f64() < escalation_chance {
+                plan.escalations += 1;
+            } else {
+                plan.copies += 1;
+            }
+        }
+
+        if fastrand::f64() < self.config.pack.at(level) {
+            let pack_max = self.config.pack_max.max(self.config.pack_min);
+            plan.pack = self.config.pack_min + fastrand::usize(0..=pack_max - self.config.pack_min);
+        }
+        Some(plan)
+    }
+
+    /// Select anchors, classes, and scatter positions, then ask the caller to
+    /// execute each request. Only successful requests consume the session cap.
+    pub fn execute<A, C>(
+        &mut self,
+        plan: &EncounterPlan<P>,
+        anchors: &[EncounterAnchor<A, C>],
+        escalation_pool: &[C],
+        mut on_pack: impl FnMut(&C, usize),
+        mut spawn: impl FnMut(EncounterSpawn<A, C>) -> bool,
+    ) -> usize
+    where
+        A: Clone,
+        C: Clone,
+    {
+        if anchors.is_empty() || escalation_pool.is_empty() {
+            return 0;
+        }
+
+        let mut spawned = 0;
+        let mut attempt = |kind: EncounterSpawnKind, anchor: &EncounterAnchor<A, C>, class: &C| {
+            if self.is_full() {
+                return;
+            }
+            let Some((x, y, z)) = anchor.position else {
+                return;
+            };
+            let angle = fastrand::f64() * std::f64::consts::TAU;
+            let distance = self.config.scatter_min
+                + fastrand::f64() * (self.config.scatter_max - self.config.scatter_min);
+            let request = EncounterSpawn {
+                kind,
+                anchor: anchor.value.clone(),
+                class: class.clone(),
+                position: (
+                    x + angle.cos() * distance,
+                    y + angle.sin() * distance,
+                    z + self.config.height_offset,
+                ),
+            };
+            if spawn(request) {
+                self.spawned_total += 1;
+                spawned += 1;
+            }
+        };
+
+        for _ in 0..plan.copies {
+            let anchor = &anchors[fastrand::usize(0..anchors.len())];
+            if let Some(class) = &anchor.class {
+                attempt(EncounterSpawnKind::Copy, anchor, class);
+            }
+        }
+        for _ in 0..plan.escalations {
+            let anchor = &anchors[fastrand::usize(0..anchors.len())];
+            let class = &escalation_pool[fastrand::usize(0..escalation_pool.len())];
+            attempt(EncounterSpawnKind::Escalation, anchor, class);
+        }
+        if plan.pack > 0 {
+            let anchor = &anchors[fastrand::usize(0..anchors.len())];
+            let class = &escalation_pool[fastrand::usize(0..escalation_pool.len())];
+            on_pack(class, plan.pack);
+            for _ in 0..plan.pack {
+                attempt(EncounterSpawnKind::Pack, anchor, class);
+            }
+        }
+
+        spawned
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.spawned_total >= self.config.session_cap
+    }
+
+    pub fn spawned_total(&self) -> usize {
+        self.spawned_total
+    }
+
+    pub fn processed_total(&self) -> usize {
+        self.processed_total
+    }
 }
 
 /// One caller-observed target for adaptive pressure. The caller
@@ -260,7 +469,10 @@ impl Director {
         let rule = self.pick_rule();
         match (rule.run)(now) {
             Ok(Outcome::Fired) => {
-                *self.last_event.lock() = Some(LastEvent { rule: rule.name, at: now });
+                *self.last_event.lock() = Some(LastEvent {
+                    rule: rule.name,
+                    at: now,
+                });
                 self.schedule_next(now, false);
             }
             Ok(Outcome::Passed) => self.schedule_next(now, true),
@@ -316,8 +528,10 @@ impl Director {
             return true;
         }
         if let Ok(seed) = seed_fn() {
-            self.rng_state
-                .store(((seed as u64) ^ 0xD1B5_4A32_D192_ED03) | 1, Ordering::Relaxed);
+            self.rng_state.store(
+                ((seed as u64) ^ 0xD1B5_4A32_D192_ED03) | 1,
+                Ordering::Relaxed,
+            );
             return true;
         }
         false

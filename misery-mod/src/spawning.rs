@@ -12,12 +12,14 @@
 //! Average extras reach the square's own vanilla count (a
 //! doubling) at DOUBLE_AT_EMISSIONS.
 
-use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::time::Duration;
 
+use modforge::storyteller::{
+    EncounterAnchor, EncounterChance, EncounterConfig, EncounterPlan, EncounterPlanner,
+};
 use ueforge::ue::{self, UObject, read_at};
-
 
 /// One knob for overall intensity; multiplies the budget curve.
 const INTENSITY: f64 = 1.0;
@@ -49,19 +51,11 @@ const EMISSIONS_PAST_OFFSET: usize = 0x2F8;
 /// Classes never used as escalations (harmless or friendly).
 const NO_ESCALATE: &[&str] = &["Tamed", "DeerNeutral", "Boar"];
 
-static SPAWNED_TOTAL: AtomicU64 = AtomicU64::new(0);
-static SQUARES_PROCESSED: AtomicU64 = AtomicU64::new(0);
 static LAST_EMISSIONS: AtomicI32 = AtomicI32::new(-1);
 /// Test override for the emission level; negative = use live.
 static EMISSIONS_OVERRIDE: AtomicI32 = AtomicI32::new(-1);
 
-/// What one square rolls; executed as one game-thread job.
-struct Plan {
-    square: String,
-    copies: usize,
-    escalations: usize,
-    pack: usize,
-}
+static PLANNER: std::sync::Mutex<Option<EncounterPlanner<String>>> = std::sync::Mutex::new(None);
 
 /// The save's shining count: max EmissionsPast across the four
 /// world generators (only the active one accumulates).
@@ -117,45 +111,31 @@ fn square_of(full_name: &str) -> Option<String> {
 /// at DOUBLE_AT_EMISSIONS. The curve, the quiet chance and the
 /// cap are `modforge::roll`, which is unit-tested; what stays
 /// here is only what MISERY spends the budget on.
-const BUDGET: modforge::roll::Budget = modforge::roll::Budget {
-    quiet_chance: QUIET_CHANCE,
-    at_zero: 0.0,
-    per_level: 1.0 / DOUBLE_AT_EMISSIONS,
-    intensity: INTENSITY,
-    max: PER_SQUARE_CAP,
+const ENCOUNTER_CONFIG: EncounterConfig = EncounterConfig {
+    budget: modforge::roll::Budget {
+        quiet_chance: QUIET_CHANCE,
+        at_zero: 0.0,
+        per_level: 1.0 / DOUBLE_AT_EMISSIONS,
+        intensity: INTENSITY,
+        max: PER_SQUARE_CAP,
+    },
+    escalation: EncounterChance {
+        base: ESCALATE_BASE,
+        per_level: ESCALATE_PER_EMISSION,
+        max: ESCALATE_CAP,
+    },
+    pack: EncounterChance {
+        base: PACK_BASE,
+        per_level: PACK_PER_EMISSION,
+        max: PACK_CAP,
+    },
+    pack_min: 3,
+    pack_max: 5,
+    session_cap: SESSION_CAP as usize,
+    scatter_min: JITTER_MIN,
+    scatter_max: JITTER_MAX,
+    height_offset: 100.0,
 };
-
-/// Chooses the extra creatures and packs that will make one square more dangerous.
-/// Stays here because Modforge supplies generic weighted rolls while MISERY defines the enemies and escalation rules.
-fn roll_plan(square: &str, vanilla: usize, emissions: i32) -> Plan {
-    let mut plan = Plan {
-        square: square.to_string(),
-        copies: 0,
-        escalations: 0,
-        pack: 0,
-    };
-    // A quiet square gets nothing, packs included.
-    if BUDGET.is_quiet() {
-        return plan;
-    }
-    let extras = BUDGET.roll_scaled(emissions as f64, vanilla as f64);
-
-    let p_escalate =
-        (ESCALATE_BASE + ESCALATE_PER_EMISSION * emissions as f64).min(ESCALATE_CAP);
-    for _ in 0..extras {
-        if fastrand::f64() < p_escalate {
-            plan.escalations += 1;
-        } else {
-            plan.copies += 1;
-        }
-    }
-
-    let p_pack = (PACK_BASE + PACK_PER_EMISSION * emissions as f64).min(PACK_CAP);
-    if fastrand::f64() < p_pack {
-        plan.pack = 3 + fastrand::usize(0..=2);
-    }
-    plan
-}
 
 /// Background watcher. Rolls a plan for each newly streamed
 /// square and executes it on the game thread.
@@ -173,55 +153,52 @@ pub fn install() {
     ));
 }
 
-/// Squares already rolled. Outside the tick because the worker
-/// re-enters per interval.
-static PROCESSED: std::sync::Mutex<Option<HashSet<String>>> = std::sync::Mutex::new(None);
-
 /// Detects newly loaded MISERY squares and schedules their extra enemy encounters.
-/// Stays here because the trigger and session policy are part of this mod's spawning feature.
+/// Stays here because polling the live Unreal world and dispatching game-thread work are MISERY integration.
 fn watcher() {
-    let mut guard = PROCESSED.lock().unwrap_or_else(|e| e.into_inner());
-    let processed = guard.get_or_insert_with(HashSet::new);
+    if ue::try_runtime().is_none() {
+        return;
+    }
+    let squares = census();
     {
-        if ue::try_runtime().is_none() {
+        let mut guard = PLANNER.lock().unwrap_or_else(|e| e.into_inner());
+        let planner = guard.get_or_insert_with(|| EncounterPlanner::new(ENCOUNTER_CONFIG));
+        planner.retain_places(|square| squares.contains_key(square));
+        if planner.is_full() {
             return;
         }
-        let squares = census();
-        // A square that unloaded rolls fresh next time it streams in.
-        processed.retain(|s| squares.contains_key(s));
+    }
+    let emissions = emission_level();
+    LAST_EMISSIONS.store(emissions, Ordering::Relaxed);
 
-        if SPAWNED_TOTAL.load(Ordering::Relaxed) >= SESSION_CAP {
-            return;
+    for (square, vanilla) in &squares {
+        let plan = {
+            let mut guard = PLANNER.lock().unwrap_or_else(|e| e.into_inner());
+            guard
+                .get_or_insert_with(|| EncounterPlanner::new(ENCOUNTER_CONFIG))
+                .plan_place(square.clone(), *vanilla, emissions as f64)
+        };
+        let Some(plan) = plan else {
+            continue;
+        };
+        let total = plan.copies + plan.escalations + plan.pack;
+        ueforge::log::log(format_args!(
+            "spawning: {} vanilla={vanilla} emissions={emissions} copies={} escalations={} pack={}",
+            short(square),
+            plan.copies,
+            plan.escalations,
+            plan.pack,
+        ));
+        if total == 0 {
+            continue;
         }
-        let emissions = emission_level();
-        LAST_EMISSIONS.store(emissions, Ordering::Relaxed);
-
-        for (square, vanilla) in &squares {
-            if processed.contains(square) {
-                continue;
-            }
-            processed.insert(square.clone());
-            SQUARES_PROCESSED.fetch_add(1, Ordering::Relaxed);
-            let plan = roll_plan(square, *vanilla, emissions);
-            let total = plan.copies + plan.escalations + plan.pack;
-            ueforge::log::log(format_args!(
-                "spawning: {} vanilla={vanilla} emissions={emissions} copies={} escalations={} pack={}",
-                short(square), plan.copies, plan.escalations, plan.pack,
-            ));
-            if total == 0 {
-                continue;
-            }
-            // Not `enqueue`: this watcher already runs ON the
-            // game thread, so queueing here would wait for a
-            // drain that cannot start until we return. `run`
-            // executes in place when we are already there.
-            let r = ueforge::game_thread::run(
-                move || execute_plan(&plan),
-                Duration::from_secs(10),
-            );
-            if let Err(e) = r {
-                ueforge::log::log(format_args!("spawning: plan failed: {e}"));
-            }
+        // Not `enqueue`: this watcher already runs ON the
+        // game thread, so queueing here would wait for a
+        // drain that cannot start until we return. `run`
+        // executes in place when we are already there.
+        let r = ueforge::game_thread::run(move || execute_plan(&plan), Duration::from_secs(10));
+        if let Err(e) = r {
+            ueforge::log::log(format_args!("spawning: plan failed: {e}"));
         }
     }
 }
@@ -235,21 +212,38 @@ fn short(square: &str) -> &str {
 /// Runs on the game thread. Re-censuses the square (pointers
 /// from the watcher could be stale), then spawns.
 /// Places a planned group of extra enemies around the chosen loaded square.
-/// Stays here because the creature pools, pack rules, and placement policy are MISERY gameplay.
-fn execute_plan(plan: &Plan) -> Result<serde_json::Value, String> {
-    let mut anchors: Vec<*const u8> = Vec::new();
-    let mut pool: Vec<(u64, String)> = Vec::new();
+/// Stays here because it reads MISERY's live enemies and executes Modforge requests through Ueforge.
+fn execute_plan(plan: &EncounterPlan<String>) -> Result<serde_json::Value, String> {
+    #[derive(Clone)]
+    struct EnemyClass {
+        ptr: u64,
+        name: String,
+    }
+
+    let mut anchors = Vec::new();
+    let mut pool = Vec::new();
     for p in ueforge::ue::actor::find_actors_by_chain("BP_MasterAICharacter_C") {
         // SAFETY: p is live; we are on the game thread, nothing
         // streams out mid-frame.
         let obj = unsafe { &*(p as *const UObject) };
-        let class_name = obj.class().map(|c| c.as_object().name()).unwrap_or_default();
+        let class_name = obj
+            .class()
+            .map(|c| c.as_object().name())
+            .unwrap_or_default();
         let class_ptr = unsafe { read_at::<u64>(p, 0x10) };
+        let class = (class_ptr != 0).then(|| EnemyClass {
+            ptr: class_ptr,
+            name: class_name.clone(),
+        });
         if class_ptr != 0 && !NO_ESCALATE.iter().any(|n| class_name.contains(n)) {
-            pool.push((class_ptr, class_name));
+            pool.push(class.clone().expect("non-null class was captured"));
         }
-        if square_of(&obj.full_name()).as_deref() == Some(plan.square.as_str()) {
-            anchors.push(p);
+        if square_of(&obj.full_name()).as_deref() == Some(plan.place.as_str()) {
+            anchors.push(EncounterAnchor {
+                value: p,
+                class,
+                position: actor_location(p),
+            });
         }
     }
     if anchors.is_empty() {
@@ -263,50 +257,28 @@ fn execute_plan(plan: &Plan) -> Result<serde_json::Value, String> {
         .next()
         .ok_or("no player for world context")?;
 
-    let mut spawned = 0usize;
-    let mut spawn_near = |anchor: *const u8, class_ptr: u64| {
-        if SPAWNED_TOTAL.load(Ordering::Relaxed) >= SESSION_CAP {
-            return;
-        }
-        if let Some((x, y, z)) = actor_location(anchor) {
-            let ang = fastrand::f64() * std::f64::consts::TAU;
-            let dist = JITTER_MIN + fastrand::f64() * (JITTER_MAX - JITTER_MIN);
-            let (sx, sy) = (x + ang.cos() * dist, y + ang.sin() * dist);
-            if spawn_class(world_ctx, class_ptr, sx, sy, z + 100.0) != 0 {
-                SPAWNED_TOTAL.fetch_add(1, Ordering::Relaxed);
-                spawned += 1;
-            }
-        }
-    };
-
-    for _ in 0..plan.copies {
-        let anchor = anchors[fastrand::usize(0..anchors.len())];
-        let class_ptr = unsafe { read_at::<u64>(anchor, 0x10) };
-        if class_ptr != 0 {
-            spawn_near(anchor, class_ptr);
-        }
-    }
-    for _ in 0..plan.escalations {
-        let anchor = anchors[fastrand::usize(0..anchors.len())];
-        let (class_ptr, _) = pool[fastrand::usize(0..pool.len())];
-        spawn_near(anchor, class_ptr);
-    }
-    if plan.pack > 0 {
-        let anchor = anchors[fastrand::usize(0..anchors.len())];
-        let (class_ptr, name) = pool[fastrand::usize(0..pool.len())].clone();
-        ueforge::log::log(format_args!(
-            "spawning: PACK of {} x {name} at {}",
-            plan.pack,
-            short(&plan.square)
-        ));
-        for _ in 0..plan.pack {
-            spawn_near(anchor, class_ptr);
-        }
-    }
+    let mut guard = PLANNER.lock().unwrap_or_else(|e| e.into_inner());
+    let planner = guard.get_or_insert_with(|| EncounterPlanner::new(ENCOUNTER_CONFIG));
+    let spawned = planner.execute(
+        plan,
+        &anchors,
+        &pool,
+        |class, count| {
+            ueforge::log::log(format_args!(
+                "spawning: PACK of {count} x {} at {}",
+                class.name,
+                short(&plan.place)
+            ));
+        },
+        |request| {
+            let (x, y, z) = request.position;
+            spawn_class(world_ctx, request.class.ptr, x, y, z) != 0
+        },
+    );
 
     ueforge::log::log(format_args!(
         "spawning: {} spawned {spawned} extra NPC(s)",
-        short(&plan.square)
+        short(&plan.place)
     ));
     Ok(serde_json::json!({"spawned": spawned}))
 }
@@ -328,9 +300,7 @@ fn actor_location(actor: *const u8) -> Option<(f64, f64, f64)> {
 fn spawn_class(world_ctx: *const u8, class_ptr: u64, x: f64, y: f64, z: f64) -> u64 {
     // SAFETY: world_ctx is a live actor and class_ptr a live
     // UClass, both from this frame's GObjects walk; game thread.
-    unsafe {
-        ueforge::ue::spawn::spawn_ai_from_class(world_ctx, class_ptr, (x, y, z), 0.0, true)
-    }
+    unsafe { ueforge::ue::spawn::spawn_ai_from_class(world_ctx, class_ptr, (x, y, z), 0.0, true) }
 }
 
 /// Adds adaptive-spawning status and override commands to the MISERY debug API.
@@ -342,9 +312,11 @@ fn register_ops() {
             "Scaling spawner counters",
             "{}",
             |_args| {
+                let mut guard = PLANNER.lock().unwrap_or_else(|e| e.into_inner());
+                let planner = guard.get_or_insert_with(|| EncounterPlanner::new(ENCOUNTER_CONFIG));
                 Ok(serde_json::json!({
-                    "spawned_total": SPAWNED_TOTAL.load(Ordering::Relaxed),
-                    "squares_processed": SQUARES_PROCESSED.load(Ordering::Relaxed),
+                    "spawned_total": planner.spawned_total(),
+                    "squares_processed": planner.processed_total(),
                     "emissions": LAST_EMISSIONS.load(Ordering::Relaxed),
                     "override": EMISSIONS_OVERRIDE.load(Ordering::Relaxed),
                 }))
