@@ -41,7 +41,7 @@ Engine-independent systems usable by a mod or a standalone game.
 | Research | [Patterns](modforge/src/patterns/mod.rs), [Scanning](modforge/src/scanner.rs), [Processes](modforge/src/winproc.rs), [Research](modforge/src/research.rs), [Minidumps](modforge/src/bin/minidump.rs) |
 | Input | [Input](modforge/src/input/mod.rs), [Actions](modforge/src/actions.rs) |
 | UI | [UI](modforge/src/ui/mod.rs), [HUD](modforge/src/hud.rs) |
-| Items | [Items](modforge/src/item.rs), [Quality](modforge/src/quality.rs), [Crafting](modforge/src/crafting.rs) |
+| Items | [Items](modforge/src/item.rs), [Quality](modforge/src/quality.rs), [Crafting](modforge/src/crafting.rs), [Vendors](modforge/src/vendor.rs) |
 | Progression | [Upgrades](modforge/src/upgrade.rs), [RPG](modforge/src/rpg/mod.rs) |
 | Actors | [Actors](modforge/src/actor.rs), [Decisions](modforge/src/brain.rs), [Memory](modforge/src/memory.rs) |
 | Conflict | [Combat](modforge/src/combat.rs), [Factions](modforge/src/faction.rs) |

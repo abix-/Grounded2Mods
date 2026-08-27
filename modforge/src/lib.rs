@@ -50,6 +50,7 @@ pub mod ui;
 pub mod unknown;
 pub mod upgrade;
 pub mod vanilla;
+pub mod vendor;
 pub mod winproc;
 pub mod worker;
 pub mod worldgen;

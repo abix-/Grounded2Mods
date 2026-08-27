@@ -25,6 +25,8 @@ Extract the remaining engine-independent and Unreal-specific systems from MISERY
 - MISERY retains Unreal progression and creature observation, enemy exclusions, tuning values, spawn execution, logging, and controls.
 - Phenomenon region tracking, weighted selection, reward guarding, count and cluster rolls, placement requests, successful-spawn caps, and counters belong to `modforge::storyteller`.
 - MISERY retains its phenomenon catalog, live-square and progression observation, Blueprint lookup, ground traces, Unreal spawning, logging, and controls.
+- Vendor percentage pricing, provisional global assignment, commit-on-success, inventory mirroring, and special-offer rejection belong to `modforge::vendor`.
+- MISERY retains vendor and item discovery, category and economy values, offer precedence, sewing-kit policy, and Unreal list mutation.
 - The root README is a concise workspace map with capability tables; detailed framework and decompilation material stays in the owning crate documentation.
 
 ## Last session summary
@@ -78,10 +80,13 @@ Extract the remaining engine-independent and Unreal-specific systems from MISERY
 - Expanded `modforge::storyteller` with phenomenon definitions and planning state for region re-entry, weighted distinct selection, reward-danger pairing, ordered guard placement, count and cluster rolls, class-variant choices, placement requests, caps, and counters.
 - Migrated MISERY phenomena to supply its catalog and live Unreal facts, resolve ground and Blueprint classes, and execute Modforge's requests while preserving random roll order, placement, counters, logs, controls, and spawn behavior.
 - Verified the MISERY library compiles. Modforge built and 312 tests passed; the full library target remains red only on the existing `input::tests::backend_parse_rejects_garbage` mismatch where `l3` is accepted.
+- Added `modforge::vendor::OfferPlanner` for percentage pricing, globally unique provisional assignments, commit-on-success behavior, inventory mirroring, and caller-supplied special offers.
+- Migrated MISERY's vendor mirror, ammo, food, and sewing-kit decisions to Modforge while preserving vendor order, item and currency policy, prices, append-failure fallback, and raw Unreal mutation.
+- Verified the MISERY library compiles. Modforge built and 312 tests passed; the full library target remains red only on the existing `input::tests::backend_parse_rejects_garbage` mismatch where `l3` is accepted.
 
 ## Next steps
 
-- Move MISERY's engine-independent vendor offer planning into Modforge while retaining Unreal inventory mutation in MISERY and Ueforge.
+- Move MISERY's raw TArray clone, growth, and append machinery into Ueforge while retaining vendor entry offsets and byte patches in MISERY.
 
 ## Open questions
 
