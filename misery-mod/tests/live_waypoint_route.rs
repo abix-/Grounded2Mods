@@ -16,6 +16,8 @@ use std::time::{Duration, Instant};
 
 use common::{Api, api_or_skip, offsets_live};
 use modforge::client;
+use modforge::client::live_journal::{LiveJournal, Observation, OpExecutor, RecordedOp, Recorder};
+use modforge::envelope::OpResponse;
 use modforge::route::{
     Pose, Position, RouteGraph, SteeringConfig, StuckDetector, TrailRecorder, Waypoint, steer,
     steer_yaw,
@@ -32,10 +34,9 @@ struct ReleaseForward<'a>(&'a Api);
 
 impl Drop for ReleaseForward<'_> {
     fn drop(&mut self) {
-        let _ = self.0.try_op(
-            "input.key.up",
-            json!({"key": "w", "backend": "l1"}),
-        );
+        let _ = self
+            .0
+            .try_op("input.key.up", json!({"key": "w", "backend": "l1"}));
     }
 }
 
@@ -72,7 +73,11 @@ fn input(api: &Api, op: &str, args: serde_json::Value) {
 
 fn require_game_foreground(api: &Api) {
     let foreground = api.op("input.foreground.hwnd", json!({}));
-    assert!(foreground.ok, "foreground hwnd failed: {:?}", foreground.error);
+    assert!(
+        foreground.ok,
+        "foreground hwnd failed: {:?}",
+        foreground.error
+    );
     let own = api.op("input.self.hwnd", json!({}));
     assert!(own.ok, "game hwnd failed: {:?}", own.error);
     assert_eq!(
@@ -95,7 +100,7 @@ fn follow(
     selector: &str,
     waypoints: &[Waypoint],
     mut trail: Option<&mut TrailRecorder>,
-) {
+) -> Result<(), String> {
     let config = SteeringConfig {
         mouse_units_per_degree: 2.0,
         max_mouse_delta: 120,
@@ -113,20 +118,18 @@ fn follow(
             if output.arrived {
                 break;
             }
-            assert!(
-                started.elapsed() < WAYPOINT_TIMEOUT,
-                "timed out at waypoint '{}' from pose {:?}, distance {:.1} cm",
-                waypoint.id,
-                current,
-                output.distance
-            );
-            assert!(
-                !stuck.observe(started.elapsed().as_millis() as u64, output.distance),
-                "stuck at waypoint '{}' from pose {:?}, distance {:.1} cm",
-                waypoint.id,
-                current,
-                output.distance
-            );
+            if started.elapsed() >= WAYPOINT_TIMEOUT {
+                return Err(format!(
+                    "timed out at waypoint '{}' from pose {:?}, distance {:.1} cm",
+                    waypoint.id, current, output.distance
+                ));
+            }
+            if stuck.observe(started.elapsed().as_millis() as u64, output.distance) {
+                return Err(format!(
+                    "stuck at waypoint '{}' from pose {:?}, distance {:.1} cm",
+                    waypoint.id, current, output.distance
+                ));
+            }
             if output.mouse_dx != 0 {
                 input(
                     api,
@@ -145,6 +148,94 @@ fn follow(
             }
         }
     }
+    Ok(())
+}
+
+struct RouteExecutor<'a> {
+    api: &'a Api,
+    selector: &'a str,
+}
+
+impl OpExecutor for RouteExecutor<'_> {
+    fn execute(&self, operation: &RecordedOp) -> Result<OpResponse<serde_json::Value>, String> {
+        match operation.op.as_str() {
+            "route.follow" => {
+                let route: RouteGraph = serde_json::from_value(
+                    operation
+                        .args
+                        .get("route")
+                        .cloned()
+                        .ok_or("route.follow is missing route")?,
+                )
+                .map_err(|error| format!("parse route.follow route: {error}"))?;
+                let start = operation
+                    .args
+                    .get("start")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or("route.follow is missing start")?;
+                let goal = operation
+                    .args
+                    .get("goal")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or("route.follow is missing goal")?;
+                follow(
+                    self.api,
+                    self.selector,
+                    &route_waypoints(&route, start, goal),
+                    None,
+                )?;
+                Ok(OpResponse::ok(
+                    "route.follow",
+                    json!({"arrived": goal}),
+                    json!({}),
+                ))
+            }
+            "route.arrived" => {
+                let target: Position = serde_json::from_value(
+                    operation
+                        .args
+                        .get("position")
+                        .cloned()
+                        .ok_or("route.arrived is missing position")?,
+                )
+                .map_err(|error| format!("parse route.arrived position: {error}"))?;
+                let radius = operation
+                    .args
+                    .get("radius")
+                    .and_then(serde_json::Value::as_f64)
+                    .ok_or("route.arrived is missing radius")?;
+                let current = pose(self.api, self.selector);
+                Ok(OpResponse::ok(
+                    "route.arrived",
+                    json!({
+                        "arrived": current.position.distance(target) <= radius,
+                        "position": current.position,
+                        "yaw_deg": current.yaw_deg,
+                    }),
+                    json!({}),
+                ))
+            }
+            _ => self.api.execute(operation),
+        }
+    }
+}
+
+fn follow_op(route: &RouteGraph, start: &str, goal: &str) -> RecordedOp {
+    RecordedOp::new(
+        "route.follow",
+        json!({"route": route, "start": start, "goal": goal}),
+    )
+}
+
+fn arrived(position: Position) -> Observation {
+    Observation::new(
+        RecordedOp::new(
+            "route.arrived",
+            json!({"position": position, "radius": ARRIVAL_CM}),
+        ),
+        "/result/arrived",
+        json!(true),
+    )
 }
 
 fn restore_yaw(api: &Api, selector: &str, target_yaw: f64) {
@@ -160,7 +251,10 @@ fn restore_yaw(api: &Api, selector: &str, target_yaw: f64) {
         if dx.abs() <= 1 {
             return;
         }
-        assert!(started.elapsed() < Duration::from_secs(4), "could not restore facing");
+        assert!(
+            started.elapsed() < Duration::from_secs(4),
+            "could not restore facing"
+        );
         input(
             api,
             "input.mouse.move_rel",
@@ -197,17 +291,21 @@ fn misery_records_saves_and_replays_a_waypoint_route() {
         &player.addr_selector,
         &[Waypoint::new("recording-target", target, ARRIVAL_CM)],
         Some(&mut recorder),
-    );
+    )
+    .unwrap();
     let recorded = recorder.finish("misery short route").unwrap();
-    assert!(recorded.waypoints().len() >= 2, "route did not retain movement samples");
+    assert!(
+        recorded.waypoints().len() >= 2,
+        "route did not retain movement samples"
+    );
 
-    let path = std::env::temp_dir().join(format!(
+    let route_path = std::env::temp_dir().join(format!(
         "modforge-misery-waypoint-route-{}.json",
         std::process::id()
     ));
-    let _remove = RemoveFile(path.clone());
-    std::fs::write(&path, recorded.to_json().unwrap()).unwrap();
-    let loaded = RouteGraph::from_json(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let _remove_route = RemoveFile(route_path.clone());
+    std::fs::write(&route_path, recorded.to_json().unwrap()).unwrap();
+    let loaded = RouteGraph::from_json(&std::fs::read_to_string(&route_path).unwrap()).unwrap();
     assert_eq!(loaded, recorded);
 
     let first = loaded.first_id().unwrap();
@@ -218,19 +316,39 @@ fn misery_records_saves_and_replays_a_waypoint_route() {
         &player.addr_selector,
         &route_waypoints(&reverse, last, first),
         None,
-    );
-    follow(
-        &api,
-        &player.addr_selector,
-        &route_waypoints(&loaded, first, last),
-        None,
-    );
-    follow(
-        &api,
-        &player.addr_selector,
-        &route_waypoints(&reverse, last, first),
-        None,
-    );
+    )
+    .unwrap();
+
+    let executor = RouteExecutor {
+        api: &api,
+        selector: &player.addr_selector,
+    };
+    let mut journal_recorder = Recorder::new("misery short route", &executor);
+    journal_recorder
+        .action("follow saved route", follow_op(&loaded, first, last))
+        .unwrap();
+    journal_recorder
+        .wait("saved route arrived", arrived(target), 250, 25)
+        .unwrap();
+    journal_recorder
+        .action("return on saved route", follow_op(&reverse, last, first))
+        .unwrap();
+    journal_recorder
+        .wait("return arrived", arrived(start.position), 250, 25)
+        .unwrap();
+    let journal = journal_recorder.finish();
+
+    let journal_path = std::env::temp_dir().join(format!(
+        "modforge-misery-waypoint-journal-{}.json",
+        std::process::id()
+    ));
+    let _remove_journal = RemoveFile(journal_path.clone());
+    std::fs::write(&journal_path, journal.to_json().unwrap()).unwrap();
+    let replay = LiveJournal::from_json(&std::fs::read_to_string(&journal_path).unwrap()).unwrap();
+    assert_eq!(replay, journal);
+    let report = replay.replay(&executor).unwrap();
+    assert_eq!(report.actions, 2);
+    assert!(report.wait_polls >= 2);
     restore_yaw(&api, &player.addr_selector, start.yaw_deg);
 
     let final_pose = pose(&api, &player.addr_selector);

@@ -56,6 +56,11 @@ Turn the MISERY live action journal into recorded waypoint routes with closed-lo
 
 ## Last session summary
 
+- Added `modforge::route` with versioned world-space waypoint graphs, recorded directed edges, A* over available recorded edges, trail reduction, closed-loop yaw steering, arrival checks, and stuck evidence.
+- Added relative mouse movement and look-axis operations, registered the generic input catalog in MISERY, and extended Horsey's input surface for relative axes.
+- Added five route tests. All five pass, all 327 Modforge library tests pass, and Modforge, MISERY, and Horsey compile across all targets.
+- Changed the permanent MISERY route proof so the live journal owns semantic `route.follow` actions and observed-arrival waits, then saves, loads, and replays the journal. The test target compiles.
+- Deployed the new MISERY DLL as `main-new.dll`, but the running game retained the old operation catalog. MISERY hot reload is unsupported and documented as crash-prone, so live movement verification is blocked until a safe cold restart loads the deployed build.
 - Updated the synthetic-input design for MISERY 3D route recording: world-space waypoints, relative look axes, closed-loop waypoint following, stuck evidence, combat handoff, and A* over recorded traversable edges.
 - Added `modforge::client::live_journal`, a versioned JSON journal for injected games that records control-plane actions, waits for observed JSON values, and asserts resulting state with precise step and value evidence on failure.
 - Added five behavioral tests covering round-trip, ordered replay, condition polling, recording, operation failure, and assertion failure.
@@ -257,7 +262,7 @@ Turn the MISERY live action journal into recorded waypoint routes with closed-lo
 
 ## Next steps
 
-- Record a live MISERY trail from spawn to the expedition as world-space waypoints, then replay it through movement and relative look input while the journal waits on observed waypoint arrival.
+- Cold-start MISERY so the deployed route build becomes `main.dll`, then run `live_waypoint_route` and retain its measured outward-and-return result.
 - Compile the BepInEx IL2CPP shim when a BepInEx 6 IL2CPP reference directory is available.
 - Namespace Unityforge's managed handle table by generation so stale handles cannot collide after a hot swap.
 - Run the existing Grounded 2 in-game smoke checks for the completed extraction batch.

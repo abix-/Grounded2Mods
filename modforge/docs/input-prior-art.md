@@ -8,7 +8,7 @@
 > `modforge::input`. Research-only; no code lands until PR-1..PR-10 are
 > done and a recommendation is on file at the bottom of this doc.
 
-## Implementation status (2026-05-16)
+## Implementation status (2026-08-27)
 
 End state after the 2026-05-16 session: **all three layers shipped + smoke green**.
 
@@ -24,13 +24,14 @@ End state after the 2026-05-16 session: **all three layers shipped + smoke green
 | I-4: L3 surface + HorseyInputSurface | `6796b7bc` | `Backend::L3` + `set_input_surface`/`input_surface` slot + per-cmdlet `l3_or_fallback`. `HorseyInputSurface` v1 writes `LOC+0x174`/`+0x178` cursor floats directly. Graceful degrade when no save loaded. |
 | Unit tests | `054053d3` | 8 parser tests (`Backend`/`Button`/`Key`). |
 | I-6: live action journal | `d18f3726` | Versioned operation actions, observed-value waits, and assertions in `modforge::client::live_journal`; recorded, saved, loaded, replayed, and restored live against MISERY movement speed. |
+| I-7: waypoint routes | `d331b31d` | Versioned world-space routes, recorded traversable edges, A*, trail reduction, closed-loop steering, relative mouse input, and stuck evidence. Unit proof is green; the MISERY journal replay proof requires a cold game restart because this game does not support hot reload. |
 
-**Cmdlets shipped** (12 total under `input.*`):
+**Cmdlets shipped** (14 total under `input.*`):
 
 ```
-input.mouse.move    input.mouse.click    input.mouse.drag    input.mouse.scroll
+input.mouse.move    input.mouse.move_rel    input.mouse.click    input.mouse.drag    input.mouse.scroll
 input.key.down      input.key.up         input.key.press
-input.combo
+input.axis          input.combo
 input.cursor.get    input.foreground.hwnd    input.find_hwnd_by_pid    input.self.hwnd
 ```
 
@@ -45,7 +46,7 @@ input.cursor.get    input.foreground.hwnd    input.find_hwnd_by_pid    input.sel
 
 **Open items for future sessions:**
 
-- MISERY 3D route proof: record a live player trail as world-space waypoints, replay it through closed-loop movement and look input, and make the live action journal wait on waypoint arrival. Start with the recorded trail as the traversability graph; add A* when more than one proven route exists.
+- Cold-start MISERY with the deployed route build, then run the permanent live test that saves a waypoint graph and a semantic action journal, replays outward and back, and waits on observed arrival.
 - HorseyInputSurface v2: direct mouse-state struct writes + direct keyboard buffer writes (per the engine-internal findings above).
 - HK1 Shift+Click transfer migration. Now unblocked by L3; pending an in-save smoke run.
 - Cross-game proof: grounded2-mod or schedule1 ships its own `InputSurface` impl.
