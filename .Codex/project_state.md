@@ -2,7 +2,7 @@
 
 ## Current focus
 
-Extract engine-independent Survivalist systems into their existing Modforge authorities without changing game behavior.
+Extract the remaining engine-independent and Unreal-specific systems from MISERY into Modforge and Ueforge without changing game behavior.
 
 ## Design goals
 
@@ -64,10 +64,11 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 - Corrected Scrap Mechanic's README to describe its loadable `BetterSurvival` custom game instead of incorrectly calling the directory research-only.
 - Reworked every mod feature table so each concise feature name links to its primary implementing source file and a separate description column explains the behavior.
 - Documented every function in `misery-mod/src` with a concise player-readable purpose and a specific reason the function remains game-specific instead of moving into Modforge, Ueforge, or Unityforge.
+- Audited those function boundaries and recorded the remaining MISERY lifts in `docs/todo.md`: standard asset and game-thread operations, reusable field editing, typed TMap mutation, encounter and phenomenon planning, vendor offer planning, raw TArray append support, checked UFunction calls, transient-object lookup, and live-object hook installation.
 
 ## Next steps
 
-- Review the next unchecked Modforge extraction candidate in `docs/todo.md`.
+- Start with the standard MISERY asset operations, which already sit entirely on Ueforge asset and game-thread primitives.
 
 ## Open questions
 
