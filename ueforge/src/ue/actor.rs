@@ -4,8 +4,319 @@
 //! `AController.Pawn` slot at a stable offset that doesn't move
 //! between Engine versions.
 
-use crate::ue::{self, UClass, UObject};
+use crate::ue::uobject::NativeProperty;
+use crate::ue::{self, ClassRef, UClass, UObject};
+use parking_lot::Mutex;
+use std::ffi::c_void;
+use std::sync::OnceLock;
 use std::time::Duration;
+
+static GAMEPLAY_STATICS: ClassRef = ClassRef::new("GameplayStatics");
+static ACTOR_CLASS: ClassRef = ClassRef::new("Actor");
+static GET_ALL_ACTORS_LAYOUT: OnceLock<Result<ActorEnumerationLayout, String>> = OnceLock::new();
+static GET_COMPONENT_LAYOUT: OnceLock<Result<ComponentLookupLayout, String>> = OnceLock::new();
+static GET_COMPONENTS_LAYOUT: OnceLock<Result<ComponentEnumerationLayout, String>> =
+    OnceLock::new();
+static ACTOR_OUTPUT: Mutex<ActorOutputBuffer> = Mutex::new(ActorOutputBuffer { data: 0, max: 0 });
+static COMPONENT_OUTPUT: Mutex<ActorOutputBuffer> =
+    Mutex::new(ActorOutputBuffer { data: 0, max: 0 });
+
+const INITIAL_ACTOR_CAPACITY: i32 = 4096;
+const MAX_ACTOR_RESULTS: i32 = 65_536;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ActorEnumerationLayout {
+    parms_size: usize,
+    world_context: usize,
+    actor_class: usize,
+    out_actors: usize,
+}
+
+impl ActorEnumerationLayout {
+    fn from_properties(parms_size: usize, properties: &[NativeProperty]) -> Result<Self, String> {
+        let offset = |name: &str| {
+            properties
+                .iter()
+                .find(|property| property.name == name)
+                .map(|property| property.offset as usize)
+                .ok_or_else(|| format!("GetAllActorsOfClass has no {name} parameter"))
+        };
+        let layout = Self {
+            parms_size,
+            world_context: offset("WorldContextObject")?,
+            actor_class: offset("ActorClass")?,
+            out_actors: offset("OutActors")?,
+        };
+        if layout.world_context + 8 > parms_size
+            || layout.actor_class + 8 > parms_size
+            || layout.out_actors + 16 > parms_size
+        {
+            return Err("GetAllActorsOfClass parameter layout exceeds ParmsSize".into());
+        }
+        Ok(layout)
+    }
+}
+
+struct ActorOutputBuffer {
+    data: usize,
+    max: i32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ComponentLookupLayout {
+    parms_size: usize,
+    component_class: usize,
+    return_value: usize,
+}
+
+impl ComponentLookupLayout {
+    fn from_properties(parms_size: usize, properties: &[NativeProperty]) -> Result<Self, String> {
+        let offset = |name: &str| {
+            properties
+                .iter()
+                .find(|property| property.name == name)
+                .map(|property| property.offset as usize)
+                .ok_or_else(|| format!("GetComponentByClass has no {name} parameter"))
+        };
+        let layout = Self {
+            parms_size,
+            component_class: offset("ComponentClass")?,
+            return_value: offset("ReturnValue")?,
+        };
+        if layout.component_class + 8 > parms_size || layout.return_value + 8 > parms_size {
+            return Err("GetComponentByClass parameter layout exceeds ParmsSize".into());
+        }
+        Ok(layout)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ComponentEnumerationLayout {
+    parms_size: usize,
+    component_class: usize,
+    return_value: usize,
+}
+
+impl ComponentEnumerationLayout {
+    fn from_properties(parms_size: usize, properties: &[NativeProperty]) -> Result<Self, String> {
+        let offset = |name: &str| {
+            properties
+                .iter()
+                .find(|property| property.name == name)
+                .map(|property| property.offset as usize)
+                .ok_or_else(|| format!("K2_GetComponentsByClass has no {name} parameter"))
+        };
+        let layout = Self {
+            parms_size,
+            component_class: offset("ComponentClass")?,
+            return_value: offset("ReturnValue")?,
+        };
+        if layout.component_class + 8 > parms_size || layout.return_value + 16 > parms_size {
+            return Err("K2_GetComponentsByClass parameter layout exceeds ParmsSize".into());
+        }
+        Ok(layout)
+    }
+}
+
+impl ActorOutputBuffer {
+    fn ensure_allocated(&mut self) -> Result<(), String> {
+        if self.data != 0 {
+            return Ok(());
+        }
+        let bytes = INITIAL_ACTOR_CAPACITY as usize * std::mem::size_of::<*const UObject>();
+        self.data = ue::gmalloc::alloc_zeroed(bytes, ue::gmalloc::DEFAULT_ALIGNMENT)
+            .ok_or("GetAllActorsOfClass could not allocate its retained output buffer")?
+            as usize;
+        self.max = INITIAL_ACTOR_CAPACITY;
+        Ok(())
+    }
+}
+
+/// Ask Unreal for every live actor derived from `actor_class`.
+///
+/// This calls `UGameplayStatics::GetAllActorsOfClass`, which uses
+/// the world's actor collections. It does not walk GObjects. The
+/// output buffer is allocated once from Unreal's allocator and
+/// retained for the process, so repeated calls neither allocate
+/// nor leak one buffer per query.
+///
+/// Game thread only. Returned pointers are valid only for the
+/// current world and must be discarded when that world ends.
+pub fn actors_of_class(
+    world_context: &UObject,
+    actor_class: &UClass,
+) -> Result<Vec<*const UObject>, String> {
+    let _measurement = modforge::counters::measure("ue:actors_of_class");
+    let function = GAMEPLAY_STATICS
+        .find_function("GetAllActorsOfClass")
+        .ok_or("GameplayStatics::GetAllActorsOfClass is not loaded")?;
+    let layout = GET_ALL_ACTORS_LAYOUT.get_or_init(|| {
+        ActorEnumerationLayout::from_properties(
+            function.parms_size() as usize,
+            &function.iter_parameters(),
+        )
+    });
+    let layout = layout.as_ref().map_err(Clone::clone)?;
+    let cdo = GAMEPLAY_STATICS
+        .cdo()
+        .ok_or("GameplayStatics class default object is not loaded")?;
+    let mut output = ACTOR_OUTPUT.lock();
+    output.ensure_allocated()?;
+    let mut parms = vec![0u8; layout.parms_size];
+    parms[layout.world_context..layout.world_context + 8]
+        .copy_from_slice(&(world_context as *const UObject as u64).to_le_bytes());
+    parms[layout.actor_class..layout.actor_class + 8]
+        .copy_from_slice(&(actor_class as *const UClass as u64).to_le_bytes());
+    parms[layout.out_actors..layout.out_actors + 8]
+        .copy_from_slice(&(output.data as u64).to_le_bytes());
+    parms[layout.out_actors + 12..layout.out_actors + 16]
+        .copy_from_slice(&output.max.to_le_bytes());
+
+    // SAFETY: the function and CDO are cached live engine objects;
+    // the reflected offsets were validated inside ParmsSize; the
+    // output TArray uses the engine allocator; caller guarantees the
+    // game thread and a live world-context actor.
+    unsafe {
+        cdo.process_event(function, parms.as_mut_ptr() as *mut c_void);
+    }
+
+    let data = u64::from_le_bytes(
+        parms[layout.out_actors..layout.out_actors + 8]
+            .try_into()
+            .expect("eight-byte actor output pointer"),
+    ) as usize;
+    let num = i32::from_le_bytes(
+        parms[layout.out_actors + 8..layout.out_actors + 12]
+            .try_into()
+            .expect("four-byte actor output count"),
+    );
+    let max = i32::from_le_bytes(
+        parms[layout.out_actors + 12..layout.out_actors + 16]
+            .try_into()
+            .expect("four-byte actor output capacity"),
+    );
+    if data == 0 || num < 0 || max < num || max > MAX_ACTOR_RESULTS {
+        return Err(format!(
+            "GetAllActorsOfClass returned corrupt TArray data={data:#x} num={num} max={max}"
+        ));
+    }
+    output.data = data;
+    output.max = max;
+    // SAFETY: the validated TArray reports `num` initialized actor
+    // pointers inside its engine-allocated `max` capacity.
+    let actors = unsafe { std::slice::from_raw_parts(data as *const *const UObject, num as usize) };
+    Ok(actors
+        .iter()
+        .copied()
+        .filter(|actor| !actor.is_null())
+        .collect())
+}
+
+/// Return the first component on `actor` derived from
+/// `component_class`, through Unreal's own actor API.
+///
+/// No object search. Game thread only, and the returned pointer
+/// belongs to the current world.
+pub fn component_by_class(
+    actor: &UObject,
+    component_class: &UClass,
+) -> Result<Option<*const UObject>, String> {
+    let _measurement = modforge::counters::measure("ue:component_by_class");
+    let function = ACTOR_CLASS
+        .find_function("GetComponentByClass")
+        .ok_or("Actor::GetComponentByClass is not loaded")?;
+    let layout = GET_COMPONENT_LAYOUT.get_or_init(|| {
+        ComponentLookupLayout::from_properties(
+            function.parms_size() as usize,
+            &function.iter_parameters(),
+        )
+    });
+    let layout = layout.as_ref().map_err(Clone::clone)?;
+    let mut parms = vec![0u8; layout.parms_size];
+    parms[layout.component_class..layout.component_class + 8]
+        .copy_from_slice(&(component_class as *const UClass as u64).to_le_bytes());
+    // SAFETY: `actor` and `component_class` are live engine
+    // objects; reflected offsets are validated within ParmsSize;
+    // caller guarantees the game thread.
+    unsafe {
+        actor.process_event(function, parms.as_mut_ptr() as *mut c_void);
+    }
+    let result = u64::from_le_bytes(
+        parms[layout.return_value..layout.return_value + 8]
+            .try_into()
+            .expect("eight-byte component return pointer"),
+    );
+    Ok((result != 0).then_some(result as *const UObject))
+}
+
+/// Return every component on `actor` derived from
+/// `component_class`, through Unreal's own actor API.
+///
+/// No object search. The retained output buffer is reused for the
+/// process. Game thread only, and returned pointers belong to the
+/// current world.
+pub fn components_by_class(
+    actor: &UObject,
+    component_class: &UClass,
+) -> Result<Vec<*const UObject>, String> {
+    let _measurement = modforge::counters::measure("ue:components_by_class");
+    let function = ACTOR_CLASS
+        .find_function("K2_GetComponentsByClass")
+        .ok_or("Actor::K2_GetComponentsByClass is not loaded")?;
+    let layout = GET_COMPONENTS_LAYOUT.get_or_init(|| {
+        ComponentEnumerationLayout::from_properties(
+            function.parms_size() as usize,
+            &function.iter_parameters(),
+        )
+    });
+    let layout = layout.as_ref().map_err(Clone::clone)?;
+    let mut output = COMPONENT_OUTPUT.lock();
+    output.ensure_allocated()?;
+    let mut parms = vec![0u8; layout.parms_size];
+    parms[layout.component_class..layout.component_class + 8]
+        .copy_from_slice(&(component_class as *const UClass as u64).to_le_bytes());
+    parms[layout.return_value..layout.return_value + 8]
+        .copy_from_slice(&(output.data as u64).to_le_bytes());
+    parms[layout.return_value + 12..layout.return_value + 16]
+        .copy_from_slice(&output.max.to_le_bytes());
+    // SAFETY: `actor` and `component_class` are live engine
+    // objects; the reflected offsets fit ParmsSize; the output
+    // TArray uses Unreal's allocator; caller guarantees game thread.
+    unsafe {
+        actor.process_event(function, parms.as_mut_ptr() as *mut c_void);
+    }
+    let data = u64::from_le_bytes(
+        parms[layout.return_value..layout.return_value + 8]
+            .try_into()
+            .expect("eight-byte component output pointer"),
+    ) as usize;
+    let num = i32::from_le_bytes(
+        parms[layout.return_value + 8..layout.return_value + 12]
+            .try_into()
+            .expect("four-byte component output count"),
+    );
+    let max = i32::from_le_bytes(
+        parms[layout.return_value + 12..layout.return_value + 16]
+            .try_into()
+            .expect("four-byte component output capacity"),
+    );
+    if data == 0 || num < 0 || max < num || max > MAX_ACTOR_RESULTS {
+        return Err(format!(
+            "K2_GetComponentsByClass returned corrupt TArray data={data:#x} num={num} max={max}"
+        ));
+    }
+    output.data = data;
+    output.max = max;
+    // SAFETY: the validated TArray reports `num` initialized
+    // component pointers within its engine-allocated capacity.
+    let components =
+        unsafe { std::slice::from_raw_parts(data as *const *const UObject, num as usize) };
+    Ok(components
+        .iter()
+        .copied()
+        .filter(|component| !component.is_null())
+        .collect())
+}
 
 /// `AController.Pawn` byte offset (Engine_classes.hpp:30510).
 /// Stable UE5 layout, valid for any game built on Engine 5.x.
@@ -214,10 +525,19 @@ impl LiveActor {
         self.get().map(|o| o as *const UObject as *const u8)
     }
 
+    /// Return the actor already retained for the current world without searching.
+    pub fn retained(&'static self) -> Option<&'static UObject> {
+        let addr = self.addr.load(std::sync::atomic::Ordering::Acquire);
+        (addr != 0).then(|| {
+            // SAFETY: `addr` is set only from a live GObjects result and is
+            // cleared by `forget_all` when its owning world ends.
+            unsafe { &*(addr as *const UObject) }
+        })
+    }
+
     /// Forget it, so the next `get` searches again.
     pub fn forget(&self) {
-        self.addr
-            .store(0, std::sync::atomic::Ordering::Release);
+        self.addr.store(0, std::sync::atomic::Ordering::Release);
     }
 
     pub fn is_held(&self) -> bool {
@@ -446,7 +766,10 @@ pub fn actors_in_levels(path_needle: &str) -> Vec<(String, *const u8)> {
         if !full.contains(path_needle) || !is_level_actor(&full) {
             continue;
         }
-        let class = obj.class().map(|c| c.as_object().name()).unwrap_or_default();
+        let class = obj
+            .class()
+            .map(|c| c.as_object().name())
+            .unwrap_or_default();
         out.push((class, obj.as_ptr()));
     }
     out
@@ -504,12 +827,8 @@ pub fn find_objects_by_chain(class_needle: &str) -> Vec<*const u8> {
 /// is all it has given us to work with.
 ///
 /// The thread runs for the lifetime of the process.
-pub fn on_each_load<P, F>(
-    label: &'static str,
-    poll_interval: Duration,
-    finder: P,
-    on_load: F,
-) where
+pub fn on_each_load<P, F>(label: &'static str, poll_interval: Duration, finder: P, on_load: F)
+where
     P: Fn() -> Option<*const u8> + Send + Sync + 'static,
     F: Fn(*const u8) + Send + Sync + 'static,
 {
@@ -529,94 +848,213 @@ pub fn on_each_load<P, F>(
     // and the crash landed one second after it logged
     // "gone (main menu?)". See ueforge::game_thread::run.
     let thread_name = format!("ueforge-load-{label}");
-    let _ = std::thread::Builder::new().name(thread_name).spawn(move || {
-        /// Ask the game thread whether the finder sees anything.
-        /// `None` also covers "the game thread did not answer",
-        /// which is the safe reading: do nothing.
-        fn look<P>(finder: &Arc<P>) -> Option<usize>
-        where
-            P: Fn() -> Option<*const u8> + Send + Sync + 'static,
-        {
-            let f = finder.clone();
-            let found = crate::game_thread::run(
-                move || Ok(serde_json::json!(f().map(|p| p as usize))),
-                TIMEOUT,
-            );
-            found.ok()?.as_u64().map(|a| a as usize)
-        }
-
-        /// Is a world loaded? Cheap when the mod has registered
-        /// where its streamed levels live, and `None` when it has
-        /// not, which means "no idea" rather than "no world".
-        fn world() -> Option<bool> {
-            crate::game_thread::run(
-                || Ok(serde_json::json!(crate::ue::streaming::world_is_up())),
-                TIMEOUT,
-            )
-            .ok()?
-            .as_bool()
-        }
-
-        loop {
-            // Waiting for a world. Searching for the thing before
-            // there is a world to hold it is 100 ms spent to
-            // learn nothing.
-            if world() == Some(false) {
-                std::thread::sleep(poll_interval);
-                continue;
+    let _ = std::thread::Builder::new()
+        .name(thread_name)
+        .spawn(move || {
+            /// Ask the game thread whether the finder sees anything.
+            /// `None` also covers "the game thread did not answer",
+            /// which is the safe reading: do nothing.
+            fn look<P>(finder: &Arc<P>) -> Option<usize>
+            where
+                P: Fn() -> Option<*const u8> + Send + Sync + 'static,
+            {
+                let f = finder.clone();
+                let found = crate::game_thread::run(
+                    move || Ok(serde_json::json!(f().map(|p| p as usize))),
+                    TIMEOUT,
+                );
+                found.ok()?.as_u64().map(|a| a as usize)
             }
-            std::thread::sleep(poll_interval);
-            let Some(addr) = look(&finder) else {
-                continue;
-            };
-            crate::log::log(format_args!("{label}: found, applying"));
-            let action = on_load.clone();
-            let _ = crate::game_thread::run(
-                move || {
-                    action(addr as *const u8);
-                    Ok(serde_json::Value::Null)
-                },
-                TIMEOUT,
-            );
 
-            // Applied. Now the only question is whether the world
-            // goes away, and that is ONE BIT. Asking it by
-            // re-running the finder and seeing nothing costs a
-            // full object search every poll, for the life of the
-            // process: 1009 ms per 30 seconds in MISERY, the
-            // biggest single cost in the mod once everything else
-            // was fixed.
+            /// Is a world loaded? Cheap when the mod has registered
+            /// where its streamed levels live, and `None` when it has
+            /// not, which means "no idea" rather than "no world".
+            fn world() -> Option<bool> {
+                crate::game_thread::run(
+                    || Ok(serde_json::json!(crate::ue::streaming::world_is_up())),
+                    TIMEOUT,
+                )
+                .ok()?
+                .as_bool()
+            }
+
             loop {
+                // Waiting for a world. Searching for the thing before
+                // there is a world to hold it is 100 ms spent to
+                // learn nothing.
+                if world() == Some(false) {
+                    std::thread::sleep(poll_interval);
+                    continue;
+                }
                 std::thread::sleep(poll_interval);
-                match world() {
-                    Some(true) => continue,
-                    Some(false) => {
-                        crate::log::log(format_args!(
-                            "{label}: world gone, waiting for the next one"
-                        ));
-                        // Everything found in that world is now a
-                        // stale pointer.
-                        let _ = crate::game_thread::run(
-                            || {
-                                forget_all();
-                                Ok(serde_json::Value::Null)
-                            },
-                            TIMEOUT,
-                        );
-                        break;
-                    }
-                    // No streamer registered, so fall back to the
-                    // old way: run the finder and see.
-                    None => {
-                        if look(&finder).is_none() {
+                let Some(addr) = look(&finder) else {
+                    continue;
+                };
+                crate::log::log(format_args!("{label}: found, applying"));
+                let action = on_load.clone();
+                let _ = crate::game_thread::run(
+                    move || {
+                        action(addr as *const u8);
+                        Ok(serde_json::Value::Null)
+                    },
+                    TIMEOUT,
+                );
+
+                // Applied. Now the only question is whether the world
+                // goes away, and that is ONE BIT. Asking it by
+                // re-running the finder and seeing nothing costs a
+                // full object search every poll, for the life of the
+                // process: 1009 ms per 30 seconds in MISERY, the
+                // biggest single cost in the mod once everything else
+                // was fixed.
+                loop {
+                    std::thread::sleep(poll_interval);
+                    match world() {
+                        Some(true) => continue,
+                        Some(false) => {
                             crate::log::log(format_args!(
-                                "{label}: gone (main menu?), waiting for reload"
+                                "{label}: world gone, waiting for the next one"
                             ));
+                            // Everything found in that world is now a
+                            // stale pointer.
+                            let _ = crate::game_thread::run(
+                                || {
+                                    forget_all();
+                                    Ok(serde_json::Value::Null)
+                                },
+                                TIMEOUT,
+                            );
                             break;
+                        }
+                        // No streamer registered, so fall back to the
+                        // old way: run the finder and see.
+                        None => {
+                            if look(&finder).is_none() {
+                                crate::log::log(format_args!(
+                                    "{label}: gone (main menu?), waiting for reload"
+                                ));
+                                break;
+                            }
                         }
                     }
                 }
             }
-        }
-    });
+        });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    static NEVER_FOUND: LiveActor = LiveActor::new("NeverFound_C");
+
+    #[test]
+    fn retained_actor_does_not_search_when_empty() {
+        assert!(NEVER_FOUND.retained().is_none());
+        assert!(!NEVER_FOUND.is_held());
+    }
+
+    #[test]
+    fn actor_enumeration_layout_uses_reflected_offsets() {
+        let properties = vec![
+            NativeProperty {
+                name: "WorldContextObject".into(),
+                offset: 0,
+                element_size: 8,
+            },
+            NativeProperty {
+                name: "ActorClass".into(),
+                offset: 8,
+                element_size: 8,
+            },
+            NativeProperty {
+                name: "OutActors".into(),
+                offset: 16,
+                element_size: 8,
+            },
+        ];
+
+        assert_eq!(
+            ActorEnumerationLayout::from_properties(32, &properties).unwrap(),
+            ActorEnumerationLayout {
+                parms_size: 32,
+                world_context: 0,
+                actor_class: 8,
+                out_actors: 16,
+            }
+        );
+    }
+
+    #[test]
+    fn actor_enumeration_layout_rejects_missing_or_truncated_output() {
+        let properties = vec![
+            NativeProperty {
+                name: "WorldContextObject".into(),
+                offset: 0,
+                element_size: 8,
+            },
+            NativeProperty {
+                name: "ActorClass".into(),
+                offset: 8,
+                element_size: 8,
+            },
+        ];
+        assert!(ActorEnumerationLayout::from_properties(32, &properties).is_err());
+
+        let mut with_output = properties;
+        with_output.push(NativeProperty {
+            name: "OutActors".into(),
+            offset: 24,
+            element_size: 8,
+        });
+        assert!(ActorEnumerationLayout::from_properties(32, &with_output).is_err());
+    }
+
+    #[test]
+    fn component_lookup_layout_uses_reflected_offsets() {
+        let properties = vec![
+            NativeProperty {
+                name: "ComponentClass".into(),
+                offset: 0,
+                element_size: 8,
+            },
+            NativeProperty {
+                name: "ReturnValue".into(),
+                offset: 8,
+                element_size: 8,
+            },
+        ];
+        assert_eq!(
+            ComponentLookupLayout::from_properties(16, &properties).unwrap(),
+            ComponentLookupLayout {
+                parms_size: 16,
+                component_class: 0,
+                return_value: 8,
+            }
+        );
+    }
+
+    #[test]
+    fn component_enumeration_layout_uses_reflected_offsets() {
+        let properties = vec![
+            NativeProperty {
+                name: "ComponentClass".into(),
+                offset: 0,
+                element_size: 8,
+            },
+            NativeProperty {
+                name: "ReturnValue".into(),
+                offset: 8,
+                element_size: 16,
+            },
+        ];
+        assert_eq!(
+            ComponentEnumerationLayout::from_properties(24, &properties).unwrap(),
+            ComponentEnumerationLayout {
+                parms_size: 24,
+                component_class: 0,
+                return_value: 8,
+            }
+        );
+    }
 }

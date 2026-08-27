@@ -106,6 +106,7 @@ fn on_unreal_init() {
         run: || modforge::rpg::poller::shutdown_all(),
     });
 
+    speed::register_player_selector();
     debug::spawn(DEBUG_PORT);
 
     // Where MISERY keeps its loaded squares. Registering it lets
@@ -154,17 +155,26 @@ fn on_unreal_init() {
         // call the host-a-server object and came up in a world
         // the player had never been to. See research.md 26.9.
         .once("autoload", autoload::install)
-        .on_each_load("speed_default", Duration::from_secs(2),
+        .on_each_load(
+            "speed_default",
+            Duration::from_secs(2),
             || speed::PLAYER.ptr(),
             |_| {
                 if let Err(e) = speed::set_multiplier(2.0) {
                     ueforge::log::log(format_args!("speed_default: {e}"));
                 }
-            })
-        .on_each_load("vendors", Duration::from_secs(3),
-            || ueforge::ue::actor::find_actors_by_chain("BP_MasterVendorBuildPart_C")
-                .into_iter().next(),
-            vendors::apply_all)
+            },
+        )
+        .on_each_load(
+            "vendors",
+            Duration::from_secs(3),
+            || {
+                ueforge::ue::actor::find_actors_by_chain("BP_MasterVendorBuildPart_C")
+                    .into_iter()
+                    .next()
+            },
+            vendors::apply_all,
+        )
         .install();
 }
 

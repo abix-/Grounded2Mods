@@ -11,22 +11,28 @@
 
 mod common;
 
-use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use common::{Api, api_or_skip, offsets_live};
-use modforge::client;
-use modforge::route::{Position, RouteEdge, RouteGraph, StuckDetector, Waypoint};
+use modforge::client::{self, ClassInstance};
+use modforge::route::{
+    Position, RouteEdge, RouteGraph, SteeringConfig, StuckDetector, Waypoint, steer_yaw,
+};
 use serde_json::{Value, json};
 
 const PLAYER_CLASS: &str = "BP_SGKMasterCharacter_C";
 const METAL_DOOR_CLASS: &str = "BP_MetalDoor_C";
 const EXPEDITION_DOOR_CLASS: &str = "BP_ExpeditionDoor_C";
-const LOOT_BOX_CLASSES: [&str; 4] = [
-    "BP_GradBigCrate_C",
-    "BP_AirCrate_C",
-    "BP_WoodenBoxResource_C",
-    "BP_DestroyedStorageBag_C",
+const STORAGE_CLASS: &str = "BP_MasterStorageBuildPart_C";
+const CONTAINER_WINDOW_CLASS: &str = "BP_ContainerWindow_C";
+const LOOT_BOX_CLASSES: [&str; 7] = [
+    "BP_BigCrate_C",
+    "BP_MidCrate_C",
+    "BP_WoodenCrate2_C",
+    "BP_MilBigCrateWorld_C",
+    "BP_MilMidCrateWorld_C",
+    "BP_StashMid_C",
+    "BP_Safe_C",
 ];
 const ARRIVAL_CM: f64 = 175.0;
 const SAMPLE_CM: f64 = 100.0;
@@ -34,10 +40,115 @@ const METAL_DOOR_APPROACH_CM: f64 = 200.0;
 const EXPEDITION_ENTRY_DISTANCE_CM: f64 = 1_000.0;
 const MOVE_TIMEOUT: Duration = Duration::from_secs(90);
 const ENTRY_TIMEOUT: Duration = Duration::from_secs(15);
+const INTERACTION_RANGE_CM: f64 = 300.0;
+const INVENTORY_ITEM_COUNT_OFFSET: u64 = 0xC0;
+const INVENTORY_USING_PLAYERS_NUM_OFFSET: u64 = 0xB0;
+const PLAYER_CHARACTER_COMPONENT_OFFSET: u64 = 0x740;
+const CHARACTER_PLAYER_INVENTORY_OFFSET: u64 = 0x218;
+
+struct NavigationCalls {
+    project: Value,
+    find_path: Value,
+    get_controller: Value,
+    simple_move: Value,
+}
+
+struct ReachableLootBox {
+    actor: ClassInstance,
+    approach: [f64; 3],
+    path_cost: f64,
+}
+
+impl NavigationCalls {
+    fn new(api: &Api) -> Self {
+        Self {
+            project: function_layout(api, "NavigationSystemV1", "K2_ProjectPointToNavigation"),
+            find_path: function_layout(
+                api,
+                "NavigationSystemV1",
+                "FindPathToLocationSynchronously",
+            ),
+            get_controller: function_layout(api, "Pawn", "GetController"),
+            simple_move: function_layout(api, "AIBlueprintHelperLibrary", "SimpleMoveToLocation"),
+        }
+    }
+}
 
 struct StopMovement<'a> {
     api: &'a Api,
     controller_selector: String,
+}
+
+struct TimingGuard<'a> {
+    api: &'a Api,
+    active: bool,
+}
+
+impl<'a> TimingGuard<'a> {
+    fn start(api: &'a Api) -> Self {
+        let response = api.op("timing", json!({"on": true, "reset": true}));
+        assert!(response.ok, "could not start timing: {:?}", response.error);
+        Self { api, active: true }
+    }
+
+    fn finish(mut self) -> Value {
+        let report = self.api.op("timing_report", json!({}));
+        assert!(report.ok, "could not read timing: {:?}", report.error);
+        assert_performance_report(&report.result);
+        self.disable()
+            .unwrap_or_else(|error| panic!("could not stop timing: {error}"));
+        report.result
+    }
+
+    fn disable(&mut self) -> Result<(), String> {
+        if !self.active {
+            return Ok(());
+        }
+        let response = self
+            .api
+            .try_op("timing", json!({"on": false, "reset": false}))
+            .map_err(|error| format!("timing request failed: {error}"))?;
+        if !response.ok {
+            return Err(response.error.unwrap_or_else(|| "unknown error".into()));
+        }
+        self.active = false;
+        Ok(())
+    }
+}
+
+impl Drop for TimingGuard<'_> {
+    fn drop(&mut self) {
+        if let Err(error) = self.disable() {
+            eprintln!("could not disable route timing during cleanup: {error}");
+        }
+    }
+}
+
+fn assert_performance_report(report: &Value) {
+    let entries = report["entries"]
+        .as_array()
+        .expect("timing report has entries");
+    for forbidden in [
+        "ue:find_object",
+        "ue:find_objects_by_chain",
+        "ue:find_actors_by_chain",
+        "ue:objects_read",
+    ] {
+        assert!(
+            entries.iter().all(|entry| entry["name"] != forbidden),
+            "route performed forbidden global object work: {forbidden}"
+        );
+    }
+    for entry in entries.iter().filter(|entry| {
+        entry["name"]
+            .as_str()
+            .is_some_and(|name| name.starts_with("ue:"))
+    }) {
+        assert!(
+            entry["worst_ms"].as_f64().unwrap_or(f64::INFINITY) < 16.7,
+            "Unreal bot operation consumed a full frame: {entry}"
+        );
+    }
 }
 
 impl Drop for StopMovement<'_> {
@@ -64,6 +175,69 @@ fn actor_location(api: &Api, selector: &str) -> [f64; 3] {
         client::from_le_f64(&out, 0x08),
         client::from_le_f64(&out, 0x10),
     ]
+}
+
+fn retained_player(api: &Api) -> ClassInstance {
+    client::resolve_selector(api, "live_player")
+        .expect("the current-world MISERY player is not retained")
+}
+
+fn scene_component_location(api: &Api, selector: &str) -> [f64; 3] {
+    let (out, _) = api
+        .call_ufunction(
+            "SceneComponent",
+            "K2_GetComponentLocation",
+            selector,
+            &[0u8; 0x18],
+        )
+        .expect("K2_GetComponentLocation failed");
+    [
+        client::from_le_f64(&out, 0x00),
+        client::from_le_f64(&out, 0x08),
+        client::from_le_f64(&out, 0x10),
+    ]
+}
+
+fn pawn_view_location(api: &Api, player_selector: &str) -> [f64; 3] {
+    let player = u64::from_str_radix(player_selector.trim_start_matches("addr:0x"), 16)
+        .expect("player selector is an address");
+    let camera = component_of_class(api, player, "CameraComponent");
+    scene_component_location(api, &format!("addr:0x{camera:X}"))
+}
+
+fn actor_bounds(api: &Api, selector: &str) -> ([f64; 3], [f64; 3]) {
+    let mut parms = [0u8; 57];
+    parms[0] = 1;
+    let (out, _) = api
+        .call_ufunction("Actor", "GetActorBounds", selector, &parms)
+        .expect("GetActorBounds failed");
+    let vector = |offset| {
+        [
+            client::from_le_f64(&out, offset),
+            client::from_le_f64(&out, offset + 8),
+            client::from_le_f64(&out, offset + 16),
+        ]
+    };
+    (vector(8), vector(32))
+}
+
+fn interaction_in_range(view: [f64; 3], origin: [f64; 3], extent: [f64; 3]) -> bool {
+    let mut squared = 0.0;
+    for axis in 0..3 {
+        let outside = ((view[axis] - origin[axis]).abs() - extent[axis]).max(0.0);
+        squared += outside * outside;
+    }
+    squared.sqrt() <= INTERACTION_RANGE_CM
+}
+
+fn interaction_allowed(api: &Api, target: &ClassInstance) -> bool {
+    let class = target
+        .full_name
+        .split_whitespace()
+        .next()
+        .unwrap_or_default();
+    api.call_ufunction(class, "SGK AllowInteraction", &target.addr_selector, &[0])
+        .is_ok_and(|(out, _)| out.first() == Some(&1))
 }
 
 fn distance(left: [f64; 3], right: [f64; 3]) -> f64 {
@@ -112,6 +286,23 @@ fn spawn_to_expedition_route(
     .unwrap()
 }
 
+fn expedition_to_loot_route(start: [f64; 3], loot_box: [f64; 3]) -> RouteGraph {
+    RouteGraph::new(
+        "misery expedition to loot box",
+        vec![
+            Waypoint::new("expedition-entry", position(start), ARRIVAL_CM),
+            Waypoint::new("loot-box", position(loot_box), ARRIVAL_CM),
+        ],
+        vec![RouteEdge::new(
+            "expedition-entry->loot-box",
+            "expedition-entry",
+            "loot-box",
+            distance(start, loot_box),
+        )],
+    )
+    .unwrap()
+}
+
 fn metal_door_approach(spawn: [f64; 3], door: [f64; 3]) -> [f64; 3] {
     let dx = spawn[0] - door[0];
     let dy = spawn[1] - door[1];
@@ -150,6 +341,70 @@ fn game_viewport(api: &Api) -> isize {
     .expect("window handle is hex");
     let pid = modforge::input::window_pid(own_hwnd).expect("game window has an owning process");
     modforge::input::find_hwnd_by_pid(pid).expect("game viewport exists")
+}
+
+fn focus_game(api: &Api) {
+    let viewport = game_viewport(api);
+    assert!(
+        modforge::input::focus_hwnd(viewport),
+        "could not focus the game viewport"
+    );
+    assert_eq!(
+        modforge::input::foreground_hwnd(),
+        Some(viewport),
+        "game viewport did not become foreground"
+    );
+}
+
+fn control_rotation(api: &Api, player_selector: &str) -> [f64; 3] {
+    let (out, _) = api
+        .call_ufunction("Pawn", "GetControlRotation", player_selector, &[0u8; 0x18])
+        .expect("GetControlRotation failed");
+    [
+        client::from_le_f64(&out, 0x00),
+        client::from_le_f64(&out, 0x08),
+        client::from_le_f64(&out, 0x10),
+    ]
+}
+
+fn signed_degrees(degrees: f64) -> f64 {
+    (degrees + 180.0).rem_euclid(360.0) - 180.0
+}
+
+fn aim_at(api: &Api, player_selector: &str, target: [f64; 3]) {
+    focus_game(api);
+    let config = SteeringConfig {
+        mouse_units_per_degree: 2.0,
+        max_mouse_delta: 120,
+        move_yaw_tolerance_deg: 2.0,
+    };
+    let started = Instant::now();
+    loop {
+        let view = pawn_view_location(api, player_selector);
+        let rotation = control_rotation(api, player_selector);
+        let dx = target[0] - view[0];
+        let dy = target[1] - view[1];
+        let horizontal = (dx * dx + dy * dy).sqrt();
+        let target_yaw = dy.atan2(dx).to_degrees();
+        let target_pitch = -(target[2] - view[2]).atan2(horizontal).to_degrees();
+        let mouse_dx = steer_yaw(rotation[1], target_yaw, config);
+        let pitch_error = signed_degrees(target_pitch - signed_degrees(rotation[0]));
+        let mouse_dy = (-(pitch_error * config.mouse_units_per_degree).round() as i32)
+            .clamp(-config.max_mouse_delta, config.max_mouse_delta);
+        if mouse_dx.abs() <= 1 && mouse_dy.abs() <= 1 {
+            return;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(4),
+            "could not aim at loot box: rotation={rotation:?} target_yaw={target_yaw:.1} target_pitch={target_pitch:.1} mouse=({mouse_dx},{mouse_dy})"
+        );
+        let response = api.op(
+            "input.mouse.move_rel",
+            json!({"dx": mouse_dx, "dy": mouse_dy, "backend": "l1"}),
+        );
+        assert!(response.ok, "mouse look failed: {:?}", response.error);
+        std::thread::sleep(Duration::from_millis(16));
+    }
 }
 
 fn matching_functions(api: &Api, class: &str, needles: &[&str]) -> Value {
@@ -202,10 +457,13 @@ fn parameter_offset(layout: &Value, name: &str) -> usize {
         .unwrap_or_else(|| panic!("function has no {name} parameter")) as usize
 }
 
-fn try_project_to_navigation(api: &Api, world_context: u64, point: [f64; 3]) -> Option<[f64; 3]> {
-    let layout = function_layout(api, "NavigationSystemV1", "K2_ProjectPointToNavigation");
-    let cdo = client::find_class_cdo(api, "NavigationSystemV1")
-        .expect("NavigationSystemV1 CDO is not loaded");
+fn try_project_to_navigation(
+    api: &Api,
+    calls: &NavigationCalls,
+    world_context: u64,
+    point: [f64; 3],
+) -> Option<[f64; 3]> {
+    let layout = &calls.project;
     let mut parms = vec![0u8; layout["parms_size"].as_u64().unwrap() as usize];
     put_u64(
         &mut parms,
@@ -224,7 +482,7 @@ fn try_project_to_navigation(api: &Api, world_context: u64, point: [f64; 3]) -> 
         .call_ufunction(
             "NavigationSystemV1",
             "K2_ProjectPointToNavigation",
-            &cdo.addr_selector,
+            "singleton:NavigationSystemV1",
             &parms,
         )
         .expect("K2_ProjectPointToNavigation failed");
@@ -239,10 +497,85 @@ fn try_project_to_navigation(api: &Api, world_context: u64, point: [f64; 3]) -> 
     ])
 }
 
-fn wait_for_navigation(api: &Api, world_context: u64, point: [f64; 3]) -> [f64; 3] {
+fn navigation_path_cost(
+    api: &Api,
+    calls: &NavigationCalls,
+    world_context: u64,
+    pathfinding_context: u64,
+    start: [f64; 3],
+    goal: [f64; 3],
+) -> Option<f64> {
+    let layout = &calls.find_path;
+    let mut parms = vec![0u8; layout["parms_size"].as_u64().unwrap() as usize];
+    put_u64(
+        &mut parms,
+        parameter_offset(&layout, "WorldContextObject"),
+        world_context,
+    );
+    put_u64(
+        &mut parms,
+        parameter_offset(&layout, "PathfindingContext"),
+        pathfinding_context,
+    );
+    for (name, point) in [("PathStart", start), ("PathEnd", goal)] {
+        let offset = parameter_offset(&layout, name);
+        for (index, value) in point.into_iter().enumerate() {
+            put_f64(&mut parms, offset + index * 8, value);
+        }
+    }
+    let (out, _) = api
+        .call_ufunction(
+            "NavigationSystemV1",
+            "FindPathToLocationSynchronously",
+            "singleton:NavigationSystemV1",
+            &parms,
+        )
+        .expect("FindPathToLocationSynchronously failed");
+    let path = client::from_le_u64(&out, parameter_offset(&layout, "ReturnValue"));
+    if path == 0 {
+        return None;
+    }
+    let selector = format!("addr:0x{path:X}");
+    let (valid, _) = api
+        .call_ufunction("NavigationPath", "IsValid", &selector, &[0])
+        .expect("NavigationPath::IsValid failed");
+    let (partial, _) = api
+        .call_ufunction("NavigationPath", "IsPartial", &selector, &[0])
+        .expect("NavigationPath::IsPartial failed");
+    if valid[0] == 0 || partial[0] != 0 {
+        return None;
+    }
+    let (length, _) = api
+        .call_ufunction("NavigationPath", "GetPathLength", &selector, &[0; 8])
+        .expect("NavigationPath::GetPathLength failed");
+    let cost = client::from_le_f64(&length, 0);
+    (cost.is_finite() && cost > 0.0).then_some(cost)
+}
+
+fn interaction_approaches(target: [f64; 3]) -> Vec<[f64; 3]> {
+    let mut approaches = Vec::with_capacity(16);
+    for radius in [175.0, 275.0] {
+        for step in 0..8 {
+            let angle = step as f64 * std::f64::consts::TAU / 8.0;
+            approaches.push([
+                target[0] + angle.cos() * radius,
+                target[1] + angle.sin() * radius,
+                target[2],
+            ]);
+        }
+    }
+    approaches
+}
+
+fn wait_for_navigation(
+    api: &Api,
+    calls: &NavigationCalls,
+    world_context: u64,
+    point: [f64; 3],
+) -> [f64; 3] {
     let started = Instant::now();
     loop {
-        if let Some(projected) = try_project_to_navigation(api, world_context, point) {
+        if let Some(projected) = try_project_to_navigation(api, calls, world_context, point) {
             return projected;
         }
         assert!(
@@ -253,8 +586,8 @@ fn wait_for_navigation(api: &Api, world_context: u64, point: [f64; 3]) -> [f64; 
     }
 }
 
-fn player_controller(api: &Api, player_selector: &str) -> u64 {
-    let layout = function_layout(api, "Pawn", "GetController");
+fn player_controller(api: &Api, calls: &NavigationCalls, player_selector: &str) -> u64 {
+    let layout = &calls.get_controller;
     let parms = vec![0u8; layout["parms_size"].as_u64().unwrap() as usize];
     let (out, _) = api
         .call_ufunction("Pawn", "GetController", player_selector, &parms)
@@ -262,10 +595,8 @@ fn player_controller(api: &Api, player_selector: &str) -> u64 {
     client::from_le_u64(&out, parameter_offset(&layout, "ReturnValue"))
 }
 
-fn start_simple_move(api: &Api, controller: u64, goal: [f64; 3]) {
-    let layout = function_layout(api, "AIBlueprintHelperLibrary", "SimpleMoveToLocation");
-    let cdo = client::find_class_cdo(api, "AIBlueprintHelperLibrary")
-        .expect("AIBlueprintHelperLibrary CDO is not loaded");
+fn start_simple_move(api: &Api, calls: &NavigationCalls, controller: u64, goal: [f64; 3]) {
+    let layout = &calls.simple_move;
     let mut parms = vec![0u8; layout["parms_size"].as_u64().unwrap() as usize];
     put_u64(
         &mut parms,
@@ -279,7 +610,7 @@ fn start_simple_move(api: &Api, controller: u64, goal: [f64; 3]) {
     api.call_ufunction(
         "AIBlueprintHelperLibrary",
         "SimpleMoveToLocation",
-        &cdo.addr_selector,
+        "singleton:AIBlueprintHelperLibrary",
         &parms,
     )
     .expect("SimpleMoveToLocation failed");
@@ -295,40 +626,14 @@ fn stop_movement(api: &Api, controller: u64) {
     .expect("Controller::StopMovement failed");
 }
 
-fn print_nearby_navigation_actors(api: &Api, location: [f64; 3]) {
-    let mut seen = HashSet::new();
-    for needle in ["Door", "Gate", "Ladder", "Elevator", "Stair", "Lift"] {
-        for actor in client::walk_class_chain_instances(api, needle, 256) {
-            if !seen.insert(actor.addr) {
-                continue;
-            }
-            let Some(suffix) = actor.full_name.split(".PersistentLevel.").nth(1) else {
-                continue;
-            };
-            if suffix.contains('.') {
-                continue;
-            }
-            let candidate = actor_location(api, &actor.addr_selector);
-            let nearby = distance(location, candidate);
-            if nearby <= 1_000.0 {
-                println!(
-                    "navigation_obstacle_candidate={} location={candidate:?} distance={nearby:.1}",
-                    actor.full_name
-                );
-            }
-        }
-    }
-}
-
 fn interact(api: &Api) {
-    let viewport = game_viewport(api);
+    focus_game(api);
     let response = api.op(
         "input.key.press",
         json!({
             "key": "e",
             "hold_ms": 80,
-            "backend": "l2",
-            "hwnd": format!("0x{:X}", viewport as usize),
+            "backend": "l1",
         }),
     );
     assert!(
@@ -338,15 +643,142 @@ fn interact(api: &Api) {
     );
 }
 
+fn nearest_loot_box(
+    api: &Api,
+    world_context: u64,
+    player_location: [f64; 3],
+) -> (ClassInstance, [f64; 3]) {
+    let candidates = loot_box_candidates(api, world_context, player_location);
+    let nearest = candidates
+        .into_iter()
+        .min_by(|left, right| left.0.total_cmp(&right.0))
+        .expect("the live expedition has no known placed loot box");
+    println!(
+        "nearest_loot_box={} location={:?} distance={:.1}",
+        nearest.1.full_name, nearest.2, nearest.0
+    );
+    (nearest.1, nearest.2)
+}
+
+fn is_loot_box(actor: &ClassInstance) -> bool {
+    let class = actor
+        .full_name
+        .split_whitespace()
+        .next()
+        .unwrap_or_default();
+    LOOT_BOX_CLASSES.contains(&class)
+}
+
+fn loot_box_candidates(
+    api: &Api,
+    world_context: u64,
+    player_location: [f64; 3],
+) -> Vec<(f64, ClassInstance, [f64; 3])> {
+    assert_ne!(world_context, 0, "loot discovery requires a world context");
+    client::actors_of_class(api, world_context, STORAGE_CLASS)
+        .into_iter()
+        .filter(is_loot_box)
+        .filter_map(|actor| {
+            let location = actor_location(api, &actor.addr_selector);
+            let nearby = distance(player_location, location);
+            (nearby <= 15_000.0).then_some((nearby, actor, location))
+        })
+        .collect()
+}
+
+fn reachable_loot_boxes(
+    api: &Api,
+    calls: &NavigationCalls,
+    player: &ClassInstance,
+    player_location: [f64; 3],
+) -> Vec<ReachableLootBox> {
+    let mut candidates = loot_box_candidates(api, player.addr, player_location);
+    candidates.sort_by(|left, right| left.0.total_cmp(&right.0));
+    let projected_start = wait_for_navigation(api, calls, player.addr, player_location);
+    let mut reachable = Vec::new();
+    for (nearby, actor, location) in candidates.into_iter().take(20) {
+        let best_approach = interaction_approaches(location)
+            .into_iter()
+            .filter_map(|approach| {
+                let projected = try_project_to_navigation(api, calls, player.addr, approach)?;
+                let cost = navigation_path_cost(
+                    api,
+                    calls,
+                    player.addr,
+                    player.addr,
+                    projected_start,
+                    projected,
+                )?;
+                Some((cost, projected))
+            })
+            .min_by(|left, right| left.0.total_cmp(&right.0));
+        let Some((path_cost, approach)) = best_approach else {
+            println!("loot_box_unreachable={}", actor.full_name);
+            continue;
+        };
+        println!(
+            "loot_box_reachable={} location={location:?} nearby={nearby:.1} approach={approach:?} path_cost={path_cost:.1}",
+            actor.full_name
+        );
+        reachable.push(ReachableLootBox {
+            actor,
+            approach,
+            path_cost,
+        });
+    }
+    reachable.sort_by(|left, right| left.path_cost.total_cmp(&right.path_cost));
+    assert!(
+        !reachable.is_empty(),
+        "the live expedition has no reachable known loot box"
+    );
+    reachable
+}
+
+fn component_of_class(api: &Api, actor: u64, class: &str) -> u64 {
+    let response = api.op(
+        "component_of_class",
+        json!({"actor": actor, "class": class}),
+    );
+    assert!(response.ok, "component lookup failed: {:?}", response.error);
+    response.result["component"]
+        .as_str()
+        .and_then(|address| u64::from_str_radix(address.trim_start_matches("0x"), 16).ok())
+        .unwrap_or_else(|| panic!("{class} is not attached to actor 0x{actor:X}"))
+}
+
+fn player_inventory(api: &Api, player: u64) -> u64 {
+    let character = client::read_u64(api, player, PLAYER_CHARACTER_COMPONENT_OFFSET);
+    assert_ne!(character, 0, "player has no character component");
+    let inventory = client::read_u64(api, character, CHARACTER_PLAYER_INVENTORY_OFFSET);
+    assert_ne!(inventory, 0, "character component has no player inventory");
+    inventory
+}
+
+fn open_loot_box(api: &Api, storage_inventory: u64) -> usize {
+    for attempt in 1..=3 {
+        println!("loot_box_interact attempt={attempt}");
+        interact(api);
+        let started = Instant::now();
+        while started.elapsed() < ENTRY_TIMEOUT {
+            if client::read_i32(api, storage_inventory, INVENTORY_USING_PLAYERS_NUM_OFFSET) > 0 {
+                return attempt;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+    panic!("E was pressed at the loot box, but its inventory did not gain a using player")
+}
+
 fn walk_edge(
     api: &Api,
+    calls: &NavigationCalls,
     player_selector: &str,
     controller: u64,
     waypoint: &Waypoint,
-    bunker_door: Option<[f64; 3]>,
+    bunker_door: Option<&ClassInstance>,
     breadcrumbs: &mut Vec<Position>,
-) -> usize {
-    start_simple_move(api, controller, point(waypoint.position));
+) -> Result<usize, String> {
+    start_simple_move(api, calls, controller, point(waypoint.position));
     let started = Instant::now();
     let mut stuck = StuckDetector::new(50.0, 10_000).unwrap();
     let mut last_report = 0;
@@ -357,28 +789,53 @@ fn walk_edge(
         retain_breadcrumb(breadcrumbs, position(current));
         let remaining = distance(current, point(waypoint.position));
         if remaining <= waypoint.arrival_radius {
-            return interactions;
+            return Ok(interactions);
         }
         let elapsed_ms = started.elapsed().as_millis() as u64;
-        assert!(
-            started.elapsed() < MOVE_TIMEOUT,
-            "Unreal navigation timed out at {current:?}, {remaining:.1} cm from '{}'",
-            waypoint.id
-        );
-        if stuck.observe(elapsed_ms, remaining) {
-            print_nearby_navigation_actors(api, current);
-            let door_is_blocking = bunker_door
-                .is_some_and(|door| distance(current, door) <= 1_000.0 && interactions < 3);
-            assert!(
-                door_is_blocking,
-                "Unreal navigation stuck at {current:?}, {remaining:.1} cm from '{}'",
+        if started.elapsed() >= MOVE_TIMEOUT {
+            return Err(format!(
+                "Unreal navigation timed out at {current:?}, {remaining:.1} cm from '{}'",
                 waypoint.id
-            );
+            ));
+        }
+        if stuck.observe(elapsed_ms, remaining) {
+            let blocking_door = bunker_door.filter(|door| {
+                distance(current, actor_location(api, &door.addr_selector)) <= 1_000.0
+                    && interactions < 3
+            });
+            let Some(blocking_door) = blocking_door else {
+                return Err(format!(
+                    "Unreal navigation stuck at {current:?}, {remaining:.1} cm from '{}'",
+                    waypoint.id
+                ));
+            };
             interactions += 1;
             println!("bunker_door_interact attempt={interactions} location={current:?}");
+            stop_movement(api, controller);
+            let (interaction_point, extent) = actor_bounds(api, &blocking_door.addr_selector);
+            aim_at(api, player_selector, interaction_point);
+            let view = pawn_view_location(api, player_selector);
+            let in_range = interaction_in_range(view, interaction_point, extent);
+            let allowed = interaction_allowed(api, blocking_door);
+            println!(
+                "bunker_door_state target={} point={interaction_point:?} extent={extent:?} view={view:?} in_range={in_range} allowed={allowed}",
+                blocking_door.full_name
+            );
+            if !in_range {
+                return Err(format!(
+                    "door interaction is out of range: view={view:?} point={interaction_point:?} extent={extent:?}"
+                ));
+            }
+            if !allowed {
+                return Err("door does not currently allow interaction".into());
+            }
             interact(api);
+            println!(
+                "bunker_door_interaction_sent target={}",
+                blocking_door.full_name
+            );
             std::thread::sleep(Duration::from_secs(1));
-            start_simple_move(api, controller, point(waypoint.position));
+            start_simple_move(api, calls, controller, point(waypoint.position));
             stuck = StuckDetector::new(50.0, 10_000).unwrap();
         }
         let elapsed_seconds = started.elapsed().as_secs();
@@ -392,17 +849,19 @@ fn walk_edge(
     }
 }
 
-fn enter_expedition(api: &Api, expedition_door: [f64; 3]) -> ([f64; 3], usize) {
+fn enter_expedition(
+    api: &Api,
+    player_selector: &str,
+    expedition_door: [f64; 3],
+) -> ([f64; 3], usize) {
     for attempt in 1..=3 {
         println!("expedition_door_interact attempt={attempt}");
         interact(api);
         let started = Instant::now();
         loop {
-            if let Some(player) = client::find_live_instance(api, PLAYER_CLASS) {
-                let current = actor_location(api, &player.addr_selector);
-                if expedition_entry_observed(expedition_door, current) {
-                    return (current, attempt);
-                }
+            let current = actor_location(api, player_selector);
+            if expedition_entry_observed(expedition_door, current) {
+                return (current, attempt);
             }
             if started.elapsed() >= ENTRY_TIMEOUT {
                 break;
@@ -420,6 +879,10 @@ fn player_interaction_surface_is_discoverable() {
     assert!(offsets_live(&api), "MISERY offsets are not live");
     let surface = matching_functions(&api, PLAYER_CLASS, &["Interact", "InpActEvt_E", "Use"]);
     println!("player_interaction_surface={surface}");
+    println!(
+        "player_view_surface={}",
+        matching_functions(&api, PLAYER_CLASS, &["View", "Eye", "Camera"])
+    );
     assert!(
         surface["functions"]
             .as_array()
@@ -436,6 +899,79 @@ fn player_interaction_surface_is_discoverable() {
         "player_sgk_interact_layout={}",
         function_layout(&api, PLAYER_CLASS, "SGK Interact")
     );
+    println!(
+        "actor_components_layout={}",
+        function_layout(&api, "Actor", "K2_GetComponentsByClass")
+    );
+    println!(
+        "actor_bounds_layout={}",
+        function_layout(&api, "Actor", "GetActorBounds")
+    );
+    let player = retained_player(&api);
+    let player_location = actor_location(&api, &player.addr_selector);
+    let cameras = api.op(
+        "components_of_class",
+        json!({"actor": player.addr, "class": "CameraComponent"}),
+    );
+    assert!(
+        cameras.ok,
+        "player camera discovery failed: {:?}",
+        cameras.error
+    );
+    println!("player_camera_components={}", cameras.result);
+    let door = client::actors_of_class(&api, player.addr, METAL_DOOR_CLASS)
+        .into_iter()
+        .min_by(|left, right| {
+            distance(player_location, actor_location(&api, &left.addr_selector)).total_cmp(
+                &distance(player_location, actor_location(&api, &right.addr_selector)),
+            )
+        })
+        .expect("live metal door exists");
+    let components = api.op(
+        "components_of_class",
+        json!({"actor": door.addr, "class": "SceneComponent"}),
+    );
+    assert!(
+        components.ok,
+        "door component discovery failed: {:?}",
+        components.error
+    );
+    println!("door_interaction_components={}", components.result);
+    let (allow_interaction, _) = api
+        .call_ufunction(
+            METAL_DOOR_CLASS,
+            "SGK AllowInteraction",
+            &door.addr_selector,
+            &[0],
+        )
+        .expect("door SGK AllowInteraction failed");
+    println!(
+        "door_allow_interaction_at_distance={} distance={:.1}",
+        allow_interaction[0],
+        distance(player_location, actor_location(&api, &door.addr_selector))
+    );
+    for component in components.result["components"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        let selector = component["addr_selector"]
+            .as_str()
+            .expect("component selector is a string");
+        println!(
+            "door_component={} location={:?}",
+            component["name"].as_str().unwrap_or_default(),
+            scene_component_location(&api, selector)
+        );
+    }
+    println!(
+        "door_interaction_surface={}",
+        matching_functions(
+            &api,
+            METAL_DOOR_CLASS,
+            &["Interact", "Point", "Range", "Distance", "Allow", "Can"]
+        )
+    );
 }
 
 #[test]
@@ -443,32 +979,115 @@ fn player_interaction_surface_is_discoverable() {
 fn nearby_expedition_loot_box_is_discoverable() {
     let Some(api) = api_or_skip() else { return };
     assert!(offsets_live(&api), "MISERY offsets are not live");
-    let player = client::find_live_instance(&api, PLAYER_CLASS)
-        .expect("enter an expedition so the live player exists");
+    let player = retained_player(&api);
     let player_location = actor_location(&api, &player.addr_selector);
-    let mut seen = HashSet::new();
-    let mut candidates = Vec::new();
-    for class in LOOT_BOX_CLASSES {
-        for actor in client::walk_class_chain_instances(&api, class, 256) {
-            if !seen.insert(actor.addr) {
-                continue;
+    nearest_loot_box(&api, player.addr, player_location);
+}
+
+#[test]
+#[ignore = "inspects the live MISERY loot interaction surface"]
+fn loot_interaction_surface_is_discoverable() {
+    let Some(api) = api_or_skip() else { return };
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+    for class in ["BP_BigCrate_C", "BP_MasterStorageBuildPart_C"] {
+        println!(
+            "loot_actor_surface={}",
+            matching_functions(
+                &api,
+                class,
+                &["Interact", "Open", "Use", "Inventory", "Container", "Loot"]
+            )
+        );
+    }
+}
+
+#[test]
+#[ignore = "moves to and opens the nearest loot box in a live MISERY expedition"]
+fn unreal_navigation_opens_nearest_expedition_loot_box() {
+    let Some(api) = api_or_skip() else { return };
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+    let timing = TimingGuard::start(&api);
+    let player = retained_player(&api);
+    let calls = NavigationCalls::new(&api);
+    let start = actor_location(&api, &player.addr_selector);
+    let player_inventory = player_inventory(&api, player.addr);
+    let player_items_before = client::read_i32(&api, player_inventory, INVENTORY_ITEM_COUNT_OFFSET);
+    let controller = player_controller(&api, &calls, &player.addr_selector);
+    assert_ne!(controller, 0, "the live player has no controller");
+    let controller_selector = format!("addr:0x{controller:X}");
+    let _stop = StopMovement {
+        api: &api,
+        controller_selector,
+    };
+    let started = Instant::now();
+    let mut breadcrumbs = vec![position(start)];
+    let targets = reachable_loot_boxes(&api, &calls, &player, start);
+    let mut selected = None;
+    for target in targets {
+        let current = actor_location(&api, &player.addr_selector);
+        let projected_start = wait_for_navigation(&api, &calls, player.addr, current);
+        let route = expedition_to_loot_route(projected_start, target.approach);
+        assert_eq!(
+            route
+                .shortest_path("expedition-entry", "loot-box", |_| true)
+                .unwrap(),
+            ["expedition-entry", "loot-box"]
+        );
+        match walk_edge(
+            &api,
+            &calls,
+            &player.addr_selector,
+            controller,
+            route.waypoint("loot-box").unwrap(),
+            None,
+            &mut breadcrumbs,
+        ) {
+            Ok(_) => {
+                selected = Some((target, route));
+                break;
             }
-            let location = actor_location(&api, &actor.addr_selector);
-            let nearby = distance(player_location, location);
-            println!(
-                "loot_box_candidate={} location={location:?} distance={nearby:.1}",
-                actor.full_name
-            );
-            candidates.push((nearby, actor, location));
+            Err(error) => {
+                stop_movement(&api, controller);
+                println!("loot_box_traversal_rejected={error}");
+            }
         }
     }
-    let nearest = candidates
-        .into_iter()
-        .min_by(|left, right| left.0.total_cmp(&right.0))
-        .expect("the live expedition has no known placed loot box");
+    let (loot_box, route) = selected.expect("no engine-reachable loot box was traversable");
+    stop_movement(&api, controller);
+    let route_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("target")
+        .join("misery-routes")
+        .join("expedition-to-loot-box.json");
+    std::fs::create_dir_all(route_path.parent().unwrap()).unwrap();
+    std::fs::write(&route_path, route.to_json().unwrap()).unwrap();
+    println!("loot_route_saved={}", route_path.display());
+
+    let storage_inventory = component_of_class(&api, loot_box.actor.addr, "BP_MasterInventory_C");
+    let storage_items_before =
+        client::read_i32(&api, storage_inventory, INVENTORY_ITEM_COUNT_OFFSET);
+    let mut live_loot_box_location = actor_location(&api, &loot_box.actor.addr_selector);
+    live_loot_box_location[2] += 150.0;
+    aim_at(&api, &player.addr_selector, live_loot_box_location);
+    let interaction_attempts = open_loot_box(&api, storage_inventory);
+    let timing_report = timing.finish();
     println!(
-        "nearest_loot_box={} location={:?} distance={:.1}",
-        nearest.1.full_name, nearest.2, nearest.0
+        "loot_box_opened elapsed_s={:.2} target={} path_cost={:.1} interaction_attempts={interaction_attempts} storage_inventory=0x{storage_inventory:X} storage_items={storage_items_before} player_inventory=0x{player_inventory:X} player_items={player_items_before} waypoints={} edges={} breadcrumbs={}",
+        started.elapsed().as_secs_f64(),
+        loot_box.actor.full_name,
+        loot_box.path_cost,
+        route.waypoints().len(),
+        route.edges().len(),
+        breadcrumbs.len(),
+    );
+    println!("loot_performance={timing_report}");
+    println!(
+        "container_loot_surface={}",
+        matching_functions(
+            &api,
+            CONTAINER_WINDOW_CLASS,
+            &["Take", "Transfer", "Loot", "Item", "Inventory", "Click"]
+        )
     );
 }
 
@@ -478,10 +1097,11 @@ fn unreal_navigation_enters_expedition_through_three_stops() {
     let Some(api) = api_or_skip() else { return };
     assert!(offsets_live(&api), "MISERY offsets are not live");
 
-    let player = client::find_live_instance(&api, PLAYER_CLASS)
-        .expect("load a save so the live player exists");
+    let timing = TimingGuard::start(&api);
+    let player = retained_player(&api);
+    let calls = NavigationCalls::new(&api);
     let start = actor_location(&api, &player.addr_selector);
-    let door = client::walk_class_instances(&api, EXPEDITION_DOOR_CLASS, 32)
+    let door = client::actors_of_class(&api, player.addr, EXPEDITION_DOOR_CLASS)
         .into_iter()
         .filter_map(|door| {
             let location = actor_location(&api, &door.addr_selector);
@@ -497,14 +1117,16 @@ fn unreal_navigation_enters_expedition_through_three_stops() {
     let goal = door.2;
     if distance(start, goal) <= ARRIVAL_CM {
         let started = Instant::now();
-        let (entered_location, expedition_door_interactions) = enter_expedition(&api, goal);
+        let (entered_location, expedition_door_interactions) =
+            enter_expedition(&api, &player.addr_selector, goal);
         println!(
             "expedition_entered_from_existing_stop elapsed_s={:.2} location={entered_location:?} expedition_door_interactions={expedition_door_interactions}",
             started.elapsed().as_secs_f64(),
         );
+        println!("route_performance={}", timing.finish());
         return;
     }
-    let metal_door = client::walk_class_chain_instances(&api, METAL_DOOR_CLASS, 32)
+    let metal_door = client::actors_of_class(&api, player.addr, METAL_DOOR_CLASS)
         .into_iter()
         .filter_map(|candidate| {
             let location = actor_location(&api, &candidate.addr_selector);
@@ -548,14 +1170,15 @@ fn unreal_navigation_enters_expedition_through_three_stops() {
         );
     }
 
-    let projected_start = wait_for_navigation(&api, player.addr, start);
-    let projected_metal_door = wait_for_navigation(&api, player.addr, metal_door.2);
+    let projected_start = wait_for_navigation(&api, &calls, player.addr, start);
+    let projected_metal_door = wait_for_navigation(&api, &calls, player.addr, metal_door.2);
     let metal_door_stop = wait_for_navigation(
         &api,
+        &calls,
         player.addr,
         metal_door_approach(projected_start, projected_metal_door),
     );
-    let projected_goal = wait_for_navigation(&api, player.addr, goal);
+    let projected_goal = wait_for_navigation(&api, &calls, player.addr, goal);
     println!(
         "projected_start={projected_start:?} metal_door_stop={metal_door_stop:?} projected_goal={projected_goal:?}"
     );
@@ -579,7 +1202,7 @@ fn unreal_navigation_enters_expedition_through_three_stops() {
     );
     println!("route_saved={}", route_path.display());
 
-    let controller = player_controller(&api, &player.addr_selector);
+    let controller = player_controller(&api, &calls, &player.addr_selector);
     assert_ne!(controller, 0, "the live player has no controller");
     let controller_selector = format!("addr:0x{controller:X}");
     let _stop = StopMovement {
@@ -592,23 +1215,28 @@ fn unreal_navigation_enters_expedition_through_three_stops() {
     let expedition_door_waypoint = route.waypoint("expedition-door").unwrap();
     let first_edge_interactions = walk_edge(
         &api,
+        &calls,
         &player.addr_selector,
         controller,
         metal_door_waypoint,
         None,
         &mut breadcrumbs,
-    );
+    )
+    .expect("spawn to metal door traversal failed");
     assert_eq!(first_edge_interactions, 0);
     let bunker_door_interactions = walk_edge(
         &api,
+        &calls,
         &player.addr_selector,
         controller,
         expedition_door_waypoint,
-        Some(projected_metal_door),
+        Some(&metal_door.1),
         &mut breadcrumbs,
-    );
+    )
+    .expect("metal door to expedition door traversal failed");
     stop_movement(&api, controller);
-    let (entered_location, expedition_door_interactions) = enter_expedition(&api, projected_goal);
+    let (entered_location, expedition_door_interactions) =
+        enter_expedition(&api, &player.addr_selector, projected_goal);
     println!(
         "expedition_entered elapsed_s={:.2} location={entered_location:?} waypoints={} edges={} breadcrumbs={} bunker_door_interactions={bunker_door_interactions} expedition_door_interactions={expedition_door_interactions}",
         started.elapsed().as_secs_f64(),
@@ -616,6 +1244,7 @@ fn unreal_navigation_enters_expedition_through_three_stops() {
         route.edges().len(),
         breadcrumbs.len(),
     );
+    println!("route_performance={}", timing.finish());
 }
 
 #[test]
@@ -639,4 +1268,75 @@ fn expedition_entry_requires_the_player_to_leave_the_safe_area_door() {
 
     assert!(!expedition_entry_observed(door, [150.0, 100.0, 0.0]));
     assert!(expedition_entry_observed(door, [2_000.0, 100.0, 0.0]));
+}
+
+#[test]
+fn expedition_loot_route_adds_only_the_discovered_target() {
+    let route = expedition_to_loot_route([0.0, 0.0, 0.0], [200.0, 100.0, 0.0]);
+
+    assert_eq!(
+        route
+            .waypoints()
+            .iter()
+            .map(|waypoint| waypoint.id.as_str())
+            .collect::<Vec<_>>(),
+        ["expedition-entry", "loot-box"]
+    );
+    assert_eq!(route.edges().len(), 1);
+}
+
+#[test]
+fn interaction_range_uses_the_nearest_point_on_actor_bounds() {
+    assert!(interaction_in_range(
+        [0.0, 0.0, 0.0],
+        [250.0, 0.0, 0.0],
+        [100.0, 50.0, 50.0]
+    ));
+    assert!(!interaction_in_range(
+        [0.0, 0.0, 0.0],
+        [500.0, 0.0, 0.0],
+        [100.0, 50.0, 50.0]
+    ));
+}
+
+#[test]
+fn navigation_and_looting_use_no_global_object_scans() {
+    let source = include_str!("research_navigation.rs");
+    for forbidden in [
+        concat!("find_", "live_instance"),
+        concat!("walk_", "class_instances"),
+        concat!("walk_", "class_chain_instances"),
+        concat!("\"walk_", "class_chain\""),
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "navigation still contains global object scan path {forbidden}"
+        );
+    }
+}
+
+#[test]
+fn performance_report_accepts_zero_scan_sub_frame_operations() {
+    assert_performance_report(&json!({
+        "entries": [
+            {"name": "ue:actors_of_class", "worst_ms": 2.5},
+            {"name": "ue:component_by_class", "worst_ms": 0.2}
+        ]
+    }));
+}
+
+#[test]
+#[should_panic(expected = "route performed forbidden global object work")]
+fn performance_report_rejects_global_object_scans() {
+    assert_performance_report(&json!({
+        "entries": [{"name": "ue:find_object", "worst_ms": 20.0}]
+    }));
+}
+
+#[test]
+#[should_panic(expected = "Unreal bot operation consumed a full frame")]
+fn performance_report_rejects_full_frame_operations() {
+    assert_performance_report(&json!({
+        "entries": [{"name": "ue:actors_of_class", "worst_ms": 16.7}]
+    }));
 }

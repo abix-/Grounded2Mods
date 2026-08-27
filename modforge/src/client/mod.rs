@@ -330,6 +330,18 @@ pub struct ClassInstance {
     pub full_name: String,
 }
 
+/// Resolve a retained object selector without walking Unreal's global object list.
+pub fn resolve_selector<S: DeserializeOwned>(
+    api: &Api<S>,
+    selector: &str,
+) -> Option<ClassInstance> {
+    let response = api.op("resolve_selector", json!({"selector": selector}));
+    response
+        .ok
+        .then(|| parse_class_instance(&response.result))
+        .flatten()
+}
+
 pub fn find_data_table_by_name<S: DeserializeOwned>(
     api: &Api<S>,
     short_name: &str,
@@ -341,9 +353,12 @@ pub fn find_data_table_by_name<S: DeserializeOwned>(
     if !r.ok {
         return None;
     }
-    let inst = r.result.get("instances")?.as_array()?.iter().find(|i| {
-        i.get("name").and_then(|v| v.as_str()) == Some(short_name)
-    })?;
+    let inst = r
+        .result
+        .get("instances")?
+        .as_array()?
+        .iter()
+        .find(|i| i.get("name").and_then(|v| v.as_str()) == Some(short_name))?;
     let sel = inst.get("addr_selector")?.as_str()?.to_string();
     let addr = inst
         .get("addr")
@@ -457,7 +472,10 @@ pub fn fname_to_string<S: DeserializeOwned>(api: &Api<S>, fname: u64) -> Option<
     if !r.ok {
         return None;
     }
-    r.result.get("string").and_then(|v| v.as_str()).map(String::from)
+    r.result
+        .get("string")
+        .and_then(|v| v.as_str())
+        .map(String::from)
 }
 
 pub fn walk_class_instances<S: DeserializeOwned>(
@@ -494,10 +512,28 @@ pub fn walk_class_chain_instances<S: DeserializeOwned>(
     arr.iter().filter_map(parse_class_instance).collect()
 }
 
-pub fn find_class_cdo<S: DeserializeOwned>(
+/// Ask Unreal's world actor collections for every live actor
+/// derived from `class`. Unlike the research walk helpers, this
+/// does not scan the global UObject list.
+pub fn actors_of_class<S: DeserializeOwned>(
     api: &Api<S>,
+    world_context: u64,
     class: &str,
-) -> Option<ClassInstance> {
+) -> Vec<ClassInstance> {
+    let r = api.op(
+        "actors_of_class",
+        json!({"world_context": world_context, "class": class}),
+    );
+    if !r.ok {
+        return Vec::new();
+    }
+    let Some(actors) = r.result.get("actors").and_then(|value| value.as_array()) else {
+        return Vec::new();
+    };
+    actors.iter().filter_map(parse_class_instance).collect()
+}
+
+pub fn find_class_cdo<S: DeserializeOwned>(api: &Api<S>, class: &str) -> Option<ClassInstance> {
     let r = api.op(
         "walk_class",
         json!({"class": class, "max": 32, "include_cdo": true}),
@@ -506,18 +542,13 @@ pub fn find_class_cdo<S: DeserializeOwned>(
         return None;
     }
     let arr = r.result.get("instances")?.as_array()?;
-    let cdo = arr.iter().find(|i| {
-        i.get("is_cdo")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false)
-    })?;
+    let cdo = arr
+        .iter()
+        .find(|i| i.get("is_cdo").and_then(|v| v.as_bool()).unwrap_or(false))?;
     parse_class_instance(cdo)
 }
 
-pub fn find_live_instance<S: DeserializeOwned>(
-    api: &Api<S>,
-    class: &str,
-) -> Option<ClassInstance> {
+pub fn find_live_instance<S: DeserializeOwned>(api: &Api<S>, class: &str) -> Option<ClassInstance> {
     let r = api.op(
         "walk_class",
         json!({"class": class, "max": 32, "include_cdo": false}),
@@ -526,11 +557,9 @@ pub fn find_live_instance<S: DeserializeOwned>(
         return None;
     }
     let arr = r.result.get("instances")?.as_array()?;
-    let live = arr.iter().find(|i| {
-        !i.get("is_cdo")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false)
-    })?;
+    let live = arr
+        .iter()
+        .find(|i| !i.get("is_cdo").and_then(|v| v.as_bool()).unwrap_or(false))?;
     parse_class_instance(live)
 }
 
@@ -606,25 +635,33 @@ pub fn read_bytes<S: DeserializeOwned>(
 
 pub fn read_i32<S: DeserializeOwned>(api: &Api<S>, addr: u64, offset: u64) -> i32 {
     let b = read_bytes(api, addr, offset, 4);
-    if b.len() < 4 { return 0; }
+    if b.len() < 4 {
+        return 0;
+    }
     i32::from_le_bytes([b[0], b[1], b[2], b[3]])
 }
 
 pub fn read_u32<S: DeserializeOwned>(api: &Api<S>, addr: u64, offset: u64) -> u32 {
     let b = read_bytes(api, addr, offset, 4);
-    if b.len() < 4 { return 0; }
+    if b.len() < 4 {
+        return 0;
+    }
     u32::from_le_bytes([b[0], b[1], b[2], b[3]])
 }
 
 pub fn read_f32<S: DeserializeOwned>(api: &Api<S>, addr: u64, offset: u64) -> f32 {
     let b = read_bytes(api, addr, offset, 4);
-    if b.len() < 4 { return 0.0; }
+    if b.len() < 4 {
+        return 0.0;
+    }
     f32::from_le_bytes([b[0], b[1], b[2], b[3]])
 }
 
 pub fn read_f64<S: DeserializeOwned>(api: &Api<S>, addr: u64, offset: u64) -> f64 {
     let b = read_bytes(api, addr, offset, 8);
-    if b.len() < 8 { return 0.0; }
+    if b.len() < 8 {
+        return 0.0;
+    }
     f64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]])
 }
 
@@ -635,7 +672,9 @@ pub fn read_u8<S: DeserializeOwned>(api: &Api<S>, addr: u64, offset: u64) -> u8 
 
 pub fn read_u64<S: DeserializeOwned>(api: &Api<S>, addr: u64, offset: u64) -> u64 {
     let b = read_bytes(api, addr, offset, 8);
-    if b.len() < 8 { return 0; }
+    if b.len() < 8 {
+        return 0;
+    }
     u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]])
 }
 
@@ -671,7 +710,9 @@ pub fn read_tarray_header<S: DeserializeOwned>(
     offset: u64,
 ) -> Option<TArrayHeader> {
     let b = read_bytes(api, addr, offset, 16);
-    if b.len() < 16 { return None; }
+    if b.len() < 16 {
+        return None;
+    }
     Some(TArrayHeader {
         ptr: from_le_u64(&b, 0),
         num: from_le_i32(&b, 8),
@@ -889,11 +930,7 @@ pub fn print_declared_methods<S: DeserializeOwned>(api: &Api<S>, class: &str) {
 /// Field name to value map from inspect_object.
 pub fn fields<S: DeserializeOwned>(api: &Api<S>, handle: i64) -> Option<Value> {
     let r = api.op("inspect_object", json!({"handle": handle}));
-    if r.ok {
-        Some(r.result)
-    } else {
-        None
-    }
+    if r.ok { Some(r.result) } else { None }
 }
 
 /// Parse a Vector3 string "(x, y, z)" into a tuple.
@@ -1038,12 +1075,7 @@ pub fn read_fstring_bytes<S: DeserializeOwned>(api: &Api<S>, bytes: &[u8]) -> St
 ///
 /// The counterpart to [`read_bytes`], and the thing three vendor
 /// tests each wrote their own copy of.
-pub fn write_bytes<S: DeserializeOwned>(
-    api: &Api<S>,
-    addr: u64,
-    offset: u64,
-    data: &[u8],
-) -> bool {
+pub fn write_bytes<S: DeserializeOwned>(api: &Api<S>, addr: u64, offset: u64, data: &[u8]) -> bool {
     write_bytes_at(api, &format!("addr:0x{addr:X}"), offset, data)
 }
 

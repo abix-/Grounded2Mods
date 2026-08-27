@@ -112,6 +112,24 @@ pub fn register_builtins() {
             |args| on_game_thread(args, walk_class_chain),
         ),
         OpDef::new(
+            "actors_of_class",
+            "Ask Unreal's world actor collections for every actor derived from one class",
+            "{world_context: u64, class: str}",
+            |args| on_game_thread(args, actors_of_class),
+        ),
+        OpDef::new(
+            "component_of_class",
+            "Ask one Unreal actor for its first component derived from one class",
+            "{actor: u64, class: str}",
+            |args| on_game_thread(args, component_of_class),
+        ),
+        OpDef::new(
+            "components_of_class",
+            "Ask one Unreal actor for every component derived from one class",
+            "{actor: u64, class: str}",
+            |args| on_game_thread(args, components_of_class),
+        ),
+        OpDef::new(
             "class_functions",
             "List the functions on a LIVE class, read off an instance (finds what the startup discovery cache misses)",
             "{class: str}",
@@ -493,7 +511,7 @@ pub fn register_builtins() {
 /// [`crate::selector::resolve_generic`] with extra game names like
 /// `live_player:`); the closure captures it.
 ///
-/// Registers: `read_bytes`, `write_bytes`. (Selector-form `freeze`
+/// Registers: `resolve_selector`, `read_bytes`, `write_bytes`. (Selector-form `freeze`
 /// already accepts a resolver internally via the selector module's
 /// `resolve_generic` + game's chained dispatch, so it goes through
 /// `register_builtins`.)
@@ -502,6 +520,12 @@ where
     R: Fn(&str) -> Result<&'static UObject, String> + Copy + Send + Sync + 'static,
 {
     OP_REGISTRY.register_many([
+        OpDef::new(
+            "resolve_selector",
+            "Resolve a selector to its retained UObject without a global object scan",
+            "{selector: str}",
+            move |args| on_game_thread(args, move |args| resolve_selector(args, resolver)),
+        ),
         OpDef::new(
             "read_bytes",
             "Read N bytes from a selector + offset",
@@ -521,6 +545,21 @@ where
             move |args| tarray_grow(args, resolver),
         ),
     ]);
+}
+
+pub fn resolve_selector<F>(args: &Json, resolve: F) -> Result<Json, String>
+where
+    F: FnOnce(&str) -> Result<&'static UObject, String>,
+{
+    let selector = arg_str(args, "selector")?;
+    let object = resolve(selector)?;
+    let addr = object as *const UObject as usize;
+    Ok(serde_json::json!({
+        "addr": format!("0x{addr:X}"),
+        "addr_selector": format!("addr:0x{addr:X}"),
+        "name": object.name(),
+        "full_name": object.full_name(),
+    }))
 }
 
 /// Cap on `read_bytes` length / `write_bytes` payload (1 MiB).
@@ -764,6 +803,106 @@ pub fn walk_class_chain(args: &Json) -> Result<Json, String> {
         "total": total,
         "returned": hits.len(),
         "instances": hits,
+    }))
+}
+
+/// Enumerate actors through `UGameplayStatics::GetAllActorsOfClass`.
+///
+/// Unlike `walk_class_chain`, this does not read GObjects. It is
+/// the production path for one-shot world target discovery after
+/// the caller already owns a live world-context pointer.
+pub fn actors_of_class(args: &Json) -> Result<Json, String> {
+    let world_context = arg_u64(args, "world_context", None)? as usize;
+    if world_context == 0 || !crate::winproc::is_addr_readable(world_context) {
+        return Err(format!("world_context {world_context:#x} is not readable"));
+    }
+    let class_name = arg_str(args, "class")?;
+    let actor_class =
+        ue::find_class_fast(class_name).ok_or_else(|| format!("class '{class_name}' not found"))?;
+    // SAFETY: readability was checked above. The caller's contract
+    // requires a live actor from the current world, and execution
+    // is serialized onto the game thread by registration.
+    let world = unsafe { &*(world_context as *const UObject) };
+    let actors = ue::actor::actors_of_class(world, actor_class)?;
+    let rows = actors
+        .into_iter()
+        .filter_map(|actor| {
+            // SAFETY: each pointer came directly from Unreal's
+            // GetAllActorsOfClass output for this live world.
+            let actor = unsafe { actor.as_ref()? };
+            let class = actor.class()?.as_object().name();
+            let location =
+                // SAFETY: GetAllActorsOfClass returns AActor pointers.
+                unsafe { ue::transform::world_location(actor.as_ptr()) };
+            Some(serde_json::json!({
+                "addr": format!("0x{:X}", actor.as_ptr() as usize),
+                "addr_selector": format!("addr:0x{:X}", actor.as_ptr() as usize),
+                "class": class,
+                "name": actor.name(),
+                "full_name": actor.full_name(),
+                "location": location.map(|(x, y, z)| [x, y, z]),
+            }))
+        })
+        .collect::<Vec<_>>();
+    Ok(serde_json::json!({
+        "class": class_name,
+        "count": rows.len(),
+        "actors": rows,
+    }))
+}
+
+pub fn component_of_class(args: &Json) -> Result<Json, String> {
+    let actor_addr = arg_u64(args, "actor", None)? as usize;
+    if actor_addr == 0 || !crate::winproc::is_addr_readable(actor_addr) {
+        return Err(format!("actor {actor_addr:#x} is not readable"));
+    }
+    let class_name = arg_str(args, "class")?;
+    let component_class =
+        ue::find_class_fast(class_name).ok_or_else(|| format!("class '{class_name}' not found"))?;
+    // SAFETY: readability was checked above; the op contract
+    // requires a live actor and registration runs this on the game
+    // thread.
+    let actor = unsafe { &*(actor_addr as *const UObject) };
+    let component = ue::actor::component_by_class(actor, component_class)?;
+    Ok(serde_json::json!({
+        "actor": format!("0x{actor_addr:X}"),
+        "class": class_name,
+        "component": component.map(|ptr| format!("0x{:X}", ptr as usize)),
+    }))
+}
+
+pub fn components_of_class(args: &Json) -> Result<Json, String> {
+    let actor_addr = arg_u64(args, "actor", None)? as usize;
+    if actor_addr == 0 || !crate::winproc::is_addr_readable(actor_addr) {
+        return Err(format!("actor {actor_addr:#x} is not readable"));
+    }
+    let class_name = arg_str(args, "class")?;
+    let component_class =
+        ue::find_class_fast(class_name).ok_or_else(|| format!("class '{class_name}' not found"))?;
+    // SAFETY: readability was checked above; the op contract
+    // requires a live actor and registration runs on the game thread.
+    let actor = unsafe { &*(actor_addr as *const UObject) };
+    let components = ue::actor::components_by_class(actor, component_class)?;
+    let rows = components
+        .into_iter()
+        .map(|component| {
+            // SAFETY: each pointer came from this call to Unreal's
+            // component collection and is consumed on the game thread.
+            let component = unsafe { &*component };
+            serde_json::json!({
+                "addr": format!("0x{:X}", component as *const UObject as usize),
+                "addr_selector": format!("addr:0x{:X}", component as *const UObject as usize),
+                "class": component.class().map(|class| class.as_object().name()),
+                "name": component.name(),
+                "full_name": component.full_name(),
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(serde_json::json!({
+        "actor": format!("0x{actor_addr:X}"),
+        "class": class_name,
+        "count": rows.len(),
+        "components": rows,
     }))
 }
 

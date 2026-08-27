@@ -17,6 +17,20 @@ use ueforge::ue::follow_ptr_chain;
 /// frame it was open.
 pub static PLAYER: ueforge::ue::actor::LiveActor =
     ueforge::ue::actor::LiveActor::new("BP_SGKMasterCharacter_C");
+
+pub fn register_player_selector() {
+    ueforge::selector::SELECTOR_REGISTRY.register(ueforge::selector::SelectorDef {
+        prefix: "live_player",
+        summary: "MISERY player retained for the current world",
+        resolver: |selector| {
+            (selector == "live_player").then(|| {
+                PLAYER.retained().ok_or_else(|| {
+                    "MISERY player is not retained for the current world".to_string()
+                })
+            })
+        },
+    });
+}
 const CHAR_COMP_OFFSET: usize = 0x740;
 const INV_PTR_OFFSET: usize = 0x218;
 const MOVEMENT_SPEEDS_MAP: usize = 0xFE8;
@@ -54,8 +68,7 @@ pub struct MapEntry {
 ///
 /// Cleared when the world ends, along with the player pointer, so
 /// the next world reads its own.
-static SHOWN: modforge::read_once::ReadOnce<Vec<MapEntry>> =
-    modforge::read_once::ReadOnce::new();
+static SHOWN: modforge::read_once::ReadOnce<Vec<MapEntry>> = modforge::read_once::ReadOnce::new();
 
 /// Returns every player movement speed currently active in MISERY.
 /// Stays here because it translates MISERY's movement-state map into this feature's values.
