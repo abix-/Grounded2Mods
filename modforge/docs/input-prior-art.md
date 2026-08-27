@@ -25,6 +25,7 @@ End state after the 2026-05-16 session: **all three layers shipped + smoke green
 | Unit tests | `054053d3` | 8 parser tests (`Backend`/`Button`/`Key`). |
 | I-6: live action journal | `d18f3726` | Versioned operation actions, observed-value waits, and assertions in `modforge::client::live_journal`; recorded, saved, loaded, replayed, and restored live against MISERY movement speed. |
 | I-7: waypoint routes | `d331b31d`, `96242512` | Versioned world-space routes, recorded traversable edges, A*, trail reduction, closed-loop steering, relative mouse input, stuck evidence, and journal-owned semantic route actions. Five unit tests and the 9.31-second live MISERY outward-and-return replay are green. |
+| I-8: engine navigation route discovery | pending | UFunction layout discovery, live endpoint projection, Unreal player-controller navigation, automatic diagnostic sampling, nearby-door diagnosis, bounded interaction recovery, and a 53.72-second cold-start MISERY spawn-to-expedition proof with 72 one-meter breadcrumbs. The durable graph is not yet distilled into its three stop waypoints. |
 
 **Cmdlets shipped** (14 total under `input.*`):
 
@@ -46,7 +47,7 @@ input.cursor.get    input.foreground.hwnd    input.find_hwnd_by_pid    input.sel
 
 **Open items for future sessions:**
 
-- Generate the real spawn-to-expedition trail from MISERY's live Unreal navigation path, then add alternate engine-generated or recorded edges for a measured A* reroute proof.
+- Distill the MISERY proof into the exact durable graph `spawn -> metal-door -> expedition-door`, with a conditional open action on `metal-door`, an enter-expedition action on `expedition-door`, and diagnostic breadcrumbs kept outside the graph. Then add an alternate stop-to-stop edge for a measured high-level A* reroute proof.
 - HorseyInputSurface v2: direct mouse-state struct writes + direct keyboard buffer writes (per the engine-internal findings above).
 - HK1 Shift+Click transfer migration. Now unblocked by L3; pending an in-save smoke run.
 - Cross-game proof: grounded2-mod or schedule1 ships its own `InputSurface` impl.
@@ -65,7 +66,7 @@ input.cursor.get    input.foreground.hwnd    input.find_hwnd_by_pid    input.sel
 
 **Live action journal:** injected games are not deterministic simulations owned by Modforge. Their journal records semantic control-plane operations, then waits for observable conditions and asserts the resulting values. Raw timed input remains one operation type, not the authority for progress.
 
-**3D route replay:** record the player's world-space trail as waypoints, not as one long timed keyboard and mouse stream. A route follower continuously reads player position and camera rotation, holds movement keys, and emits relative look-axis input until each waypoint is reached. The journal starts the follower and advances only when arrival is observed. A* selects among known traversable waypoint edges; it does not infer walkability from empty space.
+**3D route replay:** store meaningful stops as world-space waypoints, not every sampled position and not one long timed keyboard and mouse stream. An edge means travel between two stops. Modforge A* selects stop-to-stop edges, while the host game's navigation system or Modforge's fallback follower handles the detailed movement within one edge. Dense position samples are diagnostic breadcrumbs only.
 
 **Anti-cheat:** all current targets are LOW risk. Tag `dwExtraInfo` and restore foreground anyway (cheap insurance).
 
@@ -428,31 +429,33 @@ Properties:
 
 ### 3D route discovery and pathing
 
-A long first-person route is not authoritative as raw timed input. One collision, frame hitch, loading pause, or changed enemy position can invalidate every later mouse delta. The durable recording is a sequence of world-space waypoints derived from the path the player actually walked.
+A long first-person route is not authoritative as raw timed input. One collision, frame hitch, loading pause, or changed enemy position can invalidate every later mouse delta. The durable recording is a graph of meaningful places and proven travel between them.
 
-When an injected game exposes its own navigation mesh, that is the first waypoint authority. The game already owns walkable geometry, ramps, collision clearance, and rebuilt navigation state. The route planner reads the live player and destination actor positions, asks the engine for a complete navigation path, rejects invalid or partial paths, and converts the returned path points into the same Modforge waypoint graph. Manual route recording remains the fallback for games without a readable navigation surface and for paths that require player-only interactions absent from the navigation mesh.
+The route model uses three distinct terms:
 
-Each waypoint records:
+- A **waypoint** is a meaningful place where travel stops so the controller can observe arrival, perform an action, or choose another edge. It records a stable route-local ID, world position, arrival radius, and optional arrival condition or action.
+- An **edge** is a proven movement request between two waypoints. It may record distance, observed traversal time, danger, failures, or temporary blockage.
+- A **breadcrumb** is a transient position sample retained for diagnostics, visualization, stuck evidence, or later route analysis. Breadcrumbs are never durable waypoints and never become A* nodes merely because the player passed through them.
 
-- a stable route-local ID;
-- world position and an arrival radius;
-- optional required facing for doors, interactions, or transitions;
-- optional observed completion such as entering an expedition or returning to spawn.
+There are two pathfinding levels. Modforge's high-level A* chooses a sequence of stop-to-stop edges. Within one edge, the host navigation system computes and follows the detailed path across walkable geometry. Unreal's navigation mesh therefore owns turns, ramps, collision clearance, and local obstacle avoidance. Games without a usable navigation surface fall back to Modforge's closed-loop movement and look follower, but the durable graph still contains stops rather than fixed-distance samples.
 
-Recording samples player position, camera rotation, key transitions, mouse-button transitions, and relative look axes on the game tick. It reduces the position trail into waypoints while retaining turns, narrow passages, elevation changes, and action locations. Raw input may remain as evidence, but replay uses the waypoints as its movement intent.
+Manual recording may capture player position, camera rotation, key transitions, mouse-button transitions, and relative look axes on every game tick. That dense stream is evidence. Distillation promotes only meaningful stops, actions, and branch points into the durable graph.
 
-The route follower owns movement and look input while travel is active. On each game tick it:
+Only one controller may write movement and look input while an edge is active. For an Unreal edge, the player-controller path follower owns movement and Modforge observes progress. For a fallback edge, Modforge continuously reads position and camera rotation, steers toward the destination waypoint, marks arrival inside its radius, and reports stuck when distance does not improve within a bounded interval.
 
-1. reads the player position and camera rotation;
-2. selects the current waypoint;
-3. calculates the yaw and pitch error to that waypoint;
-4. emits relative look-axis input and holds the required movement keys;
-5. marks arrival only when the player enters the waypoint radius;
-6. reports stuck when distance does not improve within a bounded interval.
+A door interaction is a waypoint action, not another movement sample. At the bunker metal door, the controller stops, observes whether the door is closed, performs bounded interaction only when needed, and starts the next edge after passage is available. At the expedition door, arrival triggers bounded interaction and succeeds only when the game observes that the expedition was entered. Combat similarly pauses or replaces edge travel and returns control only after combat completion is observed.
 
-Only one active controller may write movement and look input. Combat pauses or replaces route following, aims at the live target position, and returns control to the route follower after the combat completion observation succeeds.
+For the first MISERY route, the durable graph is exactly:
 
-The first route graph consists only of edges supplied by the live engine navigation path or successfully traversed while recording. A* chooses the lowest-cost known route between waypoint IDs when the graph has alternate edges. Edge cost begins with path distance and may later include observed traversal time, danger, failures, or temporary blockage. A* plans over this graph; a separate observer proves whether an edge is currently usable. An unobserved straight line between two positions is never assumed walkable.
+```text
+spawn
+  -> metal-door [stop; interact if closed]
+  -> expedition-door [stop; interact and observe expedition entered]
+```
+
+That is three waypoints and two edges. The bunker-door action is conditional because an open door needs no input. The expedition-door action is required because reaching its position is not the journey's completion condition; entering the expedition is. There is no after-door waypoint unless live evidence establishes a distinct stop, action, or branch there. Modforge A* sees these three nodes. Unreal navigation handles every intermediate position along each edge.
+
+A* chooses the lowest-cost known route between waypoint IDs when the graph has alternate edges. An edge enters the graph only after the host navigation system supplies it or a recording proves it traversable. A separate observer determines whether the edge is currently usable. An unobserved straight line between two positions is never assumed walkable.
 
 The live action journal coordinates the route without becoming the pathing loop:
 
@@ -465,7 +468,7 @@ start route follower: expedition -> spawn
 wait until spawn waypoint is reached
 ```
 
-The first measured proof reads the live MISERY player and placed expedition-door positions, asks Unreal for a valid complete navigation path, converts its points into waypoints, and walks from spawn to the expedition without teleporting. Acceptance requires reaching every waypoint in order, reporting position and steering error while moving, restoring all held input on completion or failure, and returning a precise stuck waypoint with the last observed position when the route cannot continue. The higher-level A* proof follows when the graph contains a fork: block or reject one known edge and verify that replay reaches the goal through the alternate engine-generated or recorded edge.
+The first measured proof reads the live MISERY player and placed expedition-door positions, projects both onto Unreal navigation, and lets the player-controller path follower walk without teleporting. It reached the expedition entrance from a cold start in 53.72 seconds, retained 72 one-meter diagnostic breadcrumbs, detected the blocking metal door, and continued after three bounded interaction attempts. Those 72 samples are evidence, not a durable route. The next implementation step is to persist the exact three-waypoint graph above. The higher-level A* proof follows when that graph contains a fork: block or reject one known stop-to-stop edge and verify that replay reaches the goal through an alternate proven edge.
 
 ---
 
