@@ -93,11 +93,8 @@ pub unsafe fn grow_raw(header_ptr: *mut u8, stride: usize, new_max: i32) -> Resu
     // growth that caused it. There is deliberately no fallback to
     // std::alloc: growing with the wrong allocator is worse than
     // not growing.
-    let new_ptr = crate::ue::gmalloc::alloc_zeroed(
-        new_size,
-        crate::ue::gmalloc::DEFAULT_ALIGNMENT,
-    )
-    .ok_or("TArray grow: engine allocator (GMalloc) unavailable")?;
+    let new_ptr = crate::ue::gmalloc::alloc_zeroed(new_size, crate::ue::gmalloc::DEFAULT_ALIGNMENT)
+        .ok_or("TArray grow: engine allocator (GMalloc) unavailable")?;
 
     let old_bytes = (old_num as usize) * stride;
     if !old_ptr.is_null() && old_bytes > 0 {
@@ -113,6 +110,80 @@ pub unsafe fn grow_raw(header_ptr: *mut u8, stride: usize, new_max: i32) -> Resu
     Ok(())
 }
 
+/// Append raw fixed-stride entries by cloning entry zero and letting the
+/// caller patch each clone before it is copied into the live `TArray`.
+///
+/// Capacity growth uses the engine allocator through [`grow_raw`]. The caller
+/// owns only the entry-specific byte patches.
+///
+/// # Safety
+/// `header_ptr` must point at a live `TArray` header whose data contains at
+/// least one entry of `stride` bytes. No other thread may mutate the array
+/// during this call. The patch callback must preserve the entry's layout.
+pub unsafe fn append_cloned_raw(
+    header_ptr: *mut u8,
+    stride: usize,
+    append_count: usize,
+    spare_capacity: i32,
+    mut patch: impl FnMut(usize, &[u8], &mut [u8]),
+) -> Result<usize, String> {
+    if append_count == 0 {
+        return Ok(0);
+    }
+
+    // SAFETY: the caller guarantees a live TArray header.
+    let old_num = unsafe { *((header_ptr as usize + 8) as *const i32) };
+    // SAFETY: the caller guarantees a live TArray header.
+    let old_max = unsafe { *((header_ptr as usize + 12) as *const i32) };
+    if old_num < 0 || old_num > old_max {
+        return Err(format!("corrupt TArray: num={old_num} max={old_max}"));
+    }
+    let append_count = i32::try_from(append_count).map_err(|_| "append count exceeds i32")?;
+    let total_needed = old_num
+        .checked_add(append_count)
+        .ok_or("TArray append count overflow")?;
+    if total_needed > old_max {
+        let new_max = total_needed
+            .checked_add(spare_capacity.max(0))
+            .ok_or("TArray append capacity overflow")?;
+        // SAFETY: the caller's header and stride guarantees flow through.
+        unsafe { grow_raw(header_ptr, stride, new_max) }
+            .map_err(|error| format!("grow failed: {error}"))?;
+    }
+
+    // SAFETY: the header remains live after any growth above.
+    let data = unsafe { *(header_ptr as *const *mut u8) };
+    if data.is_null() {
+        return Err("null list pointer".into());
+    }
+
+    let mut template = vec![0u8; stride];
+    // SAFETY: the caller guarantees entry zero contains `stride` bytes.
+    unsafe {
+        std::ptr::copy_nonoverlapping(data, template.as_mut_ptr(), stride);
+    }
+
+    for index in 0..append_count as usize {
+        let mut entry = template.clone();
+        patch(index, &template, &mut entry);
+        // SAFETY: capacity was checked or grown for every appended entry.
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                entry.as_ptr(),
+                data.add((old_num as usize + index) * stride),
+                stride,
+            );
+        }
+    }
+
+    // SAFETY: the caller guarantees the header remains live and exclusively
+    // mutated for this operation.
+    unsafe {
+        *((header_ptr as usize + 8) as *mut i32) = total_needed;
+    }
+    Ok(append_count as usize)
+}
+
 /// Iterate a TArray of fixed-stride structs at `header_ptr`.
 /// Yields `(index, element_ptr)` for each entry. The element
 /// pointer is valid for `stride` bytes.
@@ -126,7 +197,11 @@ pub unsafe fn iter_stride(
 ) -> impl Iterator<Item = (usize, *const u8)> {
     let data_ptr = unsafe { *(header_ptr as *const *const u8) };
     let num = unsafe { *((header_ptr as usize + 8) as *const i32) };
-    let count = if data_ptr.is_null() || num <= 0 { 0 } else { num as usize };
+    let count = if data_ptr.is_null() || num <= 0 {
+        0
+    } else {
+        num as usize
+    };
     (0..count).map(move |i| (i, unsafe { data_ptr.add(i * stride) }))
 }
 

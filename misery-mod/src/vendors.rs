@@ -11,7 +11,7 @@
 use modforge::vendor::{OfferPlanner, VendorItem, VendorOffer, special_offer};
 use std::collections::{HashMap, HashSet};
 use ueforge::ue;
-use ueforge::ue::{TArray, read_at, tarray};
+use ueforge::ue::{read_at, tarray};
 const VENDOR_COMP_OFFSET: usize = 0x3B8;
 const SELL_LIST_OFFSET: usize = 0x2E8;
 const SELL_STRIDE: usize = 0x38;
@@ -187,7 +187,7 @@ pub fn apply_all(_first: *const u8) {
                 }),
             &costs,
         );
-        if append_entries::<SELL_STRIDE>(*comp, SELL_LIST_OFFSET, "vendor_mirror", &new) {
+        if apply_entries::<SELL_STRIDE>(*comp, SELL_LIST_OFFSET, "vendor_mirror", &new) {
             planner.commit(&new);
         }
     }
@@ -204,7 +204,7 @@ pub fn apply_all(_first: *const u8) {
                 }),
             &costs,
         );
-        if append_entries::<SELL_STRIDE>(comp, SELL_LIST_OFFSET, "vendor_ammo", &new) {
+        if apply_entries::<SELL_STRIDE>(comp, SELL_LIST_OFFSET, "vendor_ammo", &new) {
             planner.commit(&new);
         }
     }
@@ -221,7 +221,7 @@ pub fn apply_all(_first: *const u8) {
                 }),
             &costs,
         );
-        append_entries::<SELL_STRIDE>(comp, SELL_LIST_OFFSET, "vendor_food", &new);
+        apply_entries::<SELL_STRIDE>(comp, SELL_LIST_OFFSET, "vendor_food", &new);
     }
 
     // ResourseSaler: permanently sells the sewing kit.
@@ -267,7 +267,7 @@ fn add_sewing_kit(comp: *mut u8) {
         return;
     };
     let new = [offer];
-    append_entries::<BUY_STRIDE>(comp, BUY_LIST_OFFSET, "vendor_sewingkit", &new);
+    apply_entries::<BUY_STRIDE>(comp, BUY_LIST_OFFSET, "vendor_sewingkit", &new);
 }
 
 /// Item name + FName index of every entry on this vendor's buy
@@ -290,12 +290,10 @@ fn buy_entry_names(comp: *const u8) -> Vec<(String, u32)> {
     items
 }
 
-/// Append entries to the vendor list at `list_offset` (sell or
-/// buy; STRIDE picks the layout), growing the TArray when
-/// needed. Entry 0 is cloned as the template; vanilla entries
-/// are never modified. Returns true when everything was written.
-/// Stays here because both supported layouts and their ownership behavior were measured in MISERY.
-fn append_entries<const STRIDE: usize>(
+/// Applies planned offers to the vendor list at `list_offset`.
+/// Ueforge grows the array and clones its template entry.
+/// Stays here because MISERY owns the item, price, and stock byte patches.
+fn apply_entries<const STRIDE: usize>(
     comp: *mut u8,
     list_offset: usize,
     label: &str,
@@ -305,64 +303,43 @@ fn append_entries<const STRIDE: usize>(
         return false;
     }
 
-    // SAFETY: comp is a live BP_VendorComponent_C; list_offset
-    // is one of the two documented TArray headers on it.
-    let arr = unsafe { &mut *(comp.add(list_offset) as *mut TArray<[u8; STRIDE]>) };
-    let total_needed = arr.num + entries.len() as i32;
-    if total_needed > arr.max {
-        // SAFETY: grow copies old entries into a fresh Rust
-        // allocation; the old buffer is leaked on purpose.
-        if let Err(e) = unsafe { arr.grow(total_needed + 10) } {
-            ueforge::log::log(format_args!("{label}: grow failed: {e}"));
+    let mut priced = 0usize;
+    // SAFETY: comp is a live BP_VendorComponent_C; list_offset is one of its
+    // verified TArray headers, and every vanilla list has a template entry.
+    let result = unsafe {
+        tarray::append_cloned_raw(
+            comp.add(list_offset),
+            STRIDE,
+            entries.len(),
+            10,
+            |index, template, entry| {
+                let e = &entries[index];
+                entry[0x08..0x0C].copy_from_slice(&e.id.to_le_bytes());
+                entry[0x0C..0x10].copy_from_slice(&0u32.to_le_bytes());
+                if let Some(pay) = e.price {
+                    let template_price_ptr =
+                        u64::from_le_bytes(template[0x18..0x20].try_into().unwrap()) as *const u8;
+                    if !template_price_ptr.is_null() {
+                        set_custom_price(entry, template_price_ptr, pay);
+                        priced += 1;
+                    }
+                }
+                if let Some(stock) = e.stock {
+                    entry[0x28..0x2C].copy_from_slice(&stock.to_le_bytes());
+                }
+            },
+        )
+    };
+    let appended = match result {
+        Ok(appended) => appended,
+        Err(error) => {
+            ueforge::log::log(format_args!("{label}: {error}"));
             return false;
         }
-    }
-    let data = arr.data as *mut u8;
-    if data.is_null() {
-        ueforge::log::log(format_args!("{label}: null list pointer"));
-        return false;
-    }
-
-    // clone entry 0 as template
-    let mut template = vec![0u8; STRIDE];
-    // SAFETY: every vanilla vendor list has at least one entry.
-    unsafe {
-        std::ptr::copy_nonoverlapping(data, template.as_mut_ptr(), STRIDE);
-    }
-    let template_price_ptr =
-        u64::from_le_bytes(template[0x18..0x20].try_into().unwrap()) as *const u8;
-
-    let mut num = arr.num;
-    let mut priced = 0usize;
-    for e in entries {
-        let mut entry = template.clone();
-        entry[0x08..0x0C].copy_from_slice(&e.id.to_le_bytes());
-        entry[0x0C..0x10].copy_from_slice(&0u32.to_le_bytes());
-        if let Some(pay) = e.price {
-            if !template_price_ptr.is_null() {
-                set_custom_price(&mut entry, template_price_ptr, pay);
-                priced += 1;
-            }
-        }
-        if let Some(stock) = e.stock {
-            entry[0x28..0x2C].copy_from_slice(&stock.to_le_bytes());
-        }
-        // SAFETY: grow above guarantees num < max, so this slot
-        // is inside the allocation.
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                entry.as_ptr(),
-                data.add((num as usize) * STRIDE),
-                STRIDE,
-            );
-        }
-        num += 1;
-    }
-
-    arr.num = num;
+    };
     ueforge::log::log(format_args!(
         "{label}: added {} items ({priced} custom priced)",
-        entries.len()
+        appended
     ));
     true
 }

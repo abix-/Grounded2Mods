@@ -27,6 +27,8 @@ Extract the remaining engine-independent and Unreal-specific systems from MISERY
 - MISERY retains its phenomenon catalog, live-square and progression observation, Blueprint lookup, ground traces, Unreal spawning, logging, and controls.
 - Vendor percentage pricing, provisional global assignment, commit-on-success, inventory mirroring, and special-offer rejection belong to `modforge::vendor`.
 - MISERY retains vendor and item discovery, category and economy values, offer precedence, sewing-kit policy, and Unreal list mutation.
+- Raw TArray capacity checks, engine-allocator growth, template cloning, appended slot writes, and count updates belong to `ueforge::ue::tarray`.
+- MISERY retains vendor list offsets, item identifiers, price-array construction, stock and price byte patches, labels, and logging.
 - The root README is a concise workspace map with capability tables; detailed framework and decompilation material stays in the owning crate documentation.
 
 ## Last session summary
@@ -83,10 +85,13 @@ Extract the remaining engine-independent and Unreal-specific systems from MISERY
 - Added `modforge::vendor::OfferPlanner` for percentage pricing, globally unique provisional assignments, commit-on-success behavior, inventory mirroring, and caller-supplied special offers.
 - Migrated MISERY's vendor mirror, ammo, food, and sewing-kit decisions to Modforge while preserving vendor order, item and currency policy, prices, append-failure fallback, and raw Unreal mutation.
 - Verified the MISERY library compiles. Modforge built and 312 tests passed; the full library target remains red only on the existing `input::tests::backend_parse_rejects_garbage` mismatch where `l3` is accepted.
+- Added raw clone-and-append support to `ueforge::ue::tarray`, including engine-allocator growth, template cloning, slot writes, and count updates.
+- Migrated MISERY vendors to provide only item, price, and stock byte patches while preserving its offsets, spare-capacity policy, logging, and failure behavior.
+- Verified all 53 Ueforge library tests pass and the MISERY library compiles with its existing unused `STACK_TWEAK` warning.
 
 ## Next steps
 
-- Move MISERY's raw TArray clone, growth, and append machinery into Ueforge while retaining vendor entry offsets and byte patches in MISERY.
+- Move MISERY's transient live-object lookup, checked byte-buffer UFunction calls, and game-thread live-object hook installation into Ueforge.
 
 ## Open questions
 
