@@ -203,6 +203,75 @@ that offset is not measured yet. What this run proves is the
 thing that matters for feel: standing still, and playing without
 crossing a square boundary, now costs nothing.
 
+### Sixth run: the tabs
+
+Everything above was measured with the mod menu CLOSED, so none
+of it covered a tab. A tab's render runs once a frame while it is
+open, and UE4SS owns that loop: it calls
+`ueforge_mod_render_tab(idx)` per frame for the selected tab
+(`ueforge/src/mod_main.rs:193`). ImGui is immediate mode, so
+there is no "redraw only when something changed"; the widgets
+exist only as the draw commands that frame emits.
+
+What IS ours is whether the redraw does any WORK beyond drawing.
+
+**The Speed tab was the worst thing in the mod, invisibly.** It
+called `find_actor` on every frame it was open, to display eight
+numbers that only this mod ever changes. At 60 fps that is about
+1,800 object searches in a 30 second window, 20 ms each. It never
+appeared in any measurement above because nobody had the tab open.
+
+Two fixes, both in shared code:
+
+- `ue::actor::LiveActor` finds an actor once and keeps it until
+  the world ends. Measured with the tab open: **zero searches in
+  30 seconds**, `ue:find_object` absent from the report entirely.
+- `modforge::read_once::ReadOnce` keeps the numbers themselves.
+  With the tab open for 30 seconds, `misery-speed-read` counted
+  **zero reads**: the tab drew from what it already had.
+
+```text
+held for 0.8 ms over 30.0 s
+that is 0.03 ms per second of play, with the Speed tab OPEN
+```
+
+**The Shining tab keeps its once-a-second read, and that is
+correct.** The countdown is DISPLAYED in whole seconds, so
+reading it sixty times a second renders the same text sixty
+times. That is not a cache hiding an expensive read: measured at
+**0.5 microseconds** (`misery-shining-read`, 30 calls in 30
+seconds) against a 16,700 microsecond frame. It is the display's
+own resolution. A first attempt at removing it was wrong and was
+put back.
+
+**The Gameplay tab was already right about the frame cost.**
+`FieldEditor::render` reads only when Refresh is pressed or a
+control actually changes; every frame it draws from values held
+in memory.
+
+It had two holes, both since fixed:
+
+- It started empty and told the player to click Refresh. It now
+  fills itself once a world is up, and reloads when a NEW world
+  arrives. `ue::actor::world_generation` counts worlds ended, and
+  values carrying an old count are an old screenshot rather than
+  values. The auto-fill is gated on `streaming::world_is_up`,
+  which is a cached pointer and an array length, so a tab left
+  open at the main menu costs nothing instead of running a full
+  search per frame looking for something that cannot exist yet.
+- The accessor runs on EVERY frame of a slider DRAG, and MISERY's
+  accessor was a full object search, so dragging one slider cost
+  a search a frame. The game instance is not in a level, so
+  `LiveActor::anywhere` was added alongside `LiveActor::new` and
+  now holds it.
+
+So the rule the three tabs settle between them:
+
+> A tab redraws every frame whether you like it or not. Make the
+> redraw draw, and nothing else. Read when the value changes, or
+> at the resolution the value is DISPLAYED at, whichever is
+> rarer.
+
 How to read the first run:
 
 - 6,443,370 objects read across 37 searches is **174,000 objects
@@ -232,6 +301,9 @@ off code are worth what they cost.
 | One search of the object list | see below | game | **94 ms**, reading about **174,000 objects**. Every other cost in this table is a multiple of this one. | MEASURED |
 | `strange` watcher | OFF since 2026-08-26 | game | Was three searches a pass: **291 ms average, 305 ms worst**, then spawning up to 48 actors into a square. Switched off; see below. | MEASURED |
 | `spawning` watcher | every 5 s | game | Rebuilt 2026-08-26. **5.97 ms average, 10.6 ms worst**, no search at all: it reads the generator's streaming list and compares. Was 246 ms a pass. Only a square that streamed in costs a search. | MEASURED |
+| Speed tab | every frame it is open | game | Fixed 2026-08-26. **Zero searches and zero reads**, measured with the tab open. Was a full object search per frame. | MEASURED |
+| Shining tab | once a second while open | game | 0.5 microseconds a read, which is the countdown's display resolution rather than a cache over an expensive read. | MEASURED |
+| Gameplay tab | on load, on Refresh, on an edit | game | Fills itself once a world is up and reloads on a new world. Never per frame. | code, not measured |
 | `vendors` and `speed_default` finders | every 3 s | game | Fixed 2026-08-26. **Zero searches.** They search only while hunting for the thing, and ask `streaming::world_is_up` the rest of the time. Used to cost 1009 ms per 30 seconds between them. | MEASURED |
 | `nag` watcher | until the notice is dismissed, then never | game | Fixed 2026-08-26. Dismisses once, uninstalls its hook, ends itself. Gone from the report entirely. Used to tick twice a second for the life of the process and leave a hook firing on every widget. | MEASURED |
 | `find_object`, one object by class | as the finders run | game | **20 ms average**, cheaper than a full search because it stops at the first match. Used by `speed_default`, `vendors` and `nag`. | MEASURED |

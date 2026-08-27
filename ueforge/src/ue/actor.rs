@@ -151,6 +151,9 @@ pub fn find_live_object(
 /// ```
 pub struct LiveActor {
     class: &'static str,
+    /// Whether the object has to be in a level. An actor does; a
+    /// game instance or a widget does not.
+    require_level: bool,
     /// The actor, or 0 for "not found yet".
     addr: std::sync::atomic::AtomicUsize,
     /// Whether this one is in [`ALL_LIVE`] yet.
@@ -162,9 +165,23 @@ pub struct LiveActor {
 static ALL_LIVE: parking_lot::Mutex<Vec<&'static LiveActor>> = parking_lot::Mutex::new(Vec::new());
 
 impl LiveActor {
+    /// An actor: something living in a level.
     pub const fn new(class: &'static str) -> Self {
         Self {
             class,
+            require_level: true,
+            addr: std::sync::atomic::AtomicUsize::new(0),
+            listed: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+
+    /// An object that is NOT in a level: a game instance, a
+    /// widget, a manager that outlives the world. Found and kept
+    /// the same way.
+    pub const fn anywhere(class: &'static str) -> Self {
+        Self {
+            class,
+            require_level: false,
             addr: std::sync::atomic::AtomicUsize::new(0),
             listed: std::sync::atomic::AtomicUsize::new(0),
         }
@@ -186,7 +203,7 @@ impl LiveActor {
             // ended.
             return Some(unsafe { &*(addr as *const UObject) });
         }
-        let found = find_live_object(self.class, None, true)?;
+        let found = find_live_object(self.class, None, self.require_level)?;
         self.addr
             .store(found as *const UObject as usize, Ordering::Release);
         Some(found)
@@ -218,6 +235,20 @@ pub fn forget_all() {
     }
     // Anything else read out of that world is stale too.
     modforge::read_once::forget_all();
+    WORLD_COUNT.fetch_add(1, std::sync::atomic::Ordering::Release);
+}
+
+/// How many worlds have ended.
+///
+/// For anything holding state read out of a world that does not
+/// want to register a callback: remember this number alongside
+/// the state, and when it differs, what you are holding came from
+/// a world that no longer exists.
+static WORLD_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Which world we are on. See [`WORLD_COUNT`].
+pub fn world_generation() -> u64 {
+    WORLD_COUNT.load(std::sync::atomic::Ordering::Acquire)
 }
 
 /// How many actors are remembered right now. For diagnostics.

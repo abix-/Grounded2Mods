@@ -96,6 +96,9 @@ impl FieldAccessor {
 
 struct EditorState {
     loaded: bool,
+    /// Which world the values came from, so a new one reloads.
+    /// See `ue::actor::world_generation`.
+    world: u64,
     doubles: Vec<f32>,
     bools: Vec<bool>,
 }
@@ -125,16 +128,35 @@ impl FieldEditor {
         let mut state = self.state.lock();
         let state = state.get_or_insert_with(|| EditorState {
             loaded: false,
+            world: 0,
             doubles: vec![0.0; fields.len()],
             bools: vec![false; fields.len()],
         });
+
+        // Values read out of a world that has since ended are not
+        // values, they are an old screenshot.
+        let world = super::actor::world_generation();
+        if state.world != world {
+            state.loaded = false;
+            state.world = world;
+        }
+
+        // Fill on its own once there is a world to read. Asking
+        // whether a world is up is a cached pointer and an array
+        // length, so this costs nothing on the frames when the
+        // answer is no. Without that check, a tab left open at the
+        // main menu would run a full object search every frame,
+        // looking for something that cannot exist yet.
+        if !state.loaded && super::streaming::world_is_up() != Some(false) {
+            let _ = load_fields(state, fields, accessor());
+        }
 
         if crate::ui::button(&format!("Refresh##{}", self.id)) {
             let _ = load_fields(state, fields, accessor());
         }
 
         if !state.loaded {
-            crate::ui::text_disabled("Click Refresh after loading a save.");
+            crate::ui::text_disabled("Waiting for a save to load.");
             return;
         }
 

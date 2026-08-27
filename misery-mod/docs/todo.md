@@ -7,7 +7,6 @@
 | 1 | `ue::gmalloc` | [ ] Read the `imm8` from `mov rax,[rcx]; call [rax+imm8]` inside `FMemory::Malloc` and set `MALLOC_SLOT` to it | Vendor lists grow with no `grow failed` line, and disconnecting after a vendor pass does not crash. |
 | 1 | `ops` | [ ] Stop `discover_class_detail` crashing the game on a native engine class: it faults in `UClass::iter_native_properties` reading a tiny address (worldgen.md 10) | Pointing it at `LevelStreamingDynamic` returns its fields instead of killing the process. |
 | 1 | `ops` | [ ] Stop `fname_to_string` killing the game when handed a value that is not a real name: it panics and the panic unwinds out of the mod (worldgen.md 10) | A bogus FName returns an error over the control plane and the game keeps running. |
-| 2 | `gameplay.rs` | [ ] Same check on its tab, which also reads live state every frame with no cache. Count the reads first, the way `misery-speed-read` did, then use `read_once::ReadOnce` if the count is per frame | Either a counter shows the tab reads once, or a measurement says it does not matter. |
 | 2 | `ops` | [ ] Make NO control-plane call able to kill the game: catch panics at the op boundary the way the hook trampolines already do | A deliberately bad argument to every registered op returns an error, proven by a test. |
 | 2 | `ops` | [ ] Guard `read_bytes` with `modforge::seh::guard` so a bad address returns an error instead of killing the game | Reading a deliberately bad address returns an error, proven by a test. |
 | 2 | `research` | [ ] Find a level's own actor list offset, once `read_bytes` is guarded | The NPCs in one square are read as a short list, with no object search. |
@@ -16,7 +15,6 @@
 | 2 | `lib.rs` | [ ] Restore `stack_10x`, whose block was lost in the feature bisect and never put back (`STACK_TWEAK` is the unused-static warning on every build) | The feature is back and confirmed working live or named as broken. |
 | 2 | `spawning.rs` | [ ] Record whether the hub spawn point re-reads count and class after `set_spawn_point` writes | Observation from the tamed dwarf spot written into research.md 25.4. |
 | 3 | `vendors.rs` | [ ] `find_vendor_comp` takes its class at runtime so it cannot use `LiveActor`. Decide whether that matters: it runs once per vendor type per load, not on a hot path | Either converted, or a line in performance.md saying why it stays. |
-| 3 | `modforge::ui` | [ ] Delete `Cached<T>` and move `shining.rs` onto `read_once::ReadOnce`. It re-reads on a clock, which is polling with a longer gap; the event-based one replaced it the same evening | `Cached` is gone and nothing re-reads on a timer. |
 | 3 | `ops` | [ ] Fix `inspect_address` answering `found: false` for live widget and streaming-level addresses | Inspecting one returns its fields. |
 | 3 | `dispatch.rs` | [ ] Resolve `GGameThreadId` and assert against it, instead of comparing the engine tick thread to the ProcessEvent thread | A test proves it ran on the game thread with no save loaded. |
 | 3 | `autoload.rs` | [ ] Construct an `FString` in memory the game owns so `SGK SetSaveGameSlotName` can name any slot | Any listed save loads by name from the control plane. |
@@ -25,6 +23,7 @@
 | 3 | `ue::platform` | [ ] Cache the resolved patternsleuth offsets to disk so a reloaded image skips the scan | A hot reload survives and the control plane answers without a restart. |
 | 3 | `worldgen` | [ ] Find why `GenerateCustomBiom(1)` generates nothing while Factory works under natural shinings | Factory forcible on demand, or the different path written into worldgen.md. |
 | 3 | `worldgen` | [ ] Test whether a spawned fifth generator can run `RunGenerationFromSeed` with a custom grid and pool | Go or no-go written into worldgen.md. |
+| 5 | `modforge::ui` | [ ] `Cached<T>` has one user, the Shining tab, where a once-a-second read matches a countdown displayed in whole seconds. Decide whether one user justifies a shared type or whether it should move back into `shining.rs` | Kept with the reason written down, or moved. |
 | 5 | `autoload.rs` | [ ] Decide whether auto-load fires again after quitting to the main menu, and make the code match | Behaviour chosen and stated in the module docs. |
 | 5 | `autoload.rs` | [ ] Run the missing-save path with the save file moved aside | Auto-load skips and logs the reason, with no `LoadLevel` call. |
 | 5 | `worldgen` | [ ] Find how preset levels are packaged (pak, cooked umap) and whether a cloned, renamed square loads | Go or no-go written into worldgen.md. |

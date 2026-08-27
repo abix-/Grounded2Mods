@@ -5,7 +5,6 @@
 //! assumption). Field offsets within the struct are from the
 //! UE4SS object dump. See docs/research.md section 8.6.
 
-use ueforge::ue;
 pub use ueforge::ue::struct_fields::{FieldAccessor, FieldDef, FieldEditor, FieldType};
 
 const STRUCT_BASE: usize = 0x218;
@@ -44,8 +43,18 @@ pub static FIELDS: &[FieldDef] = &[
 
 /// Opens MISERY's live gameplay settings so the mod can read or change them.
 /// Stays here because the owning Blueprint and struct offset are MISERY-specific; Ueforge owns the accessor.
+/// The game instance, found once. It is not in a level, so it
+/// needs `anywhere` rather than `new`.
+///
+/// This used to be a full object search, and the accessor runs on
+/// EVERY frame of a slider drag, so dragging one cost a search a
+/// frame.
+static GAME_INSTANCE: ueforge::ue::actor::LiveActor =
+    ueforge::ue::actor::LiveActor::anywhere(GI_CLASS);
+
 pub fn accessor() -> Result<FieldAccessor, String> {
-    let ptr = ue::actor::find_object(GI_CLASS, None, false)
+    let ptr = GAME_INSTANCE
+        .ptr()
         .ok_or_else(|| "no game instance found".to_string())?;
     Ok(FieldAccessor::new(ptr, STRUCT_BASE, "gameplay"))
 }
