@@ -247,3 +247,128 @@ fn write_the_parts_list() {
     println!("pivots: {with_pivot} of {count}, {no_pivot} without");
     assert!(with_pivot > 0, "no mesh gave up a pivot");
 }
+
+/// Does the registry list the LEVELS the way it lists the meshes?
+///
+/// The vanilla buildings are data in the pak files: a level asset
+/// IS the list of placed parts. If the registry lists every level
+/// asset, extracting all the building data is a pass over that
+/// list, the same move as the parts list, and no square ever has
+/// to be streamed into play.
+///
+/// The level pools in worldgen.md section 4 name the squares
+/// (L_Town01, L_Kolhoz01, ...), so those names appearing here is
+/// the confirmation.
+#[test]
+fn every_level_asset_in_the_game() {
+    let Some(api) = api_or_skip() else { return };
+    let r = api.op("asset_inventory", json!({ "class": "World" }));
+    assert!(r.ok, "asset_inventory failed: {:?}", r.error);
+    let total = r.result["total"].as_u64().unwrap_or(0);
+    let assets = r.result["assets"].as_array().cloned().unwrap_or_default();
+    println!("{total} level asset(s) in the game");
+    let mut names: Vec<&str> = assets.iter().filter_map(|a| a["name"].as_str()).collect();
+    names.sort_unstable();
+    for n in &names {
+        println!("  {n}");
+    }
+
+    // Squares named in the pools (worldgen.md 4) must be here,
+    // or this route does not reach the vanilla buildings.
+    for known in ["L_Town01", "L_Kolhoz01", "L_Anomaly_House"] {
+        assert!(
+            names.iter().any(|n| *n == known),
+            "pool square {known} is not in the registry's World list"
+        );
+    }
+}
+
+/// Can a LEVEL asset be read without streaming it into play?
+///
+/// The yes/no on the whole in-process extraction route: load one
+/// small square's level asset the way the pivot pass loads a
+/// mesh, and see what the loaded object is. If its placed actors
+/// are reachable from here, extracting every vanilla building is
+/// a pass over the 121 level assets.
+#[test]
+#[ignore = "loads a level asset into the live game"]
+fn read_a_level_asset_without_streaming() {
+    let Some(api) = api_or_skip() else { return };
+    let r = api.op(
+        "asset_inventory",
+        json!({ "class": "World", "contains": "L_Anomaly_House" }),
+    );
+    assert!(r.ok, "asset_inventory failed: {:?}", r.error);
+    let assets = r.result["assets"].as_array().cloned().unwrap_or_default();
+    assert!(!assets.is_empty(), "L_Anomaly_House not in the registry");
+    // The list can hold the same name in more than one package;
+    // take them all, because which one carries the actors is part
+    // of the question.
+    for a in &assets {
+        let package = a["package"].as_str().unwrap_or("?");
+        println!("\n=== loading {package}");
+        let r = api.op(
+            "load_asset",
+            json!({
+                "package_fname": a["package_fname"],
+                "asset_fname": a["asset_fname"],
+            }),
+        );
+        if !r.ok {
+            println!("load_asset failed: {:?}", r.error);
+            continue;
+        }
+        println!("load result: {}", r.result);
+        let addr = r.result["address"].as_str().unwrap_or("0x0").to_string();
+        if addr == "0x0" {
+            continue;
+        }
+        // What did we get? Class and fields, if the inspector can
+        // see it.
+        let ins = api.op("inspect_address", json!({ "addr": addr }));
+        println!(
+            "inspect: {}",
+            serde_json::to_string_pretty(&ins.result).unwrap_or_default()
+        );
+    }
+
+    // The inspector cannot see level addresses (known, todo), so
+    // ask the object list instead: after those loads, every
+    // object whose class is exactly World. The loaded levels
+    // should be among them, and their full names say where each
+    // came from.
+    let w = api.op("walk_class", json!({ "class": "World" }));
+    for inst in w.result["instances"].as_array().cloned().unwrap_or_default() {
+        println!(
+            "  {}  {}",
+            inst["addr"].as_str().unwrap_or("?"),
+            inst["full_name"].as_str().unwrap_or("?")
+        );
+    }
+
+    // THE DECISIVE HALF: are the loaded level's placed actors
+    // readable? `level_parts` reads actors whose level path
+    // matches, so pointing it at the asset-loaded square answers
+    // whether extraction needs no streaming at all.
+    let r = api.op(
+        "level_parts",
+        json!({ "level": "3727_4_7.L_Anomaly_House" }),
+    );
+    println!(
+        "\nlevel_parts on the asset-loaded square: ok={} count={} error={:?}",
+        r.ok, r.result["count"], r.error
+    );
+    for p in r.result["parts"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .take(10)
+    {
+        println!(
+            "  {:<40} at {:?}",
+            p["asset"].as_str().unwrap_or(p["class"].as_str().unwrap_or("?")),
+            p["offset"]
+        );
+    }
+}

@@ -101,7 +101,7 @@ two parts connect is read off the placed meshes directly.
 | Step | State |
 |---|---|
 | the parts list | DONE. 2,407 meshes on disk with size, shape and pivot, every one of them. No studs yet. |
-| the catalog of connections | NOT BUILT. Everything written so far pairs placement points by distance and counts offsets, which is the superseded design. Reading shared borders off the placed meshes has not been started. |
+| the catalog of studs | NOT BUILT, but its route is proven: all 121 level assets load and read without streaming (see "ALL of it, no streaming"). Everything written before that pairs placement points by distance, the superseded design. |
 | the level read | BUILT and WRONG for the same reason: it pairs by distance instead of reading borders, takes every actor instead of building parts, and nothing caps what it writes; its only real output was a 900 MB file. |
 | the 350 cm wall-to-floor number | MEASURED between placement points by a loop local to one test. A fact, but not a stud: the design records shared borders, not origin offsets. |
 
@@ -146,6 +146,42 @@ shared border is a STUD**, and stud is the only word for it.
 So this is a CATALOG, not a search. Walk the vanilla buildings
 part by part and record, for every part, which studs it uses to
 connect to which other parts.
+
+### ALL of it, no streaming (proven live 2026-08-27)
+
+The vanilla buildings are data in the pak files, and the whole
+route is the same move as the parts list:
+
+- The registry lists **121 level assets** under class `World`:
+  every pool square from worldgen.md 4 (`L_Town01`,
+  `L_Kolhoz01`, the factories, the bunkers), plus levels the
+  pools never name (`L_SafeHub`, `L_Store01`,
+  `L_TutorialLevel`).
+- `LoadAsset_Blocking` pulls one in as a live `World` object,
+  confirmed by walking the object list to the same address.
+- `level_parts` then reads its placed actors:
+  `3727_4_7.L_Anomaly_House` gave **2,751 parts with names and
+  positions**, and the player was never in that square.
+
+So extraction is a loop over the 121, no square ever streamed
+into play. (`research_assets::read_a_level_asset_without_
+streaming`.)
+
+Two things the loop must settle:
+
+- **Memory.** 121 levels at a few thousand actors each, all
+  loaded at once, is unmeasured. Whether a read level can be let
+  go afterwards is unknown.
+- **Duplicates.** `L_Town01` exists in several packages: the
+  preset itself and per-world squares (`3727_5_7.L_Town01`).
+  Which to read, or whether reading all of them just confirms
+  the same studs more times, is undecided.
+
+And a find on the way: **individual buildings ship as levels
+too.** The panel houses are level instances
+(`LI_HouseVar1_01` under `/Game/Meshes/Structures/PanelHouses/`),
+so a single house is itself a level of placed parts, and those
+are among the 121.
 
 ### Two meshes, same coordinates, shared border
 
