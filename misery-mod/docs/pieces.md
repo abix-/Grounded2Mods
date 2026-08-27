@@ -270,6 +270,32 @@ observed adjacent to which in an example, then generates from
 that. Same idea, in three dimensions, with a real building as the
 example.
 
+### The sweep has to be filtered and bounded
+
+Pairing EVERY actor within 9 m across eleven loaded levels wrote
+a 900 MB file on 2026-08-27 (research.md 30). Two mistakes:
+
+- **Filter first.** A cliff 8 m from a rock is not a join. Only
+  things that could be kit parts are worth pairing, and
+  `parts.json` already says which: `Panel`, `Slab`, `Post`, not
+  `Block` or `Clutter`.
+- **Cap the output.** A sweep that would exceed a size should
+  stop and say so rather than fill the disk.
+
+And the earlier run that gave the clean wall-to-floor answer read
+four levels and printed the top forty, so the noise never
+surfaced. **A result that looks right is not evidence that the
+method is.**
+
+### Reading an actor can fault
+
+Some actors in a streamed level have a mesh component pointer
+that does not resolve, and dereferencing one kills the process
+(research.md 29). The per-actor read is wrapped in
+`modforge::seh::guard`, so a bad actor is skipped and counted.
+Expect a sweep to report skips; a level that skips half its
+actors is telling you something.
+
 ### The format
 
 A part in `parts.json`, with the real measured numbers:

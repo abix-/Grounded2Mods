@@ -2847,3 +2847,58 @@ CollisionPrims yes    NaniteEnabled yes   BoundsExtent no
 would carry a mesh's dimensions. So `GetTagValue` can now be
 asked for them, and the parts list may not need to load 1,500
 meshes after all. See pieces.md.
+
+## 29. Reading a live actor can fault (2026-08-27)
+
+Reading an actor means following its transform, then its mesh
+component, then the mesh. Some actors in a streamed level have a
+component pointer that does not resolve, and dereferencing one
+takes the whole process down:
+
+```text
+EXCEPTION_ACCESS_VIOLATION reading address 0x0000008000000018
+  ueforge::ue::pieces::read_level (+0x1e0)
+```
+
+**The clue was in the output before the crash.** Actors were
+coming back named `<bogus-fname>` and `<none>`. That is the FName
+side already refusing to trust what it read: `FName::is_plausible`
+rejects a garbage index rather than handing it to `AppendString`.
+The mesh side had no such refusal.
+
+So: `read_level` now wraps the per-actor read in
+`modforge::seh::guard`. One bad actor becomes one skipped actor,
+counted and logged, rather than a dump. The guard existed and
+nothing had used it.
+
+**The general rule.** Anything that walks live objects and
+dereferences what it finds should assume some of them will be
+unreadable. A streamed world is being built and torn down while
+we look at it, and "this pointer is in a live object so it is
+valid" is not true.
+
+## 30. A research sweep must be bounded (2026-08-27)
+
+Pairing every actor within 9 m across eleven loaded levels wrote
+a **900 MB** file, to a disk that was 99% full, and every control
+call timed out waiting for it.
+
+Two separate mistakes, worth keeping apart:
+
+- **No cap.** A control that writes should refuse past a size and
+  say so. Nothing stopped this one.
+- **No filter.** Pairing everything is meaningless as well as
+  huge: a cliff 8 m from a rock is not a join. The interesting
+  pairs are between building parts, and `parts.json` already
+  knows which meshes are `Panel`, `Slab` or `Post`.
+
+The earlier run that produced the clean wall-to-floor result
+looked fine because it read four levels and printed the top
+forty, so the noise never surfaced. A result that looks right is
+not evidence that the method is.
+
+**Also:** a large response cannot come back over the control
+plane at all. 50,000 sightings is 12 MB of JSON and the client
+times out reading it. Evidence belongs on disk, where it also
+accumulates across sessions and can be re-derived from without
+the game running.
