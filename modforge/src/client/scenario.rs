@@ -111,10 +111,7 @@ where
     /// Skip if the player has no skill points to spend.
     fn check_skill_point(&self) -> bool {
         if self.api.skill_points() < 1 {
-            eprintln!(
-                "scenario({}): need a skill point; skipping",
-                self.skill_id
-            );
+            eprintln!("scenario({}): need a skill point; skipping", self.skill_id);
             return false;
         }
         true
@@ -123,7 +120,9 @@ where
     /// "Spending a point should make the value grow."
     /// Spends 1, asserts strictly greater, refunds.
     pub fn should_grow_when_spent(self) {
-        let Some(v0) = self.read_or_skip("baseline") else { return };
+        let Some(v0) = self.read_or_skip("baseline") else {
+            return;
+        };
         if !self.check_skill_point() {
             return;
         }
@@ -136,14 +135,18 @@ where
         assert!(
             v1 > v0,
             "{}: expected grow, got {:?} -> {:?}",
-            self.skill_id, v0, v1
+            self.skill_id,
+            v0,
+            v1
         );
     }
 
     /// "Spending a point should make the value shrink."
     /// Spends 1, asserts strictly less, refunds.
     pub fn should_shrink_when_spent(self) {
-        let Some(v0) = self.read_or_skip("baseline") else { return };
+        let Some(v0) = self.read_or_skip("baseline") else {
+            return;
+        };
         if !self.check_skill_point() {
             return;
         }
@@ -156,14 +159,18 @@ where
         assert!(
             v1 < v0,
             "{}: expected shrink, got {:?} -> {:?}",
-            self.skill_id, v0, v1
+            self.skill_id,
+            v0,
+            v1
         );
     }
 
     /// "Spending then refunding should restore the value."
     /// Useful for skills that capture vanilla once and reapply.
     pub fn should_revert_when_refunded(self) {
-        let Some(v0) = self.read_or_skip("baseline") else { return };
+        let Some(v0) = self.read_or_skip("baseline") else {
+            return;
+        };
         if !self.check_skill_point() {
             return;
         }
@@ -173,12 +180,16 @@ where
             return;
         };
         self.api.skill_refund(self.skill_id, 1);
-        let Some(v2) = self.read_or_skip("post-refund") else { return };
+        let Some(v2) = self.read_or_skip("post-refund") else {
+            return;
+        };
         assert_eq!(
             cmp(v0, v2),
             std::cmp::Ordering::Equal,
             "{}: expected revert, got baseline={:?} post-refund={:?}",
-            self.skill_id, v0, v2
+            self.skill_id,
+            v0,
+            v2
         );
     }
 
@@ -186,7 +197,9 @@ where
     /// vanilla; toggling back on should re-apply."
     /// For toggle-aware skills (movement / global-data / etc).
     pub fn should_revert_when_toggled_off(self) {
-        let Some(v0) = self.read_or_skip("baseline") else { return };
+        let Some(v0) = self.read_or_skip("baseline") else {
+            return;
+        };
         if !self.check_skill_point() {
             return;
         }
@@ -211,13 +224,17 @@ where
             cmp(v0, v_off),
             std::cmp::Ordering::Equal,
             "{}: toggle-off didn't restore vanilla; baseline={:?} toggled_off={:?}",
-            self.skill_id, v0, v_off
+            self.skill_id,
+            v0,
+            v_off
         );
         assert_eq!(
             cmp(v1, v_on),
             std::cmp::Ordering::Equal,
             "{}: toggle-on didn't restore effect; post-spend={:?} toggled_on={:?}",
-            self.skill_id, v1, v_on
+            self.skill_id,
+            v1,
+            v_on
         );
     }
 }

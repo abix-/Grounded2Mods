@@ -46,7 +46,10 @@ pub fn offsets_live(api: &Api) -> bool {
 /// Pretty-print whatever an op returned, ok or not.
 pub fn show(label: &str, r: &ueforge::OpResponse<bool>) {
     if r.ok {
-        println!("{label}: {}", serde_json::to_string(&r.result).unwrap_or_default());
+        println!(
+            "{label}: {}",
+            serde_json::to_string(&r.result).unwrap_or_default()
+        );
     } else {
         println!("{label}: FAILED {:?}", r.error);
     }

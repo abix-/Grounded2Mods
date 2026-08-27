@@ -43,7 +43,10 @@ impl MetricsSnapshot {
     /// derive `Serialize`; pass `&api.snapshot()`.
     pub fn from_snapshot<S: Serialize>(s: &S) -> Self {
         let raw = serde_json::to_value(s).unwrap_or(Value::Null);
-        Self { at: Instant::now(), raw }
+        Self {
+            at: Instant::now(),
+            raw,
+        }
     }
 
     /// Convenience: snapshot the api right now and build. Uses
@@ -59,7 +62,10 @@ impl MetricsSnapshot {
     /// Build from a raw `Value` (e.g. from a manually-constructed
     /// op response).
     pub fn from_value(raw: Value) -> Self {
-        Self { at: Instant::now(), raw }
+        Self {
+            at: Instant::now(),
+            raw,
+        }
     }
 
     fn obj(&self, key: &str) -> Option<&serde_json::Map<String, Value>> {
@@ -85,14 +91,8 @@ impl MetricsSnapshot {
 
     pub fn diff_counters(&self, later: &MetricsSnapshot) -> CounterDiff {
         let elapsed_secs = later.at.duration_since(self.at).as_secs_f64().max(1e-9);
-        let c0 = self
-            .obj("counters")
-            .cloned()
-            .unwrap_or_default();
-        let c1 = later
-            .obj("counters")
-            .cloned()
-            .unwrap_or_default();
+        let c0 = self.obj("counters").cloned().unwrap_or_default();
+        let c1 = later.obj("counters").cloned().unwrap_or_default();
 
         let mut rates: Vec<RateRow> = c0
             .keys()
@@ -109,7 +109,9 @@ impl MetricsSnapshot {
             })
             .collect();
         rates.sort_by(|a, b| {
-            b.per_sec.partial_cmp(&a.per_sec).unwrap_or(std::cmp::Ordering::Equal)
+            b.per_sec
+                .partial_cmp(&a.per_sec)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         let mut times: Vec<TimeRow> = c0
@@ -208,14 +210,31 @@ impl MetricsSnapshot {
             }
         }
         deltas.sort_by(|a, b| b.ns.cmp(&a.ns));
-        ThreadsDiff { elapsed_secs, rows: deltas }
+        ThreadsDiff {
+            elapsed_secs,
+            rows: deltas,
+        }
     }
 
     pub fn diff_population(&self, later: &MetricsSnapshot) -> PopulationDiff {
-        let p0 = self.raw.get("game_population").cloned().unwrap_or(Value::Null);
-        let p1 = later.raw.get("game_population").cloned().unwrap_or(Value::Null);
-        let total_before = p0.get("gobjects_total").and_then(|v| v.as_u64()).unwrap_or(0);
-        let total_after = p1.get("gobjects_total").and_then(|v| v.as_u64()).unwrap_or(0);
+        let p0 = self
+            .raw
+            .get("game_population")
+            .cloned()
+            .unwrap_or(Value::Null);
+        let p1 = later
+            .raw
+            .get("game_population")
+            .cloned()
+            .unwrap_or(Value::Null);
+        let total_before = p0
+            .get("gobjects_total")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let total_after = p1
+            .get("gobjects_total")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
 
         let mut count_0: HashMap<String, u64> = HashMap::new();
         if let Some(arr) = p0.get("top_classes").and_then(|v| v.as_array()) {
@@ -291,11 +310,7 @@ impl Display for CounterDiff {
         writeln!(f, "{:<40} {:>12} {:>12}", "counter", "delta", "per second")?;
         writeln!(f, "{}", "-".repeat(70))?;
         for r in &self.rates {
-            writeln!(
-                f,
-                "{:<40} {:>12} {:>12.1}",
-                r.name, r.delta, r.per_sec
-            )?;
+            writeln!(f, "{:<40} {:>12} {:>12.1}", r.name, r.delta, r.per_sec)?;
         }
         writeln!(
             f,
@@ -305,11 +320,7 @@ impl Display for CounterDiff {
         writeln!(f, "{:<40} {:>14} {:>10}", "hot path", "ns total", "% wall")?;
         writeln!(f, "{}", "-".repeat(70))?;
         for t in &self.times {
-            writeln!(
-                f,
-                "{:<40} {:>14} {:>9.3}%",
-                t.name, t.ns, t.pct_wall
-            )?;
+            writeln!(f, "{:<40} {:>14} {:>9.3}%", t.name, t.ns, t.pct_wall)?;
         }
         writeln!(
             f,
@@ -338,8 +349,7 @@ impl MemoryDiff {
             / (1024.0 * 1024.0)
     }
     pub fn private_delta_mb(&self) -> f64 {
-        ((self.private_after as i128) - (self.private_before as i128)) as f64
-            / (1024.0 * 1024.0)
+        ((self.private_after as i128) - (self.private_before as i128)) as f64 / (1024.0 * 1024.0)
     }
 }
 
@@ -481,7 +491,10 @@ impl Display for PopulationDiff {
             self.total_after,
             (self.total_after as i64) - (self.total_before as i64)
         )?;
-        writeln!(f, "\n=== Top growing UE classes (count delta over window) ===")?;
+        writeln!(
+            f,
+            "\n=== Top growing UE classes (count delta over window) ==="
+        )?;
         writeln!(f, "{:<48} {:>10} {:>10}", "class", "delta", "now")?;
         writeln!(f, "{}", "-".repeat(70))?;
         for r in self.classes.iter().take(20) {
@@ -591,11 +604,23 @@ impl MetricsSnapshot {
             let row = SampleRow {
                 t_secs: start.elapsed().as_secs_f32(),
                 working_set: ws,
-                working_set_delta: if first { 0 } else { (ws as i64) - (prev_ws as i64) },
+                working_set_delta: if first {
+                    0
+                } else {
+                    (ws as i64) - (prev_ws as i64)
+                },
                 page_faults: pf,
-                page_faults_delta: if first { 0 } else { (pf as i64) - (prev_pf as i64) },
+                page_faults_delta: if first {
+                    0
+                } else {
+                    (pf as i64) - (prev_pf as i64)
+                },
                 gobjects_total: gobj,
-                gobjects_delta: if first { 0 } else { (gobj as i64) - (prev_gobj as i64) },
+                gobjects_delta: if first {
+                    0
+                } else {
+                    (gobj as i64) - (prev_gobj as i64)
+                },
             };
             series.rows.push(row);
             prev_ws = ws;

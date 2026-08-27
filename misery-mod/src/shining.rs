@@ -198,7 +198,10 @@ pub fn render() {
         STATUS.invalidate();
     }
     if st.frozen {
-        ui::text_colored("Paused. The expedition will not end on its own.", (0.4, 0.9, 0.4, 1.0));
+        ui::text_colored(
+            "Paused. The expedition will not end on its own.",
+            (0.4, 0.9, 0.4, 1.0),
+        );
     }
 
     ui::spacing();
@@ -238,7 +241,7 @@ pub fn render() {
                 ueforge::log::log(format_args!("shining: add failed: {e}"));
             }
             STATUS.invalidate();
-            }
+        }
         ui::same_line();
     }
     ui::new_line();

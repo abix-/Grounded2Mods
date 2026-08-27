@@ -76,8 +76,7 @@ pub fn open(test_name: &str, start_dir: &Path) -> PerfLog {
 /// without panicking.
 pub fn try_open(test_name: &str, start_dir: &Path) -> Result<PerfLog, String> {
     let dir = repo_root(start_dir).join("perf-runs");
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("create perf dir {dir:?}: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create perf dir {dir:?}: {e}"))?;
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())

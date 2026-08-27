@@ -54,9 +54,9 @@ pub struct Derive {
     /// Stud positions round to this, centimetres, so a nudged
     /// placement does not invent a new stud.
     pub round_cm: f64,
-    /// Kit parts join at quarter turns. A pair whose relative
-    /// turn is further than this, degrees, from a quarter is not
-    /// compared at all.
+    /// Building parts join at quarter turns. A pair whose
+    /// relative turn is further than this, degrees, from a
+    /// quarter is not compared at all.
     pub snap_deg: f64,
     /// A stud needs this many confirmations. One placed room is
     /// already a correct catalog entry, so the default is 1.
@@ -149,8 +149,8 @@ pub fn studs_in(parts: &[PartDef], how: Derive) -> HashMap<String, Vec<Stud>> {
     for (i, a) in parts.iter().enumerate() {
         for b in parts.iter().skip(i + 1) {
             let rel = (b.yaw - a.yaw) as f64;
-            // Kit parts join at quarter turns; anything else is
-            // scenery leaning near scenery.
+            // Building parts join at quarter turns; anything
+            // else is scenery leaning near scenery.
             let quarter = (rel.to_degrees() / 90.0).round() * 90.0;
             if (rel.to_degrees() - quarter).abs() > how.snap_deg {
                 continue;

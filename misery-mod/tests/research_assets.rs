@@ -400,6 +400,50 @@ fn do_vanilla_neighbours_share_borders() {
     assert!(printed > 0, "no wall stands within 50 cm of any floor tile's top");
 }
 
+/// Is the registry still LOADING when we ask it?
+///
+/// Three launches reported 121, then 123, then 81 level assets,
+/// so the catalog read a different set each run. The suspicion:
+/// the registry fills its index in the background after launch,
+/// and an early ask gets a partial answer. This watches the
+/// count over time and lists whatever is-it-done functions the
+/// live registry classes expose.
+#[test]
+fn does_the_registry_fill_in_over_time() {
+    let Some(api) = api_or_skip() else { return };
+
+    // What can the registry be asked about its own readiness?
+    for class in ["AssetRegistry", "AssetRegistryHelpers"] {
+        let r = api.op("class_functions_by_name", json!({ "class": class }));
+        println!("=== {class}");
+        for f in r.result["functions"].as_array().cloned().unwrap_or_default() {
+            let name = f["name"].as_str().unwrap_or("?");
+            let lower = name.to_lowercase();
+            if lower.contains("load") || lower.contains("wait") || lower.contains("scan") {
+                println!(
+                    "  {name:<44} parms={} bytes={}",
+                    f["num_parms"], f["parms_size"]
+                );
+            }
+        }
+    }
+
+    // The count over a minute. Climbing and settling means the
+    // index fills in the background and the catalog must wait.
+    println!("\nlevel assets over time:");
+    for i in 0..7 {
+        let r = api.op("asset_inventory", json!({ "class": "World" }));
+        println!(
+            "  t+{:>3}s  {} level asset(s)",
+            i * 10,
+            r.result["total"]
+        );
+        if i < 6 {
+            std::thread::sleep(std::time::Duration::from_secs(10));
+        }
+    }
+}
+
 /// THE LEGO RULE against the real catalog: what the game does is
 /// legal, what it never does is refused with the reason named.
 ///

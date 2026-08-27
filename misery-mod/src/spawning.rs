@@ -56,12 +56,11 @@ const EMISSIONS_PAST_OFFSET: usize = 0x2F8;
 ///
 /// Four generators exist, one per area, and only the active one
 /// has a non-empty array, which is how the shared code picks it.
-pub const STREAMER: ueforge::ue::streaming::LevelStreamer =
-    ueforge::ue::streaming::LevelStreamer {
-        class: "BP_WorldGeneration_Base_C",
-        levels: 0x2E8,
-        loaded_level: 0x158,
-    };
+pub const STREAMER: ueforge::ue::streaming::LevelStreamer = ueforge::ue::streaming::LevelStreamer {
+    class: "BP_WorldGeneration_Base_C",
+    levels: 0x2E8,
+    loaded_level: 0x158,
+};
 
 /// Which squares have appeared since the last check. The shared
 /// watcher does the remembering.
