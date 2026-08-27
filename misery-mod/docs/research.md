@@ -2343,6 +2343,124 @@ game thread proves nothing.
 `research_load::load_current_slot` drives it. It is `#[ignore]`d
 because it starts a level load, so run it deliberately.
 
+**One line of that recipe was wrong, fixed 2026-08-26.**
+`LoadLevel` is right, but it was called on the wrong object:
+`BP_HostLoadGameServer` hosts a server and generates a world, so
+every launch came up somewhere the player had never been. The
+object to call is `BP_SingleplayerNewGameMenu`. See 26.9.
+
+### 26.9 Three load screens and three host objects (2026-08-26)
+
+`research_singleplayer_load.rs`, read-only, run at the main menu.
+Every line below is from its output.
+
+The menu the player clicks is Singleplayer, then Load Game, then
+a save. Underneath, each of those two screens exists three times
+over, and the class name does not tell them apart. Only the
+object name does.
+
+Three load screens, all of class `BP_LoadGameMenu_C`:
+
+```text
+BP_SinglePlayerLoadSaveMenu    the singleplayer one
+BP_HostLoadSaveMenu            host a server
+BP_LoadGameMenu                in-game
+```
+
+Three objects of class `BP_HostNewGameServer_C`, each with its
+own 0-parm `LoadLevel`:
+
+```text
+BP_SingleplayerNewGameMenu
+BP_HostNewGameServer
+BP_HostLoadGameServer          <- what autoload calls
+```
+
+So 26.7 called `LoadLevel` on the host-a-server object. That
+starts a server and generates a world, which is exactly the
+symptom.
+
+There is no fourth host object for singleplayer-load, so
+singleplayer load is `BP_SingleplayerNewGameMenu` with
+`SGK SetLoadSaveGame(true)`: the flag is what turns the new-game
+widget into a load.
+
+**Confirmed live 2026-08-26** by `tests/load_singleplayer.rs`,
+from the main menu:
+
+```text
+slot name: "Save 1"
+load flag reads back: 01
+LoadLevel called on BP_SingleplayerNewGameMenu
+world up after 11.2600474s
+```
+
+The proof it is the player's save and not a new world is the
+emission count in the mod log, `emissions=42`. A new world starts
+at 1. `src/autoload.rs` now calls this object.
+
+**A world number in a square's name proves nothing.** Six runs
+gave 5760, 244, 10776, 15820, 9387, 10748, and the last of those
+was a confirmed load of the player's save. The number belongs to
+the preset square that streamed in, not to the world.
+
+**Reading the object list during a load crashes the game.** The
+first run of this test polled `walk_class_chain` every three
+seconds while the level loaded, from the control plane's own
+thread, and took the process down:
+
+```text
+exception   0xc0000005  ACCESS_VIOLATION
+address     0x7ffcba8ab2ce  main.dll + 0x5b2ce
+fault       reading 0x22548e5edd0
+```
+
+The faulting address is in the same range as the menu widgets
+listed a minute earlier, and those are destroyed when the level
+loads. `ueforge::ops::on_game_thread` now routes `walk_class`,
+`walk_class_chain`, `class_functions`, `inspect_address` and
+`class_outer_samples` through the game thread. The same poll then
+ran through a full load without faulting. Answers carry
+`game_thread: false` when a mod serves no queue and the walk had
+to run on the calling thread.
+
+`main.dll` in a MISERY dump is THIS MOD: `scripts/restart.ps1`
+builds `misery_mod.dll` and deploys it under the name UE4SS
+requires. Symbols only resolve if the deployed DLL and the local
+`.pdb` are the same build.
+
+**What a save row can be told to do.** Each load screen owns a
+`BP_SaveGamePanel` of class `BP_LoadGameMenuPanel_C`:
+
+```text
+DeleteExistingSave                                         FString
+InitializeSavePanel                                        none
+NoSelected / YesSelected                                   none
+BndEvt__Button_284_..._OnButtonClickedEvent__Delegate...   none
+BndEvt__Button_372_..._OnButtonClickedEvent__Delegate...   none
+```
+
+The two buttons are named only by number. One loads and one
+deletes, and nothing in the function list says which. Do not call
+either until that is settled some other way.
+
+**The slot name is not what the menu shows.** Read live at the
+main menu:
+
+```text
+SGK GetLoadSaveGame     -> 0
+SGK GetSaveGameSlotName -> "Save 1_Auto"
+```
+
+`"Save 1_Auto"` is the autosave, not the `"Save 1"` recorded in
+26.7. Auto-load reads that name back and loads it, so it was
+never loading the save the player picks.
+
+**`inspect_address` is no use here.** It answered `found: false`
+for every live widget address, with `address not within any
+UObject`. Comparing the three host objects field by field needs
+`read_bytes`.
+
 ### 26.2 The game-thread queue
 
 `src/dispatch.rs`: a `ueforge::pe_queue::GameThread` drained from

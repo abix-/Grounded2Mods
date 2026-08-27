@@ -5,7 +5,10 @@
 | 1 | `assets.rs` | [ ] Turn every shipped mesh from the asset registry into a `PieceDef` with its measured size and marker offset, and its role from the shape classifier | `asset_inventory` returns all 2398 meshes as pieces, each carrying a size, a marker offset and a role. |
 | 1 | `assets.rs` | [ ] Load each unloaded mesh with `load_asset` before measuring it, so measurements cover every shipped mesh and not only the loaded third | Every mesh in the parts list has a non-zero size. |
 | 1 | `ue::gmalloc` | [ ] Read the `imm8` from `mov rax,[rcx]; call [rax+imm8]` inside `FMemory::Malloc` and set `MALLOC_SLOT` to it | Vendor lists grow with no `grow failed` line, and disconnecting after a vendor pass does not crash. |
-| 1 | `autoload.rs` | [ ] Call what the rows under `BP_SinglePlayerLoadSaveMenu` call, instead of `LoadLevel` on `BP_HostLoadGameServer` | Auto-load reaches the operator's own save, with the same world number on two launches. |
+| 1 | `autoload.rs` | [ ] Confirm a launch lands in the operator's save with the feature enabled, not just from the test | Operator watches a launch reach the save with no keys and no clicks. |
+| 2 | `autoload.rs` | [ ] Load the slot the player picks, not the `"Save 1_Auto"` autosave the game instance sometimes holds at the menu | The world that comes up is the save named in the menu row, not the autosave. |
+| 2 | `research` | [ ] Find which of `Button_284` and `Button_372` on a save row loads and which deletes, without calling either blind | Named in research.md 26.9, with the evidence that settles it. |
+| 3 | `ops` | [ ] Fix `inspect_address` answering `found: false` for live widget addresses | Inspecting a menu widget returns its fields. |
 | 1 | `strange.rs` | [ ] Run a world and check props and monuments sit on the ground after the move to `ue::spawn` and `ue::trace` | Operator confirms props are on the ground, not floating or buried. |
 | 2 | `lib.rs` | [ ] Re-enable `assets` and `stack_10x` one at a time and record which work | Both are confirmed working live or named as broken. |
 | 2 | `spawning.rs` | [ ] Record whether the hub spawn point re-reads count and class after `set_spawn_point` writes | Observation from the tamed dwarf spot written into research.md 25.4. |

@@ -98,6 +98,16 @@ pub fn register_ops(queue: &'static GameThread, timeout_hint: &'static str) {
     ]);
 }
 
+/// True when a queue has been handed to [`serve`].
+///
+/// Not the same as the hook being installed: a mod that serves a
+/// queue before the engine exists answers true here while the
+/// install is still being retried. That is what a caller wants,
+/// because the work will be queued and run on the first tick.
+pub fn is_served() -> bool {
+    QUEUE.lock().is_some()
+}
+
 /// True when the caller is already on the game thread.
 ///
 /// `UEngine::Tick` only ever runs there, so the thread it last

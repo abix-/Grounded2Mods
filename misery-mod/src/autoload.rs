@@ -7,7 +7,7 @@
 //! ```text
 //! SGK SetSaveGameSlotName(FString)   which slot
 //! SGK SetLoadSaveGame(bool)          load it, don't start new
-//! LoadLevel()                        on BP_HostLoadGameServer
+//! LoadLevel()                        on BP_SingleplayerNewGameMenu
 //! ```
 //!
 //! The game instance already holds the slot name at startup
@@ -34,10 +34,27 @@ use std::time::Duration;
 use ueforge::ue::{self, UObject};
 
 const GAME_INSTANCE: &str = "BP_SGKGameInstance_C";
-/// Both the New Game and Load Game panels are instances of this
-/// one class; only the object name tells them apart.
+
+/// Three objects share this class, and only the object name
+/// tells them apart (research.md 26.9):
+///
+/// ```text
+/// BP_SingleplayerNewGameMenu
+/// BP_HostNewGameServer
+/// BP_HostLoadGameServer
+/// ```
 const HOST_CLASS: &str = "BP_HostNewGameServer_C";
-const LOAD_HOST: &str = "BP_HostLoadGameServer";
+
+/// The object behind the Singleplayer button, and the one to
+/// call `LoadLevel` on.
+///
+/// This used to be `BP_HostLoadGameServer`, which hosts a server
+/// and generates a world: every launch came up somewhere the
+/// player had never been. Calling the singleplayer object instead
+/// loaded the operator's own save, proven live on 2026-08-26 by
+/// the emission count coming back as 42 rather than 1
+/// (`tests/load_singleplayer.rs`).
+const SINGLEPLAYER: &str = "BP_SingleplayerNewGameMenu";
 
 /// `FindExistingSave` takes an FString and returns a bool. The
 /// bool lands in byte 16, measured live: an existing slot came
@@ -96,7 +113,7 @@ fn attempt() -> String {
     let Some(gi) = find_live(GAME_INSTANCE, None) else {
         return WAITING.to_string();
     };
-    let Some(host) = find_live(HOST_CLASS, Some(LOAD_HOST)) else {
+    let Some(host) = find_live(HOST_CLASS, Some(SINGLEPLAYER)) else {
         return WAITING.to_string();
     };
 

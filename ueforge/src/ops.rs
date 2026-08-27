@@ -37,6 +37,43 @@ use crate::ue::{self, UObject, fname::FName};
 // handlers + register_builtins continue to live below.
 pub use modforge::ops::{OP_REGISTRY, OpDef, OpHandler, OpRegistry, metrics_json};
 
+/// How long an object-list walk may wait for the game thread.
+///
+/// Longer than the 3s a small call gets: `walk_class_chain` reads
+/// every object in the game, and a frame during a level load can
+/// take a while to come round.
+const WALK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Run an op body on the game thread.
+///
+/// Anything that reads the game's object list must go through
+/// here. A level unload deletes those objects while the control
+/// plane's own thread is still walking them, which reads freed
+/// memory and kills the process. Measured twice: once faulting
+/// inside `ue::actor::find_objects_by_chain` a second after a
+/// level started unloading, and again on 2026-08-26 when a test
+/// polled `walk_class_chain` every three seconds through a load
+/// (research.md 26.6).
+///
+/// A mod that serves no queue gets the old behaviour, the walk
+/// on the calling thread, because that is all it has. The answer
+/// carries `game_thread: false` so a caller can tell which it
+/// got rather than having to assume.
+fn on_game_thread<F>(args: &Json, f: F) -> Result<Json, String>
+where
+    F: FnOnce(&Json) -> Result<Json, String> + Send + 'static,
+{
+    if !crate::game_thread::is_served() {
+        let mut out = f(args)?;
+        if let Some(map) = out.as_object_mut() {
+            map.insert("game_thread".into(), Json::Bool(false));
+        }
+        return Ok(out);
+    }
+    let args = args.clone();
+    crate::game_thread::run(move || f(&args), WALK_TIMEOUT)
+}
+
 /// Register every framework-shipped op that does NOT need
 /// per-game context (no tracker, no selector resolver, no PE
 /// queue). Game crates call this once at worker init. Typically
@@ -62,19 +99,19 @@ pub fn register_builtins() {
             "walk_class",
             "Walk a UClass property chain and return the named fields",
             "{class: str}",
-            |args| walk_class(args),
+            |args| on_game_thread(args, walk_class),
         ),
         OpDef::new(
             "walk_class_chain",
             "Walk objects whose class chain contains a name (survives Blueprint reinstancing)",
             "{needle: str, max?: u64}",
-            |args| walk_class_chain(args),
+            |args| on_game_thread(args, walk_class_chain),
         ),
         OpDef::new(
             "class_functions",
             "List the functions on a LIVE class, read off an instance (finds what the startup discovery cache misses)",
             "{class: str}",
-            |args| class_functions(args),
+            |args| on_game_thread(args, class_functions),
         ),
         OpDef::new(
             "fname_to_string",
@@ -86,16 +123,18 @@ pub fn register_builtins() {
             "inspect_address",
             "Describe the UObject at an address (class + properties + values)",
             "{addr: hex}",
-            |args| inspect_address(args),
+            |args| on_game_thread(args, inspect_address),
         ),
         OpDef::new(
             "class_outer_samples",
             "Sample up to k UObjects under class and return their outers",
             "{class: str, k?: u64}",
             |args| {
-                let class_name = arg_str(args, "class")?;
-                let k = arg_u64(args, "k", Some(20))? as usize;
-                Ok(crate::ue::probe::class_outer_samples(class_name, k))
+                on_game_thread(args, |a| {
+                    let class_name = arg_str(a, "class")?;
+                    let k = arg_u64(a, "k", Some(20))? as usize;
+                    Ok(crate::ue::probe::class_outer_samples(class_name, k))
+                })
             },
         ),
         OpDef::new(

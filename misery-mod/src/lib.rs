@@ -135,14 +135,11 @@ fn on_unreal_init() {
         .once("pieces", ueforge::ue::pieces::register_ops)
         .once("assets", ueforge::assets::register_ops)
         .once("nag", nag::install)
-        // Auto-load is OFF. It called LoadLevel on
-        // BP_HostLoadGameServer, the host-a-server path, and
-        // started a FRESH world every launch rather than loading
-        // the save: the map square names carry a world number and
-        // it differed on every run (5760, 244, 10776, 15820).
-        // Turn it back on once the singleplayer load path is
-        // read off the menu. See docs/todo.md.
-        // .once("autoload", autoload::install)
+        // Auto-load calls LoadLevel on BP_SingleplayerNewGameMenu,
+        // the object behind the Singleplayer button. It used to
+        // call the host-a-server object and came up in a world
+        // the player had never been to. See research.md 26.9.
+        .once("autoload", autoload::install)
         .on_each_load("speed_default", Duration::from_secs(2),
             || ueforge::ue::actor::find_actor("BP_SGKMasterCharacter_C", None),
             |_| {
