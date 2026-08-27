@@ -116,6 +116,47 @@ feels.
 
 `spawning` is the freezing. 1478 ms of the 2899.
 
+### Fourth run: `spawning` asks the generator instead of the world
+
+```text
+held for 1287.7 ms over 30.0 s
+that is 42.92 ms per second of play    (was 96.65, and 126.14 at the start)
+
+name                              calls    total ms     avg us    worst ms
+ue:find_actors_by_chain              10     1009.64   100963.9      104.63
+ue:find_objects_by_chain             10     1009.42   100942.1      104.61
+ue:find_object                       15      277.49    18499.4       20.14
+misery-spawning                       6       35.82     5970.0       10.61
+misery-autoload                      15        0.00        0.3        0.00
+ue:objects_read                 1854528        0.00        0.0        0.00
+```
+
+**`spawning` went from 246 ms a pass to 5.97 ms. Forty-one times
+cheaper**, worst pass 10.6 ms instead of 258 ms.
+
+It no longer searches at all. Its tick reads the generator's
+`StreamingLevels`, follows each entry's `LoadedLevel` at +0x158
+for the square name, and compares that set against last time. A
+tick with nothing new stops there. Only a square that actually
+streamed in is worth a search, and then only for that square.
+See worldgen.md 10 for the chain and
+`ueforge::ue::streaming::LevelStreamer` for the shared half.
+
+Six milliseconds is also the proof it is running rather than
+bailing out: an empty list would cost microseconds, like
+`autoload`.
+
+**The remaining 43 ms per second is almost all one watcher, and
+it is not this mod's.** Ten searches in 30 seconds is one every
+three seconds, which is the `vendors` finder. It polls for a
+vendor FOREVER, searching every object each time, so it can
+re-apply after a return to the main menu. That is
+`ueforge::ue::actor::on_each_load`, which every game in the
+workspace uses.
+
+Same disease `spawning` and the notice watcher have now been
+cured of, in shared code.
+
 How to read the first run:
 
 - 6,443,370 objects read across 37 searches is **174,000 objects
@@ -144,7 +185,8 @@ off code are worth what they cost.
 |---|---|---|---|---|
 | One search of the object list | see below | game | **94 ms**, reading about **174,000 objects**. Every other cost in this table is a multiple of this one. | MEASURED |
 | `strange` watcher | OFF since 2026-08-26 | game | Was three searches a pass: **291 ms average, 305 ms worst**, then spawning up to 48 actors into a square. Switched off; see below. | MEASURED |
-| `spawning` watcher | every 5 s | game | Two searches a pass: **190 ms average, 200 ms worst**. Then spawns any planned enemies in the same frame. | MEASURED |
+| `spawning` watcher | every 5 s | game | Rebuilt 2026-08-26. **5.97 ms average, 10.6 ms worst**, no search at all: it reads the generator's streaming list and compares. Was 246 ms a pass. Only a square that streamed in costs a search. | MEASURED |
+| `vendors` finder | every 3 s, forever | game | **The biggest cost left: 10 searches and 1009 ms per 30 seconds.** Polls the whole object list for a vendor for the life of the process, so it can re-apply after a return to the main menu. Shared code, `ue::actor::on_each_load`. | MEASURED |
 | `nag` watcher | until the notice is dismissed, then never | game | Fixed 2026-08-26. Dismisses once, uninstalls its hook, ends itself. Gone from the report entirely. Used to tick twice a second for the life of the process and leave a hook firing on every widget. | MEASURED |
 | `find_object`, one object by class | as the finders run | game | **20 ms average**, cheaper than a full search because it stops at the first match. Used by `speed_default`, `vendors` and `nag`. | MEASURED |
 | `autoload` watcher | every 2 s | game | **0.4 microseconds a tick.** Returns immediately once the load has been attempted. Nothing to fix. | MEASURED |
@@ -189,6 +231,12 @@ Nothing below has been done.
   square streams in.
 - It runs on a fixed timer, so most passes re-answer a question
   whose answer has not changed.
+- `ue::actor::on_each_load` searches the whole object list on a
+  timer FOREVER, so that a feature can re-apply after a return to
+  the main menu. It should apply once and then stop, and be woken
+  by the world going away rather than polling for it. This is the
+  pattern the notice watcher and `spawning` have both now been
+  fixed to follow, and it is shared by every game.
 - **The price of a search grows with the world.** Any fix that
   keeps searching on a timer will get worse the more of the map is
   loaded around the player.

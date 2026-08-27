@@ -48,6 +48,24 @@ const POLL: Duration = Duration::from_secs(5);
 /// EmissionsPast on BP_WorldGeneration_Base_C (research.md 19.2).
 const EMISSIONS_PAST_OFFSET: usize = 0x2F8;
 
+/// Where MISERY keeps its loaded squares, all measured live
+/// (worldgen.md 10). The generator holds an array of streaming
+/// levels; each of those points at the `ULevel` it has loaded,
+/// whose name IS the square.
+///
+/// Four generators exist, one per area, and only the active one
+/// has a non-empty array, which is how the shared code picks it.
+pub const STREAMER: ueforge::ue::streaming::LevelStreamer =
+    ueforge::ue::streaming::LevelStreamer {
+        class: "BP_WorldGeneration_Base_C",
+        levels: 0x2E8,
+        loaded_level: 0x158,
+    };
+
+/// Squares already planned for, so a tick with nothing new does
+/// no work at all.
+static SEEN: std::sync::Mutex<Option<modforge::worldgen::Seen>> = std::sync::Mutex::new(None);
+
 /// Classes never used as escalations (harmless or friendly).
 const NO_ESCALATE: &[&str] = &["Tamed", "DeerNeutral", "Boar"];
 
@@ -159,19 +177,46 @@ fn watcher() {
     if ue::try_runtime().is_none() {
         return;
     }
-    let squares = census();
+
+    // Which squares are loaded, asked of the generator rather
+    // than worked out by reading every object in the game. A
+    // cached pointer and two array reads instead of 174,000
+    // objects and 132 ms (worldgen.md 10).
+    let live = STREAMER.loaded_levels();
+    if live.is_empty() {
+        return;
+    }
     {
         let mut guard = PLANNER.lock().unwrap_or_else(|e| e.into_inner());
         let planner = guard.get_or_insert_with(|| EncounterPlanner::new(ENCOUNTER_CONFIG));
-        planner.retain_places(|square| squares.contains_key(square));
+        planner.retain_places(|square| live.iter().any(|l| l == square));
         if planner.is_full() {
             return;
         }
     }
+
+    // Nothing streamed in since last time, so nothing has
+    // changed and there is nothing to do. THIS is the whole
+    // point: a tick while the player stands still does no
+    // searching at all.
+    let fresh: Vec<String> = {
+        let mut guard = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+        let seen = guard.get_or_insert_with(modforge::worldgen::Seen::new);
+        // A square that unloaded is allowed to come back.
+        seen.forget_gone(&live);
+        live.iter().filter(|s| seen.is_new(s)).cloned().collect()
+    };
+    if fresh.is_empty() {
+        return;
+    }
+
+    // Only now is a search worth paying for, and only for the
+    // squares that actually appeared.
+    let squares = census();
     let emissions = emission_level();
     LAST_EMISSIONS.store(emissions, Ordering::Relaxed);
 
-    for (square, vanilla) in &squares {
+    for (square, vanilla) in squares.iter().filter(|(s, _)| fresh.contains(s)) {
         let plan = {
             let mut guard = PLANNER.lock().unwrap_or_else(|e| e.into_inner());
             guard

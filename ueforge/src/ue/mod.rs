@@ -28,6 +28,7 @@ pub mod struct_fields;
 pub mod pieces;
 pub mod rooms;
 pub mod spawn;
+pub mod streaming;
 pub mod tarray;
 pub mod tmap;
 pub mod trace;
