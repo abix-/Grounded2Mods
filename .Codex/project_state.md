@@ -62,6 +62,7 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 - Added forward and right movement axes plus ordered movement, look, and key dispatch to `modforge::input::InputSurface`.
 - Added the shared `modforge::route::PathFollower`. It consumes path points and observed poses, emits player axes, advances points, and releases movement on arrival, cancellation, or stuck detection.
 - Added two input tests and two follower tests. The focused suite passes all nine tests.
+- Replaced Ueforge's unused OS key helper with a reusable Unreal input adapter. It sends an entire command batch through one game-thread job, uses standard reflected movement and look UFunctions, and leaves game-specific key actions in the consumer.
 - Replaced every OS input dependency in `research_navigation.rs`. Look commands now call `PlayerController::AddYawInput` and `AddPitchInput`, observe control-rotation movement, and fail after ten ignored commands. Interaction calls the retained player's Enhanced Input action directly. The source proof rejects OS mouse, keyboard, focus, foreground, and viewport lookup paths. Ten deterministic navigation tests pass and MISERY checks across all targets; live verification remains open.
 - Pushed `b9d41c7f` and deployed that exact clean commit. The restarted cold route passed in 21.32 seconds with three waypoints, two edges, one bunker-door interaction, one expedition-door interaction, and zero global UObject scan rows. `ue:actors_of_class` measured 0.50 ms worst and `ue:component_by_class` measured 0.09 ms worst.
 - From the entered expedition, the bot rejected two unreachable crates, selected the lowest-cost reachable `BP_StashMid_C`, and traversed to its one target waypoint in about eight seconds. Crate interaction did not start because four seconds of L1 relative mouse input left control rotation unchanged at yaw -90 degrees while the target required yaw 49.3 degrees. The next change must drive and observe the player controller's yaw and pitch input before another live run.
@@ -288,7 +289,6 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 
 ## Next steps
 
-- Add the reusable Ueforge `InputSurface` adapter and run every command on the Unreal game thread.
 - Extract Unreal navigation path points and feed them into the shared route follower instead of `SimpleMoveToLocation`.
 - Route MISERY door, expedition, crate, and inventory actions through the same registered input surface.
 - Aim at the door's colliding-bounds center from the active camera and gate `E` on interaction range.

@@ -1,4 +1,5 @@
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use modforge::input::{Axis, Button, InputSurface, Key, PlayerCommand, dispatch_player_commands};
 
@@ -11,6 +12,7 @@ enum Seen {
 #[derive(Default)]
 struct RecordingSurface {
     seen: Mutex<Vec<Seen>>,
+    batches: AtomicUsize,
 }
 
 impl InputSurface for RecordingSurface {
@@ -38,6 +40,23 @@ impl InputSurface for RecordingSurface {
             .push(Seen::Axis(axis, value, delta_time));
         Ok(())
     }
+
+    fn commands(&self, commands: &[PlayerCommand]) -> Result<(), String> {
+        self.batches.fetch_add(1, Ordering::Relaxed);
+        for command in commands {
+            match *command {
+                PlayerCommand::Axis {
+                    axis,
+                    value,
+                    delta_time,
+                } => {
+                    self.axis(axis, value, delta_time)?;
+                }
+                PlayerCommand::Key { key, down } => self.key(key, down)?,
+            }
+        }
+        Ok(())
+    }
 }
 
 #[test]
@@ -55,6 +74,7 @@ fn player_commands_reach_the_surface_in_order() {
     )
     .unwrap();
 
+    assert_eq!(surface.batches.load(Ordering::Relaxed), 1);
     assert_eq!(
         *surface.seen.lock().unwrap(),
         vec![

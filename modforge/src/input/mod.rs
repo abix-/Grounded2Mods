@@ -217,6 +217,23 @@ pub trait InputSurface: Send + Sync + 'static {
     fn move_abs(&self, x: i32, y: i32) -> Result<(), String>;
     fn key(&self, key: Key, down: bool) -> Result<(), String>;
     fn axis(&self, axis: Axis, value: f32, delta_time: f32) -> Result<(), String>;
+
+    /// Apply one ordered command batch. Engine adapters override this when
+    /// entering the engine thread once per batch is cheaper than once per
+    /// command.
+    fn commands(&self, commands: &[PlayerCommand]) -> Result<(), String> {
+        for command in commands {
+            match *command {
+                PlayerCommand::Axis {
+                    axis,
+                    value,
+                    delta_time,
+                } => self.axis(axis, value, delta_time)?,
+                PlayerCommand::Key { key, down } => self.key(key, down)?,
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Send player commands in caller-provided order, stopping at the first error.
@@ -224,17 +241,8 @@ pub fn dispatch_player_commands(
     surface: &dyn InputSurface,
     commands: impl IntoIterator<Item = PlayerCommand>,
 ) -> Result<(), String> {
-    for command in commands {
-        match command {
-            PlayerCommand::Axis {
-                axis,
-                value,
-                delta_time,
-            } => surface.axis(axis, value, delta_time)?,
-            PlayerCommand::Key { key, down } => surface.key(key, down)?,
-        }
-    }
-    Ok(())
+    let commands: Vec<_> = commands.into_iter().collect();
+    surface.commands(&commands)
 }
 
 /// Global slot for the registered per-game [`InputSurface`]. First

@@ -4,6 +4,7 @@
 
 | Area | Shipped | Verification |
 |---|---|---|
+| `ueforge` input | [x] Add a reusable Unreal player-input adapter | The adapter batches each command sequence into one game-thread job, resolves standard movement and look UFunctions from reflected parameter layouts, uses the retained local player, and delegates only game-specific key actions. All 59 Ueforge library tests pass. |
 | `modforge::input` + `modforge::route` | [x] Execute calculated paths as ordered player input | Input tests prove ordered movement, look, and key dispatch. Route tests prove aim, movement, path-point advancement, arrival, stuck handling, cancellation, and neutral release. |
 | `misery` | [x] Retained current-world player selector and Unreal actor-collection discovery for expedition and metal doors | Exact pushed commit `b9d41c7f` completed cold setup with no global UObject scan row. |
 | `misery` | [x] Scan-free bunker-door handling and expedition-entry observation | Restarted live route opened the retained bunker door once and observed entry through the retained player pointer. Source proof rejects every former navigation scan helper. |
