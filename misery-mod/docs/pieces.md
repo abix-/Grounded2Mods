@@ -44,6 +44,47 @@ searchable TAGS into each asset, and for a static mesh those can
 already include bounds and vertex counts. If the size is in the
 tags, nothing needs loading at all.
 
+### What the registry carries per asset (read live, 2026-08-27)
+
+`FAssetData` is 0x68 bytes. Read off the running game with
+`asset_data_bytes`, four static meshes side by side:
+
+```text
++0x00  PackageName   FName    differs per asset
++0x08  PackagePath   FName    differs per asset
++0x10  AssetName     FName    differs per asset
++0x18  zero
++0x20  AssetClassPath package FName   0x5986   same for all
++0x28  AssetClassPath asset   FName   0x2A5A2  same for all ("StaticMesh")
++0x38  a heap pointer, DIFFERENT per asset   <- TagsAndValues
++0x50  an image address, same for all
++0x64  2
+```
+
+**The tags are there.** The pointer at +0x38 differs per asset,
+which is the cooked tag map.
+
+**And it does not have to be decoded.** Reading a shared
+`TMap<FName, ...>` out of raw memory is real work;
+`AssetRegistryHelpers::GetTagValue` is a function, 4 parms in 129
+bytes, so it is callable through ProcessEvent the same way
+`GetAssetsByClass` already is:
+
+```text
+GetTagValue(FAssetData, FName TagName, FString& OutValue) -> bool
+```
+
+Finding that needed a new control. `class_functions` reads a
+class off a LIVE INSTANCE, and `AssetRegistryHelpers` is a static
+Blueprint library that only ever has a CDO, so it could not see
+it. `class_functions_by_name` looks the class up by name instead.
+It is also the safe way to ask what a native engine class can do,
+because `discover_class_detail` CRASHES on one (worldgen.md 10).
+
+Still open: which tag NAMES this build cooked in, and whether any
+of them carries bounds. That is what decides whether 1,500 meshes
+need loading or none do.
+
 **2. The studs.** Where a piece can attach. Derived from its
 measured bounds and its marker: which face, where on it, which
 way it faces. A 4 m wall has an end at each side and a top; a
