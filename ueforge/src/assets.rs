@@ -32,6 +32,7 @@
 //! game-thread only.
 
 use std::ffi::c_void;
+use std::time::Duration;
 
 use crate::ue::{self, UObject, read_at};
 
@@ -49,6 +50,10 @@ pub mod offsets {
 /// thousands of assets, so a larger count means the parm block
 /// was misread rather than that the game is enormous.
 const IMPLAUSIBLE_ASSET_COUNT: i32 = 500_000;
+
+/// Long enough for a cold registry query over tens of thousands
+/// of assets, and for a blocking asset load.
+const ENGINE_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// An FName as the engine stores it: comparison index then
 /// number, read as one u64.
@@ -172,8 +177,7 @@ pub fn assets_of_class(class_name: &str) -> Result<Vec<AssetEntry>, String> {
 ///
 /// Blocking, and game thread only.
 pub fn load_asset(package_fname: u64, asset_fname: u64) -> Result<u64, String> {
-    let ksl =
-        ue::find_class_fast("KismetSystemLibrary").ok_or("KismetSystemLibrary not found")?;
+    let ksl = ue::find_class_fast("KismetSystemLibrary").ok_or("KismetSystemLibrary not found")?;
     let func = ksl
         .get_function("KismetSystemLibrary", "LoadAsset_Blocking")
         .ok_or("LoadAsset_Blocking not found")?;
@@ -192,4 +196,91 @@ pub fn load_asset(package_fname: u64, asset_fname: u64) -> Result<u64, String> {
     Ok(u64::from_le_bytes(
         parms[0x28..0x30].try_into().unwrap_or_default(),
     ))
+}
+
+/// Register the standard asset inventory and loading operations.
+/// Both operations enter Unreal through the canonical game-thread
+/// runner because the HTTP server handles requests on worker threads.
+pub fn register_ops() {
+    crate::ops::OP_REGISTRY.register_many([
+        crate::ops::OpDef::new(
+            "asset_inventory",
+            "Every asset of a class the game ships, loaded or not",
+            "{class?: str, contains?: str}",
+            inventory_op,
+        ),
+        crate::ops::OpDef::new(
+            "load_asset",
+            "Pull an asset into memory by its package and asset FNames",
+            "{package_fname: u64, asset_fname: u64}",
+            load_op,
+        ),
+    ]);
+}
+
+fn inventory_op(args: &serde_json::Value) -> Result<serde_json::Value, String> {
+    let class = args
+        .get("class")
+        .and_then(|v| v.as_str())
+        .unwrap_or("StaticMesh")
+        .to_string();
+    let filter = args
+        .get("contains")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let class_for_job = class.clone();
+    let rows = crate::game_thread::run(
+        move || {
+            let list = assets_of_class(&class_for_job)?;
+            let total = list.len();
+            let rows: Vec<serde_json::Value> = list
+                .into_iter()
+                .filter(|asset| {
+                    filter.is_empty()
+                        || asset.package.contains(&filter)
+                        || asset.name.contains(&filter)
+                })
+                .map(|asset| {
+                    serde_json::json!({
+                        "package": asset.package,
+                        "name": asset.name,
+                        "package_fname": asset.package_fname,
+                        "asset_fname": asset.name_fname,
+                    })
+                })
+                .collect();
+            Ok(serde_json::json!({ "total": total, "assets": rows }))
+        },
+        ENGINE_TIMEOUT,
+    )?;
+
+    Ok(serde_json::json!({
+        "class": class,
+        "total": rows["total"],
+        "returned": rows["assets"].as_array().map(|assets| assets.len()).unwrap_or(0),
+        "assets": rows["assets"],
+    }))
+}
+
+fn load_op(args: &serde_json::Value) -> Result<serde_json::Value, String> {
+    let package_fname = args
+        .get("package_fname")
+        .and_then(|v| v.as_u64())
+        .ok_or("need {package_fname: u64}")?;
+    let asset_fname = args
+        .get("asset_fname")
+        .and_then(|v| v.as_u64())
+        .ok_or("need {asset_fname: u64}")?;
+    crate::game_thread::run(
+        move || {
+            let address = load_asset(package_fname, asset_fname)?;
+            Ok(serde_json::json!({
+                "loaded": address != 0,
+                "address": format!("{address:#x}"),
+            }))
+        },
+        ENGINE_TIMEOUT,
+    )
 }

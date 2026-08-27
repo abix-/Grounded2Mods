@@ -65,10 +65,11 @@ Extract the remaining engine-independent and Unreal-specific systems from MISERY
 - Reworked every mod feature table so each concise feature name links to its primary implementing source file and a separate description column explains the behavior.
 - Documented every function in `misery-mod/src` with a concise player-readable purpose and a specific reason the function remains game-specific instead of moving into Modforge, Ueforge, or Unityforge.
 - Audited those function boundaries and recorded the remaining MISERY lifts in `docs/todo.md`: standard asset and game-thread operations, reusable field editing, typed TMap mutation, encounter and phenomenon planning, vendor offer planning, raw TArray append support, checked UFunction calls, transient-object lookup, and live-object hook installation.
+- Moved the unchanged `asset_inventory` and `load_asset` handlers into `ueforge::assets`, routed both through `ueforge::game_thread::run`, migrated MISERY registration, and removed its game-local asset wrapper.
 
 ## Next steps
 
-- Start with the standard MISERY asset operations, which already sit entirely on Ueforge asset and game-thread primitives.
+- Move MISERY's standard call, pe_ping, and pe_stats registration into the Ueforge game-thread control plane.
 
 ## Open questions
 

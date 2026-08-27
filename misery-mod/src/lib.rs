@@ -7,7 +7,6 @@
 //! init / shutdown hooks, the game's `PlatformOffsets`, and the
 //! control plane. Everything else is `use ueforge::*`.
 
-pub mod assets;
 pub mod debug;
 pub mod dispatch;
 pub mod gameplay;
@@ -134,7 +133,7 @@ fn on_unreal_init() {
         // misery's harvest.rs is deleted; nothing of it was
         // game-specific.
         .once("pieces", ueforge::ue::pieces::register_ops)
-        .once("assets", assets::register_ops)
+        .once("assets", ueforge::assets::register_ops)
         .once("nag", nag::install)
         // Auto-load is OFF. It called LoadLevel on
         // BP_HostLoadGameServer, the host-a-server path, and
