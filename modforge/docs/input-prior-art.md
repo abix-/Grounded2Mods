@@ -25,7 +25,7 @@ End state after the 2026-05-16 session: **all three layers shipped + smoke green
 | Unit tests | `054053d3` | 8 parser tests (`Backend`/`Button`/`Key`). |
 | I-6: live action journal | `d18f3726` | Versioned operation actions, observed-value waits, and assertions in `modforge::client::live_journal`; recorded, saved, loaded, replayed, and restored live against MISERY movement speed. |
 | I-7: waypoint routes | `d331b31d`, `96242512` | Versioned world-space routes, recorded traversable edges, A*, trail reduction, closed-loop steering, relative mouse input, stuck evidence, and journal-owned semantic route actions. Five unit tests and the 9.31-second live MISERY outward-and-return replay are green. |
-| I-8: engine navigation route discovery | pending | UFunction layout discovery, live endpoint projection, Unreal player-controller navigation, automatic diagnostic sampling, nearby-door diagnosis, bounded interaction recovery, and a 53.72-second cold-start MISERY spawn-to-expedition proof with 72 one-meter breadcrumbs. The durable graph is not yet distilled into its three stop waypoints. |
+| I-8: engine navigation route discovery | pending | UFunction layout discovery, live endpoint projection, Unreal player-controller navigation, automatic diagnostic sampling, nearby-door diagnosis, bounded interaction recovery, and a 53.72-second cold-start MISERY spawn-to-expedition proof with 72 one-meter breadcrumbs. The permanent flow now builds and saves exactly three stop waypoints, and a targeted `E` keypress live-proved expedition entry in 0.65 seconds from the existing door stop. One cold run of the combined three-stop flow remains. |
 
 **Cmdlets shipped** (14 total under `input.*`):
 
@@ -47,7 +47,7 @@ input.cursor.get    input.foreground.hwnd    input.find_hwnd_by_pid    input.sel
 
 **Open items for future sessions:**
 
-- Distill the MISERY proof into the exact durable graph `spawn -> metal-door -> expedition-door`, with a conditional open action on `metal-door`, an enter-expedition action on `expedition-door`, and diagnostic breadcrumbs kept outside the graph. Then add an alternate stop-to-stop edge for a measured high-level A* reroute proof.
+- Run one cold combined acceptance of the saved `spawn -> metal-door -> expedition-door` graph, including conditional bunker-door interaction and observed expedition entry. Then add an alternate stop-to-stop edge for a measured high-level A* reroute proof.
 - HorseyInputSurface v2: direct mouse-state struct writes + direct keyboard buffer writes (per the engine-internal findings above).
 - HK1 Shift+Click transfer migration. Now unblocked by L3; pending an in-save smoke run.
 - Cross-game proof: grounded2-mod or schedule1 ships its own `InputSurface` impl.
@@ -468,7 +468,7 @@ start route follower: expedition -> spawn
 wait until spawn waypoint is reached
 ```
 
-The first measured proof reads the live MISERY player and placed expedition-door positions, projects both onto Unreal navigation, and lets the player-controller path follower walk without teleporting. It reached the expedition entrance from a cold start in 53.72 seconds, retained 72 one-meter diagnostic breadcrumbs, detected the blocking metal door, and continued after three bounded interaction attempts. Those 72 samples are evidence, not a durable route. The next implementation step is to persist the exact three-waypoint graph above. The higher-level A* proof follows when that graph contains a fork: block or reject one known stop-to-stop edge and verify that replay reaches the goal through an alternate proven edge.
+The first measured proof reads the live MISERY player and placed expedition-door positions, projects both onto Unreal navigation, and lets the player-controller path follower walk without teleporting. It reached the expedition entrance from a cold start in 53.72 seconds, retained 72 one-meter diagnostic breadcrumbs, detected the blocking metal door, and continued after three bounded interaction attempts. Those 72 samples are evidence, not a durable route. The permanent flow now saves the exact three-waypoint graph above and retains dense samples separately as breadcrumbs. With the player already at the expedition-door stop from the earlier proof, it sent the same `E` keypress as the player and observed the transition into the expedition in 0.65 seconds. A cold combined run remains before I-8 is complete. The higher-level A* proof follows when the graph contains a fork: block or reject one known stop-to-stop edge and verify that replay reaches the goal through an alternate proven edge.
 
 ---
 

@@ -241,9 +241,46 @@ pub fn window_pid(hwnd: isize) -> Option<u32> {
 
 /// Transfer desktop focus to a top-level window.
 pub fn focus_hwnd(hwnd: isize) -> bool {
-    use windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
-    // SAFETY: focus transfer does not dereference the HWND in this process.
-    unsafe { SetForegroundWindow(hwnd as windows_sys::Win32::Foundation::HWND) != 0 }
+    use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{SetActiveWindow, SetFocus};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, SW_RESTORE,
+        SetForegroundWindow, ShowWindow,
+    };
+
+    let target = hwnd as windows_sys::Win32::Foundation::HWND;
+    // SAFETY: these APIs treat HWND values as opaque handles. Joining the input
+    // queues lets this worker transfer focus to the game's UI thread, and the
+    // queue is detached before returning.
+    unsafe {
+        let current_thread = GetCurrentThreadId();
+        let target_thread = GetWindowThreadProcessId(target, std::ptr::null_mut());
+        let foreground = GetForegroundWindow();
+        let foreground_thread = if foreground.is_null() {
+            0
+        } else {
+            GetWindowThreadProcessId(foreground, std::ptr::null_mut())
+        };
+        let attached_foreground = foreground_thread != 0
+            && foreground_thread != current_thread
+            && foreground_thread != target_thread
+            && AttachThreadInput(current_thread, foreground_thread, 1) != 0;
+        let attached_target = current_thread != target_thread
+            && target_thread != 0
+            && AttachThreadInput(current_thread, target_thread, 1) != 0;
+        ShowWindow(target, SW_RESTORE);
+        BringWindowToTop(target);
+        SetForegroundWindow(target);
+        SetActiveWindow(target);
+        SetFocus(target);
+        if attached_target {
+            AttachThreadInput(current_thread, target_thread, 0);
+        }
+        if attached_foreground {
+            AttachThreadInput(current_thread, foreground_thread, 0);
+        }
+        GetForegroundWindow() == target
+    }
 }
 
 /// Enumerate top-level windows and return the largest visible client

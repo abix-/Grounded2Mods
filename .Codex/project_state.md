@@ -2,7 +2,7 @@
 
 ## Current focus
 
-Persist the MISERY spawn-to-expedition route as exactly three stop waypoints and two edges, with Unreal navigation handling detailed movement and diagnostic breadcrumbs kept outside the graph.
+Run one cold acceptance of the combined MISERY three-stop route. The exact graph, bunker-door recovery, targeted expedition-door `E` input, observed entry gate, and separate breadcrumbs are implemented.
 
 ## Design goals
 
@@ -57,9 +57,13 @@ Persist the MISERY spawn-to-expedition route as exactly three stop waypoints and
 
 ## Last session summary
 
+- Built and round-tripped the exact `spawn -> metal-door -> expedition-door` graph with three waypoints and two edges. The live flow saves it under `target/misery-routes`, while one-meter positions remain diagnostic breadcrumbs outside the graph.
+- Added player-like door handling: Unreal owns movement along each edge, the bunker metal door receives a bounded targeted `E` keypress only after observed blockage, and the expedition door receives `E` at arrival.
+- Proved expedition entry live from the existing door stop. A targeted `E` keypress moved the player from the safe-area door to `[28643.14, 48716.50, 208.66]` in 0.65 seconds, and the permanent test passed only after observing that transition.
+- Hardened viewport focus so it restores the window, joins the relevant Windows input queues, and verifies the exact foreground HWND instead of returning the `SetForegroundWindow` call result.
 - Added live UFunction parameter discovery with validation across both observed UE5 FField layouts. MISERY returned exact layouts for navigation projection, simple movement, controller lookup, and Enhanced Input interaction.
 - Proved Unreal player-controller navigation can walk the MISERY player automatically. The permanent test projects the player and placed expedition door onto the navmesh, detects lack of progress beside a live metal door, focuses the viewport, performs bounded interaction input, resumes the same navigation controller, and retains diagnostic position breadcrumbs.
-- Cold-start acceptance passed from spawn to the expedition entrance in 53.72 seconds with 72 one-meter diagnostic breadcrumbs and three bounded interaction attempts at one metal door. Movement cleanup runs on success and failure. The durable three-stop graph is not implemented yet.
+- Cold-start acceptance passed from spawn to the expedition entrance in 53.72 seconds with 72 one-meter diagnostic breadcrumbs and three bounded interaction attempts at one metal door. Movement cleanup runs on success and failure. That proof established movement before the later three-stop graph implementation.
 - Added a permanent live MISERY navigation test. It found the player at `[19575.10, 24919.65, -273.37]`, distinguished the placed expedition door at `[19248.00, 32776.95, 54.00]` from a zero-position startup instance, and verified that MISERY loads `NavigationSystemV1::FindPathToLocationSynchronously` and `NavigationPath` validity, partial, cost, and length functions.
 - The first navigation call built from the assumed stock UE5 parameter layout timed out the game-thread control queue. The next implementation must expose live UFunction parameter offsets and sizes before invoking it again.
 - Added `modforge::route` with versioned world-space waypoint graphs, recorded directed edges, A* over available recorded edges, trail reduction, closed-loop yaw steering, arrival checks, and stuck evidence.
@@ -269,8 +273,7 @@ Persist the MISERY spawn-to-expedition route as exactly three stop waypoints and
 
 ## Next steps
 
-- Persist exactly three MISERY stop waypoints, `spawn`, `metal-door`, and `expedition-door`, with two edges, a conditional bunker-door open action, and a required expedition-entry action.
-- Keep dense navigation samples as diagnostics only, then replay each edge through Unreal navigation and verify the saved graph contains exactly three nodes.
+- Cold-start MISERY at spawn and run the combined three-stop acceptance through bunker-door recovery and observed expedition entry.
 - Add one alternate stop-to-stop edge and run the first measured high-level A* reroute.
 - Compile the BepInEx IL2CPP shim when a BepInEx 6 IL2CPP reference directory is available.
 - Namespace Unityforge's managed handle table by generation so stale handles cannot collide after a hot swap.

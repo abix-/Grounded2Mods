@@ -119,7 +119,9 @@ impl UObject {
     /// panic on the hot path. Panic = abort in release would crash the
     /// game over a recoverable race.
     pub fn is_default_object(&self) -> bool {
-        let Some(rt) = try_runtime() else { return false };
+        let Some(rt) = try_runtime() else {
+            return false;
+        };
         let name = unsafe { rt.name_resolver.to_arc(self.fname()) };
         name.starts_with("Default__")
     }
@@ -176,8 +178,7 @@ impl UObject {
             }
             // Guard the super-class pointer read: an unmapped
             // page on the next link would AV the host.
-            let super_addr =
-                c as *const UClass as usize + offsets::ustruct::SUPER_STRUCT;
+            let super_addr = c as *const UClass as usize + offsets::ustruct::SUPER_STRUCT;
             if !crate::winproc::is_addr_readable(super_addr) {
                 return false;
             }
@@ -271,7 +272,9 @@ impl UClass {
     }
 
     pub fn iter_native_properties(&self) -> Vec<NativeProperty> {
-        let Some(rt) = try_runtime() else { return Vec::new() };
+        let Some(rt) = try_runtime() else {
+            return Vec::new();
+        };
         let mut out = Vec::new();
         let mut cur: *const u8 = unsafe {
             (self as *const UClass as *const u8)
@@ -294,8 +297,8 @@ impl UClass {
                     .read_unaligned() as u32;
                 let elem_size = (cur.add(offsets::fproperty::ELEMENT_SIZE) as *const i32)
                     .read_unaligned() as u32;
-                let next: *const u8 = (cur.add(offsets::ffield::NEXT) as *const *const u8)
-                    .read_unaligned();
+                let next: *const u8 =
+                    (cur.add(offsets::ffield::NEXT) as *const *const u8).read_unaligned();
                 out.push(NativeProperty {
                     name,
                     offset,
@@ -454,6 +457,39 @@ impl UFunction {
         }
     }
 
+    /// Parameters declared by this function, including its return value.
+    /// Offsets are relative to the ProcessEvent parameter block.
+    pub fn iter_parameters(&self) -> Vec<NativeProperty> {
+        let Some(rt) = try_runtime() else {
+            return Vec::new();
+        };
+        let head_addr = self as *const UFunction as usize + offsets::ustruct::CHILD_PROPERTIES;
+        if !crate::winproc::is_addr_readable(head_addr) {
+            return Vec::new();
+        }
+        let head = unsafe { (head_addr as *const *const u8).read_unaligned() };
+        let expected = self.num_parms() as usize;
+        let parms_size = self.parms_size() as u32;
+        // UE4SS reports the first FField layout in MISERY and the
+        // second in OWS. Accept a layout only when it yields the
+        // UFunction's exact declared count inside ParmsSize.
+        for (next, name, offset) in [
+            (0x18, 0x20, 0x44),
+            (
+                offsets::ffield::NEXT,
+                offsets::ffield::NAME_PRIVATE,
+                offsets::fproperty::OFFSET_INTERNAL,
+            ),
+        ] {
+            let parameters =
+                walk_function_parameters(head, rt, next, name, offset, parms_size, expected);
+            if parameters.len() == expected {
+                return parameters;
+            }
+        }
+        Vec::new()
+    }
+
     pub fn set_function_flags(&self, flags: u32) {
         unsafe {
             (self as *const UFunction as *mut u8)
@@ -461,6 +497,59 @@ impl UFunction {
                 .cast::<u32>()
                 .write_unaligned(flags);
         }
+    }
+}
+
+fn walk_function_parameters(
+    mut current: *const u8,
+    rt: &Runtime,
+    next_offset: usize,
+    name_offset: usize,
+    value_offset: usize,
+    parms_size: u32,
+    expected: usize,
+) -> Vec<NativeProperty> {
+    let mut parameters = Vec::with_capacity(expected);
+    let mut seen = Vec::with_capacity(expected);
+    while !current.is_null() && parameters.len() < expected {
+        if seen.contains(&(current as usize)) {
+            return Vec::new();
+        }
+        seen.push(current as usize);
+        let next_addr = current as usize + next_offset;
+        let name_addr = current as usize + name_offset;
+        let offset_addr = current as usize + value_offset;
+        let size_addr = current as usize + offsets::fproperty::ELEMENT_SIZE;
+        if !crate::winproc::is_addr_readable(next_addr)
+            || !crate::winproc::is_addr_readable(name_addr)
+            || !crate::winproc::is_addr_readable(offset_addr)
+            || !crate::winproc::is_addr_readable(size_addr)
+        {
+            return Vec::new();
+        }
+        let name = unsafe {
+            let fname = (name_addr as *const FName).read_unaligned();
+            if fname.is_none() {
+                return Vec::new();
+            }
+            rt.name_resolver.to_string(fname)
+        };
+        let offset = unsafe { (offset_addr as *const i32).read_unaligned() };
+        let element_size = unsafe { (size_addr as *const i32).read_unaligned() };
+        if offset < 0 || element_size <= 0 || offset as u32 + element_size as u32 > parms_size {
+            return Vec::new();
+        }
+        parameters.push(NativeProperty {
+            name,
+            offset: offset as u32,
+            element_size: element_size as u32,
+        });
+        current = unsafe { (next_addr as *const *const u8).read_unaligned() };
+    }
+    if current.is_null() && parameters.len() == expected {
+        parameters
+    } else {
+        Vec::new()
     }
 }
 

@@ -124,6 +124,12 @@ pub fn register_builtins() {
             |args| on_game_thread(args, class_functions_by_name),
         ),
         OpDef::new(
+            "function_parameters",
+            "List one UFunction's live parameter names, offsets, and sizes",
+            "{class: str, function: str}",
+            |args| on_game_thread(args, function_parameters),
+        ),
+        OpDef::new(
             "string_to_fname",
             "Turn a string into an FName through the engine's own constructor. Find-only by default, so a name the game does not have comes back missing rather than being created",
             "{text: str, add?: bool}",
@@ -529,14 +535,16 @@ pub const BYTE_OP_CAP: usize = 0x10_0000;
 /// most likely on raw `addr:0x...` selectors that bypass class
 /// resolution.
 fn check_object_bounds(obj: &UObject, offset: usize, length: usize) -> Result<(), String> {
-    let Some(class) = obj.class() else { return Ok(()) };
+    let Some(class) = obj.class() else {
+        return Ok(());
+    };
     let size = class.properties_size() as usize;
     if size == 0 || size > 0x100_0000 {
         return Ok(());
     }
-    let end = offset.checked_add(length).ok_or_else(|| {
-        format!("offset 0x{offset:X} + length 0x{length:X} overflows")
-    })?;
+    let end = offset
+        .checked_add(length)
+        .ok_or_else(|| format!("offset 0x{offset:X} + length 0x{length:X} overflows"))?;
     if end > size {
         return Err(format!(
             "offset 0x{offset:X} + length 0x{length:X} = 0x{end:X} \
@@ -580,8 +588,7 @@ where
 {
     let selector = arg_str(args, "instance_selector")?.to_string();
     let offset = arg_u64(args, "offset", Some(0))? as usize;
-    let bytes = hex::decode(arg_str(args, "bytes_hex")?)
-        .map_err(|e| format!("bad hex: {e}"))?;
+    let bytes = hex::decode(arg_str(args, "bytes_hex")?).map_err(|e| format!("bad hex: {e}"))?;
     if bytes.len() > BYTE_OP_CAP {
         return Err(format!("bytes len {} > 1MB cap", bytes.len()));
     }
@@ -687,6 +694,34 @@ pub fn class_functions(args: &Json) -> Result<Json, String> {
         "full_name": obj.full_name(),
         "count": fns.len(),
         "functions": fns,
+    }))
+}
+
+pub fn function_parameters(args: &Json) -> Result<Json, String> {
+    let class_name = arg_str(args, "class")?.to_string();
+    let function_name = arg_str(args, "function")?.to_string();
+    let class = crate::ue::find_class_fast(&class_name)
+        .ok_or_else(|| format!("class '{class_name}' not found"))?;
+    let function = class
+        .get_function(&class_name, &function_name)
+        .ok_or_else(|| format!("function '{class_name}::{function_name}' not found"))?;
+    let parameters = function
+        .iter_parameters()
+        .into_iter()
+        .map(|parameter| {
+            serde_json::json!({
+                "name": parameter.name,
+                "offset": parameter.offset,
+                "element_size": parameter.element_size,
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(serde_json::json!({
+        "class": class_name,
+        "function": function_name,
+        "parms_size": function.parms_size(),
+        "num_parms": function.num_parms(),
+        "parameters": parameters,
     }))
 }
 
@@ -809,16 +844,12 @@ pub fn fname_to_string(args: &Json) -> Result<Json, String> {
 /// offset-within-the-field (so callers can render
 /// `MaxCanStack +0` for an exact hit, or `Colour +0xC` if the
 /// target is mid-struct).
-fn locate_property(
-    class: &UObject,
-    offset_in_instance: u32,
-) -> Option<(String, u32, u32)> {
+fn locate_property(class: &UObject, offset_in_instance: u32) -> Option<(String, u32, u32)> {
     // SAFETY: caller passes a UObject that IS a UClass instance
     // (resolved via find_class_fast); UClass extends UObject in
     // memory layout so the cast is well-defined.
-    let mut cur: Option<&ue::UClass> = Some(unsafe {
-        &*(class as *const UObject as *const ue::UClass)
-    });
+    let mut cur: Option<&ue::UClass> =
+        Some(unsafe { &*(class as *const UObject as *const ue::UClass) });
     let mut chain_depth = 0;
     while let Some(c) = cur {
         if chain_depth > 16 {
@@ -898,16 +929,13 @@ pub fn inspect_address(args: &Json) -> Result<Json, String> {
                 "instance_size": size,
             });
             // Try to name the field via property walk.
-            if let Some((name, field_off, field_size)) =
-                locate_property(class.as_object(), off)
-            {
+            if let Some((name, field_off, field_size)) = locate_property(class.as_object(), off) {
                 let into_field = off - field_off;
                 result["field"] = serde_json::json!(name);
                 result["field_offset"] = serde_json::json!(format!("0x{field_off:X}"));
                 result["field_size"] = serde_json::json!(field_size);
                 if into_field > 0 {
-                    result["field_inner_offset"] =
-                        serde_json::json!(format!("+0x{into_field:X}"));
+                    result["field_inner_offset"] = serde_json::json!(format!("+0x{into_field:X}"));
                 }
             }
             return Ok(result);
@@ -942,11 +970,11 @@ pub fn exec_call(
     function_name: &str,
     mut parms: Vec<u8>,
 ) -> Result<Json, String> {
-    let class = ue::find_class_fast(class_name)
-        .ok_or_else(|| format!("class '{class_name}' not found"))?;
-    let func = class.get_function(class_name, function_name).ok_or_else(|| {
-        format!("function '{function_name}' not found on '{class_name}'")
-    })?;
+    let class =
+        ue::find_class_fast(class_name).ok_or_else(|| format!("class '{class_name}' not found"))?;
+    let func = class
+        .get_function(class_name, function_name)
+        .ok_or_else(|| format!("function '{function_name}' not found on '{class_name}'"))?;
     // SAFETY: `instance` is a live UObject; `func` is its
     // UFunction returned by get_function (also live in
     // GObjects); `parms.as_mut_ptr()` points at a Vec<u8> buffer
