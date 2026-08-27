@@ -16,6 +16,9 @@
     <Compile Include="..\cs-shim-common\Bridge.cs">
       <Link>Common\Bridge.cs</Link>
     </Compile>
+    <Compile Include="..\cs-shim-common\GenerationLoader.cs">
+      <Link>Common\GenerationLoader.cs</Link>
+    </Compile>
     <Compile Include="..\cs-shim-common\HarmonyBridge.cs">
       <Link>Common\HarmonyBridge.cs</Link>
     </Compile>

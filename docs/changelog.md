@@ -21,6 +21,13 @@ Newest first.
 - Put new days above older days. Add rows to the existing table when that date already exists.
 - Entries before 2026-08-17 keep their existing historical format.
 
+## 2026-08-27
+
+| System | Item | Done when |
+|---|---|---|
+| `cs-shim-il2cpp` | [x] Replace the BepInEx IL2CPP shim's private Rust DLL lifecycle with the shared generation loader | The shim links `cs-shim-common/GenerationLoader.cs`, uses it for initial load, per-frame ticking, shutdown, and generation-file hot reload, and retains only BepInEx and IL2CPP host wiring. |
+| `modforge` | [x] Replace the vanilla-invoke design draft with shipped API documentation | The page matches the current signature, invoker, operation, error, and calling-thread behavior. |
+
 ## 2026-08-26
 
 | System | Item | Done when |

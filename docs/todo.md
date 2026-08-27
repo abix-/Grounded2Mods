@@ -72,13 +72,11 @@ Survivalist extraction means moving existing engine-independent code out of the 
 | 10 | `modforge` | [x] Move Schedule 1's fixed-capacity timestamped recent-key tracking into `modforge::ring`; keep NPC pointer identity and the hit and credit windows in Schedule 1 | schedule1-mod configures two recent-key rings without implementing timestamp storage, rotation, or window lookup. |
 | 10 | `modforge` | [x] Replace Schedule 1's manual capped combat-trace vector with `modforge::ring::Ring`, preserving drop-oldest order and atomic snapshot-and-clear behavior | schedule1-mod records and clears combat events without implementing its own bounded collection loop. |
 | 10 | `unityforge` | [x] Move Schedule 1's existing guarded main-thread Effect wrapper into Unityforge; keep the crash-bisection flag, labels, timeout value, and effect configurations in Schedule 1 | schedule1-mod configures the wrapper without implementing Unity queue dispatch or Effect delegation. |
-| 10 | `modforge` | [ ] Update modforge/docs/vanilla-invoke.md from design-doc to shipped-API doc | vanilla-invoke.md reflects shipped API. |
+| 10 | `modforge` | [x] Update modforge/docs/vanilla-invoke.md from design-doc to shipped-API doc | vanilla-invoke.md reflects shipped API. |
 | 10 | `grounded2-mod` | [ ] In-game smoke test: game launches, ImGui tab opens, load save triggers slot activate, kill creature triggers XP, HTTP /debug responds | Full in-game acceptance passes. |
-| 15 | `cs-shim-il2cpp` | [ ] Mirror generation-loader into IL2CPP shim before shipping IL2CPP smoke end-to-end | IL2CPP shim uses shared GenerationLoader from cs-shim-common. |
+| 15 | `cs-shim-il2cpp` | [x] Mirror generation-loader into IL2CPP shim before shipping IL2CPP smoke end-to-end | IL2CPP shim uses shared GenerationLoader from cs-shim-common. |
 | 15 | `unityforge` | [ ] Handle-table namespace per generation: old gen's still-held handles are stale after swap; high-bit-encode the generation if collision matters | Handle collisions across generations impossible. |
 | 15 | `unityforge` | [ ] Periodic GC of quiesced generations: _quiesced list grows forever; free GCHandle once gen's threads have exited | Quiesced generations cleaned up. |
-| 15 | `ueforge` | [ ] DataTable: replicated-field respect (writes during server authority drop desync) | Replicated fields handled correctly on write. |
-| 15 | `ueforge` | [ ] DataTable: non-primitive field types (FString / TArray writes need FMemory ABI work) | FString and TArray row writes work. |
 | 15 | `ueforge` | [ ] simulate_apply_damage lift to ueforge::rpg::health (gated on Wave E1; ApplyDamageFromInfo from PE trampoline re-enters ProcessEvent and crashes) | simulate_apply_damage available as framework op. |
 | 20 | `ueforge` | [ ] Parm decoders: lift per-UFunction parm block shapes from kill_hook / inv_hook / fall_hook into ParmDecoderDef + per-class registry + generic walk_parms debug op | walk_parms debug op works for any hooked UFunction. |
 | 20 | `ueforge` | [ ] ClassRef registry: every declared static ClassRef could feed a workspace-wide class_refs_list op | class_refs_list op enumerates all declared ClassRefs. |

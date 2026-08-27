@@ -2,10 +2,12 @@
 
 ## Current focus
 
-Move Schedule 1's verified engine-independent and Unity-specific helper implementations into Modforge and Unityforge without changing game behavior.
+Share Unityforge's generation-versioned Rust DLL lifecycle across every C# host without changing host-specific behavior.
 
 ## Design goals
 
+- Generation loading, hot reload, rollback, shutdown, and bridge lifetime have one implementation in `cs-shim-common/GenerationLoader.cs`.
+- Each C# shim retains only its loader integration, logging, backend bridge, and host-specific frame callback.
 - Every Grounded 2 source function explains its player-facing purpose and its verified ownership boundary with Modforge and Ueforge.
 - Every Schedule 1 source function explains its player-facing purpose and its verified ownership boundary with Modforge and Unityforge.
 - Modforge owns engine-independent coordinate decoding, lowest-level automatic skill spending, timestamped recent-key tracking, and bounded trace storage.
@@ -48,6 +50,15 @@ Move Schedule 1's verified engine-independent and Unity-specific helper implemen
 
 ## Last session summary
 
+- Linked the BepInEx IL2CPP shim to the existing shared `GenerationLoader` and removed its duplicate DLL discovery, symbol resolution, bridge pinning, direct tick delegate, shutdown, and `FreeLibrary` implementation.
+- Kept BepInEx logging, Harmony setup, IL2CPP class injection, input polling, and the injected frame driver in the IL2CPP shim.
+- The shared loader now supplies initial loading, generation-file hot reload, rollback, ticking, and final shutdown to the IL2CPP shim. No new tests were added.
+- Static verification passed: the project file parses as XML, the IL2CPP entry contains no private native-loader implementation, and `git diff --check` is clean. The BepInEx 6 IL2CPP reference set is not installed on this machine, so the target project was not compiled; tests were skipped at the operator's request.
+- Marked the IL2CPP generation-loader row complete in `docs/todo.md`.
+- Removed the speculative Ueforge DataTable replication and non-primitive-write rows. DataTable rows are not replicated actor properties, and no game mod contains an `FString` or `TArray` DataTable writer to extract.
+- Replaced `modforge/docs/vanilla-invoke.md`'s obsolete design and migration plan with concise documentation for the shipped signature, dispatcher, invoker, and operation APIs.
+- Corrected the documented safe-call name to `Invoker::call`, matched the current operation request and result shapes, and documented that invocation remains on the caller's current thread.
+- Marked the vanilla-invoke documentation row complete in `docs/todo.md`.
 - Moved Schedule 1's guarded main-thread effect dispatch and delegation into Unityforge's standard effects.
 - Kept the crash-bisection flag and operation, effect labels, two-second timeout, and concrete effect configurations in Schedule 1. Added no tests and made no game behavior changes.
 - Verified `k3sc cargo-lock check -p unityforge -p schedule1-mod`.
@@ -227,7 +238,8 @@ Move Schedule 1's verified engine-independent and Unity-specific helper implemen
 
 ## Next steps
 
-- Review Schedule 1 again for remaining direct Modforge or Unityforge extraction candidates.
+- Compile the BepInEx IL2CPP shim when a BepInEx 6 IL2CPP reference directory is available.
+- Namespace Unityforge's managed handle table by generation so stale handles cannot collide after a hot swap.
 - Run the existing Grounded 2 in-game smoke checks for the completed extraction batch.
 - Exercise Survivalist's Load/Unload re-init path through a live story switch and confirm `ReinitAfterUnload` works.
 
