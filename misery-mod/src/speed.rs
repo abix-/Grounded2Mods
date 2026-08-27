@@ -35,18 +35,10 @@ fn inventory_ptr() -> Result<*const u8, String> {
     unsafe { follow_ptr_chain(actor, &[CHAR_COMP_OFFSET, INV_PTR_OFFSET]) }
 }
 
-#[derive(Clone)]
 pub struct MapEntry {
     pub key: u8,
     pub speed: f64,
 }
-
-/// The tab redraws every frame, and reading the speeds means
-/// finding the player, which is a full object search. Once a
-/// second is plenty for eight numbers on screen.
-static SPEEDS: modforge::ui::Cached<Result<Vec<MapEntry>, String>> =
-    modforge::ui::Cached::new();
-const REFRESH: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Returns every player movement speed currently active in MISERY.
 /// Stays here because it translates MISERY's movement-state map into this feature's values.
@@ -109,7 +101,7 @@ pub fn render() {
     ui::separator();
     ui::spacing();
 
-    match SPEEDS.get(REFRESH, current_all) {
+    match current_all() {
         Ok(entries) => {
             for e in &entries {
                 ui::text(&format!("  key {:2}  {:.0}", e.key, e.speed));
@@ -131,8 +123,6 @@ pub fn render() {
             if let Err(e) = set_multiplier(mult) {
                 ueforge::log::log(format_args!("speed: {label} failed: {e}"));
             }
-            // The numbers on screen just changed.
-            SPEEDS.invalidate();
         }
         ui::same_line();
     }
