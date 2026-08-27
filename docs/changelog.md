@@ -25,6 +25,7 @@ Newest first.
 
 | System | Item | Done when |
 |---|---|---|
+| `ueforge` | [x] Move the existing parameterized LifestealEffect out of Grounded 2 and into Ueforge's standard RPG effects | Ueforge owns the unchanged damage-event filtering, level scaling, health-component write, log, and formatting while Grounded 2 keeps its player reference, offsets, tuning, and catalog static. |
 | `ueforge` | [x] Lift transient live-object lookup, checked byte-buffer UFunction calls, and game-thread live-object hook installation from MISERY | MISERY autoload retains its save checks, Blueprint names, and parameter layouts; notice suppression retains its exact class filter, re-entry guard, dismissal handler, and logs while Ueforge stops its poller and removes its hook after dismissal. |
 | `misery` | [x] Nag screen bypassed for real: call the notice's own spacebar handler, `InpActEvt_SpaceBar_K2Node_InputKeyEvent_1`, instead of hiding the widget | Operator confirmed two cold starts reaching the game with no key pressed. Log shows the handler firing and `ItemList` resolving 2s later, where the previous build timed out after 30s and went silent. |
 | `misery` | [x] Fix research_nag::nag_class_detail: it read the startup discovery cache, which this class is absent from; read the live class via `nag_stats` instead | Test prints the four live functions on `WD_PlaytestNote01_C`. |

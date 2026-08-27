@@ -24,7 +24,8 @@
 //!    `effect: EffectDef::new("MyKind", &MY_INSTANCE)`.
 //!
 //! Standard operations the framework ships are below
-//! ([`PlayerFloatEffect`], [`SubcomponentMultiplyEffect`], etc.).
+//! ([`PlayerFloatEffect`], [`SubcomponentMultiplyEffect`],
+//! [`LifestealEffect`], etc.).
 //! Game-specific operations live in the game crate and follow
 //! the same pattern.
 
@@ -315,6 +316,73 @@ impl Effect<UeEngine> for ClassFieldsMultiplyEffect {
 // Phase 0b row 16. Engine-agnostic; blanket `impl<E: Engine>
 // Effect<E>`. Re-exported via `crate::rpg::RuntimeEffect`.
 pub use modforge::rpg::std_effect::RuntimeEffect;
+
+/// Heal the player for a level-scaled fraction of outgoing
+/// player damage by reducing the health component's accumulated
+/// damage field.
+pub struct LifestealEffect {
+    pub player: &'static PlayerRef,
+    pub health_component_offset: usize,
+    pub current_damage_offset: usize,
+    pub max_fraction: f32,
+}
+
+impl Effect<UeEngine> for LifestealEffect {
+    fn apply(&self, level: u32, max_level: u32, ctx: &crate::rpg::TriggerCtx<'_>) {
+        let crate::rpg::TriggerCtx::Engine(crate::rpg::UeEvent::DamageDealt(event)) = ctx else {
+            return;
+        };
+        if !event.attacker_is_player || event.victim_is_player || event.damage <= 0.0 {
+            return;
+        }
+        let progress = sqrt_progress(level, max_level);
+        let fraction = self.max_fraction * progress;
+        let heal = event.damage * fraction;
+        if heal <= 0.0 {
+            return;
+        }
+        // SAFETY: the consumer supplies a player reference and
+        // valid offsets for its health-component pointer and f32
+        // accumulated-damage field. Damage triggers fire from the
+        // game thread inside the DamageHook trampoline.
+        unsafe {
+            let Some(pawn) = self.player.first_live_static() else {
+                return;
+            };
+            let Some(health_component) =
+                crate::ue::field::read_component_ptr(pawn, self.health_component_offset)
+            else {
+                return;
+            };
+            let current_damage_field: TypedField<f32> = TypedField::at(self.current_damage_offset);
+            let current_damage = current_damage_field.read(health_component);
+            if current_damage <= 0.0 {
+                return;
+            }
+            let new_damage = (current_damage - heal).max(0.0);
+            current_damage_field.write(health_component, new_damage);
+            crate::log!(
+                "rpg/lifesteal: dealt {:.2} -> heal {:.2} (level={}, frac={:.3}); CurrentDamage {:.2} -> {:.2}",
+                event.damage,
+                heal,
+                level,
+                fraction,
+                current_damage,
+                new_damage
+            );
+        }
+    }
+
+    fn format(&self, level: u32, max_level: u32) -> String {
+        format_pct(
+            0.0,
+            self.max_fraction,
+            level,
+            max_level,
+            &PercentFormat::PlusPercent { word: "lifesteal" },
+        )
+    }
+}
 
 /// Apply a UE5 row-driven status effect to the player's
 /// `UStatusEffectComponent`. Mutates the row's `Value` field to

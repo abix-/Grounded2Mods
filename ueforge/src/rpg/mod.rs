@@ -45,8 +45,8 @@ pub mod xp;
 
 pub use disabled::DisabledSkills;
 pub use effect::{
-    ClassFieldsMultiplyEffect, Effect, EffectDef, PlayerFloatEffect, RuntimeEffect,
-    StatusEffectApply, SubcomponentAdditiveEffect, SubcomponentFloatEffect,
+    ClassFieldsMultiplyEffect, Effect, EffectDef, LifestealEffect, PlayerFloatEffect,
+    RuntimeEffect, StatusEffectApply, SubcomponentAdditiveEffect, SubcomponentFloatEffect,
     SubcomponentMultiplyEffect, SubcomponentU32MaskEffect,
 };
 pub use format::PercentFormat;

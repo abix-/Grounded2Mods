@@ -263,91 +263,9 @@ pub(crate) fn vanilla_fall_damage_ratio() -> Option<f32> {
     VANILLA_FALL_DAMAGE_RATIO.get().copied()
 }
 
-// ---------------------------------------------------------------
-// LifestealEffect. Player-instigator damage heals the player.
-// Subscribed to ON_DAMAGE_DEALT; runs inside the DamageHook
-// trampoline before/after the engine's apply (we use the post-
-// engine fire so `event.damage` reflects any pre-mutation by
-// crit/evasion when those land).
-// ---------------------------------------------------------------
-
-pub struct LifestealEffect {
-    pub player: &'static ueforge::ue::PlayerRef,
-    pub health_component_offset: usize,
-    pub current_damage_offset: usize,
-    pub max_fraction: f32,
-}
-
-impl Effect<ueforge::rpg::UeEngine> for LifestealEffect {
-    /// Heals the player for a level-scaled share of damage dealt to another creature.
-    /// Stays here because it targets Grounded 2's player and health-component layout;
-    /// Modforge owns progression and effect dispatch, and Ueforge owns damage events and field access.
-    fn apply(&self, level: u32, max_level: u32, ctx: &ueforge::rpg::TriggerCtx<'_>) {
-        let ueforge::rpg::TriggerCtx::Engine(ueforge::rpg::UeEvent::DamageDealt(event)) = ctx
-        else {
-            return;
-        };
-        if !event.attacker_is_player || event.victim_is_player || event.damage <= 0.0 {
-            return;
-        }
-        let progress =
-            ueforge::rpg::progress::sqrt_progress(level, max_level);
-        let fraction = self.max_fraction * progress;
-        let heal = event.damage * fraction;
-        if heal <= 0.0 {
-            return;
-        }
-        // SAFETY: PlayerRef::first_live_static walks GObjects on
-        // the game thread (we are inside the DamageHook
-        // trampoline). read_component_ptr does a typed read of a
-        // *mut UObject at the configured offset on the resolved
-        // pawn. TypedField::read/write require the offset to be
-        // a valid HC.CurrentDamage f32 field, which it is for the
-        // ASurvivalCharacter HC layout.
-        unsafe {
-            let Some(pawn) = self.player.first_live_static() else {
-                return;
-            };
-            let Some(hc) =
-                ueforge::ue::field::read_component_ptr(pawn, self.health_component_offset)
-            else {
-                return;
-            };
-            let cd_field: ueforge::ue::TypedField<f32> =
-                ueforge::ue::TypedField::at(self.current_damage_offset);
-            let cd_now = cd_field.read(hc);
-            if cd_now <= 0.0 {
-                return;
-            }
-            let new_cd = (cd_now - heal).max(0.0);
-            cd_field.write(hc, new_cd);
-            ueforge::log!(
-                "rpg/lifesteal: dealt {:.2} -> heal {:.2} (level={}, frac={:.3}); CurrentDamage {:.2} -> {:.2}",
-                event.damage,
-                heal,
-                level,
-                fraction,
-                cd_now,
-                new_cd
-            );
-        }
-    }
-
-    /// Describes the share of outgoing damage converted into healing.
-    /// Stays here because the maximum lifesteal fraction is Grounded 2 skill tuning;
-    /// Modforge owns reusable percentage formatting.
-    fn format(&self, level: u32, max_level: u32) -> String {
-        ueforge::rpg::format::format_pct(
-            0.0,
-            self.max_fraction,
-            level,
-            max_level,
-            &ueforge::rpg::PercentFormat::PlusPercent { word: "lifesteal" },
-        )
-    }
-}
-
-pub static LIFESTEAL: LifestealEffect = LifestealEffect {
+/// Configures Ueforge's reusable outgoing-damage healing effect
+/// for Grounded 2's player and health-component layout.
+pub static LIFESTEAL: ueforge::rpg::LifestealEffect = ueforge::rpg::LifestealEffect {
     player: &apply::PLAYER,
     health_component_offset: apply::ASC_HEALTH_COMPONENT,
     current_damage_offset: 0x032C, // UHealthComponent.CurrentDamage

@@ -247,9 +247,9 @@ or `&ON_DAMAGE_TAKEN`; the framework `Tracker::fire(ctx)` fans
 events out to subscribed Effects. `G2DamageBinder` in
 `kill_hook.rs` calls `TRACKER.fire(DamageDealt)` in `before` and
 `TRACKER.fire(DamageTaken)` in `after`; the Effect impl
-(`LifestealEffect`, `ImpactReversalEffect`) does the actual heal
-/ mutate / reflect via TypedField writes on the resolved
-component.
+(`ueforge::rpg::LifestealEffect`, `ImpactReversalEffect`) does
+the actual heal / mutate / reflect via TypedField writes on the
+resolved component.
 
 CDO writes propagate to newly-spawned instances. Movement skills
 also mirror the same writes onto the *current* player pawn (the
