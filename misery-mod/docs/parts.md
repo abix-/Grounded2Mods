@@ -16,116 +16,30 @@ A real Lego system has three parts, and so does this. In order,
 because each one needs the one before it.
 
 **1. The parts list.** Every mesh the game ships, measured: its
-size, where its pivot sits, and what it is. The game's
-own asset registry is the source, and it reports 2,398 static
-meshes while a memory walk sees about a third of them. A part
-whose size is unknown cannot be attached to anything, so nothing
-downstream works until this is complete.
+size, its pivot, and what it is. The game's own asset registry is
+the source: it reports 2,398 static meshes while a memory walk
+sees about a third of them. A part whose size is unknown cannot
+be attached to anything, so the other two steps wait on this.
 
 **It is written to disk, and it is a file to READ**, not just a
-cache. Every asset with its package, class, registry tags,
-measured size, pivot offset and role, openable without the game
-running.
+cache. Every asset with its package, measured size, pivot and
+shape, openable without the game running.
 
-Keyed on the ASSET NAME SET, not the game binary. The meshes live
-in the pak files, so a content patch can change them without
-touching the exe, and a cache keyed on the exe would then be
-silently wrong. The registry query is cheap and loads nothing, so
-comparing names gives three cases for free: the same set means
-use the file as it stands, new names get measured and added, and
-missing names get dropped. A patch becomes "measure the twenty
-new meshes" rather than "throw it all away".
+The file is checked against the game by the list of asset names,
+not by the exe. The meshes live in the pak files, so a patch can
+change them without touching the exe. Same names: use the file as
+it stands. New names: measure and add them. Missing names: drop
+them. A patch means measuring the twenty new meshes, not
+starting over.
 
-Prior art: Cargo's fingerprints and Unreal's own Derived Data
-Cache both key on the inputs, not on the executable.
+### Where the size comes from
 
-Open question worth settling before any of it: the registry cooks
-searchable TAGS into each asset, and for a static mesh those can
-already include bounds and vertex counts. If the size is in the
-tags, nothing needs loading at all.
-
-### What the registry carries per asset (read live, 2026-08-27)
-
-`FAssetData` is 0x68 bytes. Read off the running game with
-`asset_data_bytes`, four static meshes side by side:
-
-```text
-+0x00  PackageName   FName    differs per asset
-+0x08  PackagePath   FName    differs per asset
-+0x10  AssetName     FName    differs per asset
-+0x18  zero
-+0x20  AssetClassPath package FName   0x5986   same for all
-+0x28  AssetClassPath asset   FName   0x2A5A2  same for all ("StaticMesh")
-+0x38  a heap pointer, DIFFERENT per asset   <- TagsAndValues
-+0x50  an image address, same for all
-+0x64  2
-```
-
-**The tags are there.** The pointer at +0x38 differs per asset,
-which is the cooked tag map.
-
-**And it does not have to be decoded.** Reading a shared
-`TMap<FName, ...>` out of raw memory is real work;
-`AssetRegistryHelpers::GetTagValue` is a function, 4 parms in 129
-bytes, so it is callable through ProcessEvent the same way
-`GetAssetsByClass` already is:
-
-```text
-GetTagValue(FAssetData, FName TagName, FString& OutValue) -> bool
-```
-
-Finding that needed a new control. `class_functions` reads a
-class off a LIVE INSTANCE, and `AssetRegistryHelpers` is a static
-Blueprint library that only ever has a CDO, so it could not see
-it. `class_functions_by_name` looks the class up by name instead.
-It is also the safe way to ask what a native engine class can do,
-because `discover_class_detail` CRASHES on one (worldgen.md 10).
-
-### Reading the tags is a dead end for now
-
-Three routes tried, 2026-08-27, all blocked:
-
-**Call `GetTagValue`.** It needs an `FName` for the tag name, and
-nothing in the framework builds an `FName` from a string. Every
-`FName` we have was read off an object that already existed.
-Making one means either the engine's own constructor or a walk of
-the name pool, and the pool is around half a million entries with
-one leaked buffer per unique name resolved (`fname.rs`).
-
-**Read the map's keys instead.** They are `FName`s we could
-resolve without constructing any, so this would answer "which
-tags exist" directly. But `FAssetDataTagMapSharedView` is a union
-of a fixed-map handle and a heap map pointer, and our TMap reader
-takes a UObject and a field offset, not a raw address. Decoding
-it means chasing a pointer found in memory, which took the game
-down three times last night.
-
-**Guess the tag names.** Not evidence, and a wrong guess is
-indistinguishable from a missing tag.
-
-### Unblocked the same day
-
-The `FName` problem was the only real block, and patternsleuth
-already shipped the resolver for the engine's own constructor.
-`ue::fname::from_str` now turns a string into an `FName`
-(research.md 28), so `GetTagValue` can be asked for a tag by
-name.
-
-Which tag names this build has, read live 2026-08-27:
-
-```text
-ApproxSize    yes     Triangles   yes     Vertices     yes
-Bounds        yes     Materials   yes     LODs         yes
-MinLOD        yes     UVChannels  yes     PhysicsAsset yes
-CollisionPrims yes    NaniteEnabled yes   BoundsExtent no
-```
-
-**`ApproxSize` and `Bounds` are both there.** Those are the two
-that would carry a mesh's dimensions.
-
-### ANSWERED: `ApproxSize` carries the dimensions
-
-Read live 2026-08-27 with `asset_tags`, loading nothing:
+The registry cooks searchable tags into each asset, readable with
+nothing loaded. This build carries `ApproxSize`, `Triangles`,
+`Vertices`, `Materials`, `LODs`, `MinLOD`, `UVChannels`,
+`PhysicsAsset`, `CollisionPrims` and `NaniteEnabled`; `Bounds`
+exists but is null on every asset (read live 2026-08-27).
+`ApproxSize` is the one that carries the dimensions:
 
 ```text
 Sphere                     ApproxSize 320x320x320          Tris 528   Verts 323  LODs 1
@@ -134,118 +48,28 @@ SM_Derbis_B                ApproxSize 7x8x7                Tris 40    Verts 66
 SM_mountain_background_02  ApproxSize 200000x200000x45159  Tris 9829  Verts 4920 LODs 2
 ```
 
-**So every SIZE is one registry pass, not 1,500 blocking loads.**
-Every mesh's size comes back as a `WxDxH` string, with triangle
-and vertex counts, materials and LODs alongside, for free and
-without touching the game thread for long. The pivots do cost a
-load each, which turned out to be cheap; that is further down.
+Every size is one registry pass with nothing loaded, as a
+`WxDxH` string, with triangle and vertex counts, materials and
+LODs alongside. Three cautions:
 
-Two things to carry forward:
+- `ApproxSize` is approximate and rounded to whole units. Enough
+  to sort a 4 m wall from a 2 m one; anything needing exact
+  bounds loads that one mesh.
+- `SM_MediaPlateScreen` reports `0x100x100`. A zero dimension
+  means flat, not missing.
+- It is the mesh's BOUNDING BOX. `SM_Floor_400x400` measures
+  5.18 by 5.73 m yet sits on a 4 m spacing, because its lip is
+  inside the box. Never place a part's faces from the box alone;
+  that is what the pivot and the studs are for.
 
-- `Bounds` is null on every asset. `ApproxSize` is the one.
-- `SM_MediaPlateScreen` reports `0x100x100`. A flat mesh has a
-  ZERO dimension, so the classifier must treat zero as "flat",
-  not as "missing".
+Conversion, matching `ue::parts`: Unreal is centimetres with z
+up, this crate is metres with y up, and `PartDef::extent` is a
+HALF-size while `ApproxSize` is a full one. So
+`mf(x,y,z) = ue(y,z,x) / 2 / 100`.
 
-`ApproxSize` is what its name says: approximate, and rounded to
-whole units. Good enough to sort a 4 m wall from a 2 m one, which
-is what the parts list needs. Anything needing exact bounds still
-has to load the mesh, and now only that mesh.
-
-### Where this actually stands, 2026-08-27
-
-Honest status, because three of these look further along than
-they are:
-
-| Step | State |
-|---|---|
-| the parts list | DONE. 2,407 meshes on disk with size, shape and pivot, every one of them. No studs yet. |
-| deriving studs from joins | BUILT and unit-tested. Never yet run on real sightings. |
-| the sweep between them | BUILT and WRONG. Unfiltered and uncapped; its only real output was a 900 MB file. |
-| the 350 cm wall-to-floor stud | MEASURED, but by a test-local pairing loop, NOT by the shipped sweep. The two have never agreed on anything. |
-
-**The chain has never completed once.** Proving it end to end,
-and re-confirming that 350 cm through the real path, come before
-anything is built on top of it.
-
-### The parts list exists (2026-08-27)
-
-`parts_list` writes every shipped mesh to a file. Live:
-
-```text
-count 2407, half-extent in metres, y up
-Block 885, Slab 380, Panel 320, Clutter 520, Post 144, Beam 158
-no size: 0
-```
-
-Every one of 2,407 meshes has a size, and the whole pass takes
-under a second.
-
-### And every one has its pivot (2026-08-27)
-
-```text
-count 2407, with_pivot 2407, no_pivot 0, in 2.41s
-```
-
-The size comes from the registry tag and loads nothing, but a
-pivot only exists on a LOADED mesh: it is
-`UStaticMesh::ExtendedBounds.Origin`, the middle of the geometry
-measured from the point the game places the part at. So the pass
-asks `LoadAsset_Blocking` for every mesh in turn.
-
-**One way of getting it, not two.** `LoadAsset_Blocking` hands
-back a mesh that is already in memory without reloading it, so
-asking it for all of them covers both cases, and there is no
-second path that could disagree with the first. All 2,407 in 2.41
-seconds, which is far less than a blocking load per mesh sounds
-like it should cost.
-
-The numbers agree with the tables at the bottom of this file,
-which were measured months earlier through the loaded-mesh probe:
-
-```text
-SM_Wall_100x100   pivot [0, 0.5, 0.5]      table 50, 0, 50
-SM_Floor_400x400  pivot [2.0, -0.09, 2.0]  table 200, 200, -9
-SM_Pillar         pivot [0, 1.65, 0]       table 0, 0, 165
-```
-
-(the table is centimetres on Unreal's axes, the file is metres
-y up, so they are the same numbers through `mf(x,y,z) =
-ue(y,z,x)/100`.)
-
-**And it already shows why a size alone is not enough.**
-`SM_Floor_400x400` has a half-extent of 2.59 m and a pivot at
-exactly 2.0, so the extra 0.59 m is the lip hanging past the 4 m
-module. Placing that tile's faces from its bounding box would put
-them more than half a metre out.
-
-**The classifier agrees with the names without being told any**,
-which is the point of judging by proportion:
-
-```text
-SM_Wall_400x401      Panel   [0.10, 2.00, 2.00]
-SM_WallDoor_400x300  Panel   [0.10, 1.50, 2.00]
-SM_Floor_400x400     Slab    [2.59, 0.44, 2.87]
-```
-
-A 400x401 wall reads as a Panel 0.1 m thick, 4 m wide and 4 m
-tall. A floor reads as a Slab.
-
-**Careful with the numbers though.** `SM_Floor_400x400` measures
-5.18 by 5.73 m, not 4 by 4. `ApproxSize` is the mesh's BOUNDING
-BOX, so a tile with a lip or a skirt reads larger than its module
-size. Fine for sorting parts; NOT the same as the module grid,
-and the studs must not be placed from the bounding box alone.
-
-Conversion, matching what `ue::parts` already does: Unreal is
-centimetres with z up, this crate is metres with y up, and
-`PartDef::extent` is a HALF-extent while `ApproxSize` is a full
-size. So `mf(x,y,z) = ue(y,z,x) / 2 / 100`.
-
-### How the tag is read
-
-`AssetRegistryHelpers::GetTagValue(FAssetData, FName TagName,
-FString& OutValue) -> bool`, 4 parms in 129 bytes:
+The tag is read with `AssetRegistryHelpers::GetTagValue(
+FAssetData, FName TagName, FString& OutValue) -> bool`, 4 parms
+in 129 bytes:
 
 ```text
 0x00  FAssetData   the whole 0x68-byte entry, BY VALUE
@@ -254,100 +78,117 @@ FString& OutValue) -> bool`, 4 parms in 129 bytes:
 0x80  bool         whether the tag was there
 ```
 
-The tag name must be an `FName`, which is why none of this was
-reachable until `ue::fname::from_str` landed (research.md 28).
+The tag name must be an `FName`; `ue::fname::from_str` builds one
+from a string (research.md 28).
+
+### The pivot does not matter
+
+A mesh's pivot (the point the game places it at) sits wherever
+the artist put it: a wall's at the bottom of its starting edge, a
+floor's at a corner. It is recorded per part because it was
+measured (`UStaticMesh::ExtendedBounds.Origin`, off the loaded
+mesh, all 2,407 in 2.41 s live 2026-08-27, agreeing with the
+tables at the bottom of this file), but NOTHING in this design
+uses it.
+
+It does not matter because we never work out where a mesh sits
+from its placement point. The placed mesh is already in the
+world, and the engine knows exactly where its geometry is. Where
+two parts connect is read off the placed meshes directly.
+
+### Where this stands, 2026-08-27
+
+| Step | State |
+|---|---|
+| the parts list | DONE. 2,407 meshes on disk with size, shape and pivot, every one of them. No studs yet. |
+| the catalog of connections | NOT BUILT. Everything written so far pairs placement points by distance and counts offsets, which is the superseded design. Reading shared borders off the placed meshes has not been started. |
+| the level read | BUILT and WRONG for the same reason: it pairs by distance instead of reading borders, takes every actor instead of building parts, and nothing caps what it writes; its only real output was a 900 MB file. |
+| the 350 cm wall-to-floor number | MEASURED between placement points by a loop local to one test. A fact, but not a stud: the design records shared borders, not origin offsets. |
+
+**The chain has never completed once.** One run that reads a
+vanilla building's shared borders and writes studs into
+`parts.json` comes before anything is built on top of it.
+
+### The shape
+
+Each part gets a shape judged from its proportions alone: thin
+and tall is a `Panel`, flat and wide a `Slab`, thin in both
+horizontal axes a `Post` or `Beam`. Live, all 2,407 in one pass:
+
+```text
+Block 885, Slab 380, Panel 320, Clutter 520, Post 144, Beam 158
+no size: 0
+```
+
+The shape agrees with the names without being told any:
+
+```text
+SM_Wall_400x401      Panel   [0.10, 2.00, 2.00]
+SM_WallDoor_400x300  Panel   [0.10, 1.50, 2.00]
+SM_Floor_400x400     Slab    [2.59, 0.44, 2.87]
+```
+
+The shape is for sorting and reading, not for deciding what is a
+building part. Names and proportions both lie: `SM_WallClock` is
+decoration, a road slab measures like a floor. What IS a building
+part is decided by the folder the designers filed the mesh under
+(see "Not building parts" at the bottom).
 
 **2. The studs, and they come from the VANILLA BUILDINGS.**
 
-The first plan was to derive attachment points from a part's
-measured bounds. That is wrong, and the parts list proved it:
-`SM_Floor_400x400` measures 5.18 by 5.73 m because `ApproxSize`
-is a bounding box and that tile has a lip. Measuring the mesh
-more precisely does not help, because the lip is really there.
-**A mesh has no field that says "I am a 4 metre module".** That
-is not a property of its geometry.
+The designers spent hundreds of hours building with these parts,
+and the buildings already work. A room is a floor, walls, a door,
+and each part is CONNECTED to another part where the two meshes
+share coordinates: the bottom of the wall occupies the same
+coordinates as the rim of the floor. They share a border. **That
+shared border is a STUD**, and stud is the only word for it.
 
-It is a property of how the game PLACES them. Two adjacent floor
-tiles sit 4 m apart while each is 5.18 m across, because they
-interlock. So the module size is the SPACING BETWEEN NEIGHBOURS,
-and the only place that exists is in real placements.
+So this is a CATALOG, not a search. Walk the vanilla buildings
+part by part and record, for every part, which studs it uses to
+connect to which other parts.
 
-**The vanilla buildings give us the attachment points.** Read a
-level's placed parts with their transforms, and the offset
-between two that are touching is a join we did not have to guess.
+### Two meshes, same coordinates, shared border
 
-We cannot trust the names and we cannot trust the boxes. We can
-trust where the designers put things.
+Where each placed mesh's geometry sits in the world is read off
+the placed mesh directly; the engine put it there. Two parts are
+connected where their geometry has coordinates in common: that
+shared border is the stud. Nothing statistical about it, and no
+distances, sizes or pivots enter into it. One placed room is
+already a complete, correct catalog entry; the same stud in ten
+more rooms confirms it.
 
-### A join is evidence. A STUD is the model.
+Each stud is recorded on BOTH parts, in each part's own frame:
+the floor's stud says a wall connects here, and the wall's stud
+says the mirror. Per part, never per pair, because that is what
+makes substitution work: any part with a matching stud can take
+the wall's place. A list of "this wall meets this floor" could
+never say that.
 
-One observed join yields TWO studs, one on each part, each
-expressed in THAT PART'S OWN local frame. That is the whole
-point, and an edge list cannot express it.
+- **`parts.json` is the catalog, and studs are per PART**, next
+  to its size and shape. To place a part you need only its own
+  studs and the studs of what is already there.
+- **ONE FILE.** A connection found in a level becomes studs on
+  both parts and goes into `parts.json`. Nothing else is written.
+  If the connections were also written to their own file there
+  would be two files saying the same thing, and sooner or later
+  one of them is wrong.
+- **`seen` is part of the stud**: how many placements confirmed
+  it. 231 is a rule, four is a maybe.
 
-Measured 2026-08-27: a wall sits 350 cm above a floor tile's
-origin, turned 90 degrees, in 231 sightings. That single join
-gives:
+### Rules for the pass that reads the levels
 
-```text
-the FLOOR  a stud at local (0, +350, 0)   something attaches above me
-the WALL   a stud at local (0, -350, 0)   I attach to something below me
-```
-
-(the wall's, after undoing its 90 degree turn, which is why local
-frames matter: two parts placed at different angles are only
-comparable once each is read in its own.)
-
-**Then substitution works.** Any other part with a stud at local
-`(0, -350, 0)` can take that wall's place. Recording the join as
-"this wall meets this floor" could never tell us that; recording
-it as a stud on each part does.
-
-So:
-
-- **`parts.json` is the model, and studs are per PART**, next to
-  its size and shape. To place a part you need only its own
-  studs and the studs of what is already there. The pair is never
-  looked up.
-- **ONE FILE.** Reading a level finds parts placed touching each
-  other. Each pair becomes studs right there and goes into
-  `parts.json`. Nothing else is written. If the pairs were also
-  written to their own file there would be two files saying the
-  same thing, and sooner or later one of them is wrong.
-- **`seen` is part of the stud.** It sits in the part's own
-  entry, next to its size and shape. 231 is a rule, four is a
-  maybe.
-
-Prior art: Wave Function Collapse learns which tiles were
-observed adjacent to which in an example, then generates from
-that. Same idea, in three dimensions, with a real building as the
-example.
-
-### The sweep has to be filtered and bounded
-
-Pairing EVERY actor within 9 m across eleven loaded levels wrote
-a 900 MB file on 2026-08-27 (research.md 30). Two mistakes:
-
-- **Filter first.** A cliff 8 m from a rock is not a join. Only
-  things that could be kit parts are worth pairing, and
-  `parts.json` already says which: `Panel`, `Slab`, `Post`, not
-  `Block` or `Clutter`.
-- **Cap the output.** A sweep that would exceed a size should
-  stop and say so rather than fill the disk.
-
-And the earlier run that gave the clean wall-to-floor answer read
-four levels and printed the top forty, so the noise never
-surfaced. **A result that looks right is not evidence that the
-method is.**
-
-### Reading an actor can fault
-
-Some actors in a streamed level have a mesh component pointer
-that does not resolve, and dereferencing one kills the process
-(research.md 29). The per-actor read is wrapped in
-`modforge::seh::guard`, so a bad actor is skipped and counted.
-Expect a sweep to report skips; a level that skips half its
-actors is telling you something.
+- **Only building parts enter.** Which meshes those are is
+  decided by their folder in `parts.json` (see "Not building
+  parts"), not by name and not by shape.
+- **A write past a size cap stops and says so** rather than
+  filling the disk. Pairing every actor within 9 m, the old
+  wrong test, wrote a 900 MB file on 2026-08-27 (research.md 30).
+- **A broken actor is skipped and counted.** Some actors in a
+  streamed level have a mesh pointer that does not resolve;
+  dereferencing one kills the process (research.md 29), and
+  measuring through one reports sizes like 6.8e36. Both kinds are
+  skipped and the skip count reported. A level that skips half
+  its actors is telling you something.
 
 ### The format
 
@@ -374,13 +215,15 @@ A part in `parts.json`, with the real measured numbers:
 ```
 
 - **`pivot`** is where the middle of the geometry sits relative
-  to the point the game places the part at, metres, y up. The
-  part's faces run from `pivot - extent` to `pivot + extent`,
-  which is how two placed parts are told to be touching or not.
-- **`at`** is in the part's OWN local frame, metres, y up: the
-  same units and axes as `extent` directly above it. The
-  measurement is in centimetres and converts on the way in,
-  because two units in one file is how mistakes happen.
+  to the point the game places the part at, metres, y up.
+  Measured and recorded; nothing in the design uses it (see "The
+  pivot does not matter").
+- **`at`** is where the stud sits on this part, in the part's
+  OWN local frame, metres, y up: the same units and axes as
+  `extent` directly above it. The measurement is in centimetres
+  and converts on the way in, because two units in one file is
+  how mistakes happen. Today it is one position; whether a stud
+  also needs its span recorded is open.
 - **`turn`** is how far the attached part is turned relative to
   this one, degrees. Position alone is not enough: a wall laid
   across a floor and one stood along it sit at the same spot.
@@ -398,24 +241,27 @@ The document header says how far to trust the whole thing:
   "count": 2407,
   "units": "half-extent, pivot and stud positions in metres, y up",
   "observed": { "sightings": 50328, "squares": 11 },
-  "derived_with": { "touching_m": 9.0, "round_cm": 1.0, "min_sightings": 4 }
+  "derived_with": { "round_cm": 1.0, "min_sightings": 4 }
 }
 ```
 
-Those thresholds are the ones that will change. Recording them
-means a reader can tell whether a stud list was built with the
-loose settings or the strict ones, instead of guessing.
+`round_cm` is how close two coordinates must be to count as the
+same (a hand-nudged placement must not invent a new stud), and
+`min_sightings` is how many placements must confirm a stud.
+Recording them means a reader can tell whether a stud list was
+built with the loose settings or the strict ones, instead of
+guessing.
 
 **Open, and the data will answer it:** whether a stud needs a
 TYPE beyond its position and facing. In real Lego a stud is a
 stud and anything fits anything. Here a wall's base and a wall's
 end might land on similar local positions while being different
-kinds of connection, and position alone would then let us build
-joins the game never makes.
+kinds of stud, and position alone would then let us build
+connections the game never makes.
 
-Then the rule that says when two of those points may join. Kinds
-that are allowed to meet, facings that must oppose, sizes that
-must match. Two parts connect ONLY through a legal pair. That is
+Then the rule that says when two studs may join. Kinds that are
+allowed to meet, facings that must oppose, sizes that must match.
+Two parts connect ONLY through a legal pair of studs. That is
 what stops a generated building from being a pile of meshes
 sharing a coordinate.
 
@@ -423,12 +269,12 @@ sharing a coordinate.
 record which parts the designers actually place against which,
 at what offset and facing. Two uses: it tells us what looks like
 this game rather than like a grid, and it CHECKS the rule. Every
-join the game itself makes should be a join our rule allows.
+pairing the game itself makes must be one the rule allows.
 Where the game does something the rule forbids, the rule is
 wrong, not the game.
 
 **Then assembly.** Build a structure by choosing parts whose
-points fit, biased toward the pairings the designers actually
+studs fit, biased toward the pairings the designers actually
 use.
 
 ## Everything that happens goes through the storyteller
@@ -475,9 +321,10 @@ rectangular), `SM_WallDoorGarage_400x300`,
 
 `KismetSystemLibrary:LoadAsset_Blocking` pulls an unloaded part
 into memory, so generation is not limited to what an area
-happens to have. Both go through the game-thread drain
-(`asset_inventory` and `load_asset` ops, `src/assets.rs`); the
-load path is not yet confirmed working.
+happens to have. Confirmed working 2026-08-27: the pivot pass
+loads all 2,407 meshes through it. Both calls run on the game
+thread (`asset_inventory` and `load_asset` ops,
+`ueforge/src/assets.rs`).
 
 The tables below came from measuring what was loaded, so they
 carry sizes and pivots. Names the registry knows but that were
