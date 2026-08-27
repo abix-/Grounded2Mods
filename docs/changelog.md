@@ -4,6 +4,7 @@
 
 | Area | Shipped | Verification |
 |---|---|---|
+| MISERY navigation | [x] Replace `SimpleMoveToLocation` execution with Unreal path points and the shared player-input follower | Eleven deterministic navigation tests pass, including reflected `FVector` path decoding. Source proof rejects `SimpleMoveToLocation`; live route verification remains in the todo. |
 | MISERY input | [x] Register the Unreal player-input surface and route look plus interaction through strict in-process batches | The permanent navigation suite passes 10 deterministic tests. Its source proof rejects OS mouse, keyboard, focus, viewport lookup, and direct yaw, pitch, or Enhanced Input handler calls. |
 | `modforge::input` | [x] Add a serializable strict in-process player-command batch operation | Three input tests prove ordered one-batch dispatch and JSON round-trip. The operation errors when no player surface is registered instead of falling back to OS input. |
 | `ueforge` input | [x] Add a reusable Unreal player-input adapter | The adapter batches each command sequence into one game-thread job, resolves standard movement and look UFunctions from reflected parameter layouts, uses the retained local player, and delegates only game-specific key actions. All 59 Ueforge library tests pass. |

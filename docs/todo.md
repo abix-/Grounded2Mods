@@ -4,7 +4,8 @@ Survivalist extraction means moving existing engine-independent code out of the 
 
 | Priority | System | Todo | Done when |
 |---:|---|---|---|
-| 1 | MISERY navigation | [ ] Replace `SimpleMoveToLocation` execution with Unreal path-point extraction and the shared player-input route follower | Unreal supplies the path, while movement and look are executed through the same input surface a player uses. |
+| 1 | `modforge::input` | [ ] Add one player-pose observation to `InputSurface` and its strict in-process control-plane operation | MISERY reads player position and control yaw for each follower tick in one game-thread job instead of separate actor-location and control-rotation calls. |
+| 1 | MISERY navigation | [ ] Live-verify Unreal path-point extraction and shared player-input following from spawn through both doors | A restarted run reaches the expedition without `SimpleMoveToLocation`, every follower tick uses one strict in-process command batch, and movement is released at both stops and on failure. |
 | 1 | MISERY interaction | [ ] Route door, expedition, crate, and inventory actions through the registered `InputSurface` | `research_navigation.rs` contains no direct yaw, pitch, or enhanced-input handler calls and releases all held input after success or failure. |
 | 1 | `modforge::input` | [ ] Prove the same player-command sequence through a second engine's `InputSurface` | One non-Unreal consumer passes the shared movement, look, action, and release conformance test without changing the command sequence. |
 | 1 | MISERY interaction | [ ] Aim from the active player camera at the bunker door's colliding-bounds center and press `E` only when the bounds are within interaction range and the door allows interaction | Three consecutive restarted runs open the bunker door once without looking at the floor or requiring manual input. |

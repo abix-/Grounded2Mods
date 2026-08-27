@@ -1,8 +1,9 @@
 //! Walk from the live MISERY player into an expedition through Unreal navigation.
 //!
-//! Unreal owns the navigation mesh and drives its player-controller path
-//! follower between three meaningful stops. The bot presses the same interaction
-//! key as the player at both doors and retains dense positions only as diagnostics.
+//! Unreal owns the navigation mesh and supplies path points between three
+//! meaningful stops. Modforge's shared follower executes those points through
+//! the same movement, look, and interaction inputs as the player. Dense positions
+//! remain diagnostics only.
 //!
 //! ```text
 //! MISERY_DEBUG_PORT=17176 k3sc cargo-lock test -p misery-mod \
@@ -15,8 +16,10 @@ use std::time::{Duration, Instant};
 
 use common::{Api, api_or_skip, offsets_live};
 use modforge::client::{self, ClassInstance};
-use modforge::input::{Axis, Key, PlayerCommand};
-use modforge::route::{Position, RouteEdge, RouteGraph, StuckDetector, Waypoint};
+use modforge::input::{Axis, Button, InputSurface, Key, PlayerCommand};
+use modforge::route::{
+    FollowStatus, PathFollower, Pose, Position, RouteEdge, RouteGraph, SteeringConfig, Waypoint,
+};
 use serde_json::{Value, json};
 
 const PLAYER_CLASS: &str = "BP_SGKMasterCharacter_C";
@@ -48,8 +51,7 @@ const CHARACTER_PLAYER_INVENTORY_OFFSET: u64 = 0x218;
 struct NavigationCalls {
     project: Value,
     find_path: Value,
-    get_controller: Value,
-    simple_move: Value,
+    get_path_points: Value,
 }
 
 struct ReachableLootBox {
@@ -67,15 +69,53 @@ impl NavigationCalls {
                 "NavigationSystemV1",
                 "FindPathToLocationSynchronously",
             ),
-            get_controller: function_layout(api, "Pawn", "GetController"),
-            simple_move: function_layout(api, "AIBlueprintHelperLibrary", "SimpleMoveToLocation"),
+            get_path_points: function_layout(api, "NavigationPath", "GetPathPoints"),
+        }
+    }
+}
+
+struct ControlPlaneInput<'a> {
+    api: &'a Api,
+}
+
+impl InputSurface for ControlPlaneInput<'_> {
+    fn name(&self) -> &'static str {
+        "misery-control-plane"
+    }
+
+    fn click(&self, _button: Button, _x: i32, _y: i32) -> Result<(), String> {
+        Err("MISERY route input does not use absolute UI clicks".into())
+    }
+
+    fn move_abs(&self, _x: i32, _y: i32) -> Result<(), String> {
+        Err("MISERY route input does not move the physical cursor".into())
+    }
+
+    fn key(&self, key: Key, down: bool) -> Result<(), String> {
+        self.commands(&[PlayerCommand::key(key, down)])
+    }
+
+    fn axis(&self, axis: Axis, value: f32, delta_time: f32) -> Result<(), String> {
+        self.commands(&[PlayerCommand::axis(axis, value, delta_time)])
+    }
+
+    fn commands(&self, commands: &[PlayerCommand]) -> Result<(), String> {
+        let response = self
+            .api
+            .try_op("input.player.commands", json!({"commands": commands}))
+            .map_err(|error| format!("player command request failed: {error}"))?;
+        if response.ok {
+            Ok(())
+        } else {
+            Err(response
+                .error
+                .unwrap_or_else(|| "player command batch failed".into()))
         }
     }
 }
 
 struct StopMovement<'a> {
     api: &'a Api,
-    controller_selector: String,
 }
 
 struct TimingGuard<'a> {
@@ -153,13 +193,11 @@ fn assert_performance_report(report: &Value) {
 impl Drop for StopMovement<'_> {
     fn drop(&mut self) {
         let _ = self.api.try_op(
-            "call",
-            json!({
-                "class": "Controller",
-                "function": "StopMovement",
-                "instance_selector": self.controller_selector,
-                "parms_hex": "",
-            }),
+            "input.player.commands",
+            json!({"commands": [
+                PlayerCommand::axis(Axis::MoveForward, 0.0, 0.0),
+                PlayerCommand::axis(Axis::MoveRight, 0.0, 0.0),
+            ]}),
         );
     }
 }
@@ -493,14 +531,14 @@ fn try_project_to_navigation(
     ])
 }
 
-fn navigation_path_cost(
+fn find_navigation_path(
     api: &Api,
     calls: &NavigationCalls,
     world_context: u64,
     pathfinding_context: u64,
     start: [f64; 3],
     goal: [f64; 3],
-) -> Option<f64> {
+) -> Option<(u64, f64)> {
     let layout = &calls.find_path;
     let mut parms = vec![0u8; layout["parms_size"].as_u64().unwrap() as usize];
     put_u64(
@@ -545,7 +583,72 @@ fn navigation_path_cost(
         .call_ufunction("NavigationPath", "GetPathLength", &selector, &[0; 8])
         .expect("NavigationPath::GetPathLength failed");
     let cost = client::from_le_f64(&length, 0);
-    (cost.is_finite() && cost > 0.0).then_some(cost)
+    (cost.is_finite() && cost > 0.0).then_some((path, cost))
+}
+
+fn navigation_path_cost(
+    api: &Api,
+    calls: &NavigationCalls,
+    world_context: u64,
+    pathfinding_context: u64,
+    start: [f64; 3],
+    goal: [f64; 3],
+) -> Option<f64> {
+    find_navigation_path(api, calls, world_context, pathfinding_context, start, goal)
+        .map(|(_, cost)| cost)
+}
+
+fn navigation_path_points(
+    api: &Api,
+    calls: &NavigationCalls,
+    world_context: u64,
+    pathfinding_context: u64,
+    start: [f64; 3],
+    goal: [f64; 3],
+) -> Option<Vec<[f64; 3]>> {
+    let (path, _) =
+        find_navigation_path(api, calls, world_context, pathfinding_context, start, goal)?;
+    let layout = &calls.get_path_points;
+    let parms = vec![0u8; layout["parms_size"].as_u64().unwrap() as usize];
+    let (out, _) = api
+        .call_ufunction(
+            "NavigationPath",
+            "GetPathPoints",
+            &format!("addr:0x{path:X}"),
+            &parms,
+        )
+        .expect("NavigationPath::GetPathPoints failed");
+    let returned = parameter_offset(layout, "ReturnValue");
+    let data = client::from_le_u64(&out, returned);
+    let count = client::from_le_i32(&out, returned + 8);
+    let capacity = client::from_le_i32(&out, returned + 12);
+    if data == 0 || count < 2 || capacity < count || count > 4_096 {
+        return None;
+    }
+    let bytes = client::read_bytes(api, data, 0, count as u64 * 24);
+    decode_path_points(&bytes, count as usize).ok()
+}
+
+fn decode_path_points(bytes: &[u8], count: usize) -> Result<Vec<[f64; 3]>, String> {
+    let required = count
+        .checked_mul(24)
+        .ok_or_else(|| "navigation path point count overflow".to_string())?;
+    if bytes.len() < required {
+        return Err(format!(
+            "navigation path needs {required} bytes for {count} points, got {}",
+            bytes.len()
+        ));
+    }
+    Ok((0..count)
+        .map(|index| {
+            let offset = index * 24;
+            [
+                client::from_le_f64(bytes, offset),
+                client::from_le_f64(bytes, offset + 8),
+                client::from_le_f64(bytes, offset + 16),
+            ]
+        })
+        .collect())
 }
 
 fn interaction_approaches(target: [f64; 3]) -> Vec<[f64; 3]> {
@@ -580,46 +683,6 @@ fn wait_for_navigation(
         );
         std::thread::sleep(Duration::from_millis(500));
     }
-}
-
-fn player_controller(api: &Api, calls: &NavigationCalls, player_selector: &str) -> u64 {
-    let layout = &calls.get_controller;
-    let parms = vec![0u8; layout["parms_size"].as_u64().unwrap() as usize];
-    let (out, _) = api
-        .call_ufunction("Pawn", "GetController", player_selector, &parms)
-        .expect("Pawn::GetController failed");
-    client::from_le_u64(&out, parameter_offset(&layout, "ReturnValue"))
-}
-
-fn start_simple_move(api: &Api, calls: &NavigationCalls, controller: u64, goal: [f64; 3]) {
-    let layout = &calls.simple_move;
-    let mut parms = vec![0u8; layout["parms_size"].as_u64().unwrap() as usize];
-    put_u64(
-        &mut parms,
-        parameter_offset(&layout, "Controller"),
-        controller,
-    );
-    let goal_offset = parameter_offset(&layout, "Goal");
-    for (index, value) in goal.into_iter().enumerate() {
-        put_f64(&mut parms, goal_offset + index * 8, value);
-    }
-    api.call_ufunction(
-        "AIBlueprintHelperLibrary",
-        "SimpleMoveToLocation",
-        "singleton:AIBlueprintHelperLibrary",
-        &parms,
-    )
-    .expect("SimpleMoveToLocation failed");
-}
-
-fn stop_movement(api: &Api, controller: u64) {
-    api.call_ufunction(
-        "Controller",
-        "StopMovement",
-        &format!("addr:0x{controller:X}"),
-        &[],
-    )
-    .expect("Controller::StopMovement failed");
 }
 
 fn interact(api: &Api, _calls: &NavigationCalls, _player_selector: &str) {
@@ -766,79 +829,126 @@ fn open_loot_box(
 fn walk_edge(
     api: &Api,
     calls: &NavigationCalls,
+    world_context: u64,
+    pathfinding_context: u64,
     player_selector: &str,
-    controller: u64,
     waypoint: &Waypoint,
     bunker_door: Option<&ClassInstance>,
     breadcrumbs: &mut Vec<Position>,
 ) -> Result<usize, String> {
-    start_simple_move(api, calls, controller, point(waypoint.position));
     let started = Instant::now();
-    let mut stuck = StuckDetector::new(50.0, 10_000).unwrap();
     let mut last_report = 0;
     let mut interactions = 0;
-    loop {
-        std::thread::sleep(Duration::from_millis(100));
+    let surface = ControlPlaneInput { api };
+    'replan: loop {
         let current = actor_location(api, player_selector);
-        retain_breadcrumb(breadcrumbs, position(current));
-        let remaining = distance(current, point(waypoint.position));
-        if remaining <= waypoint.arrival_radius {
-            return Ok(interactions);
-        }
-        let elapsed_ms = started.elapsed().as_millis() as u64;
-        if started.elapsed() >= MOVE_TIMEOUT {
-            return Err(format!(
-                "Unreal navigation timed out at {current:?}, {remaining:.1} cm from '{}'",
-                waypoint.id
-            ));
-        }
-        if stuck.observe(elapsed_ms, remaining) {
-            let blocking_door = bunker_door.filter(|door| {
-                distance(current, actor_location(api, &door.addr_selector)) <= 1_000.0
-                    && interactions < 3
-            });
-            let Some(blocking_door) = blocking_door else {
+        let path_points = navigation_path_points(
+            api,
+            calls,
+            world_context,
+            pathfinding_context,
+            current,
+            point(waypoint.position),
+        )
+        .ok_or_else(|| format!("Unreal returned no complete path to '{}'", waypoint.id))?;
+        let last_index = path_points.len() - 1;
+        let path = path_points
+            .into_iter()
+            .enumerate()
+            .map(|(index, point)| {
+                Waypoint::new(
+                    format!("{}-path-{index}", waypoint.id),
+                    position(point),
+                    if index == last_index {
+                        waypoint.arrival_radius
+                    } else {
+                        75.0
+                    },
+                )
+            })
+            .collect();
+        let steering = SteeringConfig {
+            mouse_units_per_degree: 0.25,
+            max_mouse_delta: 10,
+            move_yaw_tolerance_deg: 10.0,
+        };
+        let mut follower = PathFollower::new(path, steering, 50.0, 10_000)?;
+
+        loop {
+            std::thread::sleep(Duration::from_millis(16));
+            let current = actor_location(api, player_selector);
+            retain_breadcrumb(breadcrumbs, position(current));
+            let remaining = distance(current, point(waypoint.position));
+            if started.elapsed() >= MOVE_TIMEOUT {
+                follower.cancel(&surface, 0.016)?;
                 return Err(format!(
-                    "Unreal navigation stuck at {current:?}, {remaining:.1} cm from '{}'",
+                    "player-input navigation timed out at {current:?}, {remaining:.1} cm from '{}'",
                     waypoint.id
                 ));
-            };
-            interactions += 1;
-            println!("bunker_door_interact attempt={interactions} location={current:?}");
-            stop_movement(api, controller);
-            let (interaction_point, extent) = actor_bounds(api, &blocking_door.addr_selector);
-            aim_at(api, player_selector, interaction_point);
-            let view = pawn_view_location(api, player_selector);
-            let in_range = interaction_in_range(view, interaction_point, extent);
-            let allowed = interaction_allowed(api, blocking_door);
-            println!(
-                "bunker_door_state target={} point={interaction_point:?} extent={extent:?} view={view:?} in_range={in_range} allowed={allowed}",
-                blocking_door.full_name
-            );
-            if !in_range {
-                return Err(format!(
-                    "door interaction is out of range: view={view:?} point={interaction_point:?} extent={extent:?}"
-                ));
             }
-            if !allowed {
-                return Err("door does not currently allow interaction".into());
+            let rotation = control_rotation(api, player_selector);
+            match follower.tick(
+                &surface,
+                Pose::new(position(current), rotation[1]),
+                started.elapsed().as_millis() as u64,
+                0.016,
+            )? {
+                FollowStatus::Arrived => return Ok(interactions),
+                FollowStatus::Moving { .. } => {}
+                FollowStatus::Cancelled => {
+                    return Err(format!(
+                        "player-input navigation to '{}' was cancelled",
+                        waypoint.id
+                    ));
+                }
+                FollowStatus::Stuck => {
+                    let blocking_door = bunker_door.filter(|door| {
+                        distance(current, actor_location(api, &door.addr_selector)) <= 1_000.0
+                            && interactions < 3
+                    });
+                    let Some(blocking_door) = blocking_door else {
+                        return Err(format!(
+                            "player-input navigation stuck at {current:?}, {remaining:.1} cm from '{}'",
+                            waypoint.id
+                        ));
+                    };
+                    interactions += 1;
+                    println!("bunker_door_interact attempt={interactions} location={current:?}");
+                    let (interaction_point, extent) =
+                        actor_bounds(api, &blocking_door.addr_selector);
+                    aim_at(api, player_selector, interaction_point);
+                    let view = pawn_view_location(api, player_selector);
+                    let in_range = interaction_in_range(view, interaction_point, extent);
+                    let allowed = interaction_allowed(api, blocking_door);
+                    println!(
+                        "bunker_door_state target={} point={interaction_point:?} extent={extent:?} view={view:?} in_range={in_range} allowed={allowed}",
+                        blocking_door.full_name
+                    );
+                    if !in_range {
+                        return Err(format!(
+                            "door interaction is out of range: view={view:?} point={interaction_point:?} extent={extent:?}"
+                        ));
+                    }
+                    if !allowed {
+                        return Err("door does not currently allow interaction".into());
+                    }
+                    interact(api, calls, player_selector);
+                    println!(
+                        "bunker_door_interaction_sent target={}",
+                        blocking_door.full_name
+                    );
+                    std::thread::sleep(Duration::from_secs(1));
+                    continue 'replan;
+                }
             }
-            interact(api, calls, player_selector);
-            println!(
-                "bunker_door_interaction_sent target={}",
-                blocking_door.full_name
-            );
-            std::thread::sleep(Duration::from_secs(1));
-            start_simple_move(api, calls, controller, point(waypoint.position));
-            stuck = StuckDetector::new(50.0, 10_000).unwrap();
-        }
-        let elapsed_seconds = started.elapsed().as_secs();
-        if elapsed_seconds > last_report {
-            println!(
-                "navigation_progress waypoint={} elapsed_s={elapsed_seconds} location={current:?} remaining_cm={remaining:.1}",
-                waypoint.id
-            );
-            last_report = elapsed_seconds;
+            let elapsed_seconds = started.elapsed().as_secs();
+            if elapsed_seconds > last_report {
+                println!(
+                    "navigation_progress waypoint={} elapsed_s={elapsed_seconds} location={current:?} remaining_cm={remaining:.1}",
+                    waypoint.id
+                );
+                last_report = elapsed_seconds;
+            }
         }
     }
 }
@@ -997,13 +1107,7 @@ fn unreal_navigation_opens_nearest_expedition_loot_box() {
     let start = actor_location(&api, &player.addr_selector);
     let player_inventory = player_inventory(&api, player.addr);
     let player_items_before = client::read_i32(&api, player_inventory, INVENTORY_ITEM_COUNT_OFFSET);
-    let controller = player_controller(&api, &calls, &player.addr_selector);
-    assert_ne!(controller, 0, "the live player has no controller");
-    let controller_selector = format!("addr:0x{controller:X}");
-    let _stop = StopMovement {
-        api: &api,
-        controller_selector,
-    };
+    let _stop = StopMovement { api: &api };
     let started = Instant::now();
     let mut breadcrumbs = vec![position(start)];
     let targets = reachable_loot_boxes(&api, &calls, &player, start);
@@ -1021,8 +1125,9 @@ fn unreal_navigation_opens_nearest_expedition_loot_box() {
         match walk_edge(
             &api,
             &calls,
+            player.addr,
+            player.addr,
             &player.addr_selector,
-            controller,
             route.waypoint("loot-box").unwrap(),
             None,
             &mut breadcrumbs,
@@ -1032,13 +1137,11 @@ fn unreal_navigation_opens_nearest_expedition_loot_box() {
                 break;
             }
             Err(error) => {
-                stop_movement(&api, controller);
                 println!("loot_box_traversal_rejected={error}");
             }
         }
     }
     let (loot_box, route) = selected.expect("no engine-reachable loot box was traversable");
-    stop_movement(&api, controller);
     let route_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("target")
@@ -1147,7 +1250,6 @@ fn unreal_navigation_enters_expedition_through_three_stops() {
             "NavigationPath",
             &["Path", "Valid", "Partial", "Cost", "Length"][..],
         ),
-        ("AIBlueprintHelperLibrary", &["SimpleMove"][..]),
         (PLAYER_CLASS, &["Interact", "InpActEvt_E", "Use"][..]),
     ] {
         println!(
@@ -1188,13 +1290,7 @@ fn unreal_navigation_enters_expedition_through_three_stops() {
     );
     println!("route_saved={}", route_path.display());
 
-    let controller = player_controller(&api, &calls, &player.addr_selector);
-    assert_ne!(controller, 0, "the live player has no controller");
-    let controller_selector = format!("addr:0x{controller:X}");
-    let _stop = StopMovement {
-        api: &api,
-        controller_selector,
-    };
+    let _stop = StopMovement { api: &api };
     let started = Instant::now();
     let mut breadcrumbs = vec![position(start)];
     let metal_door_waypoint = route.waypoint("metal-door").unwrap();
@@ -1202,8 +1298,9 @@ fn unreal_navigation_enters_expedition_through_three_stops() {
     let first_edge_interactions = walk_edge(
         &api,
         &calls,
+        player.addr,
+        player.addr,
         &player.addr_selector,
-        controller,
         metal_door_waypoint,
         None,
         &mut breadcrumbs,
@@ -1213,14 +1310,14 @@ fn unreal_navigation_enters_expedition_through_three_stops() {
     let bunker_door_interactions = walk_edge(
         &api,
         &calls,
+        player.addr,
+        player.addr,
         &player.addr_selector,
-        controller,
         expedition_door_waypoint,
         Some(&metal_door.1),
         &mut breadcrumbs,
     )
     .expect("metal door to expedition door traversal failed");
-    stop_movement(&api, controller);
     let (entered_location, expedition_door_interactions) =
         enter_expedition(&api, &calls, &player.addr_selector, projected_goal);
     println!(
@@ -1293,6 +1390,21 @@ fn look_commands_are_bounded_and_follow_control_rotation_errors() {
 }
 
 #[test]
+fn navigation_path_points_decode_unreal_fvectors() {
+    let mut bytes = Vec::new();
+    for point in [[1.0, 2.0, 3.0], [40.0, 50.0, 60.0]] {
+        for value in point {
+            bytes.extend_from_slice(&f64::to_le_bytes(value));
+        }
+    }
+    assert_eq!(
+        decode_path_points(&bytes, 2).unwrap(),
+        vec![[1.0, 2.0, 3.0], [40.0, 50.0, 60.0]]
+    );
+    assert!(decode_path_points(&bytes[..24], 2).is_err());
+}
+
+#[test]
 fn navigation_and_looting_use_no_global_object_scans() {
     let source = include_str!("research_navigation.rs");
     for forbidden in [
@@ -1327,6 +1439,7 @@ fn navigation_and_looting_use_only_in_process_commands() {
     for forbidden in [
         concat!("Add", "YawInput"),
         concat!("Add", "PitchInput"),
+        concat!("SimpleMove", "ToLocation"),
         concat!(
             "InpActEvt_Interact",
             "Input_K2Node_EnhancedInputActionEvent_0"
