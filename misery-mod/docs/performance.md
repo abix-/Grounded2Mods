@@ -39,7 +39,45 @@ misery-autoload                      15        0.01        0.4        0.00
 ue:objects_read                 6443370        0.00        0.0        0.00
 ```
 
-How to read it:
+### Second run, with `strange` switched off
+
+```text
+held for 2894.6 ms over 30.0 s
+that is 96.48 ms per second of play        (was 126.14)
+
+name                              calls    total ms     avg us    worst ms
+ue:find_actors_by_chain              21     2603.98   123998.8      133.94
+ue:find_objects_by_chain             21     2603.21   123962.4      133.92
+misery-spawning                       6     1507.78   251297.0      261.23
+misery-nag                           58     1326.09    22863.7      201.28
+ue:find_object                       14      289.37    20669.5       24.32
+misery-autoload                      15        0.01        0.4        0.00
+ue:objects_read                 4827579        0.00        0.0        0.00
+```
+
+Searches fell from 37 to 21, which is exactly the sixteen
+`strange` was doing.
+
+**But the price of a search is not a constant.** It went UP, from
+94 ms to 124 ms, because the object count went up: 230,000 per
+search against 174,000 in the first run. The operator was in a
+different part of the world with more streamed in. **A search
+costs whatever the world currently holds, so it gets worse the
+more there is around the player.** The two runs are therefore not
+a clean comparison, and the honest summary is 126 ms per second
+down to 96, not a 24% saving on a fixed cost.
+
+With `strange` gone, `spawning` is the whole problem: six passes,
+two searches each, 251 ms a pass. It does what `strange` did, ask
+the entire object list which squares are loaded and what the
+emission count is, on a timer.
+
+`misery-nag` is the other oddity. Fifty-eight ticks, no work in
+any of them. It is hopping to the game thread twice a second
+forever, purely to discover it has nothing to do, and waiting
+behind `spawning` when it gets there.
+
+How to read the first run:
 
 - 6,443,370 objects read across 37 searches is **174,000 objects
   per search**. That single number explains everything else.
@@ -66,7 +104,7 @@ off code are worth what they cost.
 | What | How often | Thread | Cost | Measured? |
 |---|---|---|---|---|
 | One search of the object list | see below | game | **94 ms**, reading about **174,000 objects**. Every other cost in this table is a multiple of this one. | MEASURED |
-| `strange` watcher | every 5 s | game | Three searches a pass: **291 ms average, 305 ms worst**. Then places props, each a ground trace, an actor spawn and a mesh assignment. | MEASURED |
+| `strange` watcher | OFF since 2026-08-26 | game | Was three searches a pass: **291 ms average, 305 ms worst**, then spawning up to 48 actors into a square. Switched off; see below. | MEASURED |
 | `spawning` watcher | every 5 s | game | Two searches a pass: **190 ms average, 200 ms worst**. Then spawns any planned enemies in the same frame. | MEASURED |
 | `nag` watcher | every 500 ms | game | Does no work once the notice is hooked. Its **25 ms average** is time queued behind the searches above; **260 ms worst** is one tick stuck behind a `strange` pass. | MEASURED |
 | `find_object`, one object by class | as the finders run | game | **20 ms average**, cheaper than a full search because it stops at the first match. Used by `speed_default`, `vendors` and `nag`. | MEASURED |
@@ -90,20 +128,36 @@ frame. Nothing was made cheaper; the cost moved from a thread
 nobody was waiting on into the one that draws the picture. The
 freezing is new today, and this is why.
 
+## `strange` was switched off, 2026-08-26
+
+The operator asked what it was doing, and it was doing this: three
+searches every five seconds, then rolling from ELEVEN kinds of
+phenomenon, up to four per square, spawning 2 to 12 actors for
+each one. Up to 48 spawned actors in a single square, capped at
+400 a session, written into the player's own save. It had placed
+32 props in the four minutes before it was switched off.
+
+It cost 291 ms a pass on the game thread. Switched off at
+`lib.rs`, not deleted.
+
 ## The waste, now that it is measured
 
 Nothing below has been done.
 
-- Five searches every five seconds, `strange` three and `spawning`
-  two, where the useful answer changes only when a level streams
-  in. At 94 ms each that is 470 ms of held frames per five
-  seconds.
-- Both search separately for the same emission count.
-- Both run on a fixed timer rather than when a square actually
-  loads, so most passes re-answer a question whose answer has not
-  changed.
+- `spawning` searches the whole object list twice every five
+  seconds, at 124 ms each, to ask which squares are loaded and
+  what the emission count is. Neither answer changes unless a
+  square streams in.
+- It runs on a fixed timer, so most passes re-answer a question
+  whose answer has not changed.
+- `nag` hops to the game thread twice a second for the life of the
+  process to discover it has nothing to do. The check for having
+  nothing to do happens after the hop, not before it.
 - The notice hook is never removed once the notice is gone, and it
   is not measured at all.
+- **The price of a search grows with the world.** Any fix that
+  keeps searching on a timer will get worse the more of the map is
+  loaded around the player.
 - The notice hook stays installed for the whole session and fires
   for every widget, long after the notice it was for is gone.
 - A watcher that has nothing left to do (`nag` once hooked,
