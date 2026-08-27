@@ -94,6 +94,10 @@ pub fn register_builtins() {
     // any scanner op fires. Idempotent.
     crate::scanner::install_ue_resolver();
 
+    // `timing` and `timing_report`. Shared with every other
+    // forge, so a mod for any game is measured the same way.
+    modforge::counters::register_ops();
+
     OP_REGISTRY.register_many([
         OpDef::new(
             "walk_class",

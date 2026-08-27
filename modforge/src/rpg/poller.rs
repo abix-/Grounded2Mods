@@ -148,6 +148,11 @@ where
                 if thread_inner.stop.load(Ordering::Acquire) {
                     break;
                 }
+                // Every repeating job in every game goes through
+                // here, and each one already has a name, so this
+                // is the one place that measures them all. Costs
+                // an atomic load when timing is off.
+                let _m = crate::counters::measure(name);
                 if let Err(e) = std::panic::catch_unwind(AssertUnwindSafe(&tick)) {
                     thread_inner.panics.fetch_add(1, Ordering::Relaxed);
                     let msg = panic_message(&e);

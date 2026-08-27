@@ -92,6 +92,14 @@ pub fn register_ops(queue: &'static GameThread, timeout_hint: &'static str) {
                     "frames": crate::frame::frames(),
                     "frame_thread": crate::frame::thread_id(),
                     "game_thread": status(),
+                    // Total time held on the game thread since
+                    // launch. Read it twice a second apart and
+                    // the difference is what that second cost,
+                    // against a 16 ms frame at 60 fps. Always
+                    // counted, unlike the named report, because
+                    // it is one clock read per drain.
+                    "drain_time_ns": queue.time_ns(),
+                    "drain_time_ms": queue.time_ns() as f64 / 1.0e6,
                 }))
             },
         ),

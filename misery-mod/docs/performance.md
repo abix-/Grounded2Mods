@@ -65,24 +65,50 @@ on the table when the measurement comes back.
 
 ## How to measure it, rather than guess
 
-Three ways, in the order they are worth doing.
+Built 2026-08-26 and shared by every forge, so a mod for any game
+is measured the same way.
 
-**Our time on the game thread is already being counted.** Every
-drain is timed into a running total, `time_ns`
-(`ueforge/src/pe_queue.rs:303`). It is not reported anywhere.
-Adding it to `pe_stats` and reading it twice, a second apart,
-gives the milliseconds we held the game thread during that second.
-Against a 16 ms frame that single number says whether we are the
-problem.
+**Switch timing on, play, read the report.**
+
+```text
+MISERY_DEBUG_PORT=17176 cargo test -p misery-mod --test research_timing -- --test-threads=1 --nocapture
+```
+
+`tests/research_timing.rs` switches timing on, watches for 30
+seconds, prints what each named piece of work cost, and switches
+it off again.
+
+**Timing is OFF by default** and is switched on by the `timing`
+control. Off, a measured scope costs one atomic load and a branch,
+which is why the calls can sit in the code permanently. On, it
+costs two clock reads and a brief lock per scope, which is nothing
+next to reading the object list and is not nothing on a path that
+runs thousands of times a frame.
+
+What is measured, and why those places:
+
+| Named | Where the measurement lives | Covers |
+|---|---|---|
+| every repeating job, by its own name | `modforge::rpg::poller::spawn_interval` | Every watcher in every game. They already have names, so nothing had to be added per watcher. |
+| `ue:find_object` | `ueforge::ue::actor` | Every search for one object by class, including `find_actor`. |
+| `ue:find_objects_by_chain` | same | Every search of the whole object list. |
+| `ue:find_actors_by_chain` | same | The same search plus the full object path built for every hit. Nests the row above, so their times overlap; the gap between them IS the cost of building those paths. |
+| `ue:objects_read` | same | How many objects a search reads. A count, not a time: it says whether a search is dear because the list is huge or because it runs often. |
+
+**Time on the game thread is always counted**, timing switch or
+not, because it is one clock read per drain. `pe_stats` reports it
+as `drain_time_ms`. Read it twice a second apart and the
+difference is what that second cost, against a 16.7 ms frame at
+60 fps.
 
 **Which module the threads are actually in.** The
 `sample_thread_modules` control samples every thread over a window
 and reports which DLL each was executing in. `main.dll` is this
 mod. This is the direct answer to "is it us".
 
-**Per-control timing.** `op_metrics` already reports it, for work
-the operator asked for rather than work we do on our own.
+**Per-control timing.** `op_metrics`, for work the operator asked
+for rather than work the mod does on its own.
 
-Whatever is run, it ships as a test in `misery-mod/tests`, not as
-a one-off command, so the numbers can be taken again after a
+Everything runs as a test in `misery-mod/tests`, never as a
+one-off command, so the same numbers can be taken again after a
 change and compared.

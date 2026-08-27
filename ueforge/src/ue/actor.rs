@@ -94,6 +94,7 @@ pub fn find_object(
     name_filter: Option<&str>,
     require_level: bool,
 ) -> Option<*const u8> {
+    let _m = modforge::counters::measure("ue:find_object");
     let rt = ue::try_runtime()?;
     let view = unsafe { ue::GObjectsView::from_image(rt.image_base, rt.platform_offsets) };
     if !view.is_valid() {
@@ -126,6 +127,10 @@ pub fn find_object(
 /// `BP_MasterVendorBuildPart_C` finds every derived vendor.
 /// Skips CDOs and objects outside a PersistentLevel.
 pub fn find_actors_by_chain(class_needle: &str) -> Vec<*const u8> {
+    // Nests the search below, so their times overlap in the
+    // report. The gap between them is the cost of building a full
+    // object path for every hit just to test it for one word.
+    let _m = modforge::counters::measure("ue:find_actors_by_chain");
     find_objects_by_chain(class_needle)
         .into_iter()
         .filter(|p| {
@@ -233,6 +238,7 @@ pub fn actors_in_levels(path_needle: &str) -> Vec<(String, *const u8)> {
 /// not actors and live outside any PersistentLevel, so
 /// `find_actors_by_chain` cannot see them.
 pub fn find_objects_by_chain(class_needle: &str) -> Vec<*const u8> {
+    let _m = modforge::counters::measure("ue:find_objects_by_chain");
     let mut found = Vec::new();
     let Some(rt) = ue::try_runtime() else {
         return found;
@@ -243,7 +249,9 @@ pub fn find_objects_by_chain(class_needle: &str) -> Vec<*const u8> {
     if !view.is_valid() {
         return found;
     }
+    let mut read = 0u64;
     for obj in view.iter() {
+        read += 1;
         if obj.is_default_object() {
             continue;
         }
@@ -252,6 +260,10 @@ pub fn find_objects_by_chain(class_needle: &str) -> Vec<*const u8> {
         }
         found.push(obj.as_ptr());
     }
+    // How many objects one search reads. The count matters as
+    // much as the time: it says whether a search is expensive
+    // because the list is huge or because it is called often.
+    modforge::counters::tally("ue:objects_read", read);
     found
 }
 

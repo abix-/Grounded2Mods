@@ -24,6 +24,10 @@ use crate::mono::{MonoObject, MonoType};
 /// this once at worker init, typically before their own
 /// per-game `OP_REGISTRY.register(...)` calls.
 pub fn register_builtins() {
+    // `timing` and `timing_report`. Shared with every other
+    // forge, so a mod for any game is measured the same way.
+    modforge::counters::register_ops();
+
     OP_REGISTRY.register_many([
         OpDef::new(
             "ping",
