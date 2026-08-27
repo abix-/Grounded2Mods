@@ -268,6 +268,22 @@ pub struct PhenomenonDef {
     pub nature: PhenomenonNature,
 }
 
+/// One entry in a game's phenomenon catalog: what it is called,
+/// what it spawns, and how it plans.
+///
+/// [`PhenomenonDef`] is the planning half. This adds the two
+/// things a game supplies alongside it: a name for the logs and
+/// the controls, and the actor classes to draw from, one picked
+/// per prop. The catalog is then a plain `&[Phenomenon]` of the
+/// game's own content.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Phenomenon {
+    pub name: &'static str,
+    /// Classes to draw from; each prop picks one at random.
+    pub classes: &'static [&'static str],
+    pub planning: PhenomenonDef,
+}
+
 /// Engine-independent policy for phenomena placed into streamed regions.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PhenomenonConfig {

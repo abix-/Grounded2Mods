@@ -255,7 +255,7 @@ frame. Nothing was made cheaper; the cost moved from a thread
 nobody was waiting on into the one that draws the picture. The
 freezing is new today, and this is why.
 
-## `strange` was switched off, 2026-08-26
+## `strange` was deleted, 2026-08-26
 
 The operator asked what it was doing, and it was doing this: three
 searches every five seconds, then rolling from ELEVEN kinds of
@@ -264,8 +264,26 @@ each one. Up to 48 spawned actors in a single square, capped at
 400 a session, written into the player's own save. It had placed
 32 props in the four minutes before it was switched off.
 
-It cost 291 ms a pass on the game thread. Switched off at
-`lib.rs`, not deleted.
+It cost 291 ms a pass on the game thread. Switched off first,
+then deleted once what was worth keeping had been taken out of
+it. Two of its three searches existed only to read ONE NUMBER
+each off an object we already had a pointer to.
+
+What survives it, all shared:
+
+- `modforge::storyteller::Phenomenon`, the catalog shape: a name,
+  the classes to draw from, and its planning numbers. The
+  planning itself was already in `storyteller`.
+- `ueforge::ue::streaming::NewLevels`, the react-to-a-new-region
+  shape: read the loaded levels, forget the ones that went, hand
+  back only what appeared.
+- `ueforge::ue::phenomena::place`, the Unreal half of putting a
+  rolled plan into a world: a world-context actor, a ground trace
+  per point, a class lookup and a spawn. Identical in any UE
+  game; only the class names differ.
+
+What died with it: the eleven phenomena, MISERY's class names,
+and the tuning constants.
 
 ## The waste, now that it is measured
 

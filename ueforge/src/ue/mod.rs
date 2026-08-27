@@ -25,6 +25,7 @@ pub mod probe;
 pub mod resolvers;
 pub mod status_effect;
 pub mod struct_fields;
+pub mod phenomena;
 pub mod pieces;
 pub mod rooms;
 pub mod spawn;

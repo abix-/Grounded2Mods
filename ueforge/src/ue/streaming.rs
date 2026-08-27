@@ -172,6 +172,54 @@ impl LevelStreamer {
     }
 }
 
+/// Watches a streamer and reports only what is NEW.
+///
+/// The shape every feature that reacts to streaming needs: read
+/// the loaded levels, forget the ones that went away so they can
+/// come back, and hand back only the ones that appeared since
+/// last time. A check with nothing new returns an empty list and
+/// has done no searching, which is the whole point.
+///
+/// ```ignore
+/// static WATCH: Mutex<Option<NewLevels>> = Mutex::new(None);
+/// let fresh = WATCH.lock().get_or_insert_with(|| NewLevels::new(STREAMER)).since_last();
+/// if fresh.is_empty() { return }
+/// ```
+///
+/// Game thread only, because reading the streamer touches live
+/// objects.
+pub struct NewLevels {
+    streamer: LevelStreamer,
+    seen: modforge::worldgen::Seen,
+}
+
+impl NewLevels {
+    pub fn new(streamer: LevelStreamer) -> Self {
+        Self { streamer, seen: modforge::worldgen::Seen::new() }
+    }
+
+    /// The levels that have appeared since the last call.
+    ///
+    /// A level that unloads is forgotten, so it rolls fresh if it
+    /// comes back.
+    pub fn since_last(&mut self) -> Vec<String> {
+        let live = self.streamer.loaded_levels();
+        if live.is_empty() {
+            // No world, or none yet. Forget everything so a
+            // reload starts clean.
+            self.seen.forget_gone::<[&str; 0], &str>([]);
+            return Vec::new();
+        }
+        self.seen.forget_gone(&live);
+        live.into_iter().filter(|l| self.seen.is_new(l)).collect()
+    }
+
+    /// Everything loaded right now, new or not.
+    pub fn all(&self) -> Vec<String> {
+        self.streamer.loaded_levels()
+    }
+}
+
 /// The streamer this mod registered, if any.
 static REGISTERED: parking_lot::Mutex<Option<LevelStreamer>> = parking_lot::Mutex::new(None);
 

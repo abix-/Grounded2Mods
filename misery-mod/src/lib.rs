@@ -16,7 +16,6 @@ pub mod nag;
 pub mod shining;
 pub mod spawning;
 pub mod speed;
-pub mod strange;
 pub mod vendors;
 
 use std::time::Duration;
@@ -131,15 +130,13 @@ fn on_unreal_init() {
     ueforge::features()
         .once("pe_dispatch", dispatch::install)
         .once("spawning", spawning::install)
-        // `strange` is OFF (2026-08-26). It searched the object
-        // list three times every five seconds, 94 ms each, and
-        // then spawned up to 48 actors into a square: eleven
-        // kinds of phenomenon, up to four per square, 2 to 12
-        // actors each. Measured at 291 ms per pass on the game
-        // thread, which is eighteen frames the game did not draw.
-        // It also changes the player's save every five seconds.
-        // See docs/performance.md.
-        // .once("strange", strange::install)
+        // `strange` is DELETED (2026-08-26). It spawned up to 48
+        // actors into every square that streamed in, eleven kinds
+        // of phenomenon, and nobody asked for it. What was worth
+        // keeping is shared now: the catalog shape is
+        // `modforge::storyteller::Phenomenon`, reacting to a new
+        // square is `ue::streaming::NewLevels`, and putting a
+        // rolled plan into the world is `ue::phenomena::place`.
         // Reading a level as pieces, measuring meshes and placing
         // pieces are all engine work, so they live in
         // `ueforge::ue::pieces` and register from there:
