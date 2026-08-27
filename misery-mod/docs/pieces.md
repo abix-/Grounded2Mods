@@ -81,9 +81,35 @@ it. `class_functions_by_name` looks the class up by name instead.
 It is also the safe way to ask what a native engine class can do,
 because `discover_class_detail` CRASHES on one (worldgen.md 10).
 
-Still open: which tag NAMES this build cooked in, and whether any
-of them carries bounds. That is what decides whether 1,500 meshes
-need loading or none do.
+### Reading the tags is a dead end for now
+
+Three routes tried, 2026-08-27, all blocked:
+
+**Call `GetTagValue`.** It needs an `FName` for the tag name, and
+nothing in the framework builds an `FName` from a string. Every
+`FName` we have was read off an object that already existed.
+Making one means either the engine's own constructor or a walk of
+the name pool, and the pool is around half a million entries with
+one leaked buffer per unique name resolved (`fname.rs`).
+
+**Read the map's keys instead.** They are `FName`s we could
+resolve without constructing any, so this would answer "which
+tags exist" directly. But `FAssetDataTagMapSharedView` is a union
+of a fixed-map handle and a heap map pointer, and our TMap reader
+takes a UObject and a field offset, not a raw address. Decoding
+it means chasing a pointer found in memory, which took the game
+down three times last night.
+
+**Guess the tag names.** Not evidence, and a wrong guess is
+indistinguishable from a missing tag.
+
+**So: LOAD AND MEASURE.** `load_asset` works, measuring works,
+and the on-disk parts list makes it a one-time cost rather than a
+per-launch one. That was always the fallback; it is now the plan.
+
+If a string-to-`FName` primitive ever lands, `GetTagValue` is one
+call away and this becomes cheap. Worth revisiting then, not
+before.
 
 **2. The studs.** Where a piece can attach. Derived from its
 measured bounds and its marker: which face, where on it, which
