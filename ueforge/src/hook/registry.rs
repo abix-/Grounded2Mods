@@ -78,6 +78,37 @@ impl HookRegistry {
         }
     }
 
+    /// Take one hook back out and uninstall it.
+    ///
+    /// Dropping the handle restores the engine's original slot and
+    /// waits for any call already inside our code to finish, so a
+    /// hook that has done its job can be removed rather than left
+    /// firing for the rest of the session.
+    ///
+    /// NEVER call this from inside the hook's own handler. The
+    /// drop waits for in-flight calls to leave, and the caller
+    /// would be one of them, waiting for itself.
+    ///
+    /// Returns true if a hook for that class was found.
+    pub fn remove(&self, class_name: &str) -> bool {
+        // Take it out under the lock, drop it outside, so the
+        // registry is not held while waiting for calls to drain.
+        let taken = {
+            let mut g = self.handles.lock();
+            g.iter()
+                .position(|h| h.class_name() == class_name)
+                .map(|i| g.remove(i))
+        };
+        match taken {
+            Some(h) => {
+                drop(h);
+                crate::log!("hook: removed {class_name}");
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Drop every registered handle in registration order, after
     /// flipping the global `SHUTTING_DOWN` flag. Idempotent; safe
     /// to call when no hooks were ever installed.
@@ -144,6 +175,13 @@ pub static HOOK_REGISTRY: HookRegistry = HookRegistry::new();
 /// in new code.
 pub fn register(hook: ProcessEventHook) {
     HOOK_REGISTRY.register(hook);
+}
+
+/// Uninstall one hook by the class it was installed for. Thin
+/// wrapper over [`HookRegistry::remove`], including its rule:
+/// never from inside that hook's own handler.
+pub fn remove(class_name: &str) -> bool {
+    HOOK_REGISTRY.remove(class_name)
 }
 
 /// Register many hooks (e.g. the multi-class handle list returned

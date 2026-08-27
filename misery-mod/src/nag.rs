@@ -40,46 +40,33 @@ const DISMISS_FN: &str = "InpActEvt_SpaceBar_K2Node_InputKeyEvent_1";
 static HIDING: AtomicBool = AtomicBool::new(false);
 static HIDDEN_COUNT: AtomicU64 = AtomicU64::new(0);
 
-/// Set once the hook is in, so the watcher stops trying.
-static HOOKED: AtomicBool = AtomicBool::new(false);
+/// Has the notice been dismissed? Once it has, this feature is
+/// finished for the session.
+fn is_dismissed() -> bool {
+    HIDDEN_COUNT.load(Ordering::Relaxed) > 0
+}
 
 /// Starts watching for MISERY's playtest notice and exposes its status.
 /// Stays here because suppressing this particular game widget is a MISERY feature built on Ueforge hooks.
 pub fn install() {
     register_ops();
-    std::mem::forget(modforge::rpg::poller::spawn_interval(
+    ueforge::hook::install_for_live_object_until(
         "misery-nag",
         std::time::Duration::from_millis(500),
-        // Looks for a live widget, so it runs on the game thread.
-        ueforge::game_thread::each_tick(watch),
-    ));
-}
-
-/// Wait for the notice to exist, then hook its class.
-/// Stays here because the watched widget class and safe timing were established for MISERY.
-fn watch() {
-    if HOOKED.load(Ordering::Acquire) {
-        return;
-    }
-    if ue::try_runtime().is_none() {
-        return;
-    }
-    // Widgets are not actors, so do not require a level.
-    let Some(ptr) = ue::actor::find_object(NAG_CLASS, None, false) else {
-        return;
-    };
-    // SAFETY: ptr came from this call's GObjects walk.
-    let obj = unsafe { &*(ptr as *const UObject) };
-    match ueforge::hook::ProcessEventHook::install_for_object(NAG_CLASS, obj, on_nag_event) {
-        Ok(h) => {
-            HOOKED.store(true, Ordering::Release);
-            ueforge::log::log(format_args!("nag: hooked {NAG_CLASS}"));
-            ueforge::hook::register(h);
-        }
-        Err(e) => {
-            ueforge::log::log(format_args!("nag: hook failed ({e})"));
-        }
-    }
+        NAG_CLASS,
+        || ue::actor::find_live_object(NAG_CLASS, None, false),
+        on_nag_event,
+        |result| match result {
+            Ok(()) => ueforge::log::log(format_args!("nag: hooked {NAG_CLASS}")),
+            Err(e) => ueforge::log::log(format_args!("nag: hook failed ({e})")),
+        },
+        // The notice is shown once per launch. Once it has been
+        // dismissed there is nothing left to watch for, so the
+        // hook comes out and the watcher ends itself. Leaving
+        // them in cost 1326 ms of game thread in 30 seconds for
+        // no work at all (docs/performance.md).
+        is_dismissed,
+    );
 }
 
 /// Game thread, with the notice as `this`. Dismiss it once.
@@ -105,7 +92,11 @@ fn on_nag_event(
     // SAFETY: engine-supplied arguments forwarded unchanged.
     unsafe { original.call(this, function, parms) };
 
-    if is_nag && !HIDING.swap(true, Ordering::AcqRel) {
+    // Once, and once only. The hook is taken out within half a
+    // second of the first dismissal, and this closes the window
+    // in between: a widget shares its vtable with every other
+    // widget, so this handler is busy in that window.
+    if is_nag && !is_dismissed() && !HIDING.swap(true, Ordering::AcqRel) {
         dismiss(this);
         HIDING.store(false, Ordering::Release);
     }
@@ -126,22 +117,18 @@ fn on_nag_event(
 /// its own notice down the way it always does.
 /// Stays here because the dismissal function and widget lifecycle belong to MISERY's menu.
 fn dismiss(widget: &UObject) {
-    let Some(cls) = widget.class() else { return };
-    let Some(f) = cls.get_function(NAG_CLASS, DISMISS_FN) else {
-        ueforge::log::log(format_args!("nag: {NAG_CLASS} has no {DISMISS_FN}"));
+    if widget.class().is_none() {
         return;
-    };
-    // The handler is a K2Node input event, so it may declare an
-    // FKey parameter. Size the block from the UFunction rather
-    // than assuming: undersizing lets the callee write past the
-    // buffer.
-    let mut parms = vec![0u8; f.parms_size().max(1) as usize];
-    // SAFETY: live widget on the game thread, function looked up
-    // from that widget's own class, parm block sized from the
-    // function itself and zeroed.
-    unsafe {
-        widget.process_event(f, parms.as_mut_ptr() as *mut c_void);
     }
+    // SAFETY: this runs inside the notice's ProcessEvent hook on
+    // the game thread, and this input event accepts zeroed defaults.
+    let f = match unsafe { ue::pe_call::call_ufunction_zeroed(widget, NAG_CLASS, DISMISS_FN) } {
+        Ok(function) => function,
+        Err(e) => {
+            ueforge::log::log(format_args!("nag: {e}"));
+            return;
+        }
+    };
     let n = HIDDEN_COUNT.fetch_add(1, Ordering::Relaxed);
     if n == 0 {
         ueforge::log::log(format_args!(
@@ -159,11 +146,9 @@ fn dismiss(widget: &UObject) {
 /// Stays here because this diagnostic inspects MISERY's notice class, not Unreal widgets generally.
 pub fn nag_functions() -> Vec<String> {
     let mut out = Vec::new();
-    let Some(ptr) = ue::actor::find_object(NAG_CLASS, None, false) else {
+    let Some(obj) = ue::actor::find_live_object(NAG_CLASS, None, false) else {
         return out;
     };
-    // SAFETY: ptr came from this call's GObjects walk.
-    let obj = unsafe { &*(ptr as *const UObject) };
     let Some(cls) = obj.class() else { return out };
     for (name, _flags) in cls.iter_functions() {
         out.push(name);

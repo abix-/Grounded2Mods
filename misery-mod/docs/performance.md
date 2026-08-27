@@ -75,7 +75,46 @@ emission count is, on a timer.
 `misery-nag` is the other oddity. Fifty-eight ticks, no work in
 any of them. It is hopping to the game thread twice a second
 forever, purely to discover it has nothing to do, and waiting
-behind `spawning` when it gets there.
+behind `spawning` when it gets there. Fixed below.
+
+### Third run, with the notice watcher ending itself
+
+```text
+held for 2899.6 ms over 30.0 s
+that is 96.65 ms per second of play        (was 96.48)
+
+name                              calls    total ms     avg us    worst ms
+ue:find_actors_by_chain              21     2578.25   122773.8      132.01
+ue:find_objects_by_chain             21     2577.25   122726.1      132.00
+misery-spawning                       6     1478.86   246476.2      257.89
+ue:find_object                       15      320.31    21354.2       24.63
+misery-autoload                      15        0.00        0.3        0.00
+ue:objects_read                 4660369        0.00        0.0        0.00
+```
+
+`misery-nag` is gone from the report. In the log:
+
+```text
+[01:03:36] nag: hooked WD_PlaytestNote01_C
+[01:03:36] nag: pressed InpActEvt_SpaceBar_K2Node_InputKeyEvent_1
+[01:03:36] hook: removed WD_PlaytestNote01_C
+[01:03:36] misery-nag: stopped
+```
+
+**It did not reduce the stalling, and that was predictable.**
+96.48 to 96.65 is noise. The notice watcher's 1326 ms was time
+spent WAITING on its own thread for a turn behind `spawning`, not
+work on the game thread. What the fix removed is 58 pointless
+hops per 30 seconds and a hook that fired on every widget in the
+game for the whole session. Both were real and neither was the
+freezing.
+
+Worth remembering when reading this table: **a big number in a
+watcher row can be waiting rather than working.** The game thread
+total at the top is the only number that says what the player
+feels.
+
+`spawning` is the freezing. 1478 ms of the 2899.
 
 How to read the first run:
 
@@ -106,7 +145,7 @@ off code are worth what they cost.
 | One search of the object list | see below | game | **94 ms**, reading about **174,000 objects**. Every other cost in this table is a multiple of this one. | MEASURED |
 | `strange` watcher | OFF since 2026-08-26 | game | Was three searches a pass: **291 ms average, 305 ms worst**, then spawning up to 48 actors into a square. Switched off; see below. | MEASURED |
 | `spawning` watcher | every 5 s | game | Two searches a pass: **190 ms average, 200 ms worst**. Then spawns any planned enemies in the same frame. | MEASURED |
-| `nag` watcher | every 500 ms | game | Does no work once the notice is hooked. Its **25 ms average** is time queued behind the searches above; **260 ms worst** is one tick stuck behind a `strange` pass. | MEASURED |
+| `nag` watcher | until the notice is dismissed, then never | game | Fixed 2026-08-26. Dismisses once, uninstalls its hook, ends itself. Gone from the report entirely. Used to tick twice a second for the life of the process and leave a hook firing on every widget. | MEASURED |
 | `find_object`, one object by class | as the finders run | game | **20 ms average**, cheaper than a full search because it stops at the first match. Used by `speed_default`, `vendors` and `nag`. | MEASURED |
 | `autoload` watcher | every 2 s | game | **0.4 microseconds a tick.** Returns immediately once the load has been attempted. Nothing to fix. | MEASURED |
 | Run the queued jobs from `UEngine::Tick` | every frame | game | Returns immediately when nothing is waiting. Otherwise the job's own cost, inside that frame. Reported as `queued_work_ms`. | MEASURED, as the 126 ms per second total |
@@ -150,20 +189,38 @@ Nothing below has been done.
   square streams in.
 - It runs on a fixed timer, so most passes re-answer a question
   whose answer has not changed.
-- `nag` hops to the game thread twice a second for the life of the
-  process to discover it has nothing to do. The check for having
-  nothing to do happens after the hop, not before it.
-- The notice hook is never removed once the notice is gone, and it
-  is not measured at all.
 - **The price of a search grows with the world.** Any fix that
   keeps searching on a timer will get worse the more of the map is
   loaded around the player.
-- The notice hook stays installed for the whole session and fires
-  for every widget, long after the notice it was for is gone.
-- A watcher that has nothing left to do (`nag` once hooked,
-  `autoload` once settled) still pays a game-thread round trip on
-  every tick, because the check for having nothing to do happens
-  after the hop, not before it.
+- `autoload` still ticks every 2 seconds after it has settled, at
+  0.3 microseconds a tick. Correct now that the check happens
+  before the hop, and not worth touching.
+
+## The notice watcher was fixed, 2026-08-26
+
+It ticked twice a second for the life of the process to discover
+it had nothing to do, and it left a hook installed on a vtable
+every widget in the game shares. Now it dismisses the notice,
+uninstalls its own hook, and ends itself, all within the same
+second.
+
+Three pieces, two of them shared with every game:
+
+- `modforge::rpg::poller::PollerHandle::stop_soon` ends a
+  repeating job without waiting for it. `stop` joins the thread,
+  so a job could not end itself from inside its own tick without
+  joining itself, which never returns. The loop also checks the
+  flag straight after each tick now, so it goes immediately rather
+  than sleeping out one more interval.
+- `ueforge::hook::remove(class_name)` takes one hook back out and
+  uninstalls it. The careful drop already existed, restoring the
+  engine's original slot and waiting for calls already inside our
+  code to leave; there was no way to reach it for a single hook.
+  Never call it from inside that hook's own handler: the wait
+  would be waiting for the caller.
+- `ueforge::hook::install_for_live_object_until` puts them
+  together, and moves the "already installed" check off the game
+  thread, where it belonged.
 
 ## How to measure it, rather than guess
 

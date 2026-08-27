@@ -57,12 +57,26 @@ impl PollerHandle {
     /// Signal the worker to exit, wake it from sleep, and join
     /// the thread. Idempotent.
     pub fn stop(&self) {
-        self.inner.stop.store(true, Ordering::Release);
-        // Wake the sleeping thread immediately.
-        self.inner.wake.notify_all();
+        self.stop_soon();
         if let Some(j) = self.inner.join.lock().take() {
             let _ = j.join();
         }
+    }
+
+    /// Ask the worker to exit, without waiting for it.
+    ///
+    /// Safe to call FROM the worker's own tick, which [`stop`] is
+    /// not: that one joins the thread, and a thread joining itself
+    /// is a deadlock. A job that has finished for good ends itself
+    /// with this.
+    ///
+    /// The loop checks the flag straight after each tick, so the
+    /// thread is gone before the next interval rather than after
+    /// it.
+    pub fn stop_soon(&self) {
+        self.inner.stop.store(true, Ordering::Release);
+        // Wake the sleeping thread immediately.
+        self.inner.wake.notify_all();
     }
 
     pub fn panic_count(&self) -> u64 {
@@ -158,6 +172,12 @@ where
                     let msg = panic_message(&e);
                     crate::log!("{name}: tick panicked: {msg}");
                     *thread_inner.last_panic.lock() = Some(msg);
+                }
+                // Again, because a tick that has finished for good
+                // ends itself with `stop_soon` and should not wait
+                // out another interval first.
+                if thread_inner.stop.load(Ordering::Acquire) {
+                    break;
                 }
             }
             crate::log!("{name}: stopped");

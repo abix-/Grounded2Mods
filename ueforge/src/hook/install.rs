@@ -21,7 +21,14 @@
 //! Logs "pending" lines as the install attempt errors change so the
 //! mod log shows the engine-load progression. Logs once on timeout.
 
+use std::ffi::c_void;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+
+use crate::ue::{UFunction, UObject};
+
+use super::OriginalProcessEvent;
 
 #[derive(Debug, Clone, Copy)]
 pub struct RetryPolicy {
@@ -51,11 +58,7 @@ impl RetryPolicy {
 /// elapses. Returns `Some(h)` on success, `None` after timeout.
 ///
 /// `name` is used for log lines only.
-pub fn install_with_backoff<H, F>(
-    name: &str,
-    policy: RetryPolicy,
-    mut try_install: F,
-) -> Option<H>
+pub fn install_with_backoff<H, F>(name: &str, policy: RetryPolicy, mut try_install: F) -> Option<H>
 where
     F: FnMut() -> Result<H, &'static str>,
 {
@@ -131,6 +134,161 @@ where
     }
 }
 
+/// Poll for a live UObject on the game thread, install its
+/// ProcessEvent hook once, and register the handle for framework
+/// shutdown. The finder and hook installation never run on the
+/// poller's background thread.
+///
+/// `report` receives installation failures and one success so the
+/// game mod can retain its own feature-specific log wording.
+///
+/// See [`install_for_live_object_until`] for a hook that should be
+/// taken back out once its job is done.
+pub fn install_for_live_object<F, H, R>(
+    poller_name: &'static str,
+    poll_interval: Duration,
+    class_name: &'static str,
+    find_object: F,
+    handler: H,
+    report: R,
+) where
+    F: Fn() -> Option<&'static UObject> + Send + Sync + 'static,
+    H: Fn(&UObject, &UFunction, *mut c_void, OriginalProcessEvent) + Send + Sync + Clone + 'static,
+    R: Fn(Result<(), &'static str>) + Send + Sync + 'static,
+{
+    install_for_live_object_inner(
+        poller_name,
+        poll_interval,
+        class_name,
+        find_object,
+        handler,
+        report,
+        // Never finished: the hook stays for the session and the
+        // poller stops as soon as it is installed.
+        || false,
+        false,
+    );
+}
+
+/// The same, for a hook that is finished once something has
+/// happened.
+///
+/// `done` is asked, off the game thread, once the hook is in. The
+/// first time it answers true the hook is uninstalled and the
+/// poller ends itself, so neither costs anything for the rest of
+/// the session.
+///
+/// Two things this fixes, both measured in MISERY on 2026-08-26:
+///
+///   - The poller used to run for the life of the process, hopping
+///     to the game thread every tick to discover it had nothing to
+///     do. The notice watcher spent 1326 ms in 30 seconds doing
+///     exactly that, most of it queued behind real work.
+///   - The hook used to stay installed forever. A Blueprint widget
+///     class shares the base widget vtable, so a widget hook fires
+///     for EVERY widget in the game, long after the one it was
+///     installed for is gone.
+///
+/// The finished check runs on the poller's own thread, never
+/// inside the handler, because uninstalling waits for calls
+/// already inside the hook to leave and the handler would be one
+/// of them.
+pub fn install_for_live_object_until<F, H, R, D>(
+    poller_name: &'static str,
+    poll_interval: Duration,
+    class_name: &'static str,
+    find_object: F,
+    handler: H,
+    report: R,
+    done: D,
+) where
+    F: Fn() -> Option<&'static UObject> + Send + Sync + 'static,
+    H: Fn(&UObject, &UFunction, *mut c_void, OriginalProcessEvent) + Send + Sync + Clone + 'static,
+    R: Fn(Result<(), &'static str>) + Send + Sync + 'static,
+    D: Fn() -> bool + Send + Sync + 'static,
+{
+    install_for_live_object_inner(
+        poller_name,
+        poll_interval,
+        class_name,
+        find_object,
+        handler,
+        report,
+        done,
+        true,
+    );
+}
+
+fn install_for_live_object_inner<F, H, R, D>(
+    poller_name: &'static str,
+    poll_interval: Duration,
+    class_name: &'static str,
+    find_object: F,
+    handler: H,
+    report: R,
+    done: D,
+    remove_when_done: bool,
+) where
+    F: Fn() -> Option<&'static UObject> + Send + Sync + 'static,
+    H: Fn(&UObject, &UFunction, *mut c_void, OriginalProcessEvent) + Send + Sync + Clone + 'static,
+    R: Fn(Result<(), &'static str>) + Send + Sync + 'static,
+    D: Fn() -> bool + Send + Sync + 'static,
+{
+    let installed = Arc::new(AtomicBool::new(false));
+    let tick_installed = installed.clone();
+    let install_on_game_thread = crate::game_thread::each_tick(move || {
+        let Some(object) = find_object() else {
+            return;
+        };
+        match crate::hook::ProcessEventHook::install_for_object(class_name, object, handler.clone())
+        {
+            Ok(hook) => {
+                crate::hook::register(hook);
+                tick_installed.store(true, Ordering::Release);
+                report(Ok(()));
+            }
+            Err(error) => report(Err(error)),
+        }
+    });
+
+    let handle: Arc<std::sync::OnceLock<modforge::rpg::poller::PollerHandle>> =
+        Arc::new(std::sync::OnceLock::new());
+    let tick_handle = handle.clone();
+    let tick = move || {
+        // Both checks are on the poller's own thread. Hopping to
+        // the game thread to find out there is nothing to do is
+        // what made this expensive.
+        if !installed.load(Ordering::Acquire) {
+            install_on_game_thread();
+            return;
+        }
+        if remove_when_done && !done() {
+            return;
+        }
+        if remove_when_done {
+            crate::hook::remove(class_name);
+        }
+        // A session hook needs no more install checks. A temporary
+        // hook is now finished and has been removed.
+        if let Some(h) = tick_handle.get() {
+            h.stop_soon();
+        }
+    };
+
+    let spawned = modforge::rpg::poller::spawn_interval(poller_name, poll_interval, tick);
+    // The tick reads this to end itself. Setting it after the
+    // spawn is safe: a tick that runs first simply finds nothing
+    // and ends on the following one.
+    let _ = handle.set(spawned);
+    // Deliberate leak, and it MUST stay. Dropping the last
+    // reference runs `PollerHandle::drop`, which joins the worker
+    // thread. The last reference is the tick closure, which the
+    // worker drops as it exits, so the thread would be joining
+    // itself. Holding one reference forever means that drop never
+    // runs.
+    std::mem::forget(handle);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,8 +301,7 @@ mod tests {
             Duration::from_millis(10),
             Duration::from_millis(100),
         );
-        let result: Option<&'static str> =
-            install_with_backoff("test", policy, || Ok("hook"));
+        let result: Option<&'static str> = install_with_backoff("test", policy, || Ok("hook"));
         assert_eq!(result, Some("hook"));
     }
 
@@ -171,8 +328,7 @@ mod tests {
             Duration::from_millis(2),
             Duration::from_millis(20),
         );
-        let result: Option<()> =
-            install_with_backoff("test", policy, || Err("never"));
+        let result: Option<()> = install_with_backoff("test", policy, || Err("never"));
         assert_eq!(result, None);
     }
 
