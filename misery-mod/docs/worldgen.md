@@ -500,7 +500,69 @@ without spawning (so the binder is checkable, and
 Known limitation: `build_room` places along world +X, not the
 direction the player faces, because nothing reads camera yaw.
 
-## 10. Open questions
+## 10. `StreamingLevels` is the list of loaded squares (2026-08-26)
+
+Both watchers used to answer "which squares are loaded" by
+reading every object in the game: 174,000 to 230,000 objects and
+94 to 132 ms per search, on the game thread
+(`docs/performance.md`). The generator already keeps that list.
+
+Measured live by `tests/research_streaming.rs`, in the operator's
+save:
+
+```text
+=== BP_FactoryGeneration_C
+  StreamingLevels: 4 of 4 at 0x1c82a7033c0
+  TileSize: 16500   EmissionsPast: 42
+
+=== BP_BunkerWorldGeneration_C    StreamingLevels: 0   TileSize: 4800
+=== BP_MeadowsWorldGeneration_C   StreamingLevels: 0   TileSize: 12000
+=== BP_PaneliWorldGeneration_C    StreamingLevels: 0   TileSize: 12000
+```
+
+**Four entries, against 174,000 objects.** That is the whole
+argument for rebuilding the watchers around it.
+
+Three findings:
+
+- **The active area is the one whose array is not empty.** No need
+  to compare `EmissionsPast` across the four to find it, which is
+  what section 1 does.
+- **Each entry is a `LevelStreamingDynamic`.** Read the object
+  header for its identity: class pointer at `+0x10`, `FName` at
+  `+0x18`, resolved through `fname_to_string`.
+- **The array is already filtered.** The level holds 59
+  `LevelStreamingDynamic` objects in total; the active generator's
+  array holds only the 4 that are live.
+
+Still unknown: which field on `LevelStreamingDynamic` names its
+square, and which points at the loaded `ULevel` so a square's own
+actors can be read instead of searching the world. See the crash
+below for why that is not yet answered.
+
+### Two control-plane operations that do not work here
+
+**`discover_class_detail` CRASHES the game on
+`LevelStreamingDynamic`.** Confirmed twice, 2026-08-26, with a
+symbolised dump:
+
+```text
+exception   0xc0000005  ACCESS_VIOLATION
+address     main.dll + 0x55650
+function    ueforge::ue::uobject::UClass::iter_native_properties (+0x70)
+fault       reading 0x13afd5
+```
+
+Its own description claims it is "safe from eager-walk crash". It
+is not, for a native engine class. Do not point it at one until
+that is fixed. `0x13afd5` is far too small to be a real pointer,
+so the walk is reading through garbage.
+
+**`inspect_address` answers nothing** for these objects, the same
+as for the menu widgets (research.md 26.9). Read the object header
+directly instead.
+
+## 11. Open questions
 
 - Why GenerateCustomBiom(1) does nothing when Factory
   generates fine under normal shinings: broken custom path,
