@@ -75,16 +75,21 @@ static LOOP: DreadLoop<Payoff> = DreadLoop::new();
 
 /// True while a sign is out and its payoff has not landed (for the
 /// storyteller status readout).
+/// Stays here because it applies Survivalist's off-map incursions rules through the game's classes, fields, content, and actions.
 pub fn pending() -> bool {
     LOOP.pending()
 }
 
+/// Advance this system when its scheduled game update is due.
+/// Stays here because it applies Survivalist's off-map incursions rules through the game's classes, fields, content, and actions.
 pub fn tick(now: f32) {
     if let Some(payoff) = LOOP.resolve(now, RESOLVE_TICK_SECS) {
         resolve_payoff(payoff, now);
     }
 }
 
+/// Roll the next warning or payoff in the unpredictable event cycle.
+/// Stays here because it applies Survivalist's off-map incursions rules through the game's classes, fields, content, and actions.
 fn run(now: f32) -> Result<Outcome, String> {
     if LOOP.pending() {
         return Ok(Outcome::Passed);
@@ -158,6 +163,8 @@ fn run(now: f32) -> Result<Outcome, String> {
     Ok(Outcome::Fired)
 }
 
+/// Turn a completed warning into its hidden arrival, horde, or false alarm.
+/// Stays here because it applies Survivalist's off-map incursions rules through the game's classes, fields, content, and actions.
 fn resolve_payoff(payoff: Payoff, now: f32) {
     match payoff {
         Payoff::FalseAlarm => {
@@ -367,6 +374,7 @@ fn resolve_payoff(payoff: Payoff, now: f32) {
 /// map and roughly how wide it is, in tile coordinates. None when
 /// there is nothing to threaten. Scale-independent, so it works
 /// without knowing the map's absolute bounds.
+/// Stays here because it applies Survivalist's off-map incursions rules through the game's classes, fields, content, and actions.
 fn map_centroid_and_spread() -> Result<Option<((i64, i64), i64)>, String> {
     let mut sum = (0i64, 0i64);
     let mut centres: Vec<(i64, i64)> = Vec::new();
@@ -403,6 +411,7 @@ fn map_centroid_and_spread() -> Result<Option<((i64, i64), i64)>, String> {
 /// populated heart of the map, crossing whatever is in its path.
 /// Reuses the horde's spawner. Returns whether it spawned; errs
 /// "pre-v6" until a game restart arms the spawner.
+/// Stays here because it applies Survivalist's off-map incursions rules through the game's classes, fields, content, and actions.
 fn mega_horde(now: f32) -> Result<bool, String> {
     let Some((centroid, spread)) = map_centroid_and_spread()? else {
         return Ok(false);
@@ -426,6 +435,7 @@ fn mega_horde(now: f32) -> Result<bool, String> {
 /// one pass land apart. `armed` gives raider-grade weapons; light
 /// otherwise. Errs "pre-v6" until a game restart arms static invoke,
 /// like the horde. The caller owns the returned band handle.
+/// Stays here because it applies Survivalist's off-map incursions rules through the game's classes, fields, content, and actions.
 pub fn spawn_band_at_edge(
     now: f32,
     salt: u64,
@@ -465,6 +475,7 @@ pub fn spawn_band_at_edge(
 /// hostile (all camps for a military remnant, the nearest for
 /// raiders); the game's combat AI marches them in. Returns the
 /// target camp's name.
+/// Stays here because it applies Survivalist's off-map incursions rules through the game's classes, fields, content, and actions.
 fn spawn_edge_band(now: f32, kind: &str, hostile_all: bool) -> Result<Option<String>, String> {
     let Some((band_h, _id, (ex, ey))) = spawn_band_at_edge(now, 20, kind, 3, 6, true)? else {
         return Ok(None);
@@ -535,6 +546,7 @@ fn spawn_edge_band(now: f32, kind: &str, hostile_all: bool) -> Result<Option<Str
 
 /// The telegraph line. Never hints at the payoff (uncertainty is
 /// the point), but grows more ominous as the story escalates.
+/// Stays here because it applies Survivalist's off-map incursions rules through the game's classes, fields, content, and actions.
 fn dread_sign(now: f32, resolved: u32) -> &'static str {
     const EARLY: &[&str] = &[
         "smoke rises on the far horizon",
@@ -555,6 +567,7 @@ fn dread_sign(now: f32, resolved: u32) -> &'static str {
 /// The off-map signal: a broadcast luring listeners toward the
 /// edge. It names a direction (the lure needs somewhere to point)
 /// but never a meaning.
+/// Stays here because it applies Survivalist's off-map incursions rules through the game's classes, fields, content, and actions.
 fn signal_line(now: f32) -> String {
     const DIRS: &[&str] = &["north", "south", "east", "west"];
     const L: &[&str] = &[
@@ -566,6 +579,8 @@ fn signal_line(now: f32) -> String {
     L[rng(now, 13, L.len() as u64) as usize].replace("{}", dir)
 }
 
+/// Choose the chronicle text that ends a warning without an attack.
+/// Stays here because it applies Survivalist's off-map incursions rules through the game's classes, fields, content, and actions.
 fn false_alarm_line(now: f32) -> &'static str {
     const L: &[&str] = &[
         "whatever it was, it never came; the unease lingers",

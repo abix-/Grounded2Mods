@@ -120,6 +120,7 @@ static CRAFT_ROLLS: AtomicU32 = AtomicU32::new(0);
 /// product-creation entry (Recipe.UseIngredientsAndCreateProduct),
 /// the first reading the recipe (instance), the second the
 /// crafter (arg0, a Character). Registration order pairs them.
+/// Stays here because Survivalist owns the tier catalog, crafting odds, prototype names, and inventory swaps; Modforge owns the quality rolls.
 pub fn install() {
     match hook::patch_prefix_ctx(
         "Recipe",
@@ -160,6 +161,7 @@ pub fn install() {
 
 /// Prefix 1 (instance = the Recipe): remember what is being made
 /// and what skill it asks for.
+/// Stays here because Survivalist owns the tier catalog, crafting odds, prototype names, and inventory swaps; Modforge owns the quality rolls.
 extern "C" fn on_craft_recipe(ctx: *const c_void) -> i32 {
     let h = ctx as isize as i32;
     if h == 0 {
@@ -198,6 +200,7 @@ extern "C" fn on_craft_recipe(ctx: *const c_void) -> i32 {
 
 /// Prefix 2 (arg0 = the carrier Character): pair with the pending
 /// recipe and queue the roll for after the product exists.
+/// Stays here because Survivalist owns the tier catalog, crafting odds, prototype names, and inventory swaps; Modforge owns the quality rolls.
 extern "C" fn on_craft_carrier(ctx: *const c_void) -> i32 {
     let Some((product, skill_type, recipe_level)) = PENDING_RECIPE.lock().take() else {
         return 0;
@@ -231,6 +234,7 @@ extern "C" fn on_craft_carrier(ctx: *const c_void) -> i32 {
 
 /// Skill-scaled tier odds (per mille, best first). A novice never
 /// rolls Legendary; a master's hands are worth fighting over.
+/// Stays here because Survivalist owns the tier catalog, crafting odds, prototype names, and inventory swaps; Modforge owns the quality rolls.
 fn craft_odds(surplus: i64) -> [u64; 4] {
     let s = surplus.clamp(0, 8) as u64;
     [s, 3 * (1 + s), 12 * (1 + s), 40 * (1 + s)]
@@ -238,6 +242,7 @@ fn craft_odds(surplus: i64) -> [u64; 4] {
 
 /// Walk the queued craft rolls: find the product in the crafter's
 /// hands, roll the tier by skill, swap on a hit.
+/// Stays here because Survivalist owns the tier catalog, crafting odds, prototype names, and inventory swaps; Modforge owns the quality rolls.
 fn process_craft_jobs(now: f32) {
     let mut jobs = CRAFT_JOBS.lock();
     let mut i = 0;
@@ -267,6 +272,7 @@ fn process_craft_jobs(now: f32) {
 }
 
 /// Ok(true) = job resolved (rolled, missed, or product gone).
+/// Stays here because Survivalist owns the tier catalog, crafting odds, prototype names, and inventory swaps; Modforge owns the quality rolls.
 fn try_craft_roll(job: &CraftJob, now: f32) -> Result<bool, String> {
     let Some(inv_h) = with(job.crafter_h, |c| {
         c.read_field("Inventory").ok().as_ref().and_then(handle_of)
@@ -330,6 +336,7 @@ fn try_craft_roll(job: &CraftJob, now: f32) -> Result<bool, String> {
 
 /// Is the generated variant data loaded? One canary lookup; the
 /// not-loaded line logs once per generation.
+/// Stays here because Survivalist owns the tier catalog, crafting odds, prototype names, and inventory swaps; Modforge owns the quality rolls.
 fn variants_loaded() -> bool {
     match find_prototype(CANARY) {
         Ok(Some(h)) => {
@@ -359,6 +366,7 @@ fn variants_loaded() -> bool {
 /// rolls a tier by the sender's odds. Called by incursion.rs
 /// right after an edge band spawns; best-effort (a failure leaves
 /// the band exactly as the game spawned it).
+/// Stays here because Survivalist owns the tier catalog, crafting odds, prototype names, and inventory swaps; Modforge owns the quality rolls.
 pub fn upgrade_band_gear(band_h: i32, now: f32, military: bool) {
     if !variants_loaded() {
         return;
@@ -378,6 +386,7 @@ pub fn upgrade_band_gear(band_h: i32, now: f32, military: bool) {
 /// first seen. Already-tiered items never re-roll (the underscore
 /// guard), so a hot reload cannot inflate a trader twice beyond
 /// re-rolling what stayed common.
+/// Stays here because Survivalist owns the tier catalog, crafting odds, prototype names, and inventory swaps; Modforge owns the quality rolls.
 pub fn tick(now: f32) {
     LAST_NOW_BITS.store(now.to_bits(), Ordering::Relaxed);
     // Queued craft rolls settle on their own clock, every pass.
@@ -415,6 +424,8 @@ pub fn tick(now: f32) {
     ROLLED_TRADERS.lock().retain(|id| seen.contains(id));
 }
 
+/// Roll and replace eligible gear carried by an arriving band.
+/// Stays here because Survivalist owns the tier catalog, crafting odds, prototype names, and inventory swaps; Modforge owns the quality rolls.
 fn roll_band(band_h: i32, odds: &[u64; 4], now: f32, origin: &str) -> Result<(), String> {
     let Some(m_h) = with(band_h, |b| b.read_field("Members").ok().as_ref().and_then(handle_of))
     else {
@@ -483,6 +494,7 @@ fn roll_band(band_h: i32, odds: &[u64; 4], now: f32, origin: &str) -> Result<(),
 /// the tiered variant (a random sibling) lands in the same hand.
 /// Ok(true) on a swap; Ok(false) when no variant exists for this
 /// item (not a weapon or armor piece).
+/// Stays here because Survivalist owns the tier catalog, crafting odds, prototype names, and inventory swaps; Modforge owns the quality rolls.
 #[allow(clippy::too_many_arguments)]
 fn swap_to_variant(
     owner_h: i32,
@@ -554,6 +566,7 @@ fn swap_to_variant(
 /// Walk GameImpl.Instance.CurrentStories and ask each loaded
 /// story for the prototype (Story.FindEquipmentPrototypeByName);
 /// the one that loaded our XML answers. Shared with unique.rs.
+/// Stays here because it searches Survivalist story data by the game's exact prototype API.
 pub(crate) fn find_prototype(name: &str) -> Result<Option<i32>, String> {
     let game = MonoType::find("GameImpl")
         .and_then(|t| t.singleton_instance())
@@ -579,6 +592,8 @@ pub(crate) fn find_prototype(name: &str) -> Result<Option<i32>, String> {
 
 // ---- ops ---------------------------------------------------------------------
 
+/// Expose this system status and controls through the mod control endpoint.
+/// Stays here because Survivalist owns the tier catalog, crafting odds, prototype names, and inventory swaps; Modforge owns the quality rolls.
 pub fn register_ops() {
     OP_REGISTRY.register(OpDef::new(
         "quality_status",
@@ -588,6 +603,8 @@ pub fn register_ops() {
     ));
 }
 
+/// Report loaded variants, quality swaps, rolled traders, and pending craft rolls.
+/// Stays here because Survivalist owns the tier catalog, crafting odds, prototype names, and inventory swaps; Modforge owns the quality rolls.
 fn quality_status(_args: &Json) -> Result<Json, String> {
     on_main_thread(|| {
         let loaded = match find_prototype(CANARY) {

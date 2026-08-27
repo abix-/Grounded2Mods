@@ -42,6 +42,7 @@ use crate::storyteller::Outcome;
 /// reporting whether a group was near enough to actually cross. The
 /// incursion loop drives this, so every stranger arrives foreshadowed
 /// by off-map dread.
+/// Stays here because it applies Survivalist's stranger encounters rules through the game's classes, fields, content, and actions.
 pub fn launch_now(now: f32) -> bool {
     matches!(launch_with(now, None), Ok(Outcome::Fired))
 }
@@ -49,6 +50,7 @@ pub fn launch_now(now: f32) -> bool {
 /// Force-launch the mysterious stranger: a LONE figure (a one-member
 /// group) whose meaning is never learned. Same arrival machinery;
 /// the reveal is real but never explained.
+/// Stays here because it applies Survivalist's stranger encounters rules through the game's classes, fields, content, and actions.
 pub fn launch_mysterious(now: f32) -> bool {
     matches!(
         launch_with(now, Some(Intent::Mysterious)),
@@ -60,6 +62,7 @@ pub fn launch_mysterious(now: f32) -> bool {
 /// to camps as shelter-seekers who will not say what they fled.
 /// Returns how many groups crossed. The incursion loop drives this
 /// and follows it with a real threat: the wave is the foreshadow.
+/// Stays here because it applies Survivalist's stranger encounters rules through the game's classes, fields, content, and actions.
 pub fn launch_refugees(now: f32) -> usize {
     let mut launched = 0;
     for _ in 0..WAVE_MAX {
@@ -120,14 +123,20 @@ static MISSIONS: Mutex<Vec<Mission>> = Mutex::new(Vec::new());
 static CLAIMED: Mutex<Vec<i64>> = Mutex::new(Vec::new());
 static LAST_TICK_BITS: AtomicU32 = AtomicU32::new(0);
 
+/// Check whether another system already controls an arriving group.
+/// Stays here because it applies Survivalist's stranger encounters rules through the game's classes, fields, content, and actions.
 pub fn is_claimed(id: i64) -> bool {
     CLAIMED.lock().contains(&id)
 }
 
+/// Count the encounters or missions currently in flight.
+/// Stays here because it applies Survivalist's stranger encounters rules through the game's classes, fields, content, and actions.
 pub fn active_count() -> usize {
     MISSIONS.lock().len()
 }
 
+/// Advance this system when its scheduled game update is due.
+/// Stays here because it applies Survivalist's stranger encounters rules through the game's classes, fields, content, and actions.
 pub fn tick(now: f32) {
     if mission::should_tick(now, MISSION_TICK_SECS, &LAST_TICK_BITS) {
         mission::advance_one_stage_all(&MISSIONS, now, |mission, error| {
@@ -144,6 +153,8 @@ pub fn tick(now: f32) {
 
 // ---- launching (the storyteller rule) --------------------------------------
 
+/// Match an unclaimed arriving group to a camp and assign its hidden intent.
+/// Stays here because it applies Survivalist's stranger encounters rules through the game's classes, fields, content, and actions.
 fn launch_with(now: f32, forced: Option<Intent>) -> Result<Outcome, String> {
     {
         let ms = MISSIONS.lock();
@@ -267,6 +278,8 @@ fn launch_with(now: f32, forced: Option<Intent>) -> Result<Outcome, String> {
     Ok(Outcome::Fired)
 }
 
+/// Roll whether strangers join, share, threaten, rob, or leave.
+/// Stays here because it applies Survivalist's stranger encounters rules through the game's classes, fields, content, and actions.
 fn roll_intent(id: i64, now: f32) -> Intent {
     // Out of 100: join 30, share 12, aggressive 30, leave 13,
     // shakedown 15.
@@ -282,6 +295,7 @@ fn roll_intent(id: i64, now: f32) -> Intent {
 /// A pseudo-random value in [0, n): a hash of a stable id and a
 /// salt, so a band's roll is unpredictable but its flavor lines
 /// stay consistent.
+/// Extraction candidate: Modforge should own deterministic salted selection; Survivalist should supply encounter identities, weights, and text.
 fn hash_pick(id: i64, salt: f32, n: u64) -> u64 {
     let mut h = (id as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
         ^ (salt.to_bits() as u64).wrapping_mul(0xD1B5_4A32_D192_ED03);
@@ -289,6 +303,8 @@ fn hash_pick(id: i64, salt: f32, n: u64) -> u64 {
     h % n.max(1)
 }
 
+/// Read a camp position for matching arrivals to destinations.
+/// Stays here because it applies Survivalist's stranger encounters rules through the game's classes, fields, content, and actions.
 fn camp_pos(com: &MonoObject) -> Option<(f32, f32)> {
     let b_h = com
         .read_field("Buildings")
@@ -312,6 +328,8 @@ fn camp_pos(com: &MonoObject) -> Option<(f32, f32)> {
 // ---- resolving -------------------------------------------------------------
 
 impl mission::OneStageMission for Mission {
+    /// Advance the active contract or mission and resolve its next outcome.
+    /// Stays here because it applies Survivalist's stranger encounters rules through the game's classes, fields, content, and actions.
     fn advance(&mut self, now: f32) -> Result<OneStageStep, String> {
         let members = with(self.group_h, |g| {
             g.invoke("GetLivingNonZombieMemberCount", &json!([]))
@@ -459,6 +477,8 @@ impl mission::OneStageMission for Mission {
         Ok(OneStageStep::Complete)
     }
 
+    /// Resolve a mission that ran out of time.
+    /// Stays here because it applies Survivalist's stranger encounters rules through the game's classes, fields, content, and actions.
     fn on_timeout(&mut self, _now: f32) -> Result<(), String> {
         match self.intent {
             Intent::Mysterious => crate::chronicle::post(&format!(
@@ -477,12 +497,16 @@ impl mission::OneStageMission for Mission {
         Ok(())
     }
 
+    /// Release the mission squad and managed handles when the mission ends.
+    /// Stays here because it applies Survivalist's stranger encounters rules through the game's classes, fields, content, and actions.
     fn cleanup(self) {
         CLAIMED.lock().retain(|id| *id != self.group_id);
         drop(own(self.group_h));
         drop(own(self.target_h));
     }
 
+    /// Describe the active work for status output.
+    /// Stays here because it applies Survivalist's stranger encounters rules through the game's classes, fields, content, and actions.
     fn label(&self) -> String {
         format!("strangers bound for {}", self.target_name)
     }
@@ -491,6 +515,7 @@ impl mission::OneStageMission for Mission {
 /// Move the band's living members into the target via the game's
 /// own join path, up to the camp's real bed headroom. Returns how
 /// many joined.
+/// Stays here because it applies Survivalist's stranger encounters rules through the game's classes, fields, content, and actions.
 fn join_target(m: &Mission) -> Result<i64, String> {
     let headroom = with(m.target_h, |t| -> Result<i64, String> {
         let beds = t
@@ -547,6 +572,7 @@ fn join_target(m: &Mission) -> Result<i64, String> {
 /// A friendly trader band: move up to `max` non-food goods from the
 /// band's members' own inventories into the camp's first building.
 /// Returns how many stacks were shared (0 if the band had nothing).
+/// Stays here because it applies Survivalist's stranger encounters rules through the game's classes, fields, content, and actions.
 fn gift_from_band(m: &Mission, max: i64) -> Result<i64, String> {
     let store: Option<(i32, i32)> = with(m.target_h, |camp| {
         let b_h = handle_of(&camp.read_field("Buildings").ok()?)?;
@@ -663,6 +689,7 @@ fn gift_from_band(m: &Mission, max: i64) -> Result<i64, String> {
 /// A shakedown: the band takes up to `TRIBUTE_STACKS` non-food
 /// stacks from the CAMP's own stores into a band member, then
 /// leaves. Returns how many stacks were taken.
+/// Stays here because it applies Survivalist's stranger encounters rules through the game's classes, fields, content, and actions.
 fn take_tribute(m: &Mission) -> Result<i64, String> {
     let carrier = with(m.group_h, |g| -> Option<i32> {
         if let Some(h) = handle_of(&g.read_field("Leader").ok()?) {
@@ -696,6 +723,7 @@ fn take_tribute(m: &Mission) -> Result<i64, String> {
 /// Set the band hostile to the target and, best-effort, make them
 /// actively invade (the same calls war_ignite uses). The game's own
 /// combat AI carries it from here.
+/// Stays here because it applies Survivalist's stranger encounters rules through the game's classes, fields, content, and actions.
 fn set_hostile(m: &Mission) -> Result<(), String> {
     let cm = community_manager()?;
     cm.invoke(
@@ -713,6 +741,8 @@ fn set_hostile(m: &Mission) -> Result<(), String> {
 
 // ---- flavor (variety so the reveal never goes stale) -----------------------
 
+/// Choose the first rumor announcing an unknown group near a camp.
+/// Stays here because the encounter wording is Survivalist content.
 fn announce_line(id: i64, camp: &str) -> String {
     const L: &[&str] = &[
         "strangers are approaching {}",
@@ -722,6 +752,8 @@ fn announce_line(id: i64, camp: &str) -> String {
     L[hash_pick(id, 0.0, L.len() as u64) as usize].replace("{}", camp)
 }
 
+/// Choose the first rumor announcing a lone mysterious figure.
+/// Stays here because the encounter wording is Survivalist content.
 fn announce_lone_line(id: i64, camp: &str) -> String {
     const L: &[&str] = &[
         "a lone figure is walking toward {}",
@@ -731,6 +763,8 @@ fn announce_lone_line(id: i64, camp: &str) -> String {
     L[hash_pick(id, 0.0, L.len() as u64) as usize].replace("{}", camp)
 }
 
+/// Choose the first rumor announcing refugees near a camp.
+/// Stays here because the encounter wording is Survivalist content.
 fn announce_refugee_line(id: i64, camp: &str) -> String {
     const L: &[&str] = &[
         "refugees are coming down the road toward {}, looking behind them",
@@ -740,6 +774,8 @@ fn announce_refugee_line(id: i64, camp: &str) -> String {
     L[hash_pick(id, 0.0, L.len() as u64) as usize].replace("{}", camp)
 }
 
+/// Describe how many refugees a camp accepted.
+/// Stays here because the encounter wording is Survivalist content.
 fn reveal_refugees(camp: &str, n: i64) -> String {
     if n > 0 {
         format!("refugees found shelter at {camp}; they will not speak of what they fled")
@@ -748,6 +784,8 @@ fn reveal_refugees(camp: &str, n: i64) -> String {
     }
 }
 
+/// Describe the unexplained gift left by a mysterious stranger.
+/// Stays here because the encounter wording is Survivalist content.
 fn reveal_mystery_gift(camp: &str, n: i64) -> String {
     if n > 0 {
         format!("the stranger left something at {camp}'s gate and walked away without a word")
@@ -756,6 +794,8 @@ fn reveal_mystery_gift(camp: &str, n: i64) -> String {
     }
 }
 
+/// Describe strangers who arrived ready to join.
+/// Stays here because the encounter wording is Survivalist content.
 fn reveal_friendly(camp: &str, n: i64) -> String {
     if n > 0 {
         format!("the strangers came in peace: {n} threw in with {camp}")
@@ -764,6 +804,8 @@ fn reveal_friendly(camp: &str, n: i64) -> String {
     }
 }
 
+/// Describe the goods a friendly band shared.
+/// Stays here because the encounter wording is Survivalist content.
 fn reveal_share(id: i64, camp: &str, n: i64) -> String {
     if n > 0 {
         const L: &[&str] = &[
@@ -776,6 +818,8 @@ fn reveal_share(id: i64, camp: &str, n: i64) -> String {
     }
 }
 
+/// Describe strangers revealing hostile intent.
+/// Stays here because the encounter wording is Survivalist content.
 fn reveal_aggressive(id: i64, camp: &str) -> String {
     const L: &[&str] = &[
         "the strangers came for blood: {} is under attack",
@@ -785,6 +829,8 @@ fn reveal_aggressive(id: i64, camp: &str) -> String {
     L[hash_pick(id, 7.0, L.len() as u64) as usize].replace("{}", camp)
 }
 
+/// Describe cautious strangers deciding to leave.
+/// Stays here because the encounter wording is Survivalist content.
 fn reveal_wary(id: i64, camp: &str) -> String {
     const L: &[&str] = &[
         "the strangers sized up {} and moved on",
@@ -794,6 +840,8 @@ fn reveal_wary(id: i64, camp: &str) -> String {
     L[hash_pick(id, 7.0, L.len() as u64) as usize].replace("{}", camp)
 }
 
+/// Describe the tribute taken by threatening strangers.
+/// Stays here because the encounter wording is Survivalist content.
 fn reveal_shakedown(id: i64, camp: &str, n: i64) -> String {
     if n > 0 {
         const L: &[&str] = &[

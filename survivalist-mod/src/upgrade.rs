@@ -16,6 +16,8 @@ const COMMUNITIES: &str = "communities";
 
 static UPGRADES: UpgradeStore = UpgradeStore::new(1);
 
+/// Translate the C# scope number into structure or settlement upgrade state.
+/// Stays here because it implements Survivalist upgrade scopes and the exact C# shim contract; Modforge owns upgrade state and math.
 fn scope(scope: i32) -> Option<&'static str> {
     match scope {
         0 => Some(PROPS),
@@ -24,6 +26,8 @@ fn scope(scope: i32) -> Option<&'static str> {
     }
 }
 
+/// Read a checked UTF-8 track name supplied by the C# shim.
+/// Extraction candidate: Unityforge should own checked UTF-8 input at the Rust and C# boundary; Survivalist should retain its upgrade calls.
 fn with_text<T>(ptr: *const c_char, f: impl FnOnce(&str) -> T) -> Option<T> {
     if ptr.is_null() {
         return None;
@@ -33,6 +37,8 @@ fn with_text<T>(ptr: *const c_char, f: impl FnOnce(&str) -> T) -> Option<T> {
     unsafe { CStr::from_ptr(ptr) }.to_str().ok().map(f)
 }
 
+/// Read a checked Windows save path supplied by the C# shim.
+/// Extraction candidate: Unityforge should own checked UTF-16 path input at the Rust and C# boundary; Survivalist should retain its save-path policy.
 fn path(ptr: *const u16, len: i32) -> Option<PathBuf> {
     if ptr.is_null() || len < 0 {
         return None;
@@ -43,6 +49,8 @@ fn path(ptr: *const u16, len: i32) -> Option<PathBuf> {
     String::from_utf16(units).ok().map(PathBuf::from)
 }
 
+/// Load this world's upgrade state for the C# effects layer.
+/// Stays here because it implements Survivalist upgrade scopes and the exact C# shim contract; Modforge owns upgrade state and math.
 #[unsafe(no_mangle)]
 pub extern "C" fn survivalist_upgrade_load(seed: i64, path_ptr: *const u16, path_len: i32) -> i32 {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -78,6 +86,8 @@ pub extern "C" fn survivalist_upgrade_load(seed: i64, path_ptr: *const u16, path
     .unwrap_or(-1)
 }
 
+/// Return one structure or settlement upgrade level to C#.
+/// Stays here because it implements Survivalist upgrade scopes and the exact C# shim contract; Modforge owns upgrade state and math.
 #[unsafe(no_mangle)]
 pub extern "C" fn survivalist_upgrade_get(
     scope_id: i32,
@@ -96,6 +106,8 @@ pub extern "C" fn survivalist_upgrade_get(
     .unwrap_or(0)
 }
 
+/// Persist a purchased structure or settlement upgrade level.
+/// Stays here because it implements Survivalist upgrade scopes and the exact C# shim contract; Modforge owns upgrade state and math.
 #[unsafe(no_mangle)]
 pub extern "C" fn survivalist_upgrade_set(
     scope_id: i32,
@@ -126,6 +138,8 @@ pub extern "C" fn survivalist_upgrade_set(
     .unwrap_or(-1)
 }
 
+/// Tell C# whether any entity owns a named upgrade track.
+/// Stays here because it implements Survivalist upgrade scopes and the exact C# shim contract; Modforge owns upgrade state and math.
 #[unsafe(no_mangle)]
 pub extern "C" fn survivalist_upgrade_has_any(scope_id: i32, track: *const c_char) -> i32 {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -143,6 +157,8 @@ pub extern "C" fn survivalist_upgrade_has_any(scope_id: i32, track: *const c_cha
     .unwrap_or(0)
 }
 
+/// Calculate the real material cost of the next upgrade level.
+/// Stays here because it implements Survivalist upgrade scopes and the exact C# shim contract; Modforge owns upgrade state and math.
 #[unsafe(no_mangle)]
 pub extern "C" fn survivalist_upgrade_cost(base_need: f64, factor: i32, next_level: i32) -> i32 {
     std::panic::catch_unwind(|| {
@@ -151,6 +167,8 @@ pub extern "C" fn survivalist_upgrade_cost(base_need: f64, factor: i32, next_lev
     .unwrap_or(0)
 }
 
+/// Calculate the skill required for the next upgrade level.
+/// Stays here because it implements Survivalist upgrade scopes and the exact C# shim contract; Modforge owns upgrade state and math.
 #[unsafe(no_mangle)]
 pub extern "C" fn survivalist_upgrade_skill(
     base: i32,
@@ -167,6 +185,8 @@ pub extern "C" fn survivalist_upgrade_skill(
     .unwrap_or(base)
 }
 
+/// Calculate the diminishing benefit supplied by current upgrade levels.
+/// Stays here because it implements Survivalist upgrade scopes and the exact C# shim contract; Modforge owns upgrade state and math.
 #[unsafe(no_mangle)]
 pub extern "C" fn survivalist_upgrade_curve(level: i32, base_step: f32, decay: f32) -> f32 {
     std::panic::catch_unwind(|| {
@@ -175,6 +195,8 @@ pub extern "C" fn survivalist_upgrade_curve(level: i32, base_step: f32, decay: f
     .unwrap_or(0.0)
 }
 
+/// Return structure upgrade totals to the C# status surface.
+/// Stays here because it implements Survivalist upgrade scopes and the exact C# shim contract; Modforge owns upgrade state and math.
 #[unsafe(no_mangle)]
 pub extern "C" fn survivalist_upgrade_status() -> *mut c_char {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -193,6 +215,8 @@ pub extern "C" fn survivalist_upgrade_status() -> *mut c_char {
     .unwrap_or(std::ptr::null_mut())
 }
 
+/// Release a status string previously returned to C#.
+/// Extraction candidate: Unityforge should own freeing strings returned across its Rust and C# boundary; Survivalist should retain the report contents.
 #[unsafe(no_mangle)]
 pub extern "C" fn survivalist_upgrade_string_free(ptr: *mut c_char) {
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -204,6 +228,8 @@ pub extern "C" fn survivalist_upgrade_string_free(ptr: *mut c_char) {
     }));
 }
 
+/// Expose this system status and controls through the mod control endpoint.
+/// Stays here because it implements Survivalist upgrade scopes and the exact C# shim contract; Modforge owns upgrade state and math.
 pub fn register_ops() {
     OP_REGISTRY.register_many([
         OpDef::new(
@@ -223,6 +249,7 @@ pub fn register_ops() {
 
 /// The C# entries return a JSON string; unwrap it into a real
 /// object so op results read clean.
+/// Stays here because it implements Survivalist upgrade scopes and the exact C# shim contract; Modforge owns upgrade state and math.
 fn parse_report(v: Json) -> Result<Json, String> {
     match v {
         Json::String(s) => {
@@ -232,6 +259,8 @@ fn parse_report(v: Json) -> Result<Json, String> {
     }
 }
 
+/// Set and read one real structure upgrade through the game for live verification.
+/// Stays here because it implements Survivalist upgrade scopes and the exact C# shim contract; Modforge owns upgrade state and math.
 fn upgrade_probe(args: &Json) -> Result<Json, String> {
     let type_name = args
         .get("type")
@@ -249,6 +278,8 @@ fn upgrade_probe(args: &Json) -> Result<Json, String> {
     })
 }
 
+/// Report structure and settlement upgrade effects from the C# shim.
+/// Stays here because it implements Survivalist upgrade scopes and the exact C# shim contract; Modforge owns upgrade state and math.
 fn upgrade_status(_args: &Json) -> Result<Json, String> {
     on_main_thread(|| {
         let v = mono::invoke_static("SettlementUpgrades", "Status", &json!([]))?;

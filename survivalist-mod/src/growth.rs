@@ -64,6 +64,8 @@ const RECRUIT_RANGE: f32 = 48.0;
 /// begging).
 const RECRUIT_MIN_NUTRITION: f64 = 0.5;
 
+/// Install the game hooks that activate this system.
+/// Stays here because it applies Survivalist's faction growth rules through the game's classes, fields, content, and actions.
 pub fn install() {
     match hook::patch_prefix(
         "CommunityManager",
@@ -117,6 +119,8 @@ pub fn install() {
 /// spam since the game polls the gate).
 static RESPAWNS_SUPPRESSED: AtomicU32 = AtomicU32::new(0);
 
+/// Stop a destroyed hostile camp from receiving free replacement survivors.
+/// Stays here because it applies Survivalist's faction growth rules through the game's classes, fields, content, and actions.
 extern "C" fn suppress_enemy_respawn(ctx: *const c_void) -> i32 {
     let h = ctx as isize as i32;
     if h == 0 {
@@ -135,6 +139,8 @@ extern "C" fn suppress_enemy_respawn(ctx: *const c_void) -> i32 {
     0 // first spawn: the world may feed the map
 }
 
+/// Expose this system status and controls through the mod control endpoint.
+/// Stays here because it applies Survivalist's faction growth rules through the game's classes, fields, content, and actions.
 pub fn register_ops() {
     OP_REGISTRY.register_many([OpDef::new(
         "growth_status",
@@ -144,6 +150,8 @@ pub fn register_ops() {
     )]);
 }
 
+/// Stop the game from silently refilling empty settlements.
+/// Stays here because it applies Survivalist's faction growth rules through the game's classes, fields, content, and actions.
 extern "C" fn suppress_repopulation(_ctx: *const c_void) -> i32 {
     1 // skip the original: the conjurer never runs
 }
@@ -154,6 +162,8 @@ extern "C" fn suppress_repopulation(_ctx: *const c_void) -> i32 {
 /// only, the atomic is just for the static.
 static LAST_SCAN_BITS: AtomicU32 = AtomicU32::new(0);
 
+/// Advance this system when its scheduled game update is due.
+/// Stays here because it applies Survivalist's faction growth rules through the game's classes, fields, content, and actions.
 pub fn tick(now: f32) {
     let last = f32::from_bits(LAST_SCAN_BITS.load(Ordering::Relaxed));
     if now - last < RECRUIT_SCAN_PERIOD_SECS {
@@ -184,6 +194,8 @@ struct OpenDoor {
     press_gang: bool,
 }
 
+/// Find a camp entrance where willing recruits can join.
+/// Stays here because it applies Survivalist's faction growth rules through the game's classes, fields, content, and actions.
 fn base_anchor(com: &MonoObject) -> Option<(f32, f32)> {
     let b_h = com.read_field("Buildings").ok().as_ref().and_then(handle_of)?;
     let blist = own(b_h);
@@ -203,6 +215,7 @@ fn base_anchor(com: &MonoObject) -> Option<(f32, f32)> {
 /// Positions of every squad leader the community has in the
 /// field. This is the looter press-gang reach: they grow through
 /// activity, not hospitality.
+/// Stays here because it applies Survivalist's faction growth rules through the game's classes, fields, content, and actions.
 fn squad_anchors(com: &MonoObject) -> Vec<(f32, f32)> {
     let mut out = Vec::new();
     let Some(sq_h) = com.read_field("Squads").ok().as_ref().and_then(handle_of) else {
@@ -235,6 +248,8 @@ fn squad_anchors(com: &MonoObject) -> Vec<(f32, f32)> {
     out
 }
 
+/// Find nearby survivors that a camp can honestly recruit.
+/// Stays here because it applies Survivalist's faction growth rules through the game's classes, fields, content, and actions.
 fn recruit_scan() -> Result<(), String> {
     // Pass 1: settlements that can take people in, and refugee
     // groups in transit. Doctrine (operator-locked): Normal camps
@@ -361,6 +376,7 @@ fn recruit_scan() -> Result<(), String> {
 /// Move up to `door.headroom` living members of `group` into the
 /// settlement via the game's own join path. Returns how many
 /// moved.
+/// Stays here because it applies Survivalist's faction growth rules through the game's classes, fields, content, and actions.
 fn absorb_group(group: &MonoObject, door: &mut OpenDoor) -> Result<i64, String> {
     let Some(m_h) = handle_of(&group.read_field("Members")?) else {
         return Ok(0);
@@ -410,10 +426,14 @@ fn absorb_group(group: &MonoObject, door: &mut OpenDoor) -> Result<i64, String> 
 
 // ---- observability ----------------------------------------------------------
 
+/// Return the current faction-growth report.
+/// Stays here because it applies Survivalist's faction growth rules through the game's classes, fields, content, and actions.
 fn growth_status(_args: &Json) -> Result<Json, String> {
     crate::common::on_main_thread(collect_growth_status)
 }
 
+/// Count surviving camps, population, beds, and blocked free respawns.
+/// Stays here because it applies Survivalist's faction growth rules through the game's classes, fields, content, and actions.
 fn collect_growth_status() -> Result<Json, String> {
     let mut settlements = Vec::new();
     let mut arrivals = Vec::new();

@@ -59,6 +59,8 @@ static MOD_INFO: ModDef = ModDef {
     tabs: &[],
 };
 
+/// Advance every Survivalist system from the shared game tick.
+/// Stays here because it composes Survivalist features and lifecycle callbacks from shared framework services.
 fn on_tick(now: f32) {
     genome::persistence_tick(now);
     growth::tick(now);
@@ -82,6 +84,8 @@ fn on_tick(now: f32) {
 
 unityforge::unityforge_mod!(MOD_INFO);
 
+/// Register Survivalist systems, hooks, controls, and cleanup for a loaded story.
+/// Stays here because it composes Survivalist features and lifecycle callbacks from shared framework services.
 fn on_init() {
     // Generic primitive ops (ping, walk_class, inspect_object,
     // read_field, write_field, invoke_method, list_ops, ...).
@@ -150,6 +154,8 @@ fn on_init() {
     );
 }
 
+/// Persist Survivalist state and release resources when the mod unloads.
+/// Stays here because it composes Survivalist features and lifecycle callbacks from shared framework services.
 fn on_shutdown() {
     // Flush the genome memory so a hot reload loses no lessons.
     genome::persist_now();

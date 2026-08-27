@@ -100,6 +100,8 @@ static LAST_TICK_BITS: AtomicU32 = AtomicU32::new(0);
 const FAILED_LAUNCH_LOG_COOLDOWN_SECS: f32 = 1800.0;
 static FAILED_LAUNCH_LOGGED: Mutex<Vec<(i64, f32)>> = Mutex::new(Vec::new());
 
+/// Rate-limit repeated explanations when a faction cannot form a caravan.
+/// Stays here because it applies Survivalist's trade missions rules through the game's classes, fields, content, and actions.
 fn should_log_failed_launch(faction_id: i64, now: f32) -> bool {
     let mut seen = FAILED_LAUNCH_LOGGED.lock();
     if let Some((_, at)) = seen.iter_mut().find(|(id, _)| *id == faction_id) {
@@ -114,6 +116,7 @@ fn should_log_failed_launch(faction_id: i64, now: f32) -> bool {
 }
 
 /// The active trade a faction is running, for survival_status.
+/// Stays here because it applies Survivalist's trade missions rules through the game's classes, fields, content, and actions.
 pub fn active_target(faction_id: i64) -> Option<Json> {
     MISSIONS
         .lock()
@@ -128,6 +131,8 @@ pub fn active_target(faction_id: i64) -> Option<Json> {
         })
 }
 
+/// Advance this system when its scheduled game update is due.
+/// Stays here because it applies Survivalist's trade missions rules through the game's classes, fields, content, and actions.
 pub fn tick(now: f32) {
     if mission::should_tick(now, MISSION_TICK_SECS, &LAST_TICK_BITS) {
         mission::advance_all(&MISSIONS, now, |m, e| {
@@ -168,6 +173,8 @@ struct Camp {
     eligible_seller: bool,
 }
 
+/// Find one faction ready to start trade missions.
+/// Stays here because it applies Survivalist's trade missions rules through the game's classes, fields, content, and actions.
 fn launch_scan(now: f32) -> Result<(), String> {
     if MISSIONS.lock().len() >= MAX_ACTIVE_MISSIONS {
         return Ok(());
@@ -346,6 +353,8 @@ fn launch_scan(now: f32) -> Result<(), String> {
     Ok(())
 }
 
+/// Start trade missions using real survivors, supplies, and game movement.
+/// Stays here because it applies Survivalist's trade missions rules through the game's classes, fields, content, and actions.
 fn launch(camp: &Camp, host: &Camp, now: f32) -> Result<(), String> {
     with(camp.handle, |com| {
         // The trader: the most careful free member (highest
@@ -508,6 +517,8 @@ fn launch(camp: &Camp, host: &Camp, now: f32) -> Result<(), String> {
 impl mission::Mission for Mission {
     modforge::mission_accessors!();
 
+    /// Check whether the mission agent can continue.
+    /// Stays here because it applies Survivalist's trade missions rules through the game's classes, fields, content, and actions.
     fn is_agent_alive(&self) -> Result<bool, String> {
         let alive = is_npc_alive(self.trader_h)?;
         if !alive {
@@ -529,6 +540,8 @@ impl mission::Mission for Mission {
         Ok(alive)
     }
 
+    /// Resolve what happens when the mission reaches its destination.
+    /// Stays here because it applies Survivalist's trade missions rules through the game's classes, fields, content, and actions.
     fn on_going(&mut self, _now: f32) -> Result<Step, String> {
         let host_alive = with(self.host_h, |h| {
             h.invoke("HasAnyLivingNonZombieMembers", &json!([]))
@@ -568,6 +581,8 @@ impl mission::Mission for Mission {
         Ok(Step::Transition)
     }
 
+    /// Resolve what happens when the mission agent returns home.
+    /// Stays here because it applies Survivalist's trade missions rules through the game's classes, fields, content, and actions.
     fn on_returning(&mut self, _now: f32) -> Result<Step, String> {
         if dist_sq_to_building(self.trader_h, self.seller_h)? > ARRIVE_DIST_SQ {
             return Ok(Step::Continue);
@@ -591,6 +606,8 @@ impl mission::Mission for Mission {
         Ok(Step::Complete)
     }
 
+    /// Release the mission squad and managed handles when the mission ends.
+    /// Stays here because it applies Survivalist's trade missions rules through the game's classes, fields, content, and actions.
     fn cleanup(self) {
         remove_squad_and_drop(
             self.seller_h,
@@ -599,6 +616,8 @@ impl mission::Mission for Mission {
         );
     }
 
+    /// Describe the active work for status output.
+    /// Stays here because it applies Survivalist's trade missions rules through the game's classes, fields, content, and actions.
     fn label(&self) -> String {
         format!("{} trading with {}", self.seller_name, self.host_name)
     }
@@ -607,6 +626,7 @@ impl mission::Mission for Mission {
 /// Top up the caravan from campmates' carried food: a real
 /// hand-off at home via the same Take/Add transfer. Each donor
 /// keeps at least one food stack for themselves.
+/// Stays here because it applies Survivalist's trade missions rules through the game's classes, fields, content, and actions.
 fn load_food_from_members(
     com: &unityforge::mono::MonoObject,
     trader_h: i32,
@@ -709,6 +729,7 @@ fn load_food_from_members(
 /// inventory into the first host building that will hold them:
 /// the delivery half of the barter, on the same Take/Add calls as
 /// everything else.
+/// Stays here because it applies Survivalist's trade missions rules through the game's classes, fields, content, and actions.
 fn deliver_carried_food(trader_h: i32, host_h: i32, max: i64) -> Result<i64, String> {
     // The receiving shelf: the host's first building with an
     // inventory container.

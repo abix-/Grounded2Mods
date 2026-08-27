@@ -31,6 +31,7 @@ static OWNED: Mutex<Vec<i32>> = Mutex::new(Vec::new());
 /// instance handle; None (with a log line) when the quest data is
 /// not loaded, since the XML loads at story load and a hot reload
 /// alone cannot see it.
+/// Stays here because it applies Survivalist's work-board quests rules through the game's classes, fields, content, and actions.
 pub fn spawn(quest_id: &str, hirer_h: i32, ob_h: i32) -> Option<i32> {
     let quest_h = match find_quest(quest_id) {
         Ok(Some(h)) => h,
@@ -95,6 +96,7 @@ pub fn spawn(quest_id: &str, hirer_h: i32, ob_h: i32) -> Option<i32> {
 /// Walk GameImpl.Instance.CurrentStories and ask each loaded
 /// story for the quest data (Story.FindQuestByUniqueID); the one
 /// that loaded our XML answers.
+/// Stays here because it applies Survivalist's work-board quests rules through the game's classes, fields, content, and actions.
 fn find_quest(quest_id: &str) -> Result<Option<i32>, String> {
     let game = MonoType::find("GameImpl")
         .and_then(|t| t.singleton_instance())
@@ -121,6 +123,7 @@ fn find_quest(quest_id: &str) -> Result<Option<i32>, String> {
 /// Resolve a journal entry: Complete (claimed) or Fail (lapsed or
 /// void), both the game's own paths with their own notifications.
 /// Consumes the handle.
+/// Stays here because it applies Survivalist's work-board quests rules through the game's classes, fields, content, and actions.
 pub fn close(quest_h: Option<i32>, claimed: bool) {
     let Some(h) = quest_h else { return };
     OWNED.lock().retain(|&x| x != h);
@@ -141,6 +144,7 @@ pub fn close(quest_h: Option<i32>, claimed: bool) {
 /// linger in the journal forever. Entries owned by live offers of
 /// ANY work kind are spared (matched by instance UniqueID, since
 /// handles from separate bridge calls never match).
+/// Stays here because it applies Survivalist's work-board quests rules through the game's classes, fields, content, and actions.
 pub fn sweep_orphans() {
     let owned_handles: Vec<i32> = OWNED.lock().clone();
     let owned_uids: Vec<String> = owned_handles

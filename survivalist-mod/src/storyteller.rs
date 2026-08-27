@@ -27,6 +27,8 @@ static DIRECTOR: Director = Director::with_config(
 
 pub use modforge::storyteller::{Outcome, Rule};
 
+/// Advance this system when its scheduled game update is due.
+/// Stays here because it applies Survivalist's storyteller pacing rules through the game's classes, fields, content, and actions.
 pub fn tick(now: f32) {
     DIRECTOR.tick(
         now,
@@ -43,6 +45,7 @@ pub fn tick(now: f32) {
 /// The brutal-but-survivable line for a pressure event: is it safe
 /// to lean on this camp? False once it is already handling more
 /// threats than the configured ceiling.
+/// Stays here because it applies Survivalist's storyteller pacing rules through the game's classes, fields, content, and actions.
 pub fn safe_to_pressure(community_h: i32) -> bool {
     let max = guard_max_threats();
     with(community_h, |com| list_len(com, "Threats") <= max)
@@ -51,10 +54,14 @@ pub fn safe_to_pressure(community_h: i32) -> bool {
 /// Game-specific guard knob, stored alongside the director config.
 static GUARD_MAX_THREATS: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
 
+/// Read the live ceiling that prevents piling pressure onto a camp already in danger.
+/// Stays here because it applies Survivalist's storyteller pacing rules through the game's classes, fields, content, and actions.
 fn guard_max_threats() -> i64 {
     GUARD_MAX_THREATS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Expose this system status and controls through the mod control endpoint.
+/// Stays here because it applies Survivalist's storyteller pacing rules through the game's classes, fields, content, and actions.
 pub fn register_ops() {
     DIRECTOR.register_config_op();
     OP_REGISTRY.register_many([
@@ -73,6 +80,8 @@ pub fn register_ops() {
     ]);
 }
 
+/// Report the current warning, horde, vendor, and stranger activity.
+/// Stays here because it applies Survivalist's storyteller pacing rules through the game's classes, fields, content, and actions.
 fn storyteller_status(_args: &Json) -> Result<Json, String> {
     on_main_thread(|| {
         let mut status = DIRECTOR.status();
@@ -91,6 +100,8 @@ fn storyteller_status(_args: &Json) -> Result<Json, String> {
     })
 }
 
+/// Read or change the maximum threats allowed before pressure pauses.
+/// Stays here because it applies Survivalist's storyteller pacing rules through the game's classes, fields, content, and actions.
 fn storyteller_guard(args: &Json) -> Result<Json, String> {
     if let Some(v) = args.get("guard_max_threats").and_then(Json::as_i64) {
         GUARD_MAX_THREATS.store(v, std::sync::atomic::Ordering::Relaxed);

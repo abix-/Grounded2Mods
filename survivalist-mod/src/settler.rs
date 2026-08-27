@@ -48,14 +48,19 @@ static LAST_TICK_BITS: AtomicU32 = AtomicU32::new(0);
 
 /// Groups this system owns; growth.rs and the strangers skip them
 /// so nothing recruits or re-rolls a band mid-walk.
+/// Stays here because it applies Survivalist's settler missions rules through the game's classes, fields, content, and actions.
 pub fn is_claimed(id: i64) -> bool {
     MISSIONS.lock().iter().any(|m| m.group_id == id)
 }
 
+/// Count the encounters or missions currently in flight.
+/// Stays here because it applies Survivalist's settler missions rules through the game's classes, fields, content, and actions.
 pub fn active_count() -> usize {
     MISSIONS.lock().len()
 }
 
+/// Advance this system when its scheduled game update is due.
+/// Stays here because it applies Survivalist's settler missions rules through the game's classes, fields, content, and actions.
 pub fn tick(now: f32) {
     if mission::should_tick(now, WATCH_TICK_SECS, &LAST_TICK_BITS) {
         mission::advance_one_stage_all(&MISSIONS, now, |mission, error| {
@@ -74,6 +79,7 @@ pub fn tick(now: f32) {
 /// arriving group is pointed at a claimable husk. Returns whether a
 /// group and a husk matched. The incursion loop drives this, so
 /// every settling arrives foreshadowed by off-map dread.
+/// Stays here because it applies Survivalist's settler missions rules through the game's classes, fields, content, and actions.
 pub fn launch_now(now: f32) -> bool {
     match launch(now) {
         Ok(launched) => launched,
@@ -94,6 +100,8 @@ struct Husk {
     centre: (i64, i64),
 }
 
+/// Start settler missions using real survivors, supplies, and game movement.
+/// Stays here because it applies Survivalist's settler missions rules through the game's classes, fields, content, and actions.
 fn launch(now: f32) -> Result<bool, String> {
     if MISSIONS.lock().len() >= MAX_SETTLERS {
         return Ok(false);
@@ -231,6 +239,8 @@ fn launch(now: f32) -> Result<bool, String> {
 }
 
 impl mission::OneStageMission for Mission {
+    /// Advance the active contract or mission and resolve its next outcome.
+    /// Stays here because it applies Survivalist's settler missions rules through the game's classes, fields, content, and actions.
     fn advance(&mut self, now: f32) -> Result<OneStageStep, String> {
         let community_type = with(self.group_h, ctype);
         if community_type == "Normal" || community_type == "Looter" {
@@ -269,6 +279,8 @@ impl mission::OneStageMission for Mission {
         Ok(OneStageStep::Continue)
     }
 
+    /// Resolve a mission that ran out of time.
+    /// Stays here because it applies Survivalist's settler missions rules through the game's classes, fields, content, and actions.
     fn on_timeout(&mut self, _now: f32) -> Result<(), String> {
         mono::log(
             LogLevel::Info,
@@ -280,11 +292,15 @@ impl mission::OneStageMission for Mission {
         Ok(())
     }
 
+    /// Release the mission squad and managed handles when the mission ends.
+    /// Stays here because it applies Survivalist's settler missions rules through the game's classes, fields, content, and actions.
     fn cleanup(self) {
         drop(own(self.group_h));
         drop(own(self.husk_h));
     }
 
+    /// Describe the active work for status output.
+    /// Stays here because it applies Survivalist's settler missions rules through the game's classes, fields, content, and actions.
     fn label(&self) -> String {
         format!("settlers bound for {}", self.husk_name)
     }

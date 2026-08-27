@@ -77,6 +77,7 @@ static LAST_SCAN_BITS: AtomicU32 = AtomicU32::new(0);
 static LAST_TICK_BITS: AtomicU32 = AtomicU32::new(0);
 
 /// The active murder a faction is running, for survival_status.
+/// Stays here because it applies Survivalist's assassination missions rules through the game's classes, fields, content, and actions.
 pub fn active_target(faction_id: i64) -> Option<Json> {
     MISSION
         .lock()
@@ -94,6 +95,8 @@ pub fn active_target(faction_id: i64) -> Option<Json> {
         })
 }
 
+/// Advance this system when its scheduled game update is due.
+/// Stays here because it applies Survivalist's assassination missions rules through the game's classes, fields, content, and actions.
 pub fn tick(now: f32) {
     if mission::should_tick(now, MISSION_TICK_SECS, &LAST_TICK_BITS) {
         advance_mission(now);
@@ -115,6 +118,8 @@ pub fn tick(now: f32) {
 
 // ---- launching ---------------------------------------------------------------
 
+/// Find one faction ready to start assassination missions.
+/// Stays here because it applies Survivalist's assassination missions rules through the game's classes, fields, content, and actions.
 fn launch_scan(now: f32) -> Result<(), String> {
     // The camp with the darkest franchise among those AT WAR.
     let mut plotter: Option<(i32, i64, String, String, i64, i64, f64, Vec<i64>, i32)> = None;
@@ -281,6 +286,8 @@ fn launch_scan(now: f32) -> Result<(), String> {
     Ok(())
 }
 
+/// Choose a willing, capable assassin without taking a leader or busy survivor.
+/// Stays here because it applies Survivalist's assassination missions rules through the game's classes, fields, content, and actions.
 fn pick_operative(
     com: &unityforge::mono::MonoObject,
     camp_ctype: &str,
@@ -342,6 +349,8 @@ fn pick_operative(
 
 // ---- advancing ---------------------------------------------------------------
 
+/// Advance every assassination and clean up missions that end.
+/// Stays here because it applies Survivalist's assassination missions rules through the game's classes, fields, content, and actions.
 fn advance_mission(now: f32) {
     let mut slot = MISSION.lock();
     let Some(m) = slot.as_mut() else { return };
@@ -368,6 +377,8 @@ fn advance_mission(now: f32) {
 impl mission::Mission for Mission {
     modforge::mission_accessors!();
 
+    /// Check whether the mission agent can continue.
+    /// Stays here because it applies Survivalist's assassination missions rules through the game's classes, fields, content, and actions.
     fn is_agent_alive(&self) -> Result<bool, String> {
         let alive = is_npc_alive(self.operative_h)?;
         if !alive {
@@ -394,6 +405,8 @@ impl mission::Mission for Mission {
         Ok(alive)
     }
 
+    /// Resolve what happens when the mission reaches its destination.
+    /// Stays here because it applies Survivalist's assassination missions rules through the game's classes, fields, content, and actions.
     fn on_going(&mut self, now: f32) -> Result<Step, String> {
         let victim_alive = is_npc_alive(self.victim_h).unwrap_or(false);
 
@@ -482,6 +495,8 @@ impl mission::Mission for Mission {
         Ok(Step::Continue)
     }
 
+    /// Resolve what happens when the mission agent returns home.
+    /// Stays here because it applies Survivalist's assassination missions rules through the game's classes, fields, content, and actions.
     fn on_returning(&mut self, _now: f32) -> Result<Step, String> {
         let otile = with(self.operative_h, |o| o.invoke("get_Tile", &json!([])))?;
         let home = json!({"x": self.home.0, "y": self.home.1});
@@ -492,6 +507,8 @@ impl mission::Mission for Mission {
         Ok(Step::Complete)
     }
 
+    /// Release the mission squad and managed handles when the mission ends.
+    /// Stays here because it applies Survivalist's assassination missions rules through the game's classes, fields, content, and actions.
     fn cleanup(self) {
         remove_squad_and_drop(
             self.camp_h,
@@ -500,6 +517,8 @@ impl mission::Mission for Mission {
         );
     }
 
+    /// Describe the active work for status output.
+    /// Stays here because it applies Survivalist's assassination missions rules through the game's classes, fields, content, and actions.
     fn label(&self) -> String {
         format!("{} assassinating {}", self.camp_name, self.victim_name)
     }
@@ -507,6 +526,7 @@ impl mission::Mission for Mission {
 
 /// After the strike the squad is gone; walk the operative home in
 /// a fresh one.
+/// Stays here because it applies Survivalist's assassination missions rules through the game's classes, fields, content, and actions.
 fn send_home_squadless(m: &mut Mission) -> Result<(), String> {
     let home = json!({"x": m.home.0, "y": m.home.1});
     let squad_id = with(m.camp_h, |com| -> Result<i64, String> {
@@ -528,6 +548,8 @@ fn send_home_squadless(m: &mut Mission) -> Result<(), String> {
     Ok(())
 }
 
+/// Measure tile distance when choosing an assassination target.
+/// Stays here because it applies Survivalist's assassination missions rules through the game's classes, fields, content, and actions.
 fn tile_dist_sq(a: &Json, b: &Json) -> f64 {
     let g = |v: &Json, k: &str| v.get(k).and_then(Json::as_f64).unwrap_or(f64::MAX / 4.0);
     let dx = g(a, "x") - g(b, "x");

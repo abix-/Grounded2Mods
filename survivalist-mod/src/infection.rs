@@ -37,6 +37,8 @@ use unityforge::bridge::MonoHandle;
 use unityforge::hook::{self, HOOK_REGISTRY, HookCtx};
 use unityforge::mono::{self, LogLevel, MonoObject};
 
+/// Install the game hooks that activate this system.
+/// Stays here because it patches Survivalist's exact Injury infection field and method.
 pub fn install() {
     match hook::patch_prefix_ctx("Character", "AddInjury", HookCtx::Args0, zero_injury_infection) {
         Ok(h) => {
@@ -55,6 +57,8 @@ pub fn install() {
     }
 }
 
+/// Remove infection chance from every new injury before the game applies it.
+/// Stays here because it patches Survivalist's exact Injury infection field and method.
 extern "C" fn zero_injury_infection(ctx: *const c_void) -> i32 {
     let handle = ctx as isize as i32;
     if handle != 0 {

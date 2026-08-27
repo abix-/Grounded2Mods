@@ -90,12 +90,14 @@ static LAST_TICK_BITS: AtomicU32 = AtomicU32::new(0);
 
 /// How many vendors are on the road, for the storyteller status
 /// readout.
+/// Stays here because it applies Survivalist's traveling vendors rules through the game's classes, fields, content, and actions.
 pub fn active_count() -> usize {
     MISSIONS.lock().len()
 }
 
 /// Advance in-flight vendors. The director launches them (via RULE);
 /// this walks them through arrival, the swap, and the trip home.
+/// Stays here because it applies Survivalist's traveling vendors rules through the game's classes, fields, content, and actions.
 pub fn tick(now: f32) {
     if mission::should_tick(now, MISSION_TICK_SECS, &LAST_TICK_BITS) {
         mission::advance_all(&MISSIONS, now, |m, e| {
@@ -121,6 +123,8 @@ struct Camp {
     eligible_source: bool,
 }
 
+/// Choose and start the next eligible traveling vendors event.
+/// Stays here because it applies Survivalist's traveling vendors rules through the game's classes, fields, content, and actions.
 fn run(now: f32) -> Result<Outcome, String> {
     if MISSIONS.lock().len() >= MAX_VENDORS {
         return Ok(Outcome::Passed);
@@ -176,6 +180,8 @@ fn run(now: f32) -> Result<Outcome, String> {
     result
 }
 
+/// Find a source and destination able to support traveling vendors.
+/// Stays here because it applies Survivalist's traveling vendors rules through the game's classes, fields, content, and actions.
 fn try_launch(camps: &[Camp], now: f32) -> Result<Outcome, String> {
     let sources: Vec<&Camp> = camps
         .iter()
@@ -214,6 +220,8 @@ fn try_launch(camps: &[Camp], now: f32) -> Result<Outcome, String> {
     launch(source, target, now)
 }
 
+/// Start traveling vendors using real survivors, supplies, and game movement.
+/// Stays here because it applies Survivalist's traveling vendors rules through the game's classes, fields, content, and actions.
 fn launch(source: &Camp, target: &Camp, now: f32) -> Result<Outcome, String> {
     with(source.handle, |com| {
         let Some((trader_h, trader_name)) = pick_free_member(com)? else {
@@ -280,6 +288,8 @@ fn launch(source: &Camp, target: &Camp, now: f32) -> Result<Outcome, String> {
     })
 }
 
+/// Choose a living, unassigned survivor to travel.
+/// Stays here because it applies Survivalist's traveling vendors rules through the game's classes, fields, content, and actions.
 fn pick_free_member(com: &MonoObject) -> Result<Option<(i32, String)>, String> {
     let leader_id = handle_of(&com.read_field("Leader")?)
         .map(|h| own(h).read_field("Id").ok().and_then(|v| v.as_i64()).unwrap_or(-1));
@@ -322,6 +332,8 @@ fn pick_free_member(com: &MonoObject) -> Result<Option<(i32, String)>, String> {
     Ok(None)
 }
 
+/// Check whether a camp already has a vendor on the road.
+/// Stays here because it applies Survivalist's traveling vendors rules through the game's classes, fields, content, and actions.
 fn mission_active_source(id: i64) -> bool {
     MISSIONS.lock().iter().any(|m| m.source_id == id)
 }
@@ -331,10 +343,14 @@ fn mission_active_source(id: i64) -> bool {
 impl mission::Mission for Mission {
     modforge::mission_accessors!();
 
+    /// Check whether the mission agent can continue.
+    /// Stays here because it applies Survivalist's traveling vendors rules through the game's classes, fields, content, and actions.
     fn is_agent_alive(&self) -> Result<bool, String> {
         is_npc_alive(self.trader_h)
     }
 
+    /// Resolve what happens when the mission reaches its destination.
+    /// Stays here because it applies Survivalist's traveling vendors rules through the game's classes, fields, content, and actions.
     fn on_going(&mut self, _now: f32) -> Result<Step, String> {
         let target_alive = with(self.target_h, |h| {
             h.invoke("HasAnyLivingNonZombieMembers", &json!([]))
@@ -375,6 +391,8 @@ impl mission::Mission for Mission {
         Ok(Step::Transition)
     }
 
+    /// Resolve what happens when the mission agent returns home.
+    /// Stays here because it applies Survivalist's traveling vendors rules through the game's classes, fields, content, and actions.
     fn on_returning(&mut self, _now: f32) -> Result<Step, String> {
         if dist_sq_to_building(self.trader_h, self.source_h)? > ARRIVE_DIST_SQ {
             return Ok(Step::Continue);
@@ -391,10 +409,14 @@ impl mission::Mission for Mission {
         Ok(Step::Complete)
     }
 
+    /// Release the mission squad and managed handles when the mission ends.
+    /// Stays here because it applies Survivalist's traveling vendors rules through the game's classes, fields, content, and actions.
     fn cleanup(self) {
         remove_squad_and_drop(self.source_h, self.squad_id, &[self.source_h, self.target_h, self.trader_h]);
     }
 
+    /// Describe the active work for status output.
+    /// Stays here because it applies Survivalist's traveling vendors rules through the game's classes, fields, content, and actions.
     fn label(&self) -> String {
         format!("{} to {}", self.source_name, self.target_name)
     }
@@ -404,6 +426,7 @@ impl mission::Mission for Mission {
 /// inventory into the target's first building that holds a
 /// container: the delivery half of the swap, on the game's own
 /// Take/Add calls.
+/// Stays here because it applies Survivalist's traveling vendors rules through the game's classes, fields, content, and actions.
 fn deposit_goods(trader_h: i32, target_h: i32, max: i64) -> Result<i64, String> {
     let store: Option<(i32, i32)> = with(target_h, |t| {
         let b_h = handle_of(&t.read_field("Buildings").ok()?)?;

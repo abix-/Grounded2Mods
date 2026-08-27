@@ -9,7 +9,8 @@
 
 use serde_json::{Value as Json, json};
 
-use modforge::mission::{self, Stage, Step};
+pub use modforge::mission::Stage;
+use modforge::mission::{self, Step};
 use unityforge::mono::{self, LogLevel, MonoObject};
 
 use crate::common::{
@@ -58,6 +59,7 @@ pub enum Launch {
 /// Load the payment and put the courier on the road.
 /// `debt_name` names what is being paid for in log lines ("the
 /// bounty on X", "the raiders at X's door").
+/// Stays here because it applies Survivalist's payment couriers rules through the game's classes, fields, content, and actions.
 pub fn launch(hirer_h: i32, hirer_name: &str, debt_name: &str, now: f32) -> Launch {
     // The player's gate.
     let mut player: Option<(i32, (i64, i64))> = None;
@@ -178,6 +180,7 @@ pub fn launch(hirer_h: i32, hirer_name: &str, debt_name: &str, now: f32) -> Laun
 
 /// One courier step. None = the run ended (paid, lost, or
 /// recalled) and every handle is released.
+/// Stays here because it applies Survivalist's payment couriers rules through the game's classes, fields, content, and actions.
 pub fn step(c: Courier, now: f32) -> Option<Courier> {
     mission::advance_owned(c, now, |_courier, error| {
         mono::log(
@@ -190,6 +193,8 @@ pub fn step(c: Courier, now: f32) -> Option<Courier> {
 impl mission::Mission for Courier {
     modforge::mission_accessors!();
 
+    /// Check whether the mission agent can continue.
+    /// Stays here because it applies Survivalist's payment couriers rules through the game's classes, fields, content, and actions.
     fn is_agent_alive(&self) -> Result<bool, String> {
         let alive = with(self.courier_h, |ch| {
             ch.invoke("get_AliveAndNotZombie", &json!([]))
@@ -212,6 +217,8 @@ impl mission::Mission for Courier {
         Ok(alive)
     }
 
+    /// Resolve what happens when the mission reaches its destination.
+    /// Stays here because it applies Survivalist's payment couriers rules through the game's classes, fields, content, and actions.
     fn on_going(&mut self, _now: f32) -> Result<Step, String> {
         let tile = with(self.courier_h, |ch| ch.invoke("get_Tile", &json!([])))?;
         let distance = with(self.player_h, |player| {
@@ -256,6 +263,8 @@ impl mission::Mission for Courier {
         Ok(Step::Transition)
     }
 
+    /// Resolve what happens when the mission agent returns home.
+    /// Stays here because it applies Survivalist's payment couriers rules through the game's classes, fields, content, and actions.
     fn on_returning(&mut self, _now: f32) -> Result<Step, String> {
         let tile = with(self.courier_h, |ch| ch.invoke("get_Tile", &json!([])))?;
         let distance = with(self.hirer_h, |community| {
@@ -277,6 +286,8 @@ impl mission::Mission for Courier {
         Ok(Step::Complete)
     }
 
+    /// Resolve a mission that ran out of time.
+    /// Stays here because it applies Survivalist's payment couriers rules through the game's classes, fields, content, and actions.
     fn on_timeout(&mut self, _now: f32) -> Result<(), String> {
         mono::log(
             LogLevel::Info,
@@ -288,16 +299,21 @@ impl mission::Mission for Courier {
         Ok(())
     }
 
+    /// Release the mission squad and managed handles when the mission ends.
+    /// Stays here because it applies Survivalist's payment couriers rules through the game's classes, fields, content, and actions.
     fn cleanup(self) {
         close(&self);
     }
 
+    /// Describe the active work for status output.
+    /// Stays here because it applies Survivalist's payment couriers rules through the game's classes, fields, content, and actions.
     fn label(&self) -> String {
         format!("payment from {}", self.hirer_name)
     }
 }
 
 /// Disband the courier squad and release every held handle.
+/// Stays here because it applies Survivalist's payment couriers rules through the game's classes, fields, content, and actions.
 fn close(c: &Courier) {
     with(c.hirer_h, |com| {
         if let Ok(sq) = com.invoke("GetSquad", &json!([c.squad_id])) {
@@ -313,6 +329,7 @@ fn close(c: &Courier) {
 
 /// The first free member: alive, human, conscious, unsquadded,
 /// not the leader (murder.rs's eligibility, no genome ranking).
+/// Stays here because it applies Survivalist's payment couriers rules through the game's classes, fields, content, and actions.
 fn pick_courier(com: &MonoObject) -> Result<Option<(i32, String)>, String> {
     let leader_id = handle_of(&com.read_field("Leader")?).map(|h| {
         own(h)
@@ -368,6 +385,7 @@ fn pick_courier(com: &MonoObject) -> Result<Option<(i32, String)>, String> {
 /// inventory into the player's first storage building: the
 /// payout, on the same Take/Add calls as everything else
 /// (trade.rs's delivery, filter inverted).
+/// Stays here because it applies Survivalist's payment couriers rules through the game's classes, fields, content, and actions.
 fn deliver_carried_payment(courier_h: i32, player_h: i32, max: i64) -> Result<i64, String> {
     // The receiving shelf: the player's first building with an
     // inventory container.

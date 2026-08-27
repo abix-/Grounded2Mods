@@ -45,6 +45,8 @@ static LAST_HOLDER_SCAN_BITS: std::sync::atomic::AtomicU32 = std::sync::atomic::
 /// The data-not-loaded line logs once per generation.
 static MISSING_LOGGED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
+/// Choose this save's unique-item ledger path.
+/// Stays here because it applies Survivalist's unique items rules through the game's classes, fields, content, and actions.
 fn store_path(seed: i64) -> Option<PathBuf> {
     let profile = std::env::var("USERPROFILE").ok()?;
     Some(
@@ -56,10 +58,13 @@ fn store_path(seed: i64) -> Option<PathBuf> {
 
 /// The entered list for this save, loaded once per generation
 /// (the same lazy load fills the holder cache).
+/// Stays here because it applies Survivalist's unique items rules through the game's classes, fields, content, and actions.
 fn entered(seed: i64) -> Vec<String> {
     ITEMS.entered(store_path(seed))
 }
 
+/// Warn once if unique-item history cannot be saved.
+/// Stays here because it applies Survivalist's unique items rules through the game's classes, fields, content, and actions.
 fn report_persist_result(written: bool) {
     if !written {
         mono::log(
@@ -70,6 +75,7 @@ fn report_persist_result(written: bool) {
 }
 
 /// Record an entry and write the sidecar.
+/// Stays here because it applies Survivalist's unique items rules through the game's classes, fields, content, and actions.
 fn mark_entered(seed: i64, name: &str) {
     report_persist_result(ITEMS.mark_entered(store_path(seed), name));
 }
@@ -79,6 +85,7 @@ fn mark_entered(seed: i64, name: &str) {
 /// Track who holds the storied rifle: a slow whole-map inventory
 /// walk; when the holder changes, the chronicle says so, and the
 /// player always has an address for the thing they want.
+/// Stays here because it applies Survivalist's unique items rules through the game's classes, fields, content, and actions.
 pub fn tick(now: f32) {
     let last = f32::from_bits(LAST_HOLDER_SCAN_BITS.load(std::sync::atomic::Ordering::Relaxed));
     if now - last < HOLDER_SCAN_PERIOD_SECS {
@@ -124,6 +131,7 @@ pub fn tick(now: f32) {
 
 /// Find the rifle: every community's members' hands, then their
 /// buildings' stores. Returns a plain-English address.
+/// Stays here because it applies Survivalist's unique items rules through the game's classes, fields, content, and actions.
 fn scan_holder() -> Result<Option<String>, String> {
     let mut found: Option<String> = None;
     for_each_community(|com| {
@@ -175,6 +183,8 @@ fn scan_holder() -> Result<Option<String>, String> {
     Ok(found)
 }
 
+/// Check an inventory for The Colonel's Rifle.
+/// Stays here because it applies Survivalist's unique items rules through the game's classes, fields, content, and actions.
 fn inventory_has_rifle(inv_h: i32) -> Result<bool, String> {
     let inv = own(inv_h);
     let n = inv.invoke("get_Count", &json!([]))?.as_i64().unwrap_or(0);
@@ -203,6 +213,7 @@ fn inventory_has_rifle(inv_h: i32) -> Result<bool, String> {
 /// The military remnants' unique: roll The Colonel's Rifle into
 /// the band's hands, once per save. Called by incursion.rs right
 /// after a military band spawns; best-effort.
+/// Stays here because it applies Survivalist's unique items rules through the game's classes, fields, content, and actions.
 pub fn maybe_enter_with_military(band_h: i32, now: f32) {
     let Ok(seed) = session_seed() else { return };
     if ITEMS.has_entered(store_path(seed), COLONELS_RIFLE) {
@@ -260,6 +271,7 @@ pub fn maybe_enter_with_military(band_h: i32, now: f32) {
 
 /// Spawn the unique into the hands of the band's leader (or its
 /// first living member). Returns the carrier's name.
+/// Stays here because it applies Survivalist's unique items rules through the game's classes, fields, content, and actions.
 fn give_to_band(band_h: i32, proto_h: i32) -> Result<Option<String>, String> {
     // Prefer the leader: the storied gun belongs to whoever leads.
     let mut carrier_h = with(band_h, |b| {
@@ -300,6 +312,8 @@ fn give_to_band(band_h: i32, proto_h: i32) -> Result<Option<String>, String> {
     Ok(Some(who))
 }
 
+/// Choose a living carrier when a military leader is unavailable.
+/// Stays here because it applies Survivalist's unique items rules through the game's classes, fields, content, and actions.
 fn first_living_member(band_h: i32) -> Result<Option<i32>, String> {
     let Some(m_h) = with(band_h, |b| b.read_field("Members").ok().as_ref().and_then(handle_of))
     else {
@@ -326,6 +340,8 @@ fn first_living_member(band_h: i32) -> Result<Option<i32>, String> {
 
 // ---- ops ---------------------------------------------------------------------
 
+/// Expose this system status and controls through the mod control endpoint.
+/// Stays here because it applies Survivalist's unique items rules through the game's classes, fields, content, and actions.
 pub fn register_ops() {
     OP_REGISTRY.register(OpDef::new(
         "unique_status",
@@ -335,6 +351,8 @@ pub fn register_ops() {
     ));
 }
 
+/// Report whether the unique entered and where it was last seen.
+/// Stays here because it applies Survivalist's unique items rules through the game's classes, fields, content, and actions.
 fn unique_status(_args: &Json) -> Result<Json, String> {
     on_main_thread(|| {
         let loaded = match find_prototype(COLONELS_RIFLE) {

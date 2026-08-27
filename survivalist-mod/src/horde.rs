@@ -87,6 +87,8 @@ struct Alpha {
     centre: (i64, i64),
 }
 
+/// Find the strongest camp currently eligible for adaptive zombie pressure.
+/// Stays here because Survivalist supplies live camp facts, zombie types, spawning, movement, and narration; Modforge owns adaptive-pressure planning.
 fn find_alpha() -> Result<Option<Alpha>, String> {
     let mut targets = Vec::new();
     for_each_community(|com| {
@@ -127,6 +129,8 @@ fn find_alpha() -> Result<Option<Alpha>, String> {
     }))
 }
 
+/// Plan and launch the next zombie pack against the leading camp.
+/// Stays here because Survivalist supplies live camp facts, zombie types, spawning, movement, and narration; Modforge owns adaptive-pressure planning.
 fn run(now: f32) -> Result<Outcome, String> {
     PRESSURE.prune(
         |pack_h| with(pack_h, any_member_alive),
@@ -220,11 +224,13 @@ fn run(now: f32) -> Result<Outcome, String> {
 
 /// The current alpha's name and members, for the storyteller status
 /// readout. None when no camp is over the pressure threshold.
+/// Stays here because Survivalist supplies live camp facts, zombie types, spawning, movement, and narration; Modforge owns adaptive-pressure planning.
 pub fn alpha_view() -> Result<Option<(String, i64)>, String> {
     Ok(find_alpha()?.map(|a| (a.name.clone(), a.members)))
 }
 
 /// How many of our packs are currently tracked as roaming.
+/// Stays here because Survivalist supplies live camp facts, zombie types, spawning, movement, and narration; Modforge owns adaptive-pressure planning.
 pub fn live_pack_count() -> usize {
     PRESSURE.len()
 }
@@ -235,6 +241,7 @@ pub fn live_pack_count() -> usize {
 /// the incursion loop's traveling mega-horde does not duplicate the
 /// bridge plumbing. Errs with "pre-v6" when the running shim cannot
 /// static-invoke (needs a game restart, same as the horde).
+/// Stays here because Survivalist supplies live camp facts, zombie types, spawning, movement, and narration; Modforge owns adaptive-pressure planning.
 pub fn spawn_traveling_pack(
     sx: i64,
     sy: i64,
@@ -272,6 +279,8 @@ pub fn spawn_traveling_pack(
     Ok(pointed)
 }
 
+/// Check whether a tracked zombie pack still has living members.
+/// Stays here because Survivalist supplies live camp facts, zombie types, spawning, movement, and narration; Modforge owns adaptive-pressure planning.
 fn any_member_alive(com: &MonoObject) -> bool {
     let Some(m_h) = com.read_field("Members").ok().as_ref().and_then(handle_of) else {
         return false;

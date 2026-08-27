@@ -34,6 +34,8 @@ use crate::common::{
     community_manager, ctype, display_name, for_each_community, handle_of, on_main_thread, own,
 };
 
+/// Install the game hooks that activate this system.
+/// Stays here because it applies Survivalist's faction war rules through the game's classes, fields, content, and actions.
 pub fn install() {
     match hook::patch_prefix_ctx("Community", "OnMemberDied", HookCtx::Arg0, on_member_died) {
         Ok(h) => {
@@ -52,6 +54,8 @@ pub fn install() {
     }
 }
 
+/// Expose this system status and controls through the mod control endpoint.
+/// Stays here because it applies Survivalist's faction war rules through the game's classes, fields, content, and actions.
 pub fn register_ops() {
     OP_REGISTRY.register_many([
         OpDef::new(
@@ -77,6 +81,8 @@ pub fn register_ops() {
 
 // ---- the generalized revenge trigger --------------------------------------
 
+/// Observe a death for revenge, bounty, and threat-contract consequences.
+/// Stays here because it applies Survivalist's faction war rules through the game's classes, fields, content, and actions.
 extern "C" fn on_member_died(ctx: *const c_void) -> i32 {
     let h = ctx as isize as i32;
     if h != 0 {
@@ -102,6 +108,8 @@ extern "C" fn on_member_died(ctx: *const c_void) -> i32 {
     0 // always run the original OnMemberDied
 }
 
+/// Let an AI camp retaliate when another faction kills one of its people.
+/// Stays here because it applies Survivalist's faction war rules through the game's classes, fields, content, and actions.
 fn try_ai_revenge(member: &MonoObject) -> Result<(), String> {
     let Some(killer_h) = handle_of(&member.read_field("Killer")?) else {
         return Ok(()); // no killer (disease, fall, script)
@@ -160,6 +168,8 @@ fn try_ai_revenge(member: &MonoObject) -> Result<(), String> {
 
 // ---- ops -------------------------------------------------------------------
 
+/// Report every living faction and its current enemies.
+/// Stays here because it applies Survivalist's faction war rules through the game's classes, fields, content, and actions.
 fn war_status(_args: &Json) -> Result<Json, String> {
     on_main_thread(|| {
         let mut out = Vec::new();
@@ -216,6 +226,8 @@ fn war_status(_args: &Json) -> Result<Json, String> {
     })
 }
 
+/// Start a real faction war and invasion between two named camps.
+/// Stays here because it applies Survivalist's faction war rules through the game's classes, fields, content, and actions.
 fn war_ignite(args: &Json) -> Result<Json, String> {
     let attacker = args
         .get("attacker")
@@ -268,6 +280,8 @@ fn war_ignite(args: &Json) -> Result<Json, String> {
     })
 }
 
+/// End hostility between two named camps through the game relationship system.
+/// Stays here because it applies Survivalist's faction war rules through the game's classes, fields, content, and actions.
 fn war_end(args: &Json) -> Result<Json, String> {
     let loser = args.get("loser").and_then(Json::as_str).ok_or("war_end: needs `loser`")?.to_string();
     let winner = args.get("winner").and_then(Json::as_str).ok_or("war_end: needs `winner`")?.to_string();

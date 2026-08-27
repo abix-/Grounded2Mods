@@ -70,6 +70,8 @@ enum ClearThreat {
 }
 
 impl Contract for ClearThreat {
+    /// Report which stage of this work contract is active.
+    /// Stays here because it applies Survivalist's threat contracts rules through the game's classes, fields, content, and actions.
     fn phase(&self) -> ContractPhase {
         match self {
             ClearThreat::Offered { .. } => ContractPhase::Offered,
@@ -78,6 +80,8 @@ impl Contract for ClearThreat {
         }
     }
 
+    /// Advance the active contract or mission and resolve its next outcome.
+    /// Stays here because it applies Survivalist's threat contracts rules through the game's classes, fields, content, and actions.
     fn advance(self, now: f32) -> Result<Option<Self>, String> {
         Ok(match self {
             ClearThreat::Offered {
@@ -129,6 +133,8 @@ impl Contract for ClearThreat {
         })
     }
 
+    /// Describe the active work for status output.
+    /// Stays here because it applies Survivalist's threat contracts rules through the game's classes, fields, content, and actions.
     fn label(&self) -> String {
         match self {
             ClearThreat::Offered { camp_name, .. } => {
@@ -149,6 +155,8 @@ static LAST_SCAN_BITS: AtomicU32 = AtomicU32::new(0);
 static LAST_TICK_BITS: AtomicU32 = AtomicU32::new(0);
 static LAST_NOW_BITS: AtomicU32 = AtomicU32::new(0);
 
+/// Advance this system when its scheduled game update is due.
+/// Stays here because it applies Survivalist's threat contracts rules through the game's classes, fields, content, and actions.
 pub fn tick(now: f32) {
     LAST_NOW_BITS.store(now.to_bits(), Ordering::Relaxed);
     if mission::should_tick(now, MISSION_TICK_SECS, &LAST_TICK_BITS) {
@@ -170,6 +178,8 @@ pub fn tick(now: f32) {
 
 // ---- the offer ---------------------------------------------------------------
 
+/// Find one live threat that can become a player job.
+/// Stays here because it applies Survivalist's threat contracts rules through the game's classes, fields, content, and actions.
 fn offer_scan(now: f32) -> Result<(), String> {
     board::sweep_orphans();
 
@@ -235,6 +245,7 @@ fn offer_scan(now: f32) -> Result<(), String> {
 /// Snapshot the camp's first valid threat and post the offer.
 /// Consumes camp_h (kept in the state on success, released on
 /// failure). Ok(false) = nothing posted.
+/// Stays here because it applies Survivalist's threat contracts rules through the game's classes, fields, content, and actions.
 fn post_offer(camp_h: i32, camp_name: String, now: f32) -> Result<bool, String> {
     // The first threat with a living, non-player membership. A
     // threat whose members include the PLAYER's people is the
@@ -341,6 +352,7 @@ fn post_offer(camp_h: i32, camp_name: String, now: f32) -> Result<bool, String> 
 /// counts threat members felled by the player's people while the
 /// offer stands. Resolution stays in the tick (the game dropping
 /// the Threat record), never here.
+/// Stays here because it applies Survivalist's threat contracts rules through the game's classes, fields, content, and actions.
 pub fn on_death(member: &MonoObject) {
     {
         let slot = STATE.lock();
@@ -378,6 +390,7 @@ pub fn on_death(member: &MonoObject) {
 
 /// One offered step: lapse, camp death, or the game dropping the
 /// Threat record (over: paid if the player drew blood).
+/// Stays here because it applies Survivalist's threat contracts rules through the game's classes, fields, content, and actions.
 #[allow(clippy::too_many_arguments)]
 fn advance_offered(
     camp_h: i32,
@@ -474,6 +487,8 @@ fn advance_offered(
 
 // ---- ops ---------------------------------------------------------------------
 
+/// Expose this system status and controls through the mod control endpoint.
+/// Stays here because it applies Survivalist's threat contracts rules through the game's classes, fields, content, and actions.
 pub fn register_ops() {
     OP_REGISTRY.register_many([
         OpDef::new(
@@ -491,6 +506,8 @@ pub fn register_ops() {
     ]);
 }
 
+/// Report open threat-clearing offers, kills, rewards, and couriers.
+/// Stays here because it applies Survivalist's threat contracts rules through the game's classes, fields, content, and actions.
 fn threat_status(_args: &Json) -> Result<Json, String> {
     let now = f32::from_bits(LAST_NOW_BITS.load(Ordering::Relaxed));
     let slot = STATE.lock();
@@ -528,6 +545,8 @@ fn threat_status(_args: &Json) -> Result<Json, String> {
     })
 }
 
+/// Force a threat-clearing offer for a named camp.
+/// Stays here because it applies Survivalist's threat contracts rules through the game's classes, fields, content, and actions.
 fn threat_post(args: &Json) -> Result<Json, String> {
     let hirer = args
         .get("hirer")

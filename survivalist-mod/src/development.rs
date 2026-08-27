@@ -62,6 +62,8 @@ const REPORTED_PROTOS: &[&str] = &[
     "Tent",
 ];
 
+/// Expose this system status and controls through the mod control endpoint.
+/// Stays here because it applies Survivalist's build recipes, camp rules, terrain fields, and construction calls.
 pub fn register_ops() {
     OP_REGISTRY.register_many([
         OpDef::new(
@@ -79,6 +81,8 @@ pub fn register_ops() {
     ]);
 }
 
+/// Open the game's story and prototype catalog.
+/// Stays here because it applies Survivalist's build recipes, camp rules, terrain fields, and construction calls.
 fn game_impl() -> Result<MonoObject, String> {
     use unityforge::mono::MonoType;
     MonoType::find("GameImpl")
@@ -89,6 +93,7 @@ fn game_impl() -> Result<MonoObject, String> {
 /// Resolve a PropPrototype by name and confirm it has a recipe
 /// (a prototype with no recipe can never be built, so growth must
 /// not queue it). Returns (proto_handle, has_recipe).
+/// Stays here because it applies Survivalist's build recipes, camp rules, terrain fields, and construction calls.
 fn resolve_buildable(gi: &MonoObject, name: &str) -> Result<Option<(i32, bool)>, String> {
     let proto = gi.invoke("FindPropPrototypeByName", &json!([name]))?;
     let Some(ph) = handle_of(&proto) else {
@@ -100,6 +105,8 @@ fn resolve_buildable(gi: &MonoObject, name: &str) -> Result<Option<(i32, bool)>,
     Ok(Some((ph, has_recipe)))
 }
 
+/// Find the center tile of a camp's claimed ground.
+/// Stays here because it applies Survivalist's build recipes, camp rules, terrain fields, and construction calls.
 fn base_centre(com: &MonoObject) -> Option<(i32, i32)> {
     let rect = com.read_field("BaseRect").ok()?;
     let o = rect.as_object()?;
@@ -111,6 +118,8 @@ fn base_centre(com: &MonoObject) -> Option<(i32, i32)> {
     Some((((minx + maxx) / 2) as i32, ((miny + maxy) / 2) as i32))
 }
 
+/// Report which camps can expand and what they are already building.
+/// Stays here because it applies Survivalist's build recipes, camp rules, terrain fields, and construction calls.
 fn dev_status(_args: &Json) -> Result<Json, String> {
     on_main_thread(|| {
         let gi = game_impl()?;
@@ -161,6 +170,8 @@ fn dev_status(_args: &Json) -> Result<Json, String> {
 /// f32 bits of the last scan's `now`; on_tick is main-thread only.
 static LAST_ANNEX_SCAN_BITS: AtomicU32 = AtomicU32::new(0);
 
+/// Advance this system when its scheduled game update is due.
+/// Stays here because it applies Survivalist's build recipes, camp rules, terrain fields, and construction calls.
 pub fn tick(now: f32) {
     let last = f32::from_bits(LAST_ANNEX_SCAN_BITS.load(Ordering::Relaxed));
     if now - last < ANNEX_SCAN_PERIOD_SECS {
@@ -184,6 +195,8 @@ struct Rect {
     maxy: i64,
 }
 
+/// Read a camp's claimed rectangle into the planner format.
+/// Stays here because it applies Survivalist's build recipes, camp rules, terrain fields, and construction calls.
 fn base_rect(com: &MonoObject) -> Option<Rect> {
     let rect = com.read_field("BaseRect").ok()?;
     let o = rect.as_object()?;
@@ -202,6 +215,8 @@ fn base_rect(com: &MonoObject) -> Option<Rect> {
     Some(r)
 }
 
+/// Open the loaded map terrain used to reject blocked construction.
+/// Stays here because it applies Survivalist's build recipes, camp rules, terrain fields, and construction calls.
 fn game_terrain() -> Result<MonoObject, String> {
     use unityforge::mono::MonoType;
     MonoType::find("GameTerrain")
@@ -209,6 +224,8 @@ fn game_terrain() -> Result<MonoObject, String> {
         .ok_or_else(|| "GameTerrain.Instance not found".to_string())
 }
 
+/// Ask the game whether settlers can build on a tile.
+/// Stays here because it applies Survivalist's build recipes, camp rules, terrain fields, and construction calls.
 fn is_impassable(terrain: &MonoObject, x: i64, y: i64) -> bool {
     terrain
         .invoke("IsImpassable", &json!([x, y, IMPASSABLE_FLAGS, null, null]))
@@ -228,6 +245,8 @@ struct AnnexPlan {
     new_rect: Rect,
 }
 
+/// Choose a buildable fenced extension beside a crowded camp.
+/// Extraction candidate: Modforge should own engine-independent rectangular annex planning; Survivalist should supply terrain passability and construction policy.
 fn plan_annex(base: &Rect, terrain: &MonoObject) -> Option<AnnexPlan> {
     // Try east, south, west, north.
     let sides: [(&str, i64, i64); 4] =
@@ -300,6 +319,8 @@ fn plan_annex(base: &Rect, terrain: &MonoObject) -> Option<AnnexPlan> {
     None
 }
 
+/// Find one healthy, crowded camp ready to plan its next annex.
+/// Stays here because it applies Survivalist's build recipes, camp rules, terrain fields, and construction calls.
 fn annex_scan() -> Result<(), String> {
     let gi = game_impl()?;
     let terrain = game_terrain()?;
@@ -415,6 +436,8 @@ fn annex_scan() -> Result<(), String> {
     Ok(())
 }
 
+/// Queue one real construction job near a named camp for live verification.
+/// Stays here because it applies Survivalist's build recipes, camp rules, terrain fields, and construction calls.
 fn dev_place(args: &Json) -> Result<Json, String> {
     let community = args
         .get("community")

@@ -73,6 +73,8 @@ enum Bounty {
 }
 
 impl Contract for Bounty {
+    /// Report which stage of this work contract is active.
+    /// Stays here because it applies Survivalist's bounty contracts rules through the game's classes, fields, content, and actions.
     fn phase(&self) -> ContractPhase {
         match self {
             Bounty::Offered { .. } => ContractPhase::Offered,
@@ -81,6 +83,8 @@ impl Contract for Bounty {
         }
     }
 
+    /// Advance the active contract or mission and resolve its next outcome.
+    /// Stays here because it applies Survivalist's bounty contracts rules through the game's classes, fields, content, and actions.
     fn advance(self, now: f32) -> Result<Option<Self>, String> {
         Ok(match self {
             Bounty::Offered {
@@ -147,6 +151,8 @@ impl Contract for Bounty {
         })
     }
 
+    /// Describe the active work for status output.
+    /// Stays here because it applies Survivalist's bounty contracts rules through the game's classes, fields, content, and actions.
     fn label(&self) -> String {
         match self {
             Bounty::Offered { mark_name, .. } => format!("bounty on {mark_name}"),
@@ -162,6 +168,8 @@ static LAST_TICK_BITS: AtomicU32 = AtomicU32::new(0);
 /// Game clock as of the last tick, for ops that need "now".
 static LAST_NOW_BITS: AtomicU32 = AtomicU32::new(0);
 
+/// Advance this system when its scheduled game update is due.
+/// Stays here because it applies Survivalist's bounty contracts rules through the game's classes, fields, content, and actions.
 pub fn tick(now: f32) {
     LAST_NOW_BITS.store(now.to_bits(), Ordering::Relaxed);
     if mission::should_tick(now, MISSION_TICK_SECS, &LAST_TICK_BITS) {
@@ -183,6 +191,8 @@ pub fn tick(now: f32) {
 
 // ---- the offer ---------------------------------------------------------------
 
+/// Find one live ecosystem event that can become a bounty offers.
+/// Stays here because it applies Survivalist's bounty contracts rules through the game's classes, fields, content, and actions.
 fn offer_scan(now: f32) -> Result<(), String> {
     // Board entries from a prior generation or a loaded save have
     // no owner in this process; clear them before posting fresh.
@@ -260,6 +270,7 @@ fn offer_scan(now: f32) -> Result<(), String> {
 /// Turn a hirer + enemy pair into a standing offer on the enemy's
 /// leader. Consumes both handles (keeps hirer + mark, drops the
 /// enemy community).
+/// Stays here because it applies Survivalist's bounty contracts rules through the game's classes, fields, content, and actions.
 fn post_offer(hirer_h: i32, hirer_name: String, enemy_h: i32, now: f32) -> Result<(), String> {
     let enemy = own(enemy_h);
     let enemy_name = display_name(&enemy);
@@ -336,6 +347,7 @@ fn post_offer(hirer_h: i32, hirer_name: String, enemy_h: i32, now: f32) -> Resul
 /// Cheap gate first: no open offer means no bridge calls. Never
 /// launches anything here; the courier launch belongs to the
 /// tick, outside the game's death processing.
+/// Stays here because it applies Survivalist's bounty contracts rules through the game's classes, fields, content, and actions.
 pub fn on_death(member: &MonoObject) {
     {
         let slot = BOUNTY.lock();
@@ -390,6 +402,7 @@ pub fn on_death(member: &MonoObject) {
 }
 
 /// True = the offer is void; clean up.
+/// Stays here because it applies Survivalist's bounty contracts rules through the game's classes, fields, content, and actions.
 fn advance_offered(
     hirer_h: i32,
     hirer_name: &str,
@@ -450,6 +463,8 @@ fn advance_offered(
 
 // ---- ops ---------------------------------------------------------------------
 
+/// Expose this system status and controls through the mod control endpoint.
+/// Stays here because it applies Survivalist's bounty contracts rules through the game's classes, fields, content, and actions.
 pub fn register_ops() {
     OP_REGISTRY.register_many([
         OpDef::new(
@@ -467,6 +482,8 @@ pub fn register_ops() {
     ]);
 }
 
+/// Report open bounties, their phases, marks, rewards, and couriers.
+/// Stays here because it applies Survivalist's bounty contracts rules through the game's classes, fields, content, and actions.
 fn bounty_status(_args: &Json) -> Result<Json, String> {
     let now = f32::from_bits(LAST_NOW_BITS.load(Ordering::Relaxed));
     let slot = BOUNTY.lock();
@@ -503,6 +520,8 @@ fn bounty_status(_args: &Json) -> Result<Json, String> {
     })
 }
 
+/// Force a bounty between named camps for live verification.
+/// Stays here because it applies Survivalist's bounty contracts rules through the game's classes, fields, content, and actions.
 fn bounty_post(args: &Json) -> Result<Json, String> {
     let hirer = args
         .get("hirer")

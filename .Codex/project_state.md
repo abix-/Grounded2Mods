@@ -2,7 +2,7 @@
 
 ## Current focus
 
-Extract the remaining engine-independent and Unreal-specific systems from MISERY into Modforge and Ueforge without changing game behavior.
+Audit every Survivalist source function and extract every engine-independent or Unity-specific mechanism into Modforge or Unityforge without changing game behavior.
 
 ## Design goals
 
@@ -32,8 +32,18 @@ Extract the remaining engine-independent and Unreal-specific systems from MISERY
 - Live non-CDO and transient-object lookup, checked raw UFunction parameter calls, zeroed parameter allocation, and game-thread live-object hook installation and completed-hook teardown belong to Ueforge.
 - MISERY retains its autoload save checks, Blueprint names, parameter layouts, notice filtering, re-entry guard, dismissal function, diagnostics, and logs.
 - The root README is a concise workspace map with capability tables; detailed framework and decompilation material stays in the owning crate documentation.
+- Managed handle ownership, bridge-value decoding, managed-list traversal, Unity coordinate decoding, synchronous main-thread dispatch, and Rust/C# pointer and string plumbing belong to Unityforge.
+- Survivalist retains its game class and field names, object selection, gameplay policy, Unity actions, content, logging, and presentation.
+- Rectangular annex geometry and deterministic identity-based selection belong to Modforge; Survivalist retains construction and encounter policy plus game observation and execution.
 
 ## Last session summary
+
+- Documented every function in `survivalist-mod/src` with a concise purpose and an explicit ownership boundary.
+- Marked eleven functions as concrete extraction evidence instead of defending engine-independent or Unity-specific mechanics as game code.
+- Recorded five coherent lifts in `docs/todo.md`: managed-object and collection helpers, existing main-thread dispatch adoption, Rust/C# boundary helpers, annex planning, and deterministic identity selection.
+- Re-exported the shared mission stage from the courier module so existing bounty and threat status code can name it after the earlier mission extraction.
+- Added no tests and made no behavior changes.
+- Verified `k3sc cargo-lock check -p survivalist-mod` and `k3sc cargo-lock test -p survivalist-mod --lib`; both pass with the two existing unused genome-helper warnings and the library target has zero tests.
 
 - Added the `unique` property to `ItemDef`.
 - Extracted the existing entered set, holder ledger, schema version, lazy JSON restore, and temporary-file-then-rename persistence into `modforge::item::ItemLedger`.
@@ -100,8 +110,8 @@ Extract the remaining engine-independent and Unreal-specific systems from MISERY
 
 ## Next steps
 
-- No remaining MISERY extraction row is recorded. Choose the next existing todo item before expanding scope.
+- Start with the Unityforge managed-object and collection helpers because they remove repeated bridge boilerplate across nearly every Survivalist system.
 
 ## Open questions
 
-- None for the completed item, upgrade, mission, ballot, reinforcement, settlement survival, adaptive-pressure, and MISERY Unreal-helper extractions.
+- None for the Survivalist source audit. The extraction order is recorded in `docs/todo.md`.

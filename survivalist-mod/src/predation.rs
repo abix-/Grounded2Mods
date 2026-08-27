@@ -43,6 +43,7 @@ const CONSUME_AT_OR_BELOW: i64 = 2;
 
 /// Called from the survival tick (main thread already). Finds one
 /// conquest-ready war and resolves it by predation.
+/// Stays here because it applies Survivalist's conquest predation rules through the game's classes, fields, content, and actions.
 pub fn check_conquests() -> Result<(), String> {
     // Find the first winner whose invasion target is beaten.
     let mut winner_h: Option<i32> = None;
@@ -99,6 +100,8 @@ pub fn check_conquests() -> Result<(), String> {
     consume(own(wh), own(lh))
 }
 
+/// Let a victorious camp absorb a defeated camp's people, stores, and memory.
+/// Stays here because it applies Survivalist's conquest predation rules through the game's classes, fields, content, and actions.
 fn consume(winner: MonoObject, loser: MonoObject) -> Result<(), String> {
     let winner_name = display_name(&winner);
     let loser_name = display_name(&loser);

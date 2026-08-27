@@ -21,6 +21,7 @@ use unityforge::mono::MonoType;
 
 /// Post one line to the in-game status bar. Best-effort: at the
 /// menu (or if the HUD is not up) the word simply does not spread.
+/// Stays here because it targets Survivalist's status-bar class and presentation behavior.
 pub fn post(msg: &str) {
     let Some(hud) = MonoType::find("HudBehaviour").and_then(|t| t.singleton_instance()) else {
         return;

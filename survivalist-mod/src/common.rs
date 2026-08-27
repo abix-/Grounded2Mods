@@ -10,16 +10,20 @@ use unityforge::mono::{self, LogLevel, MonoObject, MonoType};
 /// SAFETY: caller asserts the handle came fresh out of a bridge
 /// response (read_field / invoke / ctx dispatcher) and is not
 /// wrapped anywhere else.
+/// Extraction candidate: Unityforge should own safe wrappers for newly returned Mono handles; Survivalist should only decide which game objects to retain.
 pub fn own(h: i32) -> MonoObject {
     unsafe { MonoObject::from_handle(MonoHandle(h)) }
 }
 
+/// Read a managed-object handle from a Unity bridge response.
+/// Extraction candidate: Unityforge should decode bridge handles from JSON; Survivalist should only consume the resulting managed objects.
 pub fn handle_of(v: &Json) -> Option<i32> {
     v.get("handle").and_then(Json::as_i64).map(|h| h as i32)
 }
 
 /// The running world's seed (Session.RandomSeed, persisted in the
 /// save): the identity key for the genome memory sidecar.
+/// Stays here because it uses Survivalist's exact community, squad, inventory, and object conventions.
 pub fn session_seed() -> Result<i64, String> {
     let session = MonoType::find("Session")
         .and_then(|t| t.singleton_instance())
@@ -30,6 +34,8 @@ pub fn session_seed() -> Result<i64, String> {
         .ok_or_else(|| "RandomSeed is not a number".into())
 }
 
+/// Open the loaded world's community manager.
+/// Stays here because it uses Survivalist's exact community, squad, inventory, and object conventions.
 pub fn community_manager() -> Result<MonoObject, String> {
     let session = MonoType::find("Session")
         .and_then(|t| t.singleton_instance())
@@ -43,6 +49,7 @@ pub fn community_manager() -> Result<MonoObject, String> {
 /// dropping it releases the handle; `std::mem::forget` keeps the
 /// handle alive for use after the loop. Returns true to keep
 /// iterating.
+/// Stays here because it uses Survivalist's exact community, squad, inventory, and object conventions.
 pub fn for_each_community(
     mut f: impl FnMut(MonoObject) -> Result<bool, String>,
 ) -> Result<(), String> {
@@ -64,6 +71,8 @@ pub fn for_each_community(
     Ok(())
 }
 
+/// Read a camp's player-visible name.
+/// Stays here because it uses Survivalist's exact community, squad, inventory, and object conventions.
 pub fn display_name(com: &MonoObject) -> String {
     com.invoke("GetDisplayNameString", &json!([]))
         .ok()
@@ -71,12 +80,16 @@ pub fn display_name(com: &MonoObject) -> String {
         .unwrap_or_else(|| "<unnamed>".to_string())
 }
 
+/// Read the game type that determines a camp's behavior.
+/// Stays here because it uses Survivalist's exact community, squad, inventory, and object conventions.
 pub fn ctype(com: &MonoObject) -> String {
     com.read_field("CommunityType")
         .map(|v| v.as_str().unwrap_or("?").to_string())
         .unwrap_or_else(|_| "?".to_string())
 }
 
+/// Count the entries in a managed list field without leaking its handle.
+/// Extraction candidate: Unityforge should provide managed-list field access; Survivalist should only name the game fields it reads.
 pub fn list_len(owner: &MonoObject, field: &str) -> i64 {
     match owner.read_field(field).ok().as_ref().and_then(handle_of) {
         Some(h) => own(h)
@@ -91,6 +104,7 @@ pub fn list_len(owner: &MonoObject, field: &str) -> i64 {
 /// Read an (x, y) pair from either the shim's struct-object form
 /// (`{"x": .., "y": ..}`, the current bridge) or the legacy
 /// ToString form ("(x, y)").
+/// Extraction candidate: Unityforge should decode Unity coordinate values returned by the bridge; Survivalist should only choose which game positions matter.
 pub fn parse_xy(v: &Json) -> Option<(f32, f32)> {
     if let Some(o) = v.as_object() {
         let g = |k: &str| o.get(k).and_then(Json::as_f64).map(|f| f as f32);
@@ -106,6 +120,8 @@ pub fn parse_xy(v: &Json) -> Option<(f32, f32)> {
     Some((x, y))
 }
 
+/// Read an object's world or tile position.
+/// Stays here because it uses Survivalist's exact community, squad, inventory, and object conventions.
 pub fn pos_of(obj: &MonoObject) -> Option<(f32, f32)> {
     if let Ok(v) = obj.read_field("PosXZ") {
         if let Some(p) = parse_xy(&v) {
@@ -116,6 +132,7 @@ pub fn pos_of(obj: &MonoObject) -> Option<(f32, f32)> {
 }
 
 /// Run `f` against a handle without releasing it.
+/// Extraction candidate: Unityforge should own temporary borrowed access to managed handles; Survivalist should only supply game operations.
 pub fn with<R>(h: i32, f: impl FnOnce(&MonoObject) -> R) -> R {
     let o = own(h);
     let r = f(&o);
@@ -128,6 +145,7 @@ pub fn with<R>(h: i32, f: impl FnOnce(&MonoObject) -> R) -> R {
 /// (incursion::spawn_band_at_edge) otherwise just wanders on its own
 /// SurvivorGoal; this points it at the camp or husk it is bound for.
 /// Returns the squad id.
+/// Stays here because it uses Survivalist's exact community, squad, inventory, and object conventions.
 pub fn march_band_to(com_h: i32, tile: (i64, i64), behaviour: &str) -> Result<i64, String> {
     let goal = json!({"x": tile.0, "y": tile.1});
     with(com_h, |com| -> Result<i64, String> {
@@ -166,6 +184,7 @@ pub fn march_band_to(com_h: i32, tile: (i64, i64), behaviour: &str) -> Result<i6
 }
 
 /// Centre of a community's base rect, in tile coordinates.
+/// Stays here because it uses Survivalist's exact community, squad, inventory, and object conventions.
 pub fn base_centre(com: &MonoObject) -> Option<(i64, i64)> {
     let rect = com.read_field("BaseRect").ok()?;
     let o = rect.as_object()?;
@@ -189,6 +208,8 @@ pub enum GoodsFilter {
 }
 
 impl GoodsFilter {
+    /// Decide whether stored goods satisfy the requested food filter.
+    /// Stays here because it uses Survivalist's exact community, squad, inventory, and object conventions.
     pub fn matches(self, item: &MonoObject) -> bool {
         match self {
             GoodsFilter::Any => true,
@@ -212,6 +233,7 @@ impl GoodsFilter {
 /// live in the C# shim beside the other track knobs
 /// (Upgrades.cs SecureBlocks); a shim without the entry fails
 /// open (the locks do not hold).
+/// Stays here because it uses Survivalist's exact community, squad, inventory, and object conventions.
 fn secure_blocks(building: &MonoObject) -> bool {
     let Some(id) = building.read_field("Id").ok().and_then(|v| v.as_i64()) else {
         return false;
@@ -243,6 +265,7 @@ fn secure_blocks(building: &MonoObject) -> bool {
 /// upgrades) are tested and a held lock keeps that whole
 /// building's stores. Willing loads (a camp loading its own
 /// wares, paying for goods or work) never test locks.
+/// Stays here because it uses Survivalist's exact community, squad, inventory, and object conventions.
 pub fn carry_off_stored_goods(
     from: &MonoObject,
     carriers: &[i32],
@@ -349,6 +372,7 @@ pub fn carry_off_stored_goods(
 /// Count a community's stored stacks matching the filter, up to
 /// `cap` (early exit; cap 1 is a cheap "has any" test). The work
 /// pillar's "can they pay" and "what does it pay" reads.
+/// Stays here because it uses Survivalist's exact community, squad, inventory, and object conventions.
 pub fn count_stored_goods(com: &MonoObject, filter: GoodsFilter, cap: i64) -> i64 {
     let Some(b_h) = com.read_field("Buildings").ok().as_ref().and_then(handle_of) else {
         return 0;
@@ -408,6 +432,7 @@ pub fn count_stored_goods(com: &MonoObject, filter: GoodsFilter, cap: i64) -> i6
 /// migration). A hot reload empties the Rust-side mission lists,
 /// so at init any such squad is an orphan; disbanding it hands the
 /// member back to normal settlement AI, which walks them home.
+/// Stays here because it uses Survivalist's exact community, squad, inventory, and object conventions.
 pub fn sweep_orphan_trade_squads() {
     let mut removed = 0u32;
     let _ = for_each_community(|com| {
@@ -455,12 +480,14 @@ pub fn sweep_orphan_trade_squads() {
 // ---- mission helpers --------------------------------------------------------
 
 /// True when the character at `h` is alive and not a zombie.
+/// Stays here because it uses Survivalist's exact community, squad, inventory, and object conventions.
 pub fn is_npc_alive(h: i32) -> Result<bool, String> {
     Ok(with(h, |t| t.invoke("get_AliveAndNotZombie", &json!([])))? == json!(true))
 }
 
 /// Squared tile distance from the character at `agent_h` to the
 /// nearest building of the community at `com_h`.
+/// Stays here because it uses Survivalist's exact community, squad, inventory, and object conventions.
 pub fn dist_sq_to_building(agent_h: i32, com_h: i32) -> Result<f64, String> {
     let tile = with(agent_h, |t| t.invoke("get_Tile", &json!([])))?;
     Ok(with(com_h, |c| {
@@ -471,6 +498,7 @@ pub fn dist_sq_to_building(agent_h: i32, com_h: i32) -> Result<f64, String> {
 }
 
 /// Retarget an existing squad toward `home`.
+/// Stays here because it uses Survivalist's exact community, squad, inventory, and object conventions.
 pub fn send_squad_home(com_h: i32, squad_id: i64, home: (i64, i64)) -> Result<(), String> {
     let dest = json!({"x": home.0, "y": home.1});
     with(com_h, |com| -> Result<(), String> {
@@ -490,6 +518,7 @@ pub fn send_squad_home(com_h: i32, squad_id: i64, home: (i64, i64)) -> Result<()
 
 /// Remove a squad from the community and release a list of owned
 /// handles.
+/// Stays here because it uses Survivalist's exact community, squad, inventory, and object conventions.
 pub fn remove_squad_and_drop(com_h: i32, squad_id: i64, handles: &[i32]) {
     with(com_h, |com| {
         if let Ok(sq) = com.invoke("GetSquad", &json!([squad_id])) {
@@ -505,6 +534,7 @@ pub fn remove_squad_and_drop(com_h: i32, squad_id: i64, handles: &[i32]) {
 
 /// Run `f` on the Unity main thread and wait for its result
 /// (same oneshot shape as unityforge's write_field op).
+/// Extraction candidate: Unityforge should own synchronous main-thread dispatch and timeout handling; Survivalist should only supply the game operation.
 pub fn on_main_thread<F>(f: F) -> Result<Json, String>
 where
     F: FnOnce() -> Result<Json, String> + Send + 'static,

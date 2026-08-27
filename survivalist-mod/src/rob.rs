@@ -82,6 +82,7 @@ static LAST_SCAN_BITS: AtomicU32 = AtomicU32::new(0);
 static ROB_PLAYER_LAST_BITS: AtomicU32 = AtomicU32::new(0);
 
 /// The active robbery a faction is running, for survival_status.
+/// Stays here because it applies Survivalist's robbery missions rules through the game's classes, fields, content, and actions.
 pub fn active_target(faction_id: i64) -> Option<Json> {
     MISSIONS
         .lock()
@@ -95,6 +96,8 @@ pub fn active_target(faction_id: i64) -> Option<Json> {
         })
 }
 
+/// Advance this system when its scheduled game update is due.
+/// Stays here because it applies Survivalist's robbery missions rules through the game's classes, fields, content, and actions.
 pub fn tick(now: f32) {
     mission::advance_one_stage_all(&MISSIONS, now, |mission, error| {
         mono::log(
@@ -119,6 +122,8 @@ pub fn tick(now: f32) {
 
 // ---- launching ---------------------------------------------------------------
 
+/// Find one faction ready to start robbery missions.
+/// Stays here because it applies Survivalist's robbery missions rules through the game's classes, fields, content, and actions.
 fn launch_scan(now: f32) -> Result<(), String> {
     // The robber: a peaceful-but-menacing camp whose franchise
     // votes it. One robbery in flight per camp, one launch per
@@ -398,6 +403,8 @@ fn launch_scan(now: f32) -> Result<(), String> {
     Ok(())
 }
 
+/// Choose the willing survivor best suited to lead robbery missions.
+/// Stays here because it applies Survivalist's robbery missions rules through the game's classes, fields, content, and actions.
 fn pick_lead(
     com: &unityforge::mono::MonoObject,
     camp_ctype: &str,
@@ -461,6 +468,8 @@ fn pick_lead(
 // ---- judging -----------------------------------------------------------------
 
 impl mission::OneStageMission for Mission {
+    /// Advance the active contract or mission and resolve its next outcome.
+    /// Stays here because it applies Survivalist's robbery missions rules through the game's classes, fields, content, and actions.
     fn advance(&mut self, now: f32) -> Result<OneStageStep, String> {
         if now < self.eval_at {
             return Ok(OneStageStep::Continue);
@@ -511,12 +520,16 @@ impl mission::OneStageMission for Mission {
         Ok(OneStageStep::Complete)
     }
 
+    /// Release the mission squad and managed handles when the mission ends.
+    /// Stays here because it applies Survivalist's robbery missions rules through the game's classes, fields, content, and actions.
     fn cleanup(self) {
         drop(own(self.robber_h));
         drop(own(self.lead_h));
         drop(own(self.proto_h));
     }
 
+    /// Describe the active work for status output.
+    /// Stays here because it applies Survivalist's robbery missions rules through the game's classes, fields, content, and actions.
     fn label(&self) -> String {
         format!("{} robbing {}", self.robber_name, self.victim_name)
     }

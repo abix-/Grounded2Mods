@@ -89,6 +89,7 @@ static MISSIONS: Mutex<Vec<Mission>> = Mutex::new(Vec::new());
 static LAST_SCAN_BITS: AtomicU32 = AtomicU32::new(0);
 
 /// The active scavenge a faction is running, for survival_status.
+/// Stays here because it applies Survivalist's scavenging missions rules through the game's classes, fields, content, and actions.
 pub fn active_target(faction_id: i64) -> Option<Json> {
     MISSIONS
         .lock()
@@ -97,6 +98,8 @@ pub fn active_target(faction_id: i64) -> Option<Json> {
         .map(|m| json!({ "prop": m.prop_name, "carriers": m.carriers.len() }))
 }
 
+/// Advance this system when its scheduled game update is due.
+/// Stays here because it applies Survivalist's scavenging missions rules through the game's classes, fields, content, and actions.
 pub fn tick(now: f32) {
     mission::advance_all(&MISSIONS, now, |m, e| {
         mono::log(
@@ -134,6 +137,8 @@ struct Winner {
     candidates: Vec<(i64, f64)>,
 }
 
+/// Find one faction ready to start scavenging missions.
+/// Stays here because it applies Survivalist's scavenging missions rules through the game's classes, fields, content, and actions.
 fn launch_scan(now: f32) -> Result<(), String> {
     // The scavenger: an expansionist camp whose franchise votes it.
     // One party per camp (the active list), one launch per scan.
@@ -325,6 +330,7 @@ fn launch_scan(now: f32) -> Result<(), String> {
 /// The nearest ownerless building holding loot: (handle, centre
 /// tile, name, stack count). Walks the game's own public props list
 /// (PropManager.AllProps), the same list its scavenging brain uses.
+/// Stays here because it applies Survivalist's scavenging missions rules through the game's classes, fields, content, and actions.
 fn find_target(home: (i64, i64)) -> Result<Option<(i32, (f64, f64), String, i64)>, String> {
     let pm = prop_manager()?;
     let list_h = handle_of(&pm.read_field("AllProps")?).ok_or("AllProps is null")?;
@@ -396,6 +402,8 @@ fn find_target(home: (i64, i64)) -> Result<Option<(i32, (f64, f64), String, i64)
     Ok(best.map(|(h, tile, name, items, _)| (h, tile, name, items)))
 }
 
+/// Open the game's complete prop list to find abandoned loot.
+/// Stays here because it applies Survivalist's scavenging missions rules through the game's classes, fields, content, and actions.
 fn prop_manager() -> Result<MonoObject, String> {
     let session = MonoType::find("Session")
         .and_then(|t| t.singleton_instance())
@@ -408,6 +416,7 @@ fn prop_manager() -> Result<MonoObject, String> {
 /// Gather live handles for the chosen carrier ids, re-checking each
 /// is still alive and free (state can move between the vote and the
 /// staffing). Forgets the kept handles so the mission owns them.
+/// Stays here because it applies Survivalist's scavenging missions rules through the game's classes, fields, content, and actions.
 fn gather_members(com: &MonoObject, ids: &[i64]) -> Result<Vec<i32>, String> {
     let mut out = Vec::new();
     let Some(m_h) = handle_of(&com.read_field("Members")?) else {
@@ -446,6 +455,8 @@ fn gather_members(com: &MonoObject, ids: &[i64]) -> Result<Vec<i32>, String> {
 impl mission::Mission for Mission {
     modforge::mission_accessors!();
 
+    /// Check whether the mission agent can continue.
+    /// Stays here because it applies Survivalist's scavenging missions rules through the game's classes, fields, content, and actions.
     fn is_agent_alive(&self) -> Result<bool, String> {
         let any_alive = self
             .carriers
@@ -464,6 +475,8 @@ impl mission::Mission for Mission {
         Ok(any_alive)
     }
 
+    /// Resolve what happens when the mission reaches its destination.
+    /// Stays here because it applies Survivalist's scavenging missions rules through the game's classes, fields, content, and actions.
     fn on_going(&mut self, _now: f32) -> Result<Step, String> {
         let lead = self
             .carriers
@@ -489,6 +502,8 @@ impl mission::Mission for Mission {
         Ok(Step::Transition)
     }
 
+    /// Resolve what happens when the mission agent returns home.
+    /// Stays here because it applies Survivalist's scavenging missions rules through the game's classes, fields, content, and actions.
     fn on_returning(&mut self, _now: f32) -> Result<Step, String> {
         let lead = self
             .carriers
@@ -525,17 +540,23 @@ impl mission::Mission for Mission {
         Ok(Step::Complete)
     }
 
+    /// Release the mission squad and managed handles when the mission ends.
+    /// Stays here because it applies Survivalist's scavenging missions rules through the game's classes, fields, content, and actions.
     fn cleanup(self) {
         let mut handles = vec![self.scav_h, self.prop_h];
         handles.extend(&self.carriers);
         remove_squad_and_drop(self.scav_h, self.squad_id, &handles);
     }
 
+    /// Describe the active work for status output.
+    /// Stays here because it applies Survivalist's scavenging missions rules through the game's classes, fields, content, and actions.
     fn label(&self) -> String {
         format!("{} scavenging {}", self.scav_name, self.prop_name)
     }
 }
 
+/// Teach the scavengers and their faction from the mission outcome.
+/// Stays here because it applies Survivalist's scavenging missions rules through the game's classes, fields, content, and actions.
 fn reinforce_all(m: &Mission, up: bool, magnitude: f64) {
     genome::reinforce_collective(
         m.scav_id,
@@ -549,6 +570,7 @@ fn reinforce_all(m: &Mission, up: bool, magnitude: f64) {
 /// Move up to the haul budget from the prop's inventory into the
 /// carriers' own inventories, each hauling up to STACKS_PER_CARRIER.
 /// The base's organizer stows the carried goods once they are home.
+/// Stays here because it applies Survivalist's scavenging missions rules through the game's classes, fields, content, and actions.
 fn take_loot(m: &Mission) -> Result<i64, String> {
     let Some(inv_h) = with(m.prop_h, |p| {
         handle_of(&p.read_field("Inventory").unwrap_or(Json::Null))

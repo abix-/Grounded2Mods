@@ -148,6 +148,7 @@ struct Experiment {
 /// conquest). Each voter votes yes if `score(their genome)`
 /// clears `floor`: the hunger raid scores raw aggression, the
 /// ambition war the aggression/expansionism blend.
+/// Stays here because it applies Survivalist's settlement survival rules through the game's classes, fields, content, and actions.
 fn tally_vote(
     com: &MonoObject,
     ctype: &str,
@@ -201,6 +202,8 @@ struct Survival {
     rung: Rung,
 }
 
+/// Classify one camp's hunger, losses, and danger into a survival rung.
+/// Stays here because it applies Survivalist's settlement survival rules through the game's classes, fields, content, and actions.
 fn assess(com: &MonoObject) -> Result<Survival, String> {
     let nutrition = com
         .invoke("CalcCommunityNutritionLevel", &json!([0.0]))?
@@ -232,6 +235,8 @@ fn assess(com: &MonoObject) -> Result<Survival, String> {
     })
 }
 
+/// Expose this system status and controls through the mod control endpoint.
+/// Stays here because it applies Survivalist's settlement survival rules through the game's classes, fields, content, and actions.
 pub fn register_ops() {
     OP_REGISTRY.register_many([
         OpDef::new(
@@ -249,6 +254,8 @@ pub fn register_ops() {
     ]);
 }
 
+/// Report every faction personality and current vote eligibility.
+/// Stays here because it applies Survivalist's settlement survival rules through the game's classes, fields, content, and actions.
 fn genome_status(_args: &Json) -> Result<Json, String> {
     // Name each id via a live pass; genomes are held Rust-side.
     let names: std::collections::HashMap<i64, (String, String)> = on_main_thread(|| {
@@ -287,6 +294,8 @@ fn genome_status(_args: &Json) -> Result<Json, String> {
 
 static LAST_SCAN_BITS: AtomicU32 = AtomicU32::new(0);
 
+/// Advance this system when its scheduled game update is due.
+/// Stays here because it applies Survivalist's settlement survival rules through the game's classes, fields, content, and actions.
 pub fn tick(now: f32) {
     let last = f32::from_bits(LAST_SCAN_BITS.load(Ordering::Relaxed));
     if now - last < SURVIVAL_SCAN_PERIOD_SECS {
@@ -328,6 +337,8 @@ struct Camp {
     ambition_voter_ids: Vec<i64>,
 }
 
+/// Let one camp respond to hunger, collapse, defeat, or aggressive ambition.
+/// Stays here because it applies Survivalist's settlement survival rules through the game's classes, fields, content, and actions.
 fn desperation_scan(now: f32) -> Result<(), String> {
     // First, judge any raids whose outcome is due (the learning
     // half): reinforce/weaken the aggression that drove them.
@@ -455,6 +466,7 @@ fn desperation_scan(now: f32) -> Result<(), String> {
 /// learned caution calls off the shakedowns, and an unrepentant
 /// one keeps squeezing. Personality expressed through the game's
 /// own lever; flips are logged, steady states are silent.
+/// Stays here because it applies Survivalist's settlement survival rules through the game's classes, fields, content, and actions.
 fn extortion_by_vote(camps: &[Camp]) -> Result<(), String> {
     for c in camps {
         if c.ctype != "Looter" {
@@ -499,6 +511,7 @@ fn extortion_by_vote(camps: &[Camp]) -> Result<(), String> {
 /// which is how the game marks WHO capitulated;
 /// `UpdateInvasionTarget` then drops the no-longer-hostile
 /// invasion on its own). One surrender per scan.
+/// Stays here because it applies Survivalist's settlement survival rules through the game's classes, fields, content, and actions.
 fn sue_for_peace(camps: &[Camp]) -> Result<bool, String> {
     for loser in camps {
         // The player never auto-surrenders: their peace is their
@@ -587,6 +600,7 @@ fn sue_for_peace(camps: &[Camp]) -> Result<bool, String> {
 /// nearest STRONGER non-hostile neighbor, while a PROUD one turtles
 /// and endures. Reuses the fracture defect path; one merge per scan
 /// keeps the bleed gradual and legible.
+/// Stays here because it applies Survivalist's settlement survival rules through the game's classes, fields, content, and actions.
 fn collapse_response(camps: &[Camp]) -> Result<bool, String> {
     for c in camps {
         let shrunk =
@@ -673,6 +687,8 @@ fn collapse_response(camps: &[Camp]) -> Result<bool, String> {
     Ok(false)
 }
 
+/// Split survivors from a terminal camp toward the nearest viable refuge.
+/// Stays here because it applies Survivalist's settlement survival rules through the game's classes, fields, content, and actions.
 fn fracture(camps: &[Camp]) -> Result<bool, String> {
     for doomed in camps {
         if doomed.ctype == "Player" || doomed.rung != Rung::Terminal || doomed.members < 3 {
@@ -746,6 +762,7 @@ fn fracture(camps: &[Camp]) -> Result<bool, String> {
 /// into the refuge via the game's own SetCommunity, capped by the
 /// refuge's real bed room. Fleeing into a Looter camp makes them
 /// conscripts (voiceless), the same rule press-ganging uses.
+/// Stays here because it applies Survivalist's settlement survival rules through the game's classes, fields, content, and actions.
 fn defect(doomed: &Camp, refuge: &Camp) -> Result<i64, String> {
     let room = crate::common::with(refuge.handle, |com| -> i64 {
         let beds = com
@@ -831,6 +848,7 @@ fn defect(doomed: &Camp, refuge: &Camp) -> Result<i64, String> {
 /// bloodthirsty franchise raids the nearest well-fed neighbor. A
 /// camp of cautious survivors endures instead. Returns true if a
 /// raid ignited.
+/// Stays here because it applies Survivalist's settlement survival rules through the game's classes, fields, content, and actions.
 fn hunger_raid(camps: &[Camp], now: f32) -> Result<bool, String> {
     let raider = camps
         .iter()
@@ -906,6 +924,7 @@ static AMBITION_LAST_BITS: AtomicU32 = AtomicU32::new(0);
 /// the nearest neighbor at most half its size. War because of WHO
 /// the faction is; with predation downstream, this is the
 /// consolidation engine. Paced by a map-wide cooldown.
+/// Stays here because it applies Survivalist's settlement survival rules through the game's classes, fields, content, and actions.
 fn ambition_war(camps: &[Camp], now: f32) -> Result<bool, String> {
     let last = f32::from_bits(AMBITION_LAST_BITS.load(Ordering::Relaxed));
     if last != 0.0 && now - last < AMBITION_COOLDOWN_SECS {
@@ -991,6 +1010,7 @@ fn ambition_war(camps: &[Camp], now: f32) -> Result<bool, String> {
 /// war_ignite): hostile + invasion, and record the learning
 /// experiment so the outcome teaches every voter the traits that
 /// chose it.
+/// Stays here because it applies Survivalist's settlement survival rules through the game's classes, fields, content, and actions.
 fn ignite(
     raider: &Camp,
     target: &Camp,
@@ -1031,6 +1051,7 @@ fn ignite(
 /// reinforces aggression; one that cost people without gain
 /// weakens it. This is the plasticity loop: personality grows
 /// from experience.
+/// Stays here because it applies Survivalist's settlement survival rules through the game's classes, fields, content, and actions.
 fn evaluate_experiments(now: f32) -> Result<(), String> {
     let due: Vec<Experiment> = {
         let mut ex = EXPERIMENTS.lock();
@@ -1107,6 +1128,8 @@ fn evaluate_experiments(now: f32) -> Result<(), String> {
     Ok(())
 }
 
+/// Release the managed camp handles collected for one survival scan.
+/// Stays here because it applies Survivalist's settlement survival rules through the game's classes, fields, content, and actions.
 fn release_camps(camps: &[Camp]) {
     for c in camps {
         drop(own(c.handle)); // release the forgotten handles
@@ -1115,6 +1138,8 @@ fn release_camps(camps: &[Camp]) {
 
 // ---- observability ----------------------------------------------------------
 
+/// Report each camp survival rung, active acts, votes, and learned outcomes.
+/// Stays here because it applies Survivalist's settlement survival rules through the game's classes, fields, content, and actions.
 fn survival_status(_args: &Json) -> Result<Json, String> {
     on_main_thread(|| {
         let mut out = Vec::new();

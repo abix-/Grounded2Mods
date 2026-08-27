@@ -90,6 +90,7 @@ static LAST_SCAN_BITS: AtomicU32 = AtomicU32::new(0);
 static LAST_TICK_BITS: AtomicU32 = AtomicU32::new(0);
 
 /// The active theft a faction is running, for survival_status.
+/// Stays here because it applies Survivalist's theft missions rules through the game's classes, fields, content, and actions.
 pub fn active_target(faction_id: i64) -> Option<Json> {
     MISSIONS
         .lock()
@@ -104,6 +105,8 @@ pub fn active_target(faction_id: i64) -> Option<Json> {
         })
 }
 
+/// Advance this system when its scheduled game update is due.
+/// Stays here because it applies Survivalist's theft missions rules through the game's classes, fields, content, and actions.
 pub fn tick(now: f32) {
     if mission::should_tick(now, MISSION_TICK_SECS, &LAST_TICK_BITS) {
         mission::advance_all(&MISSIONS, now, |m, e| {
@@ -144,6 +147,8 @@ struct Camp {
     eligible_thief: bool,
 }
 
+/// Find one faction ready to start theft missions.
+/// Stays here because it applies Survivalist's theft missions rules through the game's classes, fields, content, and actions.
 fn launch_scan(now: f32) -> Result<(), String> {
     if MISSIONS.lock().len() >= MAX_ACTIVE_MISSIONS {
         return Ok(());
@@ -288,6 +293,8 @@ fn launch_scan(now: f32) -> Result<(), String> {
     Ok(())
 }
 
+/// Start theft missions using real survivors, supplies, and game movement.
+/// Stays here because it applies Survivalist's theft missions rules through the game's classes, fields, content, and actions.
 fn launch(camp: &Camp, target: &Camp, now: f32) -> Result<(), String> {
     with(camp.handle, |com| {
         // The thief: the highest-guile member that is conscious,
@@ -410,6 +417,8 @@ fn launch(camp: &Camp, target: &Camp, now: f32) -> Result<(), String> {
 impl mission::Mission for Mission {
     modforge::mission_accessors!();
 
+    /// Check whether the mission agent can continue.
+    /// Stays here because it applies Survivalist's theft missions rules through the game's classes, fields, content, and actions.
     fn is_agent_alive(&self) -> Result<bool, String> {
         let alive = is_npc_alive(self.thief_h)?;
         if !alive {
@@ -431,6 +440,8 @@ impl mission::Mission for Mission {
         Ok(alive)
     }
 
+    /// Resolve what happens when the mission reaches its destination.
+    /// Stays here because it applies Survivalist's theft missions rules through the game's classes, fields, content, and actions.
     fn on_going(&mut self, _now: f32) -> Result<Step, String> {
         let target_alive = with(self.target_h, |t| {
             t.invoke("HasAnyLivingNonZombieMembers", &json!([]))
@@ -485,6 +496,8 @@ impl mission::Mission for Mission {
         Ok(Step::Transition)
     }
 
+    /// Resolve what happens when the mission agent returns home.
+    /// Stays here because it applies Survivalist's theft missions rules through the game's classes, fields, content, and actions.
     fn on_returning(&mut self, _now: f32) -> Result<Step, String> {
         if dist_sq_to_building(self.thief_h, self.faction_h)? > ARRIVE_DIST_SQ {
             return Ok(Step::Continue);
@@ -508,6 +521,8 @@ impl mission::Mission for Mission {
         Ok(Step::Complete)
     }
 
+    /// Release the mission squad and managed handles when the mission ends.
+    /// Stays here because it applies Survivalist's theft missions rules through the game's classes, fields, content, and actions.
     fn cleanup(self) {
         remove_squad_and_drop(
             self.faction_h,
@@ -516,6 +531,8 @@ impl mission::Mission for Mission {
         );
     }
 
+    /// Describe the active work for status output.
+    /// Stays here because it applies Survivalist's theft missions rules through the game's classes, fields, content, and actions.
     fn label(&self) -> String {
         format!("{} stealing from {}", self.faction_name, self.target_name)
     }
