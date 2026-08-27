@@ -4,10 +4,6 @@ Survivalist extraction means moving existing engine-independent code out of the 
 
 | Priority | System | Todo | Done when |
 |---:|---|---|---|
-| 1 | `cs-shim-common` | [ ] Fix the silently broken Harmony bridge in HarmonyBridge.cs: PatchPrefix + PatchPostfix construct target from instance-method lambda which HarmonyLib rejects; replace with a static dispatcher keyed by patch handle | Rust-side patch_prefix / patch_postfix calls fire in-game. |
-| 1 | `ueforge` | [ ] Add ueforge::features module with Features builder (.once(), .on_each_load(), .on_first_table(), .install()) | Features builder available; one mod uses it. |
-| 1 | `misery-mod` | [ ] Convert misery-mod on_unreal_init to use the features builder | misery-mod uses ueforge::features() instead of manual thread spawns. |
-| 1 | `outworld-station-mod` | [ ] Convert outworld-station-mod to use the features builder | outworld-station-mod uses ueforge::features(). |
 | 3 | `wwm-mod` | [ ] Verify the hot-reload cycle works in-game: launch WWM, observe gen 0 ready, run build_and_deploy.ps1 -Hot, watch BepInEx log for hot reload 0 -> 1, confirm curl ops still answer | Hot-reload verified in-game. |
 | 3 | `wwm-mod` | [ ] Fix the janky jump: investigate PlayerController per-frame movement to find what clobbers position/velocity; likely needs a Harmony prefix on the per-frame movement method to inject a jump-velocity boost | Jump feels correct and reliable. |
 | 3 | `wwm-mod` | [ ] Ship UnitySkillProxyEffect and repoint Strong Back at SkillsManager.SetSkillLevel("Bag", N) (the game already grows the slot list; verified live 5->12 slots) | Strong Back uses the game's built-in Bag skill API. |
