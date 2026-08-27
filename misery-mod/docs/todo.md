@@ -12,7 +12,6 @@
 | 2 | `spawning.rs` | [ ] Record whether the hub spawn point re-reads count and class after `set_spawn_point` writes | Observation from the tamed dwarf spot written into research.md 25.4. |
 | 3 | `ops` | [ ] Fix `inspect_address` answering `found: false` for live widget addresses | Inspecting a menu widget returns its fields. |
 | 3 | `strange.rs` | [ ] Make a rolled phenomenon that places nothing say why: `teleport_nest` logged `rolls [...]` then `placed 0 prop(s)` | Every roll either places a prop or logs the reason it could not. |
-| 3 | `nag.rs` | [ ] Move the find-the-live-object and checked-parm-block helpers duplicated in nag.rs and autoload.rs into ueforge | Neither file defines its own; both call ueforge. |
 | 3 | `dispatch.rs` | [ ] Resolve `GGameThreadId` and assert against it, instead of comparing the engine tick thread to the ProcessEvent thread | A test proves it ran on the game thread with no save loaded. |
 | 3 | `autoload.rs` | [ ] Construct an `FString` in memory the game owns so `SGK SetSaveGameSlotName` can name any slot | Any listed save loads by name from the control plane. |
 | 3 | `vendors.rs` | [ ] Read the vendor list from config on each load and expose it in an ImGui tab | Vendor lists apply from config on load, and the tab edits the items, `SELL_PRICE_PCT` and `SEWING_KIT_COST`. |
