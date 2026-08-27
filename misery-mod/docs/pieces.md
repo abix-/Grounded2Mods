@@ -22,6 +22,28 @@ meshes while a memory walk sees about a third of them. A piece
 whose size is unknown cannot be attached to anything, so nothing
 downstream works until this is complete.
 
+**It is written to disk, and it is a file to READ**, not just a
+cache. Every asset with its package, class, registry tags,
+measured size, marker offset and role, openable without the game
+running.
+
+Keyed on the ASSET NAME SET, not the game binary. The meshes live
+in the pak files, so a content patch can change them without
+touching the exe, and a cache keyed on the exe would then be
+silently wrong. The registry query is cheap and loads nothing, so
+comparing names gives three cases for free: the same set means
+use the file as it stands, new names get measured and added, and
+missing names get dropped. A patch becomes "measure the twenty
+new meshes" rather than "throw it all away".
+
+Prior art: Cargo's fingerprints and Unreal's own Derived Data
+Cache both key on the inputs, not on the executable.
+
+Open question worth settling before any of it: the registry cooks
+searchable TAGS into each asset, and for a static mesh those can
+already include bounds and vertex counts. If the size is in the
+tags, nothing needs loading at all.
+
 **2. The studs.** Where a piece can attach. Derived from its
 measured bounds and its marker: which face, where on it, which
 way it faces. A 4 m wall has an end at each side and a top; a
