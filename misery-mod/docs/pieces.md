@@ -151,6 +151,22 @@ whole units. Good enough to sort a 4 m wall from a 2 m one, which
 is what the parts list needs. Anything needing exact bounds still
 has to load the mesh, and now only that mesh.
 
+### Where this actually stands, 2026-08-27
+
+Honest status, because three of these look further along than
+they are:
+
+| Step | State |
+|---|---|
+| the parts list | DONE. 2,407 meshes on disk with size and shape. No studs, no marker offset. |
+| deriving studs from joins | BUILT and unit-tested. Never yet run on real sightings. |
+| the sweep between them | BUILT and WRONG. Unfiltered and uncapped; its only real output was a 900 MB file. |
+| the 350 cm wall-to-floor stud | MEASURED, but by a test-local pairing loop, NOT by the shipped sweep. The two have never agreed on anything. |
+
+**The chain has never completed once.** Proving it end to end,
+and re-confirming that 350 cm through the real path, come before
+anything is built on top of it.
+
 ### The parts list exists (2026-08-27)
 
 `parts_list` writes every shipped mesh to a file, with nothing
