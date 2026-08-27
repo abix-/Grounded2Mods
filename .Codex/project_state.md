@@ -125,10 +125,17 @@ Extract every engine-independent or Unity-specific mechanism identified by the S
 - Verified `k3sc cargo-lock check -p unityforge -p survivalist-mod`.
 - Verified `k3sc cargo-lock test -p unityforge --lib`: all 6 existing tests pass.
 - Verified `k3sc cargo-lock test -p survivalist-mod --lib`: build passes with the two existing unused genome-helper warnings; its library target has zero tests.
+- Added `modforge::annex` for ordered side selection, rectangular strip expansion, exposed perimeter generation, gate and interior placement, blockage rejection, and claimed-rectangle growth.
+- Migrated Survivalist development planning to supply its depth, side order, coordinate floor, blockage limit, and live terrain callback, then execute the unchanged fence, gate, shack, and claim operations through Unity.
+- Preserved passability call order, east-south-west-north preference, fence tile order, gate and shack coordinates, blocked-tile behavior, construction order, and logging. Added no tests.
+- Added the new Modforge annex source to the root capability table.
+- Verified `k3sc cargo-lock check -p modforge -p survivalist-mod`.
+- Verified `k3sc cargo-lock test -p survivalist-mod --lib`: build passes with the two existing unused genome-helper warnings; its library target has zero tests.
+- Verified `k3sc cargo-lock test -p modforge --lib`: Modforge builds and 312 existing tests pass. The full target remains red only on the existing `input::tests::backend_parse_rejects_garbage` mismatch where `l3` is accepted.
 
 ## Next steps
 
-- Add engine-independent rectangular annex planning with caller-supplied passability and construction policy; migrate Survivalist development planning.
+- Add deterministic identity-and-salt selection for stable choices and text variants; migrate Survivalist stranger intent and flavor selection.
 
 ## Open questions
 

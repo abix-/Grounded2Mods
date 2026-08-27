@@ -48,7 +48,7 @@ Engine-independent systems usable by a mod or a standalone game.
 | Society | [Genomes](modforge/src/genome.rs), [Missions](modforge/src/mission.rs) |
 | Survival | [Survival](modforge/src/survival.rs) |
 | Storytelling | [Storytelling](modforge/src/storyteller.rs), [Dread](modforge/src/unknown.rs) |
-| World | [Biomes](modforge/src/biome.rs), [Structures](modforge/src/structure.rs), [Monuments](modforge/src/monument.rs), [Worlds](modforge/src/worldgen.rs), [Rolls](modforge/src/roll.rs) |
+| World | [Biomes](modforge/src/biome.rs), [Structures](modforge/src/structure.rs), [Annexes](modforge/src/annex.rs), [Monuments](modforge/src/monument.rs), [Worlds](modforge/src/worldgen.rs), [Rolls](modforge/src/roll.rs) |
 | Testing | [Testkit](modforge/src/testkit/mod.rs), [Harness](modforge/src/harness/mod.rs) |
 | Delivery | [Deploy](modforge/src/bin/modforge_deploy.rs) |
 

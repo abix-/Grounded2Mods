@@ -8,6 +8,7 @@
 
 pub mod actions;
 pub mod actor;
+pub mod annex;
 pub mod args;
 pub mod biome;
 pub mod brain;

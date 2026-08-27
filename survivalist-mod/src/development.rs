@@ -25,6 +25,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use serde_json::{Value as Json, json};
 
+use modforge::annex::{Config as AnnexConfig, Rect, Side as AnnexSide};
 use modforge::ops::{OP_REGISTRY, OpDef};
 use unityforge::main_thread_queue::MAIN_QUEUE;
 use unityforge::mono::{self, LogLevel, MonoObject};
@@ -43,6 +44,14 @@ const ANNEX_MIN_NUTRITION: f64 = 1.0;
 /// Reject an annex side when more than this fraction of its fence
 /// tiles sit on impassable ground.
 const ANNEX_MAX_BLOCKED: f32 = 0.25;
+
+/// Factions prefer extending east, then south, west, and north.
+const ANNEX_SIDE_ORDER: [AnnexSide; 4] = [
+    AnnexSide::East,
+    AnnexSide::South,
+    AnnexSide::West,
+    AnnexSide::North,
+];
 
 /// The passability flags worldgen itself uses when validating camp
 /// ground (GameTerrain.cs camp generation).
@@ -187,13 +196,6 @@ pub fn tick(now: f32) {
     }
 }
 
-struct Rect {
-    minx: i64,
-    miny: i64,
-    maxx: i64,
-    maxy: i64,
-}
-
 /// Read a camp's claimed rectangle into the planner format.
 /// Stays here because it applies Survivalist's build recipes, camp rules, terrain fields, and construction calls.
 fn base_rect(com: &MonoObject) -> Option<Rect> {
@@ -230,96 +232,6 @@ fn is_impassable(terrain: &MonoObject, x: i64, y: i64) -> bool {
         .invoke("IsImpassable", &json!([x, y, IMPASSABLE_FLAGS, null, null]))
         .map(|v| v == json!(true))
         .unwrap_or(true) // unreadable ground counts as blocked
-}
-
-/// The annex's fence line: the three exposed sides of a strip
-/// attached to one side of the base (the shared side keeps the
-/// base's existing wall; the annex gets its own gate in the
-/// middle of its outer edge).
-struct AnnexPlan {
-    side: &'static str,
-    fence_tiles: Vec<(i64, i64)>,
-    gate_tile: (i64, i64),
-    hut_tile: (i64, i64),
-    new_rect: Rect,
-}
-
-/// Choose a buildable fenced extension beside a crowded camp.
-/// Extraction candidate: Modforge should own engine-independent rectangular annex planning; Survivalist should supply terrain passability and construction policy.
-fn plan_annex(base: &Rect, terrain: &MonoObject) -> Option<AnnexPlan> {
-    // Try east, south, west, north.
-    let sides: [(&str, i64, i64); 4] = [
-        ("east", 1, 0),
-        ("south", 0, 1),
-        ("west", -1, 0),
-        ("north", 0, -1),
-    ];
-    for (side, sx, sy) in sides {
-        // The annex strip rectangle.
-        let (aminx, aminy, amaxx, amaxy) = match (sx, sy) {
-            (1, 0) => (base.maxx + 1, base.miny, base.maxx + ANNEX_DEPTH, base.maxy),
-            (-1, 0) => (base.minx - ANNEX_DEPTH, base.miny, base.minx - 1, base.maxy),
-            (0, 1) => (base.minx, base.maxy + 1, base.maxx, base.maxy + ANNEX_DEPTH),
-            _ => (base.minx, base.miny - ANNEX_DEPTH, base.maxx, base.miny - 1),
-        };
-        if aminx < 1 || aminy < 1 {
-            continue;
-        }
-        // Fence tiles: the annex perimeter minus the side shared
-        // with the base.
-        let mut fence: Vec<(i64, i64)> = Vec::new();
-        for x in aminx..=amaxx {
-            if sy != 1 {
-                fence.push((x, aminy)); // north edge (skip if shared)
-            }
-            if sy != -1 {
-                fence.push((x, amaxy)); // south edge
-            }
-        }
-        for y in (aminy + 1)..amaxy {
-            if sx != 1 {
-                fence.push((aminx, y)); // west edge
-            }
-            if sx != -1 {
-                fence.push((amaxx, y)); // east edge
-            }
-        }
-        let blocked = fence
-            .iter()
-            .filter(|(x, y)| is_impassable(terrain, *x, *y))
-            .count();
-        if (blocked as f32) > (fence.len() as f32) * ANNEX_MAX_BLOCKED {
-            continue;
-        }
-        // Gate: the middle of the outer edge.
-        let gate = match (sx, sy) {
-            (1, 0) => (amaxx, (aminy + amaxy) / 2),
-            (-1, 0) => (aminx, (aminy + amaxy) / 2),
-            (0, 1) => ((aminx + amaxx) / 2, amaxy),
-            _ => ((aminx + amaxx) / 2, aminy),
-        };
-        let hut = ((aminx + amaxx) / 2, (aminy + amaxy) / 2);
-        if is_impassable(terrain, hut.0, hut.1) {
-            continue;
-        }
-        let fence_tiles: Vec<(i64, i64)> = fence
-            .into_iter()
-            .filter(|t| *t != gate && !is_impassable(terrain, t.0, t.1))
-            .collect();
-        return Some(AnnexPlan {
-            side,
-            fence_tiles,
-            gate_tile: gate,
-            hut_tile: hut,
-            new_rect: Rect {
-                minx: base.minx.min(aminx),
-                miny: base.miny.min(aminy),
-                maxx: base.maxx.max(amaxx),
-                maxy: base.maxy.max(amaxy),
-            },
-        });
-    }
-    None
 }
 
 /// Find one healthy, crowded camp ready to plan its next annex.
@@ -369,7 +281,16 @@ fn annex_scan() -> Result<(), String> {
         let Some(base) = base_rect(&com) else {
             return Ok(true);
         };
-        let Some(plan) = plan_annex(&base, &terrain) else {
+        let Some(plan) = modforge::annex::plan(
+            base,
+            AnnexConfig {
+                depth: ANNEX_DEPTH,
+                minimum_coordinate: 1,
+                max_blocked_fraction: ANNEX_MAX_BLOCKED,
+                side_order: &ANNEX_SIDE_ORDER,
+            },
+            |x, y| is_impassable(&terrain, x, y),
+        ) else {
             return Ok(true);
         };
 
@@ -410,7 +331,7 @@ fn annex_scan() -> Result<(), String> {
             "AddConstructionRecord",
             &json!([
                 { "handle": hut_proto },
-                { "x": plan.hut_tile.0, "y": plan.hut_tile.1 },
+                { "x": plan.interior_tile.0, "y": plan.interior_tile.1 },
                 "Deg0",
             ]),
         )?;
@@ -430,7 +351,7 @@ fn annex_scan() -> Result<(), String> {
             &format!(
                 "survivalist-mod: dev -- {} plans an annex to the {}: {} {} posts, a {}, and a shack (beds full at {}/{})",
                 display_name(&com),
-                plan.side,
+                plan.side.as_str(),
                 plan.fence_tiles.len(),
                 fence_name,
                 gate_name,
