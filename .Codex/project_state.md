@@ -36,9 +36,17 @@ Extract every engine-independent or Unity-specific mechanism identified by the S
 - Survivalist retains its game class and field names, object selection, gameplay policy, Unity actions, content, logging, and presentation.
 - Rectangular annex geometry and deterministic identity-based selection belong to Modforge; Survivalist retains construction and encounter policy plus game observation and execution.
 - Delayed craft-result readiness, retry, timeout, removal, error routing, and cleanup belong to `modforge::crafting`; Survivalist retains its Harmony observation, Unity result lookup, quality policy, and item replacement.
+- Reachable-destination matching and committed capacity consumption belong to `modforge::faction`; Survivalist retains arrival and settlement eligibility, Unity observation, member transfer, role updates, and conscript policy.
+- Stored-goods filtering, blocked-store rejection, valuable-first selection, transfer caps, and round-robin carrier assignment belong to `modforge::item`; Survivalist retains managed inventory discovery, nutrition and value observation, Secure checks, and Take and Add execution.
 
 ## Last session summary
 
+- Added `modforge::item::GoodsFilter` and `GoodsTransferPlanner` for blocked-store handling, valuable-first stack selection, stable ties, transfer caps, and round-robin carriers.
+- Migrated Survivalist's stored-goods transfer and counting paths while preserving per-transfer rescans, successful-take accounting, failed-take stopping, Secure behavior, managed inventory calls, and carry-capacity behavior.
+- Added no tests and did not build, following the direct instruction for this extraction work.
+- Added `modforge::faction::PopulationPlanner` for first-reachable assignment across multiple anchors and caller-confirmed capacity consumption.
+- Migrated Survivalist growth recruitment to use the planner while preserving destination order, reach, actual-move capacity accounting, Unity transfers, press-gang behavior, logging, and presentation.
+- Added no tests and did not build, following the direct instruction for this extraction work.
 - Recorded the remaining Survivalist extraction candidates in `docs/todo.md` with explicit Modforge and Survivalist ownership boundaries.
 - Added `modforge::crafting::CraftResultQueue` and migrated Survivalist's delayed craft-result jobs to it without changing readiness, retry, timeout, error, or managed-handle cleanup behavior.
 - Kept quality tier and sibling rolls in `modforge::quality`; Survivalist still owns hooks, recipe and skill reads, product discovery, workbench bonuses, odds, and item swaps.
@@ -146,7 +154,7 @@ Extract every engine-independent or Unity-specific mechanism identified by the S
 
 ## Next steps
 
-- Extract Survivalist's population assignment planning into Modforge, then migrate growth recruitment to consume the plan.
+- Extract Survivalist's populated-footprint and edge-arrival geometry into Modforge, then migrate incursion placement.
 - Exercise Survivalist's Load/Unload re-init path through a live story switch and confirm `ReinitAfterUnload` works.
 
 ## Open questions

@@ -2,6 +2,8 @@
 //! growth, development). Extracted at the third consumer.
 
 use serde_json::{Value as Json, json};
+pub use modforge::item::GoodsFilter;
+use modforge::item::{GoodsCandidate, GoodsTransferPlanner};
 use unityforge::mono::{self, LogLevel, MonoObject, MonoType};
 
 pub use unityforge::mono::{
@@ -140,35 +142,19 @@ pub fn base_centre(com: &MonoObject) -> Option<(i64, i64)> {
     ))
 }
 
-/// Which stored goods a transfer moves. Food is what the game's
-/// own nutrition ledger counts: `Equipment.GetNutrition() > 0`
-/// (GetHarvestedNutritionAmount sums exactly that).
-#[derive(Clone, Copy)]
-pub enum GoodsFilter {
-    Any,
-    Food,
-    NonFood,
-}
-
-impl GoodsFilter {
-    /// Decide whether stored goods satisfy the requested food filter.
-    /// Stays here because it uses Survivalist's exact community, squad, inventory, and object conventions.
-    pub fn matches(self, item: &MonoObject) -> bool {
-        match self {
-            GoodsFilter::Any => true,
-            GoodsFilter::Food | GoodsFilter::NonFood => {
-                let n = item
-                    .invoke("GetNutrition", &json!([]))
-                    .ok()
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0);
-                match self {
-                    GoodsFilter::Food => n > 0.0,
-                    _ => n <= 0.0,
-                }
-            }
-        }
+/// Classify an item through Survivalist's nutrition API, then apply
+/// Modforge's engine-independent goods filter.
+pub fn goods_match(filter: GoodsFilter, item: &MonoObject) -> bool {
+    if filter == GoodsFilter::Any {
+        return true;
     }
+    let is_food = item
+        .invoke("GetNutrition", &json!([]))
+        .ok()
+        .and_then(|value| value.as_f64())
+        .unwrap_or(0.0)
+        > 0.0;
+    filter.matches(is_food)
 }
 
 /// Secure (settlement upgrades): a hostile taking tests the
@@ -208,7 +194,8 @@ fn secure_blocks(building: &MonoObject) -> bool {
 /// upgrades) are tested and a held lock keeps that whole
 /// building's stores. Willing loads (a camp loading its own
 /// wares, paying for goods or work) never test locks.
-/// Stays here because it uses Survivalist's exact community, squad, inventory, and object conventions.
+/// Stays here because Survivalist observes and mutates its managed
+/// inventories; Modforge owns selection, limits, and distribution.
 pub fn carry_off_stored_goods(
     from: &MonoObject,
     carriers: &[i32],
@@ -221,14 +208,14 @@ pub fn carry_off_stored_goods(
     };
     let blist = own(b_h);
     let nb = blist.list_len_or_zero()?;
-    let mut carried = 0i64;
-    let mut carrier_ix = 0usize;
+    let mut planner =
+        GoodsTransferPlanner::new(filter, max_stacks.max(1) as usize, carriers.len());
     for bi in 0..nb {
         let Some(bh) = blist.list_handle(bi)? else {
             continue;
         };
         let building = own(bh);
-        if hostile && secure_blocks(&building) {
+        if !planner.can_take_from(hostile && secure_blocks(&building)) {
             continue;
         }
         let Some(inv_h) = handle_of(&building.read_field("Inventory")?) else {
@@ -242,15 +229,20 @@ pub fn carry_off_stored_goods(
         // container, so re-scan each time.
         loop {
             let count = inv.list_len().unwrap_or(0);
-            let mut pick: Option<i32> = None;
-            let mut pick_price = -1.0f64;
+            let mut items = Vec::new();
+            let mut candidates = Vec::new();
             for i in 0..count {
                 let Some(item_h) = handle_of(&inv.invoke("GetItem", &json!([i]))?) else {
                     continue;
                 };
                 let item = own(item_h);
-                if filter.matches(&item) {
-                    let price = item
+                let is_food = if filter == GoodsFilter::Any {
+                    false
+                } else {
+                    goods_match(GoodsFilter::Food, &item)
+                };
+                let value = if filter.matches(is_food) {
+                    item
                         .invoke("GetPrototype", &json!([]))
                         .ok()
                         .as_ref()
@@ -262,18 +254,19 @@ pub fn carry_off_stored_goods(
                                 .and_then(|v| v.as_f64())
                                 .unwrap_or(0.0)
                         })
-                        .unwrap_or(0.0);
-                    if price > pick_price {
-                        if let Some(old) = pick.replace(item_h) {
-                            drop(own(old));
-                        }
-                        pick_price = price;
-                        std::mem::forget(item);
-                    }
-                }
+                        .unwrap_or(0.0)
+                } else {
+                    0.0
+                };
+                items.push(item);
+                candidates.push(GoodsCandidate { value, is_food });
             }
-            let Some(item_h) = pick else { break };
-            let item = own(item_h);
+            let Some(selection) = planner.next(&candidates) else {
+                break;
+            };
+            let item = items.swap_remove(selection.candidate);
+            drop(items);
+            let item_h = item.handle().0;
             let amount = item
                 .invoke("GetAmount", &json!([]))
                 .ok()
@@ -292,26 +285,26 @@ pub fn carry_off_stored_goods(
             // capacity; anything that doesn't fit is dropped at the
             // site by the game, which is realistic (they took what
             // they could carry).
-            let carrier = own(carriers[carrier_ix % carriers.len()]);
+            let carrier = own(carriers[selection.carrier]);
             let _ = carrier.invoke(
                 "Add",
                 &json!([{ "handle": carrier.handle().0 }, { "handle": taken_h }]),
             );
             std::mem::forget(carrier);
-            carrier_ix += 1;
-            carried += 1;
-            if carried >= max_stacks {
-                return Ok(carried);
+            planner.record_success();
+            if planner.complete() {
+                return Ok(planner.transferred() as i64);
             }
         }
     }
-    Ok(carried)
+    Ok(planner.transferred() as i64)
 }
 
 /// Count a community's stored stacks matching the filter, up to
 /// `cap` (early exit; cap 1 is a cheap "has any" test). The work
 /// pillar's "can they pay" and "what does it pay" reads.
-/// Stays here because it uses Survivalist's exact community, squad, inventory, and object conventions.
+/// Stays here because it traverses Survivalist's managed buildings
+/// and inventories; Modforge owns the goods filter.
 pub fn count_stored_goods(com: &MonoObject, filter: GoodsFilter, cap: i64) -> i64 {
     let Some(b_h) = com
         .read_field("Buildings")
@@ -349,7 +342,7 @@ pub fn count_stored_goods(com: &MonoObject, filter: GoodsFilter, cap: i64) -> i6
                 continue;
             };
             let item = own(item_h);
-            if filter.matches(&item) {
+            if goods_match(filter, &item) {
                 found += 1;
                 if found >= cap {
                     return found;

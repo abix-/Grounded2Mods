@@ -14,8 +14,8 @@ use modforge::mission::{self, Step};
 use unityforge::mono::{self, LogLevel, MonoObject};
 
 use crate::common::{
-    GoodsFilter, base_centre, carry_off_stored_goods, ctype, for_each_community, handle_of, own,
-    with,
+    GoodsFilter, base_centre, carry_off_stored_goods, ctype, for_each_community, goods_match,
+    handle_of, own, with,
 };
 
 /// Non-food stacks a payment carries; also the cap the offers
@@ -427,7 +427,7 @@ fn deliver_carried_payment(courier_h: i32, player_h: i32, max: i64) -> Result<i6
                 .ok()
                 .and_then(|v| v.as_i64())
                 .unwrap_or(1);
-            if GoodsFilter::NonFood.matches(&item) {
+            if goods_match(GoodsFilter::NonFood, &item) {
                 std::mem::forget(item);
                 pick = Some((item_h, amount));
                 break;

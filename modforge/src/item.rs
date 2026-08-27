@@ -16,6 +16,96 @@ use serde_json::{Value as Json, json};
 
 use crate::quality;
 
+/// Which stored goods a transfer may select.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GoodsFilter {
+    Any,
+    Food,
+    NonFood,
+}
+
+impl GoodsFilter {
+    pub fn matches(self, is_food: bool) -> bool {
+        match self {
+            Self::Any => true,
+            Self::Food => is_food,
+            Self::NonFood => !is_food,
+        }
+    }
+}
+
+/// One observed stack available to a goods transfer.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GoodsCandidate {
+    pub value: f64,
+    pub is_food: bool,
+}
+
+/// The next stack and carrier selected by a goods transfer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GoodsTransfer {
+    pub candidate: usize,
+    pub carrier: usize,
+}
+
+/// Engine-independent valuable-goods transfer policy.
+///
+/// Stores may be blocked by the caller. Within an allowed store,
+/// the highest-value matching stack is selected, ties keep source
+/// order, successful transfers rotate across carriers, and the
+/// configured stack cap ends the transfer.
+pub struct GoodsTransferPlanner {
+    filter: GoodsFilter,
+    max_stacks: usize,
+    carrier_count: usize,
+    transferred: usize,
+}
+
+impl GoodsTransferPlanner {
+    pub fn new(filter: GoodsFilter, max_stacks: usize, carrier_count: usize) -> Self {
+        Self {
+            filter,
+            max_stacks,
+            carrier_count,
+            transferred: 0,
+        }
+    }
+
+    pub fn can_take_from(&self, blocked: bool) -> bool {
+        !blocked && !self.complete()
+    }
+
+    pub fn next(&self, candidates: &[GoodsCandidate]) -> Option<GoodsTransfer> {
+        if self.complete() {
+            return None;
+        }
+        let mut selected = None;
+        let mut selected_value = -1.0f64;
+        for (index, candidate) in candidates.iter().enumerate() {
+            if self.filter.matches(candidate.is_food) && candidate.value > selected_value {
+                selected = Some(index);
+                selected_value = candidate.value;
+            }
+        }
+        selected.map(|candidate| GoodsTransfer {
+            candidate,
+            carrier: self.transferred % self.carrier_count,
+        })
+    }
+
+    pub fn record_success(&mut self) {
+        self.transferred += 1;
+    }
+
+    pub fn transferred(&self) -> usize {
+        self.transferred
+    }
+
+    pub fn complete(&self) -> bool {
+        self.transferred >= self.max_stacks
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum ItemKind {
     Food,
