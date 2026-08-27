@@ -27,6 +27,23 @@ Newest first.
 |---|---|---|
 | `cs-shim-il2cpp` | [x] Replace the BepInEx IL2CPP shim's private Rust DLL lifecycle with the shared generation loader | The shim links `cs-shim-common/GenerationLoader.cs`, uses it for initial load, per-frame ticking, shutdown, and generation-file hot reload, and retains only BepInEx and IL2CPP host wiring. |
 | `modforge` | [x] Replace the vanilla-invoke design draft with shipped API documentation | The page matches the current signature, invoker, operation, error, and calling-thread behavior. |
+| `misery` | [x] Autoload reaches the operator's own save: `LoadLevel` on `BP_SingleplayerNewGameMenu`, not the host-a-server object | A launch lands in the save with no keys and no clicks, emission count 42 rather than 1. |
+| `modforge` | [x] Time work by name, off by default, with `timing` and `timing_report` controls every forge registers | A 30 second window prints every named job slowest first, and off records nothing. |
+| `ueforge` | [x] Object-reading controls run on the game thread; nine sites, five routed and four found later | A poll through a full level load no longer faults inside `find_objects_by_chain`. |
+| `ueforge` | [x] `LevelStreamer` answers which regions are loaded from the game's own array instead of searching every object | A tick with nothing new does no object search, `ue:objects_read` absent from the report. |
+| `ueforge` | [x] `NewLevels` reports only the regions that appeared since last time | `spawning` went from 246 ms a pass to 5.97 ms. |
+| `ueforge` | [x] A load watcher asks `world_is_up` instead of re-running its finder to learn one bit | The mod held the game thread for 0.04 ms per second, down from 126. |
+| `ueforge` | [x] `LiveActor` finds an actor once and keeps it until the world ends | The Speed tab open for 30 seconds does zero object searches. |
+| `modforge` | [x] `ReadOnce` keeps anything worked out once, cleared when the world ends | The Speed tab reads the game zero times in 30 seconds of redrawing. |
+| `ueforge` | [x] A repeating job can end itself with `PollerHandle::stop_soon`, and a hook can be removed with `hook::remove` | The notice watcher dismisses once, removes its hook and stops, all in the same second. |
+| `misery` | [x] The gameplay tab fills itself when a world loads and reloads on a new one | Operator confirmed the tab comes up filled with no Refresh click. |
+| `ueforge` | [x] `FMalloc::Malloc`'s vtable slot MEASURED from the running image rather than guessed | Three call sites agree on slot 5, and a vendor pass adds 73 items with no `grow failed`. |
+| `misery` | [x] The vendor price array comes from the engine allocator, not Rust's | An audit of every crate found one other site that stored a Rust pointer in engine memory, and it was this one. |
+| `ueforge` | [x] Build an `FName` from a string through the engine's own constructor, find-only | `"StaticMesh"` round-trips to the same text and an invented name comes back missing. |
+| `ueforge` | [x] Read cooked asset registry tags without loading the asset | `ApproxSize` returns `320x320x320` for a mesh that was never loaded. |
+| `misery` | [x] THE PARTS LIST: every shipped mesh with a size and a shape, nothing loaded | 2,407 meshes on disk, none without a size, and the classifier calls a 400x401 wall a Panel. |
+| `modforge` | [x] Derive per-piece studs from observed joins, each in its own local frame | A different piece seen in the same place gets the same stud, and turning the assembly invents none. |
+| `ueforge` | [x] Guard the per-actor read in `read_level` with `seh::guard` | An actor whose mesh pointer does not resolve is skipped and counted instead of killing the game. |
 
 ## 2026-08-26
 
