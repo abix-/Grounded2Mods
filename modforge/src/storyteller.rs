@@ -505,6 +505,51 @@ pub fn pressure_tier<T>(pressure: i64, tiers: &[PressureTier<T>]) -> Option<&Pre
     tiers.iter().find(|tier| pressure >= tier.at_least)
 }
 
+/// Calculate the integer centroid and maximum distance from it for
+/// an existing set of map points.
+pub fn centroid_and_spread(points: &[(i64, i64)]) -> Option<((i64, i64), i64)> {
+    if points.is_empty() {
+        return None;
+    }
+    let sum = points
+        .iter()
+        .fold((0i64, 0i64), |sum, point| (sum.0 + point.0, sum.1 + point.1));
+    let count = points.len() as i64;
+    let centroid = (sum.0 / count, sum.1 / count);
+    let spread = points
+        .iter()
+        .map(|point| {
+            let dx = point.0 - centroid.0;
+            let dy = point.1 - centroid.1;
+            (((dx * dx + dy * dy) as f64).sqrt()) as i64
+        })
+        .max()
+        .unwrap_or(0);
+    Some((centroid, spread))
+}
+
+/// Calculate a map point from an existing centre, angle, and radius.
+pub fn point_at_angle(centre: (i64, i64), angle: f64, radius: f64) -> (i64, i64) {
+    (
+        centre.0 + (angle.cos() * radius) as i64,
+        centre.1 + (angle.sin() * radius) as i64,
+    )
+}
+
+/// Return the first nearest point, preserving input order on ties.
+pub fn nearest_point(origin: (i64, i64), points: &[(i64, i64)]) -> Option<usize> {
+    let mut nearest = None;
+    let mut nearest_distance = i64::MAX;
+    for (index, point) in points.iter().enumerate() {
+        let distance = (point.0 - origin.0).pow(2) + (point.1 - origin.1).pow(2);
+        if distance < nearest_distance {
+            nearest_distance = distance;
+            nearest = Some(index);
+        }
+    }
+    nearest
+}
+
 /// Pick a deterministic point on a ring around a pressure target.
 pub fn pressure_ring_position(now: f32, salt: u64, centre: (i64, i64), radius: f64) -> (i64, i64) {
     let mut hash = (now.to_bits() as u64).wrapping_mul(0x9E3779B97F4A7C15) ^ (salt << 17);

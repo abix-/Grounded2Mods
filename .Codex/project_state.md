@@ -38,9 +38,13 @@ Extract every engine-independent or Unity-specific mechanism identified by the S
 - Delayed craft-result collection advancement belongs to one small function in `modforge::crafting`; Survivalist retains CraftJob, its queue, timing fields, Harmony observation, Unity result lookup, quality policy, and item replacement.
 - First-reachable destination calculation belongs to one small function in `modforge::faction`; Survivalist retains OpenDoor, headroom, destination order, eligibility, Unity observation, member transfer, role updates, and conscript policy.
 - The existing goods filter belongs to `modforge::item`; Survivalist retains the valuable-first selection and transfer loops, blocked stores, caps, round-robin distribution, managed inventory discovery, Secure checks, and Take and Add execution.
+- Centroid, spread, point-at-angle, and nearest-point calculations belong to small functions in `modforge::storyteller`; Survivalist retains community selection, minimum spread, angle and radius policy, spawning, hostility, movement, and presentation.
 
 ## Last session summary
 
+- Moved Survivalist's existing centroid, spread, radial point, and nearest-destination arithmetic into three small functions in `modforge::storyteller`.
+- Kept all incursion state, random rolls, constants, community observation, spawn behavior, target effects, logging, and chronicle text in Survivalist.
+- Added no tests and did not build, following the direct instruction for this extraction work.
 - Removed the speculative GoodsTransferPlanner, PopulationPlanner, and CraftResultQueue APIs.
 - Kept Survivalist's original CraftJob queue, OpenDoor state, goods transfer loop, caps, blocked-store check, and round-robin counter.
 - Moved only the existing engine-independent operations: delayed collection advancement, first-reachable calculation, and the existing goods filter.
@@ -152,7 +156,7 @@ Extract every engine-independent or Unity-specific mechanism identified by the S
 
 ## Next steps
 
-- Extract Survivalist's populated-footprint and edge-arrival geometry into Modforge, then migrate incursion placement.
+- Move only the repeated pure mission selection calculations already present in Survivalist; do not add a mission-launch planner or new mission state.
 - Exercise Survivalist's Load/Unload re-init path through a live story switch and confirm `ReinitAfterUnload` works.
 
 ## Open questions

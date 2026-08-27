@@ -33,6 +33,7 @@
 
 use serde_json::json;
 
+use modforge::storyteller::{centroid_and_spread, nearest_point, point_at_angle};
 use modforge::unknown::{DreadLoop, rng};
 use unityforge::mono::{self, LogLevel};
 
@@ -374,36 +375,20 @@ fn resolve_payoff(payoff: Payoff, now: f32) {
 /// map and roughly how wide it is, in tile coordinates. None when
 /// there is nothing to threaten. Scale-independent, so it works
 /// without knowing the map's absolute bounds.
-/// Stays here because it applies Survivalist's off-map incursions rules through the game's classes, fields, content, and actions.
+/// Stays here because Survivalist selects the communities and its
+/// minimum spread; Modforge owns only the coordinate calculation.
 fn map_centroid_and_spread() -> Result<Option<((i64, i64), i64)>, String> {
-    let mut sum = (0i64, 0i64);
     let mut centres: Vec<(i64, i64)> = Vec::new();
     for_each_community(|com| {
         let t = ctype(&com);
         if (t == "Normal" || t == "Looter" || t == "Player")
             && let Some(c) = base_centre(&com)
         {
-            sum.0 += c.0;
-            sum.1 += c.1;
             centres.push(c);
         }
         Ok(true)
     })?;
-    if centres.is_empty() {
-        return Ok(None);
-    }
-    let n = centres.len() as i64;
-    let centroid = (sum.0 / n, sum.1 / n);
-    let spread = centres
-        .iter()
-        .map(|c| {
-            let (dx, dy) = (c.0 - centroid.0, c.1 - centroid.1);
-            (((dx * dx + dy * dy) as f64).sqrt()) as i64
-        })
-        .max()
-        .unwrap_or(0)
-        .max(200);
-    Ok(Some((centroid, spread)))
+    Ok(centroid_and_spread(&centres).map(|(centroid, spread)| (centroid, spread.max(200))))
 }
 
 /// The traveling mega-horde: a large pack of the worst strain spawns
@@ -418,8 +403,7 @@ fn mega_horde(now: f32) -> Result<bool, String> {
     };
     let angle = rng(now, 5, 6283) as f64 / 1000.0;
     let radius = spread as f64 * 1.6 + 200.0;
-    let sx = centroid.0 + (angle.cos() * radius) as i64;
-    let sy = centroid.1 + (angle.sin() * radius) as i64;
+    let (sx, sy) = point_at_angle(centroid, angle, radius);
     let pointed = crate::horde::spawn_traveling_pack(sx, sy, centroid, 16, 24, "White")?;
     Ok(pointed > 0)
 }
@@ -449,8 +433,7 @@ pub fn spawn_band_at_edge(
     };
     let angle = rng(now, salt, 6283) as f64 / 1000.0;
     let radius = spread as f64 * 1.4 + 150.0;
-    let ex = centroid.0 + (angle.cos() * radius) as i64;
-    let ey = centroid.1 + (angle.sin() * radius) as i64;
+    let (ex, ey) = point_at_angle(centroid, angle, radius);
     let (melee, ammo, molotov, body, helmet, leg) = if armed {
         (0.85, 0.6, 0.3, 0.35, 0.3, 0.3)
     } else {
@@ -475,7 +458,8 @@ pub fn spawn_band_at_edge(
 /// hostile (all camps for a military remnant, the nearest for
 /// raiders); the game's combat AI marches them in. Returns the
 /// target camp's name.
-/// Stays here because it applies Survivalist's off-map incursions rules through the game's classes, fields, content, and actions.
+/// Stays here because Survivalist discovers camps and applies
+/// hostility, invasion targets, gear, movement, and presentation.
 fn spawn_edge_band(now: f32, kind: &str, hostile_all: bool) -> Result<Option<String>, String> {
     let Some((band_h, _id, (ex, ey))) = spawn_band_at_edge(now, 20, kind, 3, 6, true)? else {
         return Ok(None);
@@ -509,15 +493,8 @@ fn spawn_edge_band(now: f32, kind: &str, hostile_all: bool) -> Result<Option<Str
     }
 
     // Nearest camp to where the band crossed.
-    let mut best = 0usize;
-    let mut best_d = i64::MAX;
-    for (i, (_, c, _)) in camps.iter().enumerate() {
-        let d = (c.0 - ex).pow(2) + (c.1 - ey).pow(2);
-        if d < best_d {
-            best_d = d;
-            best = i;
-        }
-    }
+    let camp_centres: Vec<_> = camps.iter().map(|(_, centre, _)| *centre).collect();
+    let best = nearest_point((ex, ey), &camp_centres).unwrap_or(0);
 
     // Set the band hostile (all camps for a military unit, just the
     // nearest for raiders) and point its invasion at the target; the
