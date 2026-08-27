@@ -148,6 +148,16 @@ pub fn all() -> Vec<OpDef> {
             },
         ),
         OpDef::new(
+            "input.player.pose",
+            "Read player position and control yaw through the registered in-process input surface.",
+            "{}",
+            |_args| {
+                let surface = super::input_surface()
+                    .ok_or("no in-process player input surface is registered")?;
+                Ok(json!({"surface": surface.name(), "pose": surface.pose()?}))
+            },
+        ),
+        OpDef::new(
             "input.mouse.move",
             "Move the mouse to (x, y). L1 = screen px; L2 = client-area px of hwnd.",
             "{x: i32, y: i32, backend?: l1|l2, hwnd?: hex}",

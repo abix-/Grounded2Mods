@@ -4,6 +4,7 @@
 
 | Area | Shipped | Verification |
 |---|---|---|
+| `modforge::input` + Ueforge | [x] Observe player position and control yaw in one strict in-process operation | Player-pose JSON round-trip passes. The Unreal adapter reads both values in one game-thread job, and the MISERY follower consumes that one observation per tick. |
 | MISERY navigation | [x] Replace `SimpleMoveToLocation` execution with Unreal path points and the shared player-input follower | Eleven deterministic navigation tests pass, including reflected `FVector` path decoding. Source proof rejects `SimpleMoveToLocation`; live route verification remains in the todo. |
 | MISERY input | [x] Register the Unreal player-input surface and route look plus interaction through strict in-process batches | The permanent navigation suite passes 10 deterministic tests. Its source proof rejects OS mouse, keyboard, focus, viewport lookup, and direct yaw, pitch, or Enhanced Input handler calls. |
 | `modforge::input` | [x] Add a serializable strict in-process player-command batch operation | Three input tests prove ordered one-batch dispatch and JSON round-trip. The operation errors when no player surface is registered instead of falling back to OS input. |

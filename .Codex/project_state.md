@@ -66,6 +66,7 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 - Added a serializable strict in-process player-command operation that errors without a registered surface instead of falling back to OS input.
 - Registered MISERY's retained player with the Unreal adapter. Navigation look and every current door or crate `E` interaction now use the same command surface. Ten deterministic navigation tests pass and source proof rejects every former OS or direct Unreal input path.
 - Replaced MISERY's `SimpleMoveToLocation` executor with reflected `NavigationPath::GetPathPoints` decoding and the shared player-input follower. Eleven deterministic navigation tests pass; live route verification remains open because this environment must not launch the game.
+- Added one shared player-pose observation for position and control yaw. Ueforge serves it in one game-thread job and the MISERY follower uses one observation per tick instead of separate location and rotation calls.
 - Replaced every OS input dependency in `research_navigation.rs`. Look commands now call `PlayerController::AddYawInput` and `AddPitchInput`, observe control-rotation movement, and fail after ten ignored commands. Interaction calls the retained player's Enhanced Input action directly. The source proof rejects OS mouse, keyboard, focus, foreground, and viewport lookup paths. Ten deterministic navigation tests pass and MISERY checks across all targets; live verification remains open.
 - Pushed `b9d41c7f` and deployed that exact clean commit. The restarted cold route passed in 21.32 seconds with three waypoints, two edges, one bunker-door interaction, one expedition-door interaction, and zero global UObject scan rows. `ue:actors_of_class` measured 0.50 ms worst and `ue:component_by_class` measured 0.09 ms worst.
 - From the entered expedition, the bot rejected two unreachable crates, selected the lowest-cost reachable `BP_StashMid_C`, and traversed to its one target waypoint in about eight seconds. Crate interaction did not start because four seconds of L1 relative mouse input left control rotation unchanged at yaw -90 degrees while the target required yaw 49.3 degrees. The next change must drive and observe the player controller's yaw and pitch input before another live run.
@@ -292,9 +293,7 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 
 ## Next steps
 
-- Add one strict player-pose observation so a follower tick reads position and control yaw in one game-thread job.
 - Live-verify the extracted Unreal path points and shared follower from spawn through both doors on a restarted local game.
-- Route MISERY door, expedition, crate, and inventory actions through the same registered input surface.
 - Aim at the door's colliding-bounds center from the active camera and gate `E` on interaction range.
 - Complete ranked crate fallback, retained-state opening, UI transfer, and inventory-count evidence.
 - Enforce absent search counters and the 16.7 ms frame budget before running another cold acceptance.

@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use common::{Api, api_or_skip, offsets_live};
 use modforge::client::{self, ClassInstance};
-use modforge::input::{Axis, Button, InputSurface, Key, PlayerCommand};
+use modforge::input::{Axis, Button, InputSurface, Key, PlayerCommand, PlayerPose};
 use modforge::route::{
     FollowStatus, PathFollower, Pose, Position, RouteEdge, RouteGraph, SteeringConfig, Waypoint,
 };
@@ -111,6 +111,20 @@ impl InputSurface for ControlPlaneInput<'_> {
                 .error
                 .unwrap_or_else(|| "player command batch failed".into()))
         }
+    }
+
+    fn pose(&self) -> Result<PlayerPose, String> {
+        let response = self
+            .api
+            .try_op("input.player.pose", json!({}))
+            .map_err(|error| format!("player pose request failed: {error}"))?;
+        if !response.ok {
+            return Err(response
+                .error
+                .unwrap_or_else(|| "player pose observation failed".into()));
+        }
+        serde_json::from_value(response.result["pose"].clone())
+            .map_err(|error| format!("decode player pose: {error}"))
     }
 }
 
@@ -876,7 +890,8 @@ fn walk_edge(
 
         loop {
             std::thread::sleep(Duration::from_millis(16));
-            let current = actor_location(api, player_selector);
+            let observed = surface.pose()?;
+            let current = observed.position;
             retain_breadcrumb(breadcrumbs, position(current));
             let remaining = distance(current, point(waypoint.position));
             if started.elapsed() >= MOVE_TIMEOUT {
@@ -886,10 +901,9 @@ fn walk_edge(
                     waypoint.id
                 ));
             }
-            let rotation = control_rotation(api, player_selector);
             match follower.tick(
                 &surface,
-                Pose::new(position(current), rotation[1]),
+                Pose::new(position(current), observed.yaw_deg),
                 started.elapsed().as_millis() as u64,
                 0.016,
             )? {

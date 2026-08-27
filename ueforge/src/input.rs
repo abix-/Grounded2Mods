@@ -8,7 +8,7 @@
 use std::ffi::c_void;
 use std::time::Duration;
 
-use modforge::input::{Axis, Button, InputSurface, Key, PlayerCommand};
+use modforge::input::{Axis, Button, InputSurface, Key, PlayerCommand, PlayerPose};
 use serde_json::Value as Json;
 
 use crate::ue::actor::LiveActor;
@@ -79,6 +79,27 @@ impl InputSurface for &'static UnrealInputSurface {
 
     fn axis(&self, axis: Axis, value: f32, delta_time: f32) -> Result<(), String> {
         self.commands(&[PlayerCommand::axis(axis, value, delta_time)])
+    }
+
+    fn pose(&self) -> Result<PlayerPose, String> {
+        let surface = *self;
+        let value = crate::game_thread::run(
+            move || {
+                let player = surface.player()?;
+                let position =
+                    unsafe { crate::ue::transform::world_location(player.as_ptr() as *const u8) }
+                        .ok_or("could not read the retained player's world location")?;
+                let controller = unsafe { pawn_controller(player)? };
+                let yaw_deg = unsafe { read_control_yaw(controller)? };
+                serde_json::to_value(PlayerPose {
+                    position: [position.0, position.1, position.2],
+                    yaw_deg,
+                })
+                .map_err(|error| format!("serialize player pose: {error}"))
+            },
+            INPUT_TIMEOUT,
+        )?;
+        serde_json::from_value(value).map_err(|error| format!("decode player pose: {error}"))
     }
 
     fn commands(&self, commands: &[PlayerCommand]) -> Result<(), String> {

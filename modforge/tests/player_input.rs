@@ -1,7 +1,9 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use modforge::input::{Axis, Button, InputSurface, Key, PlayerCommand, dispatch_player_commands};
+use modforge::input::{
+    Axis, Button, InputSurface, Key, PlayerCommand, PlayerPose, dispatch_player_commands,
+};
 
 #[derive(Debug, PartialEq)]
 enum Seen {
@@ -57,6 +59,13 @@ impl InputSurface for RecordingSurface {
         }
         Ok(())
     }
+
+    fn pose(&self) -> Result<PlayerPose, String> {
+        Ok(PlayerPose {
+            position: [1.0, 2.0, 3.0],
+            yaw_deg: 90.0,
+        })
+    }
 }
 
 #[test]
@@ -106,4 +115,11 @@ fn player_command_batch_round_trips_for_the_control_plane() {
         serde_json::from_value::<Vec<PlayerCommand>>(json).unwrap(),
         commands
     );
+}
+
+#[test]
+fn player_pose_round_trips_for_the_control_plane() {
+    let pose = RecordingSurface::default().pose().unwrap();
+    let json = serde_json::to_value(pose).unwrap();
+    assert_eq!(serde_json::from_value::<PlayerPose>(json).unwrap(), pose);
 }

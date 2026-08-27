@@ -116,6 +116,13 @@ impl PlayerCommand {
     }
 }
 
+/// One observed player pose for closed-loop movement.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PlayerPose {
+    pub position: [f64; 3],
+    pub yaw_deg: f64,
+}
+
 impl Button {
     pub fn parse(s: &str) -> Result<Button, String> {
         match s.to_ascii_lowercase().as_str() {
@@ -218,6 +225,10 @@ pub trait InputSurface: Send + Sync {
     fn move_abs(&self, x: i32, y: i32) -> Result<(), String>;
     fn key(&self, key: Key, down: bool) -> Result<(), String>;
     fn axis(&self, axis: Axis, value: f32, delta_time: f32) -> Result<(), String>;
+
+    fn pose(&self) -> Result<PlayerPose, String> {
+        Err(format!("{} input surface does not expose player pose", self.name()))
+    }
 
     /// Apply one ordered command batch. Engine adapters override this when
     /// entering the engine thread once per batch is cheaper than once per
