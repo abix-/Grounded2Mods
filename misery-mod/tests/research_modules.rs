@@ -341,3 +341,81 @@ fn trim(mesh: &str) -> String {
         format!("...{}", &mesh[mesh.len() - 27..])
     }
 }
+
+/// THE STUDS, in two halves.
+///
+/// The game writes SIGHTINGS to a file, because a single pass
+/// over eleven squares is 50,000 of them and 12 MB of JSON, and
+/// because evidence accumulates across sessions.
+///
+/// Deriving studs from that file needs no game at all, which is
+/// the point of keeping the two apart: a threshold changed later
+/// re-derives from what is already on disk.
+#[test]
+fn derive_the_studs() {
+    let Some(api) = api_or_skip() else { return };
+    let squares = loaded_squares(&api);
+    if squares.is_empty() {
+        println!("no map squares loaded; load a save");
+        return;
+    }
+
+    // Reading eleven levels and comparing every pair takes longer
+    // than the client's usual few seconds. This is a research
+    // sweep, not a control the game waits on.
+    let api = api.with_timeout(std::time::Duration::from_secs(120));
+
+    let dir = "C:/Games/Steam/steamapps/common/MISERY/MISERY/Binaries/Win64/ue4ss/Mods/MiseryMod/dlls";
+    let sightings_path = format!("{dir}/sightings.json");
+    let r = api.op(
+        "joins",
+        json!({ "levels": squares, "touching": TOUCHING, "path": sightings_path }),
+    );
+    assert!(r.ok, "joins failed: {:?}", r.error);
+    println!(
+        "{} sightings from {} squares -> {}",
+        r.result["sightings"], r.result["levels"], sightings_path
+    );
+
+    // From here on the game is not involved.
+    let text = std::fs::read_to_string(&sightings_path).expect("sightings file");
+    let doc: serde_json::Value = serde_json::from_str(&text).expect("sightings json");
+    let joins: Vec<modforge::studs::Join> = doc["joins"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|j| {
+            let o = j["offset"].as_array()?;
+            Some(modforge::studs::Join {
+                from: j["from"].as_str()?.to_string(),
+                to: j["to"].as_str()?.to_string(),
+                offset: (o[0].as_f64()?, o[1].as_f64()?, o[2].as_f64()?),
+                from_yaw: j["from_yaw"].as_f64()?,
+                to_yaw: j["to_yaw"].as_f64()?,
+            })
+        })
+        .collect();
+
+    let studs = modforge::studs::derive(&joins, modforge::studs::Derive::default());
+    println!("{} pieces have studs
+", studs.len());
+
+    let mut names: Vec<&String> = studs.keys().collect();
+    names.sort_by_key(|n| std::cmp::Reverse(studs[*n].iter().map(|s| s.seen).sum::<usize>()));
+    for name in names.iter().take(5) {
+        let list = &studs[*name];
+        println!("{name}  ({} studs)", list.len());
+        for st in list.iter().take(5) {
+            let mut w: Vec<(&String, &usize)> = st.with.iter().collect();
+            w.sort_by(|a, b| b.1.cmp(a.1));
+            let who: Vec<String> = w.iter().take(2).map(|(m, n)| format!("{m} x{n}")).collect();
+            println!(
+                "   at ({:>6.2},{:>6.2},{:>6.2})  turn {:>3}  seen {:>4}  with {}",
+                st.at.0, st.at.1, st.at.2, st.turn, st.seen, who.join(", ")
+            );
+        }
+        println!();
+    }
+    assert!(!studs.is_empty(), "no piece got a stud");
+}

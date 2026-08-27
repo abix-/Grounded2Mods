@@ -353,6 +353,45 @@ fn piece_from_json(v: &serde_json::Value) -> Option<PieceDef> {
 /// Every one of these enters the engine, so a consumer must route
 /// them through its game-thread queue. They are registered here
 /// as plain ops; wrapping them is the consumer's job.
+/// Every pair of placed pieces near enough to be joined, in one
+/// or more levels.
+///
+/// This is EVIDENCE, not conclusions: the raw sightings, for
+/// `modforge::studs::derive` to turn into per-piece studs. A
+/// threshold changed later re-derives from the same sightings
+/// rather than needing the game running again.
+///
+/// Game thread only.
+pub fn joins_in(levels: &[String], touching: f64) -> Vec<modforge::studs::Join> {
+    let mut out = Vec::new();
+    for level in levels {
+        let placed: Vec<PieceDef> = read_level(level, &[]);
+        for a in &placed {
+            let Some(from) = a.asset.as_ref() else { continue };
+            for b in &placed {
+                let Some(to) = b.asset.as_ref() else { continue };
+                let d = (
+                    (b.offset.x - a.offset.x) as f64,
+                    (b.offset.y - a.offset.y) as f64,
+                    (b.offset.z - a.offset.z) as f64,
+                );
+                let far = (d.0 * d.0 + d.1 * d.1 + d.2 * d.2).sqrt();
+                if far <= 0.0 || far > touching {
+                    continue;
+                }
+                out.push(modforge::studs::Join {
+                    from: from.clone(),
+                    to: to.clone(),
+                    offset: d,
+                    from_yaw: a.yaw as f64,
+                    to_yaw: b.yaw as f64,
+                });
+            }
+        }
+    }
+    out
+}
+
 pub fn register_ops() {
     crate::ops::OP_REGISTRY.register_many([
         crate::ops::OpDef::new(
@@ -383,6 +422,59 @@ pub fn register_ops() {
                             "level": level,
                             "count": pieces.len(),
                             "pieces": pieces.iter().map(piece_json).collect::<Vec<_>>(),
+                        }))
+                    },
+                    ENGINE_TIMEOUT,
+                )
+            },
+        ),
+        crate::ops::OpDef::new(
+            "joins",
+            "Write every pair of placed pieces near enough to be joined to a file, as raw sightings for stud derivation",
+            "{levels: [str], path: str, touching?: f64}",
+            |args| {
+                let levels: Vec<String> = args
+                    .get("levels")
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                    .unwrap_or_default();
+                if levels.is_empty() {
+                    return Err("need {levels: [str]}".to_string());
+                }
+                let touching = args.get("touching").and_then(|v| v.as_f64()).unwrap_or(9.0);
+                let path = crate::args::arg_str(args, "path")?.to_string();
+                crate::game_thread::run(
+                    move || {
+                        let joins = joins_in(&levels, touching);
+                        // Written, not returned. A single pass over
+                        // eleven squares is 50,000 sightings and
+                        // 12 MB of JSON, which times out on the way
+                        // back. Evidence belongs on disk anyway: it
+                        // accumulates across sessions, and deriving
+                        // studs from it needs no game running.
+                        let rows: Vec<serde_json::Value> = joins
+                            .iter()
+                            .map(|j| serde_json::json!({
+                                "from": j.from,
+                                "to": j.to,
+                                "offset": [j.offset.0, j.offset.1, j.offset.2],
+                                "from_yaw": j.from_yaw,
+                                "to_yaw": j.to_yaw,
+                            }))
+                            .collect();
+                        let doc = serde_json::json!({
+                            "levels": levels,
+                            "touching_m": touching,
+                            "units": "offsets in metres, y up; yaw in radians",
+                            "sightings": rows.len(),
+                            "joins": rows,
+                        });
+                        std::fs::write(&path, serde_json::to_string(&doc).unwrap_or_default())
+                            .map_err(|e| format!("could not write {path}: {e}"))?;
+                        Ok(serde_json::json!({
+                            "levels": levels.len(),
+                            "sightings": rows.len(),
+                            "written_to": path,
                         }))
                     },
                     ENGINE_TIMEOUT,
