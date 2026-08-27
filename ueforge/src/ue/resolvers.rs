@@ -14,7 +14,7 @@
 //! stable across UE 5.x) and `g_objects_layout` (array shape).
 
 use patternsleuth::resolvers::impl_try_collector;
-use patternsleuth::resolvers::unreal::fname::{FNamePool, FNameToString};
+use patternsleuth::resolvers::unreal::fname::{FNameCtorWchar, FNamePool, FNameToString};
 use patternsleuth::resolvers::unreal::game_loop::UGameEngineTick;
 use patternsleuth::resolvers::unreal::gmalloc::GMalloc;
 use patternsleuth::resolvers::unreal::guobject_array::GUObjectArray;
@@ -31,6 +31,33 @@ impl_try_collector! {
         fname_to_string: FNameToString,
         gmalloc: GMalloc,
     }
+}
+
+impl_try_collector! {
+    /// `FName::FName(wchar_t const*, EFindName)`, the engine's own
+    /// name constructor.
+    ///
+    /// Resolved on its own, like Tick, because a mod works fine
+    /// without it: everything that reads names off existing
+    /// objects is unaffected. What it unlocks is calls whose
+    /// argument is a name WE choose rather than one we found
+    /// (research.md 28).
+    #[derive(Debug, PartialEq, Clone)]
+    struct FNameCtorResolution {
+        fname_ctor: FNameCtorWchar,
+    }
+}
+
+/// Absolute address of `FName::FName(wchar_t const*, EFindName)`.
+///
+/// Absolute, not image-relative, because the caller calls it.
+pub fn resolve_fname_ctor() -> Result<usize, String> {
+    let exe = patternsleuth::process::internal::read_image()
+        .map_err(|e| format!("patternsleuth: read_image failed: {e}"))?;
+    let resolution = exe
+        .resolve(FNameCtorResolution::resolver())
+        .map_err(|e| format!("patternsleuth: FName ctor not found: {e}"))?;
+    Ok(resolution.fname_ctor.0 as usize)
 }
 
 impl_try_collector! {

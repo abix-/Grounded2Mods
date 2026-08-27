@@ -124,6 +124,38 @@ pub fn register_builtins() {
             |args| on_game_thread(args, class_functions_by_name),
         ),
         OpDef::new(
+            "string_to_fname",
+            "Turn a string into an FName through the engine's own constructor. Find-only by default, so a name the game does not have comes back missing rather than being created",
+            "{text: str, add?: bool}",
+            |args| {
+                on_game_thread(args, |a| {
+                    let text = arg_str(a, "text")?.to_string();
+                    let add = a.get("add").and_then(Json::as_bool).unwrap_or(false);
+                    let mode = if add {
+                        crate::ue::fname::FindName::Add
+                    } else {
+                        crate::ue::fname::FindName::Find
+                    };
+                    let found = crate::ue::fname::from_str(&text, mode);
+                    Ok(serde_json::json!({
+                        "text": text,
+                        "mode": if add { "add" } else { "find" },
+                        "found": found.is_some(),
+                        "fname": found.map(|f| f.as_u64()),
+                        // Straight back out through the reader, so
+                        // a match proves the round trip rather than
+                        // just that something non-zero came back.
+                        "round_trip": found.and_then(|f| {
+                            crate::ue::try_runtime()
+                                // SAFETY: the name came from the
+                                // engine's own constructor.
+                                .map(|rt| unsafe { rt.name_resolver.to_string(f) })
+                        }),
+                    }))
+                })
+            },
+        ),
+        OpDef::new(
             "fname_to_string",
             "Resolve an FName u64 to its string form",
             "{fname: u64}",

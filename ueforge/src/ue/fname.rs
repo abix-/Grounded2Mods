@@ -17,6 +17,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use parking_lot::RwLock;
 
@@ -51,6 +52,79 @@ const _: () = {
 /// anything real and catches the "raw memory interpreted as
 /// FName" garbage cases that crash `AppendString`.
 const FNAME_INDEX_SANITY_MAX: i32 = 16 * 1024 * 1024;
+
+/// `EFindName`: what to do when the name is not already in the
+/// pool. Add it, or answer that it is not there.
+///
+/// Finding is what a mod almost always wants. A name the game
+/// cooked in already exists; a name that does not exist is a
+/// question with a real answer, and adding it would turn that
+/// into a silent yes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum FindName {
+    Find = 0,
+    Add = 1,
+}
+
+/// The engine's own `FName::FName(wchar_t const*, EFindName)`,
+/// resolved once.
+static CTOR: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+/// Set once resolution has been tried, so a failure is not
+/// retried on every call.
+static CTOR_TRIED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+type FNameCtor = unsafe extern "system" fn(*mut FName, *const u16, u32) -> *mut FName;
+
+/// Turn a string into an `FName`.
+///
+/// Everything else in this module READS names off objects that
+/// already exist. This is the other direction, and without it any
+/// engine call whose argument is a name we choose is out of reach
+/// (research.md 28).
+///
+/// `FindName::Find` returns `None` when the game has no such
+/// name, which is the useful answer: it means the thing you are
+/// asking about does not exist in this build.
+///
+/// Game thread only, like anything that enters the engine.
+pub fn from_str(text: &str, mode: FindName) -> Option<FName> {
+    let addr = ctor()?;
+    // A null-terminated UTF-16 string, which is what wchar_t is
+    // on Windows. It must outlive the call.
+    let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut out = FName { comparison_index: 0, number: 0 };
+    // SAFETY: `addr` came from patternsleuth's own resolver for
+    // this exact signature; `wide` is null-terminated and lives
+    // across the call; `out` is a valid FName to write into.
+    unsafe {
+        let f: FNameCtor = std::mem::transmute(addr);
+        f(&mut out as *mut FName, wide.as_ptr(), mode as u32);
+    }
+    // Find-mode misses come back as the none-name.
+    if out.is_none() { None } else { Some(out) }
+}
+
+fn ctor() -> Option<usize> {
+    let addr = CTOR.load(Ordering::Acquire);
+    if addr != 0 {
+        return Some(addr);
+    }
+    if CTOR_TRIED.swap(true, Ordering::AcqRel) {
+        return None;
+    }
+    match crate::ue::resolvers::resolve_fname_ctor() {
+        Ok(a) => {
+            CTOR.store(a, Ordering::Release);
+            crate::log!("fname: ctor at {a:#x}");
+            Some(a)
+        }
+        Err(e) => {
+            crate::log!("fname: ctor not found ({e})");
+            None
+        }
+    }
+}
 
 /// Read an `FName` field and resolve it to its text.
 ///
