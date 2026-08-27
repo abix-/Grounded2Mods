@@ -104,12 +104,8 @@ part's geometry sits is COMPUTED").
 |---|---|
 | the parts list | DONE. 2,407 meshes on disk with size, shape and pivot, every one of them. |
 | the stud reading | DONE and proven live: `modforge::studs::studs_in` finds shared borders, four unit tests, and one square's studs landed on both parts in `parts.json` (54 wall studs partnered with floors, 64 the mirror). The superseded distance design (`joins_in`, `Join`, the `joins` op) is deleted. |
-| the catalog | ONE square in, 121 to loop, and NOISY: `SM_Floor_400x400` came out with 3,228 studs including trees leaning on paving, because nothing filters to building parts yet and one square's irregular paving makes every seam its own stud. The folder filter and the cross-level confirmation counts are what cut it. |
-| the 350 cm wall-to-floor number | superseded; the design records shared borders, not origin offsets. |
-
-**The chain has completed once** (2026-08-27): load a level
-asset, read its parts, find the shared borders, merge studs into
-`parts.json`, 2,779 parts to 213 updated entries in 1.55 s.
+| the catalog | DONE, first full run 2026-08-27: all 123 level assets loaded and read in 71 s, zero failures, 2,818 studs confirmed 4+ times across 94 parts, merged into `parts.json`. The 4 m wall's commonest studs read as a kit: a wall stacks on top seen 190, the next wall along seen 157, and a door wall substitutes at the same stud. |
+| the noise | A floor tile still carries 888 studs after the cull: road paving follows terrain, and irregular seams recur enough to survive min_seen 4. Open row. |
 
 ### The shape
 

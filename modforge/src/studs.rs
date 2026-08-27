@@ -245,6 +245,37 @@ pub fn studs_in(parts: &[PartDef], how: Derive) -> HashMap<String, Vec<Stud>> {
         .collect()
 }
 
+/// Add one set of studs into another: the same stud on the same
+/// part (same place, same turn) gains the confirmations, a new
+/// one is added. This is how one catalog grows over many levels.
+pub fn merge(into: &mut HashMap<String, Vec<Stud>>, from: HashMap<String, Vec<Stud>>) {
+    for (name, studs) in from {
+        let list = into.entry(name).or_default();
+        for s in studs {
+            if let Some(e) = list.iter_mut().find(|e| e.at == s.at && e.turn == s.turn) {
+                e.seen += s.seen;
+                for (k, v) in s.with {
+                    *e.with.entry(k).or_default() += v;
+                }
+            } else {
+                list.push(s);
+            }
+        }
+    }
+}
+
+/// Keep only studs confirmed at least `min_seen` times, commonest
+/// first. Run ONCE at the end of a catalog pass: a real
+/// attachment recurs across levels, a one-off paving seam does
+/// not.
+pub fn cull(map: &mut HashMap<String, Vec<Stud>>, min_seen: usize) {
+    for list in map.values_mut() {
+        list.retain(|s| s.seen >= min_seen);
+        list.sort_by(|a, b| b.seen.cmp(&a.seen));
+    }
+    map.retain(|_, list| !list.is_empty());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -339,6 +370,33 @@ mod tests {
         assert_eq!(a["floor"][0].at, b["floor"][0].at);
         assert_eq!(a["floor"][0].turn, b["floor"][0].turn);
         assert_eq!(a["wall"][0].at, b["wall"][0].at);
+    }
+
+    /// The same stud seen in two levels gains confirmations; the
+    /// cull then keeps it and drops the one-off.
+    #[test]
+    fn confirmations_accumulate_across_levels_and_one_offs_fall() {
+        let room = vec![
+            place("floor", 0.0, 0.0, 0.0, 0.0),
+            place("wall", 1.0, 0.0, 0.0, 0.0),
+        ];
+        let oddity = vec![
+            place("floor", 0.0, 0.0, 0.0, 0.0),
+            place("floor", 3.7, 0.0, 0.0, 0.0),
+        ];
+        let mut acc = HashMap::new();
+        for _ in 0..3 {
+            merge(&mut acc, studs_in(&room, Derive::default()));
+        }
+        merge(&mut acc, studs_in(&oddity, Derive::default()));
+
+        cull(&mut acc, 3);
+        let wall = &acc["wall"][0];
+        assert_eq!(wall.seen, 3, "three levels confirmed the wall stud");
+        assert!(
+            acc["floor"].iter().all(|s| s.seen >= 3),
+            "the one-off paving seam fell to the cull"
+        );
     }
 
     /// A pair at a non-quarter relative turn is scenery, not a

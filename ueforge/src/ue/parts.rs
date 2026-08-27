@@ -41,6 +41,13 @@ const CM_PER_M: f64 = 100.0;
 /// the caller.
 const ENGINE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// The catalog loads every level asset the game ships, one at a
+/// time, on the game thread. One square took about 2 s, so 121
+/// fit inside ten minutes with room; the game is stopped for the
+/// whole pass, which is expected and why the catalog is run by
+/// hand, never on a timer.
+const CATALOG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
+
 /// A part read out of a level, still in Unreal's numbers.
 ///
 /// Kept only long enough to work out the set's middle, because
@@ -438,6 +445,96 @@ pub fn register_ops() {
                         }))
                     },
                     ENGINE_TIMEOUT,
+                )
+            },
+        ),
+        crate::ops::OpDef::new(
+            "catalog_studs",
+            "THE CATALOG: every level asset the game ships, loaded in turn, its building parts' studs accumulated across all of them and merged into parts.json once. The game stops for the whole pass",
+            "{folders: [str], path: str, min_seen?: u64, touch_m?: f64}",
+            |args| {
+                let folders: Vec<String> = args
+                    .get("folders")
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                    .unwrap_or_default();
+                if folders.is_empty() {
+                    return Err("need {folders: [str]}".to_string());
+                }
+                let path = crate::args::arg_str(args, "path")?.to_string();
+                // A real attachment recurs across levels; a
+                // one-off paving seam does not. The cull runs
+                // once, at the end.
+                let min_seen = args.get("min_seen").and_then(|v| v.as_u64()).unwrap_or(4) as usize;
+                let mut how = modforge::studs::Derive::default();
+                how.min_seen = 1;
+                if let Some(t) = args.get("touch_m").and_then(|v| v.as_f64()) {
+                    how.touch_m = t;
+                }
+                crate::game_thread::run(
+                    move || {
+                        let keep = crate::assets::names_under("StaticMesh", &folders)?;
+                        let mut worlds = crate::assets::assets_of_class("World")?;
+                        worlds.sort_by(|a, b| a.package.cmp(&b.package));
+                        worlds.dedup_by(|a, b| a.package == b.package);
+
+                        let mut acc = std::collections::HashMap::new();
+                        let mut levels_read = 0usize;
+                        let mut failed: Vec<String> = Vec::new();
+                        for w in &worlds {
+                            // Load and read in one breath: an
+                            // unreferenced level is let go by the
+                            // GC within seconds.
+                            let addr = crate::assets::load_asset(w.package_fname, w.name_fname)?;
+                            if addr == 0 {
+                                failed.push(w.name.clone());
+                                continue;
+                            }
+                            let mut parts = read_level(&w.package, &[]);
+                            parts.retain(|p| {
+                                p.asset.as_ref().is_some_and(|a| keep.contains(a))
+                            });
+                            levels_read += 1;
+                            modforge::studs::merge(
+                                &mut acc,
+                                modforge::studs::studs_in(&parts, how),
+                            );
+                        }
+                        modforge::studs::cull(&mut acc, min_seen);
+
+                        let rows: serde_json::Map<String, serde_json::Value> = acc
+                            .iter()
+                            .map(|(name, list)| {
+                                (
+                                    name.clone(),
+                                    serde_json::Value::Array(
+                                        list.iter()
+                                            .map(|s| {
+                                                serde_json::json!({
+                                                    "at": [s.at.0, s.at.1, s.at.2],
+                                                    "turn": s.turn,
+                                                    "seen": s.seen,
+                                                    "with": s.with,
+                                                })
+                                            })
+                                            .collect(),
+                                    ),
+                                )
+                            })
+                            .collect();
+                        let updated = merge_studs(&path, &rows)?;
+                        Ok(serde_json::json!({
+                            "levels": worlds.len(),
+                            "levels_read": levels_read,
+                            "load_failed": failed,
+                            "min_seen": min_seen,
+                            "parts_with_studs": rows.len(),
+                            "total_studs": acc.values().map(|l| l.len()).sum::<usize>(),
+                            "parts_updated": updated,
+                            "written_to": path,
+                        }))
+                    },
+                    CATALOG_TIMEOUT,
                 )
             },
         ),

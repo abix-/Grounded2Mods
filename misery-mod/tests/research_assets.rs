@@ -400,6 +400,67 @@ fn do_vanilla_neighbours_share_borders() {
     assert!(printed > 0, "no wall stands within 50 cm of any floor tile's top");
 }
 
+/// THE CATALOG: all the vanilla building data, extracted.
+///
+/// Every level asset the game ships, loaded in turn, its
+/// building parts' studs accumulated across all of them, culled
+/// to the confirmed ones, and merged into `parts.json` once.
+/// This is the chain row's run.
+#[test]
+#[ignore = "loads every level asset into the live game and writes parts.json"]
+fn catalog_all_the_vanilla_buildings() {
+    let Some(api) = api_or_skip() else { return };
+    let api = api.with_timeout(std::time::Duration::from_secs(900));
+    let path = "C:/Games/Steam/steamapps/common/MISERY/MISERY/Binaries/Win64/ue4ss/Mods/MiseryMod/dlls/parts.json";
+    // A fresh file, so nothing from earlier passes lingers.
+    let r = api.op("parts_list", json!({ "class": "StaticMesh", "path": path }));
+    assert!(r.ok, "parts_list failed: {:?}", r.error);
+
+    let r = api.op(
+        "catalog_studs",
+        json!({
+            "folders": [
+                "/Game/Meshes/Blockout/Meshes/Architecture",
+                "/Game/Meshes/Structures/Constructor",
+            ],
+            "path": path,
+            "min_seen": 4,
+        }),
+    );
+    assert!(r.ok, "catalog_studs failed: {:?}", r.error);
+    println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+    assert!(r.result["parts_updated"].as_u64().unwrap_or(0) > 0);
+
+    // Read the proof back OUT of the file: the wall-on-floor
+    // stud, confirmed across levels, and a floor whose stud list
+    // is shorter than the one square's 1,082.
+    let text = std::fs::read_to_string(path).expect("parts.json unreadable");
+    let doc: serde_json::Value = serde_json::from_str(&text).expect("parts.json not JSON");
+    let parts = doc["parts"].as_array().cloned().unwrap_or_default();
+    let mut floors = 0usize;
+    let mut wall_floor = 0usize;
+    for p in &parts {
+        let name = p["name"].as_str().unwrap_or("");
+        let studs = p["studs"].as_array().cloned().unwrap_or_default();
+        if name == "SM_Floor_400x400" {
+            floors = studs.len();
+        }
+        if name.starts_with("SM_Wall") {
+            wall_floor += studs
+                .iter()
+                .filter(|s| {
+                    s["with"]
+                        .as_object()
+                        .is_some_and(|w| w.keys().any(|k| k.starts_with("SM_Floor")))
+                })
+                .count();
+        }
+    }
+    println!("SM_Floor_400x400 studs after the cull: {floors}");
+    println!("wall studs partnered with a floor: {wall_floor}");
+    assert!(wall_floor > 0, "no confirmed wall-on-floor stud in the catalog");
+}
+
 /// THE STUDS, read from a vanilla square into `parts.json`.
 ///
 /// A stud is where two placed parts share a border
