@@ -125,6 +125,104 @@ pub fn find_live_object(
     None
 }
 
+/// One actor, found on first use and remembered until the world
+/// ends.
+///
+/// [`find_actor`] reads EVERY UObject the game has loaded.
+/// Measured in MISERY 2026-08-26: 174,000 to 230,000 objects, and
+/// 20 ms to stop at the first match. On the game thread, so more
+/// than a frame.
+///
+/// Most of what a mod looks for is one actor that lives for the
+/// whole session and never moves: the player, a manager. Looking
+/// for it twice pays twice for the same answer, and MISERY had
+/// five separate searches, three of them hunting the same player.
+///
+/// **Deliberately not a timer.** Re-reading on a clock is polling
+/// with a longer gap: every interval is a guess, and the right
+/// interval for something that changes on an event is never. The
+/// only event that invalidates the pointer is the world ending,
+/// and [`on_each_load`] already notices that for the price of a
+/// cached pointer and an array length.
+///
+/// ```ignore
+/// static PLAYER: LiveActor = LiveActor::new("BP_SGKMasterCharacter_C");
+/// let Some(player) = PLAYER.get() else { return };
+/// ```
+pub struct LiveActor {
+    class: &'static str,
+    /// The actor, or 0 for "not found yet".
+    addr: std::sync::atomic::AtomicUsize,
+    /// Whether this one is in [`ALL_LIVE`] yet.
+    listed: std::sync::atomic::AtomicUsize,
+}
+
+/// Every [`LiveActor`] that has been used, so one call drops all
+/// of them when the world ends.
+static ALL_LIVE: parking_lot::Mutex<Vec<&'static LiveActor>> = parking_lot::Mutex::new(Vec::new());
+
+impl LiveActor {
+    pub const fn new(class: &'static str) -> Self {
+        Self {
+            class,
+            addr: std::sync::atomic::AtomicUsize::new(0),
+            listed: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+
+    /// The actor, searching only if it is not already remembered.
+    ///
+    /// Game thread only. Do not hold the reference across a level
+    /// load; call again instead, which is free.
+    pub fn get(&'static self) -> Option<&'static UObject> {
+        use std::sync::atomic::Ordering;
+        if self.listed.swap(1, Ordering::AcqRel) == 0 {
+            ALL_LIVE.lock().push(self);
+        }
+        let addr = self.addr.load(Ordering::Acquire);
+        if addr != 0 {
+            // SAFETY: stored below from a GObjects search, and
+            // cleared by `forget_all` when the world that owned it
+            // ended.
+            return Some(unsafe { &*(addr as *const UObject) });
+        }
+        let found = find_live_object(self.class, None, true)?;
+        self.addr
+            .store(found as *const UObject as usize, Ordering::Release);
+        Some(found)
+    }
+
+    /// The same as a raw pointer, for callers that take one.
+    pub fn ptr(&'static self) -> Option<*const u8> {
+        self.get().map(|o| o as *const UObject as *const u8)
+    }
+
+    /// Forget it, so the next `get` searches again.
+    pub fn forget(&self) {
+        self.addr
+            .store(0, std::sync::atomic::Ordering::Release);
+    }
+
+    pub fn is_held(&self) -> bool {
+        self.addr.load(std::sync::atomic::Ordering::Acquire) != 0
+    }
+}
+
+/// Forget every remembered actor.
+///
+/// Called when the world ends, because that is the only thing
+/// that makes the pointers stale.
+pub fn forget_all() {
+    for a in ALL_LIVE.lock().iter() {
+        a.forget();
+    }
+}
+
+/// How many actors are remembered right now. For diagnostics.
+pub fn held_count() -> usize {
+    ALL_LIVE.lock().iter().filter(|a| a.is_held()).count()
+}
+
 /// Find a non-CDO instance by class name. When
 /// `require_level` is false, matches any non-CDO instance
 /// (useful for widgets and other non-actor objects).
@@ -463,6 +561,15 @@ pub fn on_each_load<P, F>(
                         crate::log::log(format_args!(
                             "{label}: world gone, waiting for the next one"
                         ));
+                        // Everything found in that world is now a
+                        // stale pointer.
+                        let _ = crate::game_thread::run(
+                            || {
+                                forget_all();
+                                Ok(serde_json::Value::Null)
+                            },
+                            TIMEOUT,
+                        );
                         break;
                     }
                     // No streamer registered, so fall back to the

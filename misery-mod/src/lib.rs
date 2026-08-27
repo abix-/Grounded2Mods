@@ -152,7 +152,7 @@ fn on_unreal_init() {
         // the player had never been to. See research.md 26.9.
         .once("autoload", autoload::install)
         .on_each_load("speed_default", Duration::from_secs(2),
-            || ueforge::ue::actor::find_actor("BP_SGKMasterCharacter_C", None),
+            || speed::PLAYER.ptr(),
             |_| {
                 if let Err(e) = speed::set_multiplier(2.0) {
                     ueforge::log::log(format_args!("speed_default: {e}"));

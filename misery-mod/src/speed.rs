@@ -12,7 +12,11 @@
 use ueforge::ue;
 use ueforge::ue::follow_ptr_chain;
 
-const ACTOR_CLASS: &str = "BP_SGKMasterCharacter_C";
+/// The player, found once a session. `find_actor` reads every
+/// object in the game, and this tab used to do that on every
+/// frame it was open.
+pub static PLAYER: ueforge::ue::actor::LiveActor =
+    ueforge::ue::actor::LiveActor::new("BP_SGKMasterCharacter_C");
 const CHAR_COMP_OFFSET: usize = 0x740;
 const INV_PTR_OFFSET: usize = 0x218;
 const MOVEMENT_SPEEDS_MAP: usize = 0xFE8;
@@ -31,7 +35,7 @@ const BASE_SPEEDS: &[(u8, f64)] = &[
 /// Finds the player's MISERY inventory component, which owns movement speeds.
 /// Stays here because the player classes and component offsets are specific to this game.
 fn inventory_ptr() -> Result<*const u8, String> {
-    let actor = ue::actor::find_actor(ACTOR_CLASS, None).ok_or("no live player character found")?;
+    let actor = PLAYER.ptr().ok_or("no live player character found")?;
     unsafe { follow_ptr_chain(actor, &[CHAR_COMP_OFFSET, INV_PTR_OFFSET]) }
 }
 

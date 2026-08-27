@@ -10,7 +10,6 @@
 
 use std::sync::atomic::{AtomicI32, Ordering};
 
-use ueforge::ue;
 use ueforge::ue::{follow_ptr_chain, read_at, write_at};
 
 /// Property offsets on `BP_GlobalManager_C`, from the UE4SS
@@ -24,8 +23,12 @@ mod offset {
     pub const CURRENT_GENERATED_LEVEL: usize = 0x2C8;
 }
 
-const MGR_CLASS: &str = "BP_GlobalManager_C";
-const DOOR_CLASS: &str = "BP_ExpeditionDoor_C";
+/// Both found once a session; each `find_actor` is a full search
+/// of the object list.
+static MANAGER: ueforge::ue::actor::LiveActor =
+    ueforge::ue::actor::LiveActor::new("BP_GlobalManager_C");
+static DOOR: ueforge::ue::actor::LiveActor =
+    ueforge::ue::actor::LiveActor::new("BP_ExpeditionDoor_C");
 const DOOR_MGR_OFFSET: usize = 0x448;
 
 /// Everything the tab shows in one read, so the UI never holds a
@@ -66,12 +69,13 @@ impl Status {
 /// Finds MISERY's live Shining manager, including the expedition-door fallback.
 /// Stays here because the Blueprint classes and door offset are specific to this game.
 fn manager_ptr() -> Result<*const u8, String> {
-    if let Some(mgr) = ue::actor::find_actor(MGR_CLASS, None) {
+    if let Some(mgr) = MANAGER.ptr() {
         return Ok(mgr);
     }
     // Fallback: find the expedition door and follow its pointer
     // at +0x448 to the manager (research doc 20.4).
-    let door = ue::actor::find_actor(DOOR_CLASS, None)
+    let door = DOOR
+        .ptr()
         .ok_or("no global manager or expedition door found")?;
     unsafe { follow_ptr_chain(door, &[DOOR_MGR_OFFSET]) }
 }
