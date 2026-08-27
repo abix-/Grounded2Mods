@@ -132,10 +132,16 @@ Extract every engine-independent or Unity-specific mechanism identified by the S
 - Verified `k3sc cargo-lock check -p modforge -p survivalist-mod`.
 - Verified `k3sc cargo-lock test -p survivalist-mod --lib`: build passes with the two existing unused genome-helper warnings; its library target has zero tests.
 - Verified `k3sc cargo-lock test -p modforge --lib`: Modforge builds and 312 existing tests pass. The full target remains red only on the existing `input::tests::backend_parse_rejects_garbage` mismatch where `l3` is accepted.
+- Added deterministic salted index and identity-based catalog selection to `modforge::roll`, and routed the existing dread-loop random helper through the same hash authority.
+- Migrated Survivalist stranger intent, mysterious outcome, announcements, and reveal text to Modforge selection while preserving the exact hash constants, signed identity conversion, floating-point salt bits, bounds, thresholds, catalog order, and selected text.
+- Removed Survivalist's local hash and bounded catalog indexing. Added no tests.
+- Verified `k3sc cargo-lock check -p modforge -p survivalist-mod`.
+- Verified `k3sc cargo-lock test -p survivalist-mod --lib`: build passes with the two existing unused genome-helper warnings; its library target has zero tests.
+- Verified `k3sc cargo-lock test -p modforge --lib`: Modforge builds and 312 existing tests pass. The full target remains red only on the existing `input::tests::backend_parse_rejects_garbage` mismatch where `l3` is accepted.
 
 ## Next steps
 
-- Add deterministic identity-and-salt selection for stable choices and text variants; migrate Survivalist stranger intent and flavor selection.
+- Exercise Survivalist's Load/Unload re-init path through a live story switch and confirm `ReinitAfterUnload` works.
 
 ## Open questions
 

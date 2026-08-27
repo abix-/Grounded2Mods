@@ -22,6 +22,24 @@
 //! progress, so rare things can become less rare later without
 //! ever being guaranteed.
 
+/// Select an index deterministically from an identity, salt, and upper bound.
+pub fn salted_index(identity: u64, salt: u64, bound: u64) -> u64 {
+    let mut hash =
+        identity.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ salt.wrapping_mul(0xD1B5_4A32_D192_ED03);
+    hash ^= hash >> 29;
+    hash % bound.max(1)
+}
+
+/// Select an index from a signed identity and floating-point salt.
+pub fn identity_index(identity: i64, salt: f32, bound: u64) -> u64 {
+    salted_index(identity as u64, salt.to_bits() as u64, bound)
+}
+
+/// Select one catalog entry consistently for the same identity and salt.
+pub fn identity_choice<T>(identity: i64, salt: f32, choices: &[T]) -> Option<&T> {
+    choices.get(identity_index(identity, salt, choices.len() as u64) as usize)
+}
+
 /// A budget: how many things one place gets this time.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Budget {
@@ -213,7 +231,10 @@ mod tests {
             assert!(n <= 8, "got {n}");
             saw_zero |= n == 0;
         }
-        assert!(saw_zero, "a wide spread around a small mean should sometimes be zero");
+        assert!(
+            saw_zero,
+            "a wide spread around a small mean should sometimes be zero"
+        );
     }
 
     #[test]
@@ -248,7 +269,10 @@ mod tests {
                 first += 1;
             }
         }
-        assert!((8_400..9_600).contains(&first), "picked first {first} times");
+        assert!(
+            (8_400..9_600).contains(&first),
+            "picked first {first} times"
+        );
     }
 
     #[test]
@@ -291,7 +315,10 @@ mod tests {
         let early = count_rare(0.0);
         let late = count_rare(40.0);
         assert_eq!(early, 0, "weight zero should never be picked");
-        assert!(late > 3_000, "rare thing should be common by level 40: {late}");
+        assert!(
+            late > 3_000,
+            "rare thing should be common by level 40: {late}"
+        );
         assert!(late < 9_500, "and still not certain: {late}");
     }
 }

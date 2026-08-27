@@ -30,6 +30,7 @@ use parking_lot::Mutex;
 use serde_json::json;
 
 use modforge::mission::{self, OneStageStep};
+use modforge::roll::{identity_choice, identity_index};
 use unityforge::mono::{self, LogLevel, MonoObject};
 
 use crate::common::{
@@ -283,24 +284,13 @@ fn launch_with(now: f32, forced: Option<Intent>) -> Result<Outcome, String> {
 fn roll_intent(id: i64, now: f32) -> Intent {
     // Out of 100: join 30, share 12, aggressive 30, leave 13,
     // shakedown 15.
-    match hash_pick(id, now, 100) {
+    match identity_index(id, now, 100) {
         0..=29 => Intent::FriendlyJoin,
         30..=41 => Intent::FriendlyShare,
         42..=71 => Intent::Aggressive,
         72..=84 => Intent::WaryLeave,
         _ => Intent::Shakedown,
     }
-}
-
-/// A pseudo-random value in [0, n): a hash of a stable id and a
-/// salt, so a band's roll is unpredictable but its flavor lines
-/// stay consistent.
-/// Extraction candidate: Modforge should own deterministic salted selection; Survivalist should supply encounter identities, weights, and text.
-fn hash_pick(id: i64, salt: f32, n: u64) -> u64 {
-    let mut h = (id as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
-        ^ (salt.to_bits() as u64).wrapping_mul(0xD1B5_4A32_D192_ED03);
-    h ^= h >> 29;
-    h % n.max(1)
 }
 
 /// Read a camp position for matching arrivals to destinations.
@@ -392,7 +382,7 @@ impl mission::OneStageMission for Mission {
             Intent::Mysterious => {
                 // The outcome is real, but no line ever explains it:
                 // the lingering mystery IS the payoff.
-                match hash_pick(self.group_id, 9.0, 3) {
+                match identity_index(self.group_id, 9.0, 3) {
                     0 => {
                         let left = gift_from_band(self, 1)?;
                         crate::chronicle::post(&reveal_mystery_gift(&self.target_name, left));
@@ -725,7 +715,9 @@ fn announce_line(id: i64, camp: &str) -> String {
         "an unknown band moves toward {}",
         "figures on the road near {}, their intent unclear",
     ];
-    L[hash_pick(id, 0.0, L.len() as u64) as usize].replace("{}", camp)
+    identity_choice(id, 0.0, L)
+        .expect("stranger announcement catalog is not empty")
+        .replace("{}", camp)
 }
 
 /// Choose the first rumor announcing a lone mysterious figure.
@@ -736,7 +728,9 @@ fn announce_lone_line(id: i64, camp: &str) -> String {
         "someone approaches {} alone, and no one knows them",
         "a single traveller nears {}, saying nothing",
     ];
-    L[hash_pick(id, 0.0, L.len() as u64) as usize].replace("{}", camp)
+    identity_choice(id, 0.0, L)
+        .expect("lone stranger announcement catalog is not empty")
+        .replace("{}", camp)
 }
 
 /// Choose the first rumor announcing refugees near a camp.
@@ -747,7 +741,9 @@ fn announce_refugee_line(id: i64, camp: &str) -> String {
         "a ragged band nears {}, running from something",
         "families on the road make for {}, carrying what they could",
     ];
-    L[hash_pick(id, 0.0, L.len() as u64) as usize].replace("{}", camp)
+    identity_choice(id, 0.0, L)
+        .expect("refugee announcement catalog is not empty")
+        .replace("{}", camp)
 }
 
 /// Describe how many refugees a camp accepted.
@@ -788,7 +784,9 @@ fn reveal_share(id: i64, camp: &str, n: i64) -> String {
             "the strangers proved traders: they left {} some supplies and moved on",
             "the band shared what they could spare with {} and kept walking",
         ];
-        L[hash_pick(id, 7.0, L.len() as u64) as usize].replace("{}", camp)
+        identity_choice(id, 7.0, L)
+            .expect("friendly reveal catalog is not empty")
+            .replace("{}", camp)
     } else {
         format!("the strangers were friendly but had nothing to spare for {camp}")
     }
@@ -802,7 +800,9 @@ fn reveal_aggressive(id: i64, camp: &str) -> String {
         "it was a raid; the band fell on {}",
         "the newcomers drew blades at {}'s gate",
     ];
-    L[hash_pick(id, 7.0, L.len() as u64) as usize].replace("{}", camp)
+    identity_choice(id, 7.0, L)
+        .expect("aggressive reveal catalog is not empty")
+        .replace("{}", camp)
 }
 
 /// Describe cautious strangers deciding to leave.
@@ -813,7 +813,9 @@ fn reveal_wary(id: i64, camp: &str) -> String {
         "the band eyed {}'s walls and kept walking",
         "the newcomers thought better of {} and left",
     ];
-    L[hash_pick(id, 7.0, L.len() as u64) as usize].replace("{}", camp)
+    identity_choice(id, 7.0, L)
+        .expect("wary reveal catalog is not empty")
+        .replace("{}", camp)
 }
 
 /// Describe the tribute taken by threatening strangers.
@@ -824,7 +826,9 @@ fn reveal_shakedown(id: i64, camp: &str, n: i64) -> String {
             "the strangers demanded tribute: {} paid a stack to see them gone",
             "the band shook {} down for goods and left",
         ];
-        L[hash_pick(id, 7.0, L.len() as u64) as usize].replace("{}", camp)
+        identity_choice(id, 7.0, L)
+            .expect("shakedown reveal catalog is not empty")
+            .replace("{}", camp)
     } else {
         format!("the strangers menaced {camp} for tribute but found nothing worth taking")
     }

@@ -19,10 +19,7 @@ use crate::mission::should_tick;
 /// Deterministic: the same time and salt always produce the same
 /// value, so successive rolls in one pass differ by salt alone.
 pub fn rng(now: f32, salt: u64, n: u64) -> u64 {
-    let mut h = (now.to_bits() as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
-        ^ salt.wrapping_mul(0xD1B5_4A32_D192_ED03);
-    h ^= h >> 29;
-    h % n.max(1)
+    crate::roll::salted_index(now.to_bits() as u64, salt, n)
 }
 
 /// A payoff waiting to land.
@@ -64,8 +61,7 @@ impl<P: Copy> DreadLoop<P> {
     /// Post a sign with the given payoff. The payoff lands after a
     /// random delay drawn uniformly from [min_delay, max_delay].
     pub fn post(&self, payoff: P, now: f32, min_delay: f32, max_delay: f32) {
-        let gap = min_delay
-            + (rng(now, 1, 1000) as f32 / 1000.0) * (max_delay - min_delay);
+        let gap = min_delay + (rng(now, 1, 1000) as f32 / 1000.0) * (max_delay - min_delay);
         *self.pending.lock() = Some(Pending {
             payoff,
             due: now + gap,
