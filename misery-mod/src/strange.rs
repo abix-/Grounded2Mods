@@ -177,6 +177,8 @@ static PHENOMENA: &[Phenomenon] = &[
 
 /// Emission level: max EmissionsPast across generators
 /// (worldgen.md 7.1: it is the save's global shining count).
+/// Reads the world's Shining count to scale alternate-reality phenomena.
+/// Stays here because the progression field lives on MISERY's world-generation Blueprint.
 fn emission_level() -> i32 {
     ueforge::ue::actor::find_actors_by_chain("BP_WorldGeneration_Base_C")
         .into_iter()
@@ -186,6 +188,8 @@ fn emission_level() -> i32 {
 }
 
 /// TileSize of the generator that is currently streaming a world.
+/// Finds the current MISERY map tile size used to place phenomena inside a square.
+/// Stays here because the world-generator class and tile-size field are game-specific.
 pub fn active_tile_size() -> Option<f64> {
     for p in ueforge::ue::actor::find_actors_by_chain("BP_WorldGeneration_Base_C") {
         let streaming_num: i32 = unsafe { read_at(p, STREAMING_LEVELS_OFFSET + 8) };
@@ -201,6 +205,8 @@ pub fn active_tile_size() -> Option<f64> {
 
 /// Square key plus its grid cell, from an actor's full name
 /// (`Class /Game/.../<worldid>_<cx>_<cy>.L_Preset.PersistentLevel...`).
+/// Decodes a MISERY actor path into its world name and square coordinates.
+/// Stays here because the coordinate naming convention belongs to this game's streamed maps.
 fn square_of(full_name: &str) -> Option<(String, i32, i32)> {
     let path = full_name.split(' ').nth(1)?;
     let square = path.split(".PersistentLevel").next()?;
@@ -214,6 +220,8 @@ fn square_of(full_name: &str) -> Option<(String, i32, i32)> {
 }
 
 /// Live squares, keyed by name, with their grid cells.
+/// Lists the distinct MISERY map squares currently populated by live creatures.
+/// Stays here because it identifies squares through this game's NPC classes and package names.
 pub fn live_squares() -> Vec<(String, i32, i32)> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
@@ -233,6 +241,8 @@ pub fn live_squares() -> Vec<(String, i32, i32)> {
     out
 }
 
+/// Starts the alternate-reality overlay that adds phenomena to newly loaded squares.
+/// Stays here because it composes shared rolls and spawning around MISERY content and progression.
 pub fn install() {
     register_ops();
     // Stoppable so the DLL can unload cleanly on a hot reload.
@@ -247,6 +257,8 @@ pub fn install() {
 /// Squares already rolled for phenomena.
 static DONE: std::sync::Mutex<Option<HashSet<String>>> = std::sync::Mutex::new(None);
 
+/// Notices each newly loaded square and schedules its phenomena on the game thread.
+/// Stays here because the once-per-square session policy belongs to this MISERY feature.
 fn watcher() {
     let mut guard = DONE.lock().unwrap_or_else(|e| e.into_inner());
     let done = guard.get_or_insert_with(HashSet::new);
@@ -309,6 +321,8 @@ const BUDGET: modforge::roll::Budget = modforge::roll::Budget {
     max: PHENOMENA_CAP,
 };
 
+/// Chooses a varied set of rewards, dangers, and scenery for one MISERY square.
+/// Stays here because Modforge supplies generic rolls while this mod owns the phenomenon catalog and guard rule.
 fn roll_square(emissions: i32) -> Vec<&'static Phenomenon> {
     if BUDGET.is_quiet() {
         return Vec::new();
@@ -341,6 +355,7 @@ fn roll_square(emissions: i32) -> Vec<&'static Phenomenon> {
 
 /// Game thread. Place each phenomenon at its own random point in
 /// the square, props scattered within its spread.
+/// Stays here because the Blueprint classes, ground placement, and reward guarding are MISERY gameplay.
 fn place_phenomena(
     plan: &[&'static Phenomenon],
     centre: (f64, f64),
@@ -419,6 +434,8 @@ fn place_phenomena(
 }
 
 
+/// Adds phenomenon status and manual placement controls to the MISERY debug API.
+/// Stays here because these operations expose this mod's alternate-reality content.
 fn register_ops() {
     ueforge::ops::OP_REGISTRY.register_many([
         ueforge::ops::OpDef::new("strange_stats", "Alternate-reality overlay counters", "{}", |_a| {
@@ -457,4 +474,3 @@ fn register_ops() {
         ),
     ]);
 }
-

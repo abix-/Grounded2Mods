@@ -65,6 +65,8 @@ struct Plan {
 
 /// The save's shining count: max EmissionsPast across the four
 /// world generators (only the active one accumulates).
+/// Reads how many Shinings the current world has survived to scale extra enemies.
+/// Stays here because the progression source is a MISERY world-generation Blueprint field.
 fn emission_level() -> i32 {
     let ov = EMISSIONS_OVERRIDE.load(Ordering::Relaxed);
     if ov >= 0 {
@@ -81,6 +83,8 @@ fn emission_level() -> i32 {
 /// Squares are identified by the level path before
 /// ".PersistentLevel"; only WorldPresets squares count (the hub
 /// and anything we spawned live elsewhere and are excluded).
+/// Counts hostile creatures already present in each loaded MISERY map square.
+/// Stays here because the hostile classes and WorldPresets square naming are game content.
 fn census() -> HashMap<String, usize> {
     let mut squares: HashMap<String, usize> = HashMap::new();
     for p in ueforge::ue::actor::find_actors_by_chain("BP_MasterAICharacter_C") {
@@ -98,6 +102,8 @@ fn census() -> HashMap<String, usize> {
 /// A square IS the streamed level that owns the actor
 /// (`ue::actor::level_of`); MISERY's part is only that squares
 /// live under WorldPresets, which excludes the hub.
+/// Extracts the MISERY map-square name from a live actor's Unreal object path.
+/// Stays here because the WorldPresets package convention is specific to this game's maps.
 fn square_of(full_name: &str) -> Option<String> {
     let level = ueforge::ue::actor::level_of(full_name)?;
     if !level.contains("WorldPresets") {
@@ -119,6 +125,8 @@ const BUDGET: modforge::roll::Budget = modforge::roll::Budget {
     max: PER_SQUARE_CAP,
 };
 
+/// Chooses the extra creatures and packs that will make one square more dangerous.
+/// Stays here because Modforge supplies generic weighted rolls while MISERY defines the enemies and escalation rules.
 fn roll_plan(square: &str, vanilla: usize, emissions: i32) -> Plan {
     let mut plan = Plan {
         square: square.to_string(),
@@ -151,6 +159,8 @@ fn roll_plan(square: &str, vanilla: usize, emissions: i32) -> Plan {
 
 /// Background watcher. Rolls a plan for each newly streamed
 /// square and executes it on the game thread.
+/// Starts adaptive enemy spawning and exposes its player-facing controls.
+/// Stays here because it composes shared polling and rolling around MISERY enemies and map squares.
 pub fn install() {
     register_ops();
     // Stoppable so the DLL can unload; a raw thread would keep
@@ -167,6 +177,8 @@ pub fn install() {
 /// re-enters per interval.
 static PROCESSED: std::sync::Mutex<Option<HashSet<String>>> = std::sync::Mutex::new(None);
 
+/// Detects newly loaded MISERY squares and schedules their extra enemy encounters.
+/// Stays here because the trigger and session policy are part of this mod's spawning feature.
 fn watcher() {
     let mut guard = PROCESSED.lock().unwrap_or_else(|e| e.into_inner());
     let processed = guard.get_or_insert_with(HashSet::new);
@@ -214,12 +226,16 @@ fn watcher() {
     }
 }
 
+/// Shortens a MISERY square path into a readable name for logs and status output.
+/// Stays here because it formats this game's WorldPresets naming convention.
 fn short(square: &str) -> &str {
     square.rsplit('/').next().unwrap_or(square)
 }
 
 /// Runs on the game thread. Re-censuses the square (pointers
 /// from the watcher could be stale), then spawns.
+/// Places a planned group of extra enemies around the chosen loaded square.
+/// Stays here because the creature pools, pack rules, and placement policy are MISERY gameplay.
 fn execute_plan(plan: &Plan) -> Result<serde_json::Value, String> {
     let mut anchors: Vec<*const u8> = Vec::new();
     let mut pool: Vec<(u64, String)> = Vec::new();
@@ -296,6 +312,8 @@ fn execute_plan(plan: &Plan) -> Result<serde_json::Value, String> {
 }
 
 /// Actor:K2_GetActorLocation via ProcessEvent. Game thread only.
+/// Reads a live MISERY actor's world position for encounter placement.
+/// Stays here as the feature's narrow adapter to Ueforge's shared transform reader.
 fn actor_location(actor: *const u8) -> Option<(f64, f64, f64)> {
     // SAFETY: actor is a live UObject on the game thread.
     unsafe { ueforge::ue::transform::world_location(actor) }
@@ -305,6 +323,8 @@ fn actor_location(actor: *const u8) -> Option<(f64, f64, f64)> {
 /// `ueforge::ue::spawn`; what is MISERY's here is only that
 /// extras are spawned with collision checking off, so a blocked
 /// spot does not silently swallow the spawn.
+/// Spawns one planned enemy using the collision behavior chosen for MISERY encounters.
+/// Stays here because Ueforge owns generic spawning while this mod chooses the game's spawn policy.
 fn spawn_class(world_ctx: *const u8, class_ptr: u64, x: f64, y: f64, z: f64) -> u64 {
     // SAFETY: world_ctx is a live actor and class_ptr a live
     // UClass, both from this frame's GObjects walk; game thread.
@@ -313,6 +333,8 @@ fn spawn_class(world_ctx: *const u8, class_ptr: u64, x: f64, y: f64, z: f64) -> 
     }
 }
 
+/// Adds adaptive-spawning status and override commands to the MISERY debug API.
+/// Stays here because the controls expose this mod's enemy policy, not a shared spawning primitive.
 fn register_ops() {
     ueforge::ops::OP_REGISTRY.register_many([
         ueforge::ops::OpDef::new(

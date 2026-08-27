@@ -13,18 +13,18 @@
 //! A consumer supplies [`Kit`] and gets three endpoints. Nothing
 //! here knows a mesh name.
 
-use modforge::structure::{PieceDef, ShellSlot};
+use modforge::structure::{KitNames, PieceDef};
 
 /// What a game must say about its modular parts.
 ///
 /// `class` is the actor to spawn per piece; `modules` are the
-/// widths the kit offers, largest first; `mesh_for` names the
-/// part that fills one slot.
+/// widths the kit offers, largest first; `names` says what the
+/// kit calls each part.
 #[derive(Clone, Copy)]
 pub struct Kit {
     pub class: &'static str,
     pub modules: &'static [f32],
-    pub mesh_for: fn(&ShellSlot) -> String,
+    pub names: KitNames,
     /// Mesh name prefixes that count as kit parts, for reading a
     /// level back (e.g. `["SM_Wall", "SM_Floor"]`).
     pub prefixes: &'static [&'static str],
@@ -35,7 +35,7 @@ pub struct Kit {
 
 impl Kit {
     fn pieces(&self, room: &modforge::structure::RoomDef) -> Vec<PieceDef> {
-        modforge::structure::room_pieces(room, self.modules, self.class, self.mesh_for)
+        modforge::structure::room_pieces(room, self.modules, self.class, |s| self.names.mesh_for(s))
     }
 }
 

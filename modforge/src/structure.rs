@@ -843,6 +843,79 @@ pub fn fill_run(run: f32, modules: &[f32]) -> Vec<(f32, f32)> {
     out
 }
 
+/// How a modular kit names its parts.
+///
+/// Kits are named the same way almost everywhere: a prefix and
+/// the part's size, with separate prefixes for the wall segments
+/// that carry a doorway or a window. What differs per game is the
+/// prefixes, the units, and a short list of parts whose names
+/// break the pattern.
+///
+/// Sizes in the name are in the kit's own units, usually
+/// centimetres, so `units_per_metre` converts.
+///
+/// `openings` is BOTH the exception list and the availability
+/// list: a doorway or window is only used at a size listed there.
+/// Anything else falls back to a solid wall, so a room is never
+/// left with a hole it has no part for.
+///
+/// `walls` overrides plain wall names for parts whose name lies
+/// about their size.
+#[derive(Clone, Copy)]
+pub struct KitNames {
+    pub wall: &'static str,
+    pub floor: &'static str,
+    pub units_per_metre: f32,
+    /// `(opening, width, height, exact name)`.
+    pub openings: &'static [(SlotOpening, i32, i32, &'static str)],
+    /// `(width, height, exact name)`.
+    pub walls: &'static [(i32, i32, &'static str)],
+}
+
+impl KitNames {
+    /// A metre span in the kit's naming units.
+    pub fn units(&self, metres: f32) -> i32 {
+        (metres * self.units_per_metre).round() as i32
+    }
+
+    /// The plain wall part at a size.
+    pub fn wall_at(&self, w: i32, h: i32) -> String {
+        match self.walls.iter().find(|(a, b, _)| *a == w && *b == h) {
+            Some((_, _, name)) => (*name).to_string(),
+            None => format!("{}_{w}x{h}", self.wall),
+        }
+    }
+
+    /// The floor or ceiling tile at a size.
+    ///
+    /// Sorted, because a 2 by 4 tile and a 4 by 2 tile are the
+    /// same part turned round, and a kit only ships one of them.
+    pub fn floor_at(&self, w: i32, d: i32) -> String {
+        let (a, b) = if w <= d { (w, d) } else { (d, w) };
+        format!("{}_{a}x{b}", self.floor)
+    }
+
+    /// The part that fills one slot.
+    pub fn mesh_for(&self, slot: &ShellSlot) -> String {
+        let w = self.units(slot.width);
+        let h = self.units(slot.height);
+        match slot.kind {
+            SlotKind::Floor | SlotKind::Ceiling => self.floor_at(w, h),
+            SlotKind::Wall => match slot.opening {
+                None => self.wall_at(w, h),
+                Some(op) => self
+                    .openings
+                    .iter()
+                    .find(|(o, a, b, _)| *o == op && *a == w && *b == h)
+                    .map(|(_, _, _, name)| (*name).to_string())
+                    // No part at that size: a solid wall beats a
+                    // hole.
+                    .unwrap_or_else(|| self.wall_at(w, h)),
+            },
+        }
+    }
+}
+
 /// Build the pieces for one room, given a way to name the mesh
 /// for each slot.
 ///
@@ -1218,6 +1291,71 @@ mod shape_tests {
             extent: e(0.2, 0.15, 0.02),
         };
         assert_eq!(p.shape(), PieceShape::Panel);
+    }
+
+    const TEST_KIT: KitNames = KitNames {
+        wall: "SM_Wall",
+        floor: "SM_Floor",
+        units_per_metre: 100.0,
+        openings: &[
+            (SlotOpening::Door, 400, 300, "SM_WallDoor_400x300"),
+            (SlotOpening::Window, 400, 300, "SM_WallWindow_400x300"),
+        ],
+        walls: &[(400, 400, "SM_Wall_400x401")],
+    };
+
+    fn slot(kind: SlotKind, w: f32, h: f32, opening: Option<SlotOpening>) -> ShellSlot {
+        ShellSlot {
+            kind,
+            position: Vec3::ZERO,
+            yaw: 0.0,
+            width: w,
+            height: h,
+            opening,
+        }
+    }
+
+    #[test]
+    fn a_part_is_named_by_its_size_in_the_kits_units() {
+        assert_eq!(TEST_KIT.wall_at(200, 300), "SM_Wall_200x300");
+        assert_eq!(TEST_KIT.units(4.0), 400);
+    }
+
+    /// Some parts lie about their size in their name.
+    #[test]
+    fn a_listed_wall_uses_its_exact_name() {
+        assert_eq!(TEST_KIT.wall_at(400, 400), "SM_Wall_400x401");
+    }
+
+    /// A 2 by 4 tile and a 4 by 2 tile are one part turned round.
+    #[test]
+    fn a_floor_tile_is_named_the_same_either_way_round() {
+        assert_eq!(TEST_KIT.floor_at(200, 400), TEST_KIT.floor_at(400, 200));
+        assert_eq!(TEST_KIT.floor_at(400, 200), "SM_Floor_200x400");
+    }
+
+    #[test]
+    fn a_slot_with_an_opening_gets_the_part_for_it() {
+        let s = slot(SlotKind::Wall, 4.0, 3.0, Some(SlotOpening::Door));
+        assert_eq!(TEST_KIT.mesh_for(&s), "SM_WallDoor_400x300");
+        let s = slot(SlotKind::Wall, 4.0, 3.0, Some(SlotOpening::Window));
+        assert_eq!(TEST_KIT.mesh_for(&s), "SM_WallWindow_400x300");
+    }
+
+    /// The kit has no doorway at this size, so a solid wall goes
+    /// in. A hole would be worse than a missing door.
+    #[test]
+    fn an_unavailable_opening_falls_back_to_a_solid_wall() {
+        let s = slot(SlotKind::Wall, 1.0, 3.0, Some(SlotOpening::Door));
+        assert_eq!(TEST_KIT.mesh_for(&s), "SM_Wall_100x300");
+    }
+
+    #[test]
+    fn floors_and_ceilings_use_the_floor_part() {
+        for kind in [SlotKind::Floor, SlotKind::Ceiling] {
+            let s = slot(kind, 4.0, 2.0, None);
+            assert_eq!(TEST_KIT.mesh_for(&s), "SM_Floor_200x400");
+        }
     }
 
     #[test]

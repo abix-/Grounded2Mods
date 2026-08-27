@@ -63,6 +63,7 @@ Extract engine-independent Survivalist systems into their existing Modforge auth
 - Corrected the game-mod feature inventories after the first README pass summarized systems too aggressively. Expanded Grounded 2, MISERY, Schedule 1, Survivalist, WWM, Horsey, and Scrap Mechanic against their current source while preserving each existing table format.
 - Corrected Scrap Mechanic's README to describe its loadable `BetterSurvival` custom game instead of incorrectly calling the directory research-only.
 - Reworked every mod feature table so each concise feature name links to its primary implementing source file and a separate description column explains the behavior.
+- Documented every function in `misery-mod/src` with a concise player-readable purpose and a specific reason the function remains game-specific instead of moving into Modforge, Ueforge, or Unityforge.
 
 ## Next steps
 

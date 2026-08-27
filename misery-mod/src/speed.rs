@@ -29,12 +29,16 @@ const BASE_SPEEDS: &[(u8, f64)] = &[
     (11, 100.0),
 ];
 
+/// Finds the player's MISERY inventory component, which owns movement speeds.
+/// Stays here because the player classes and component offsets are specific to this game.
 fn inventory_ptr() -> Result<*const u8, String> {
     let actor = ue::actor::find_actor(ACTOR_CLASS, None)
         .ok_or("no live player character found")?;
     unsafe { follow_ptr_chain(actor, &[CHAR_COMP_OFFSET, INV_PTR_OFFSET]) }
 }
 
+/// Opens MISERY's movement-speed map and reports how many states it contains.
+/// Stays here because the map offset and value layout come from MISERY's inventory component.
 fn tmap_element_ptr(inv: *const u8) -> Result<(*const u8, i32), String> {
     let elem_ptr: u64 = unsafe { read_at(inv, MOVEMENT_SPEEDS_MAP) };
     let num: i32 = unsafe { read_at(inv, MOVEMENT_SPEEDS_MAP + 8) };
@@ -44,6 +48,8 @@ fn tmap_element_ptr(inv: *const u8) -> Result<(*const u8, i32), String> {
     Ok((elem_ptr as *const u8, num))
 }
 
+/// Finds the speed entry for a MISERY movement state such as walking or sprinting.
+/// Stays here because the state keys and map layout are game facts, not shared engine behavior.
 fn find_slot(elements: *const u8, num: i32, key: u8) -> Option<usize> {
     (0..num as usize).find(|&s| {
         let k: u8 = unsafe { read_at(elements, s * TMAP_STRIDE) };
@@ -51,10 +57,14 @@ fn find_slot(elements: *const u8, num: i32, key: u8) -> Option<usize> {
     })
 }
 
+/// Reads one movement state's current speed for display or scaling.
+/// Stays here because the byte position belongs to MISERY's movement map layout.
 fn read_speed(elements: *const u8, slot: usize) -> f64 {
     unsafe { read_at(elements, slot * TMAP_STRIDE + 8) }
 }
 
+/// Writes one movement state's speed so the player's multiplier takes effect.
+/// Stays here because the destination layout is MISERY-specific; generic memory access is already shared.
 fn write_speed(elements: *const u8, slot: usize, value: f64) {
     unsafe { write_at(elements, slot * TMAP_STRIDE + 8, value) }
 }
@@ -64,6 +74,8 @@ pub struct MapEntry {
     pub speed: f64,
 }
 
+/// Returns every player movement speed currently active in MISERY.
+/// Stays here because it translates MISERY's movement-state map into this feature's values.
 pub fn current_all() -> Result<Vec<MapEntry>, String> {
     let inv = inventory_ptr()?;
     let (elems, num) = tmap_element_ptr(inv)?;
@@ -76,6 +88,8 @@ pub fn current_all() -> Result<Vec<MapEntry>, String> {
     Ok(out)
 }
 
+/// Applies one player-selected multiplier to all normal MISERY movement speeds.
+/// Stays here because the baseline speeds and affected states are this mod's gameplay policy.
 pub fn set_multiplier(mult: f64) -> Result<(), String> {
     let inv = inventory_ptr()?;
     let (elems, num) = tmap_element_ptr(inv)?;
@@ -92,6 +106,8 @@ pub fn set_multiplier(mult: f64) -> Result<(), String> {
 
 // ---- UI ----
 
+/// Draws the player movement-speed control in the mod menu.
+/// Stays here because it presents MISERY's speed policy; Ueforge owns only reusable UI machinery.
 pub fn render() {
     use ueforge::ui;
 

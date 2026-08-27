@@ -94,6 +94,8 @@ static MOD_INFO: ueforge::ModDef = ueforge::ModDef {
 
 ueforge::ue4ss_mod!(MOD_INFO);
 
+/// Starts MISERY's enabled features once Unreal and UE4SS are ready.
+/// Stays here because this is the mod's composition root, selecting game features and verified engine settings.
 fn on_unreal_init() {
     let _rt = ueforge::ue::platform::resolve_and_init(PROCESS_EVENT_IDX, G_OBJECTS_LAYOUT);
 
@@ -158,6 +160,8 @@ fn on_unreal_init() {
         .install();
 }
 
+/// Records that the MISERY mod is shutting down cleanly.
+/// Stays here because it is this mod's lifecycle callback; Ueforge owns the shared shutdown mechanism.
 fn on_shutdown() {
     ueforge::log::log(format_args!("on_shutdown"));
 }

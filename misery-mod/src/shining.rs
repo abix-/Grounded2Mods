@@ -42,6 +42,8 @@ pub struct Status {
 
 impl Status {
     /// "12m 25s", the form a player reads at a glance.
+    /// Formats the time until the next Shining for a player to read quickly.
+    /// Stays here because the wording is presentation for MISERY's Shining feature.
     pub fn pretty_remaining(&self) -> String {
         let total = self.seconds_left.max(0.0) as i64;
         format!("{}m {:02}s", total / 60, total % 60)
@@ -50,6 +52,8 @@ impl Status {
     /// The four generators are the four areas. Numbers confirmed
     /// live: 2 = Meadows, 3 = Paneli (research doc 19). Factory
     /// and Bunker are 0 and 1 in an order nobody has pinned down.
+    /// Turns MISERY's current area number into the location name shown to the player.
+    /// Stays here because the area mapping is game content, not an engine concept.
     pub fn area_name(&self) -> &'static str {
         match self.area {
             2 => "Meadows",
@@ -60,6 +64,8 @@ impl Status {
     }
 }
 
+/// Finds MISERY's live Shining manager, including the expedition-door fallback.
+/// Stays here because the Blueprint classes and door offset are specific to this game.
 fn manager_ptr() -> Result<*const u8, String> {
     if let Some(mgr) = ue::actor::find_actor(MGR_CLASS, None) {
         return Ok(mgr);
@@ -71,6 +77,8 @@ fn manager_ptr() -> Result<*const u8, String> {
     unsafe { follow_ptr_chain(door, &[DOOR_MGR_OFFSET]) }
 }
 
+/// Reads the next Shining countdown, state, area, and seed for display and controls.
+/// Stays here because these fields use MISERY's manager layout; Ueforge supplies generic memory access.
 pub fn status() -> Result<Status, String> {
     let m = manager_ptr()?;
     Ok(Status {
@@ -85,6 +93,8 @@ pub fn status() -> Result<Status, String> {
 /// Stop or restart the countdown. This is the game's own flag,
 /// not a mod invention: `BP_GlobalManager_C` has `FreezeTime` and
 /// `UnfreezeTime` functions that drive the same bool.
+/// Pauses or resumes the player's Shining countdown.
+/// Stays here because the freeze field and feature behavior belong specifically to MISERY.
 pub fn set_frozen(frozen: bool) -> Result<(), String> {
     let m = manager_ptr()?;
     unsafe { write_at(m, offset::FREEZE_TIMER, frozen as u8) };
@@ -93,6 +103,8 @@ pub fn set_frozen(frozen: bool) -> Result<(), String> {
 }
 
 /// Set how many seconds remain before the next shining.
+/// Sets exactly how long the player has until the next Shining.
+/// Stays here because it writes MISERY's Shining countdown field.
 pub fn set_seconds(seconds: f64) -> Result<(), String> {
     let m = manager_ptr()?;
     let clamped = seconds.max(0.0);
@@ -103,6 +115,8 @@ pub fn set_seconds(seconds: f64) -> Result<(), String> {
 
 /// Add seconds to whatever is left. What a player actually wants
 /// mid-expedition: "give me ten more minutes".
+/// Moves the next Shining earlier or later and returns the new countdown.
+/// Stays here because it changes a MISERY event using this mod's player control policy.
 pub fn add_seconds(seconds: f64) -> Result<f64, String> {
     let m = manager_ptr()?;
     let now: f64 = unsafe { read_at(m, offset::TIME_UNTIL_EMMISION) };
@@ -118,6 +132,8 @@ static SET_MINUTES: AtomicI32 = AtomicI32::new(20);
 static EPOCH: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
 static LAST_READ_MS: AtomicU64 = AtomicU64::new(0);
 
+/// Provides the clock used to refresh the Shining display without updating every frame.
+/// Stays here because its refresh schedule is local UI behavior with no reusable framework role.
 fn now_ms() -> u64 {
     let epoch = EPOCH.get_or_init(Instant::now);
     epoch.elapsed().as_millis() as u64
@@ -130,12 +146,16 @@ struct CachedShining {
 static UI_STATE: std::sync::OnceLock<std::sync::Mutex<CachedShining>> =
     std::sync::OnceLock::new();
 
+/// Stores the last Shining reading used by the mod menu.
+/// Stays here because the cached data is shaped specifically for MISERY's Shining tab.
 fn ui_state() -> &'static std::sync::Mutex<CachedShining> {
     UI_STATE.get_or_init(|| {
         std::sync::Mutex::new(CachedShining { cached_status: None })
     })
 }
 
+/// Draws the Shining status and countdown controls for the player.
+/// Stays here because it presents a MISERY-only event; Ueforge owns the reusable UI layer.
 pub fn render() {
     use ueforge::ui;
 

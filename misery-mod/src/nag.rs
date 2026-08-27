@@ -43,6 +43,8 @@ static HIDDEN_COUNT: AtomicU64 = AtomicU64::new(0);
 /// Set once the hook is in, so the watcher stops trying.
 static HOOKED: AtomicBool = AtomicBool::new(false);
 
+/// Starts watching for MISERY's playtest notice and exposes its status.
+/// Stays here because suppressing this particular game widget is a MISERY feature built on Ueforge hooks.
 pub fn install() {
     register_ops();
     std::mem::forget(modforge::rpg::poller::spawn_interval(
@@ -54,6 +56,7 @@ pub fn install() {
 }
 
 /// Wait for the notice to exist, then hook its class.
+/// Stays here because the watched widget class and safe timing were established for MISERY.
 fn watch() {
     if HOOKED.load(Ordering::Acquire) {
         return;
@@ -86,6 +89,7 @@ fn watch() {
 /// notice's vtable" therefore patches EVERY widget, and this
 /// handler is called for all of them. Without this check the
 /// main menu gets collapsed too, which it was.
+/// Stays here because it filters Ueforge's shared hook for MISERY's exact notice class.
 fn on_nag_event(
     this: &UObject,
     function: &ueforge::ue::UFunction,
@@ -120,6 +124,7 @@ fn on_nag_event(
 ///
 /// Running the game's own handler avoids both. The game tears
 /// its own notice down the way it always does.
+/// Stays here because the dismissal function and widget lifecycle belong to MISERY's menu.
 fn dismiss(widget: &UObject) {
     let Some(cls) = widget.class() else { return };
     let Some(f) = cls.get_function(NAG_CLASS, DISMISS_FN) else {
@@ -151,6 +156,7 @@ fn dismiss(widget: &UObject) {
 /// dismissal is one of these: the game's own teardown, rather
 /// than us ripping the widget out. Read live because this class
 /// is absent from the object dump.
+/// Stays here because this diagnostic inspects MISERY's notice class, not Unreal widgets generally.
 pub fn nag_functions() -> Vec<String> {
     let mut out = Vec::new();
     let Some(ptr) = ue::actor::find_object(NAG_CLASS, None, false) else {
@@ -165,6 +171,8 @@ pub fn nag_functions() -> Vec<String> {
     out
 }
 
+/// Adds the playtest-notice status command to the MISERY debug API.
+/// Stays here because the reported state belongs solely to this mod's notice suppression.
 fn register_ops() {
     ueforge::ops::OP_REGISTRY.register(ueforge::ops::OpDef::new(
         "nag_stats",

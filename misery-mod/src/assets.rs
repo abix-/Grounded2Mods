@@ -19,6 +19,8 @@ use ueforge::assets::{self, AssetEntry};
 /// of assets, and for a blocking asset load.
 const ENGINE_TIMEOUT: Duration = Duration::from_secs(20);
 
+/// Lists MISERY assets for players and mod authors through the debug API.
+/// Stays here because it binds Ueforge's registry to this mod's game-thread queue and controls.
 fn inventory_op(args: &serde_json::Value) -> Result<serde_json::Value, String> {
     let class = args
         .get("class")
@@ -63,6 +65,8 @@ fn inventory_op(args: &serde_json::Value) -> Result<serde_json::Value, String> {
     }))
 }
 
+/// Loads one requested MISERY asset so it can be inspected or used in the running game.
+/// Stays here because it binds Ueforge's loader to this mod's queue and debug operation.
 fn load_op(args: &serde_json::Value) -> Result<serde_json::Value, String> {
     let pkg = args
         .get("package_fname")
@@ -84,6 +88,8 @@ fn load_op(args: &serde_json::Value) -> Result<serde_json::Value, String> {
     )
 }
 
+/// Adds the MISERY asset commands to the mod's debug API.
+/// Stays here because shared asset discovery and loading already live in Ueforge.
 pub fn register_ops() {
     ueforge::ops::OP_REGISTRY.register_many([
         ueforge::ops::OpDef::new(

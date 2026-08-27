@@ -54,6 +54,8 @@ const FSTRING_PARMS: usize = 16;
 /// to do behind the player's back.
 static SETTLED: AtomicBool = AtomicBool::new(false);
 
+/// Starts checking for the player's last save so MISERY can load it automatically.
+/// Stays here because automatic loading is mod policy built around MISERY's save menu Blueprints.
 pub fn install() {
     std::mem::forget(modforge::rpg::poller::spawn_interval(
         "misery-autoload",
@@ -64,6 +66,7 @@ pub fn install() {
 
 /// Worker thread: hand the work to the game thread and act on
 /// what it reports.
+/// Stays here because its retry and logging policy belongs to MISERY's autoload feature.
 fn tick() {
     if SETTLED.load(Ordering::Acquire) {
         return;
@@ -88,6 +91,7 @@ fn tick() {
 const WAITING: &str = "waiting";
 
 /// Game thread. Returns what happened, as a sentence for the log.
+/// Stays here because it follows MISERY's exact save-slot flags and load-screen functions.
 fn attempt() -> String {
     let Some(gi) = find_live(GAME_INSTANCE, None) else {
         return WAITING.to_string();
@@ -147,6 +151,7 @@ fn attempt() -> String {
 /// also returns the template inside the `/Game/...WidgetTree`
 /// package, and calling a template returns success and does
 /// nothing.
+/// Stays here because the transient-object rule was verified against MISERY's menu widgets.
 fn find_live(class: &str, name_part: Option<&str>) -> Option<&'static UObject> {
     ue::actor::find_objects_by_chain(class).into_iter().find_map(|p| {
         // SAFETY: p came from that call's GObjects iteration.
@@ -169,6 +174,7 @@ fn find_live(class: &str, name_part: Option<&str>) -> Option<&'static UObject> {
 /// The parm block is checked against the function's own
 /// `ParmsSize`: passing a short buffer lets the callee write past
 /// the end of it.
+/// Stays here because it is a narrow helper for MISERY's autoload calls, not a new shared call API.
 fn call(obj: &UObject, class: &str, func: &str, parms: &mut [u8]) -> Result<(), String> {
     let cls = obj.class().ok_or("instance has no class")?;
     let f = cls

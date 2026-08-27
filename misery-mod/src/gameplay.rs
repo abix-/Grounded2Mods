@@ -42,6 +42,8 @@ pub static FIELDS: &[FieldDef] = &[
     FieldDef { name: "CollisionBetweenPlayers",    desc: "Players physically collide with each other",         offset: 0xBC, ty: FieldType::Bool },
 ];
 
+/// Opens MISERY's live gameplay settings so the mod can read or change them.
+/// Stays here because the owning Blueprint and struct offset are MISERY-specific; Ueforge owns the accessor.
 pub fn accessor() -> Result<FieldAccessor, String> {
     let ptr = ue::actor::find_object(GI_CLASS, None, false)
         .ok_or_else(|| "no game instance found".to_string())?;
@@ -59,6 +61,8 @@ struct CachedState {
 static UI_STATE: std::sync::OnceLock<std::sync::Mutex<CachedState>> =
     std::sync::OnceLock::new();
 
+/// Keeps the Gameplay tab's editable values stable between frames.
+/// Stays here because this cache mirrors MISERY's settings list and presentation.
 fn ui_state() -> &'static std::sync::Mutex<CachedState> {
     UI_STATE.get_or_init(|| {
         let n = FIELDS.len();
@@ -70,6 +74,8 @@ fn ui_state() -> &'static std::sync::Mutex<CachedState> {
     })
 }
 
+/// Refreshes every displayed gameplay setting from the running MISERY session.
+/// Stays here because it reads MISERY's known settings fields through Ueforge's generic accessor.
 fn load_all(s: &mut CachedState) -> Result<(), String> {
     let acc = accessor()?;
     for (i, field) in FIELDS.iter().enumerate() {
@@ -89,6 +95,8 @@ fn load_all(s: &mut CachedState) -> Result<(), String> {
     Ok(())
 }
 
+/// Gives each MISERY setting a useful slider range while keeping the current value reachable.
+/// Stays here because these ranges are player-facing balance choices for this game.
 fn slider_range(name: &str, current: f32) -> (f32, f32) {
     let (lo, hi) = match name {
         "ShiningsTimer" => (0.0, 120.0),
@@ -102,6 +110,8 @@ fn slider_range(name: &str, current: f32) -> (f32, f32) {
     (lo, hi)
 }
 
+/// Draws the Gameplay tab where players can tune MISERY's live rules.
+/// Stays here because the tab presents MISERY fields; Ueforge owns only the reusable UI controls.
 pub fn render() {
     use ueforge::ui;
 

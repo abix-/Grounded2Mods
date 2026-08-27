@@ -25,11 +25,14 @@ const JOB_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Register the pe_ping / pe_stats ops and start serving the
 /// queue.
+/// Stays here because it wires the shared Ueforge dispatcher into MISERY's operations.
 pub fn install() {
     register_ops();
     ueforge::game_thread::serve(&DRAIN);
 }
 
+/// Exposes MISERY's game-thread health and function-call controls to the debug API.
+/// Stays here because the operation names and diagnostics describe this mod's runtime wiring.
 fn register_ops() {
     // The framework `call` op: UFunction invocation routed
     // through the game-thread queue. Anything invoked through it

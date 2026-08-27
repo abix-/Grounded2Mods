@@ -54,12 +54,16 @@ const ALL_FOOD_SELLABLE: &[&str] = &[
     "Food_SeedsWheat",
 ];
 
+/// Finds a MISERY vendor's sell-list component so the mod can expand what it buys.
+/// Stays here because the component offset is specific to this game's vendor Blueprint.
 fn sell_list_ptr(actor: *const u8) -> Option<*mut u8> {
     unsafe { ue::follow_ptr_chain(actor, &[VENDOR_COMP_OFFSET]) }
         .ok()
         .map(|p| p as *mut u8)
 }
 
+/// Collects every item a MISERY vendor already accepts from the player.
+/// Stays here because the entry layout and item naming come from this game's vendor data.
 fn current_sell_names(comp: *const u8) -> HashSet<String> {
     let mut names = HashSet::new();
     let rt = match ue::try_runtime() {
@@ -79,6 +83,7 @@ fn current_sell_names(comp: *const u8) -> HashSet<String> {
 
 /// Vanilla cost of each ruble-priced item on this vendor's buy
 /// list, from price element 0's quantity (research.md 24.6).
+/// Stays here because rubles and the buy-entry offsets are MISERY economy facts.
 fn buy_costs(comp: *const u8) -> HashMap<String, i32> {
     let mut costs = HashMap::new();
     let Some(rt) = ue::try_runtime() else { return costs };
@@ -113,6 +118,7 @@ fn buy_costs(comp: *const u8) -> HashMap<String, i32> {
 /// rubles: clone the template's price element and swap the
 /// quantity at +0x10. The allocation is leaked on purpose; UE
 /// never frees vendor price arrays (research.md 24.12).
+/// Stays here because this clones MISERY's verified vendor-price layout, not a generic Unreal collection.
 fn set_custom_price(entry: &mut [u8], template_price_ptr: *const u8, qty: i32) {
     // SAFETY: fixed 0x18-byte layout with 8-byte alignment.
     let buf = unsafe {
@@ -132,6 +138,8 @@ fn set_custom_price(entry: &mut [u8], template_price_ptr: *const u8, qty: i32) {
     entry[0x24..0x28].copy_from_slice(&1i32.to_le_bytes());
 }
 
+/// Resolves selected MISERY item names to the identifiers required by vendor entries.
+/// Stays here because it queries this game's MasterItemList and applies feature-specific filters.
 fn resolve_item_fnames(wanted: &dyn Fn(&str) -> bool) -> HashMap<String, u32> {
     let Some(table) = ue::datatable::find_by_short_name("MasterItemList") else {
         return HashMap::new();
@@ -152,6 +160,7 @@ static VENDOR_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// mirror, then the GunDealer ammo rule, then the Barman food
 /// list. An item already sellable anywhere is never added again,
 /// so every item is sellable at exactly one vendor.
+/// Stays here because these vendor roles, items, prices, and precedence are MISERY gameplay policy.
 pub fn apply_all(_first: *const u8) {
     let _guard = VENDOR_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
@@ -213,14 +222,20 @@ pub fn apply_all(_first: *const u8) {
     }
 }
 
+/// Finds the live component for one named MISERY vendor type.
+/// Stays here because callers select game-specific vendor Blueprint classes.
 fn find_vendor_comp(class_name: &str) -> Option<*mut u8> {
     ueforge::ue::actor::find_actor(class_name, None).and_then(sell_list_ptr)
 }
 
+/// Calculates what a MISERY vendor should pay under this mod's resale rule.
+/// Stays here because the percentage is a balance decision for this game's economy.
 fn pct_price(costs: &HashMap<String, i32>, name: &str) -> Option<i32> {
     costs.get(name).map(|c| (c * SELL_PRICE_PCT / 100).max(1))
 }
 
+/// Builds new vendor entries only for MISERY items not already sellable elsewhere.
+/// Stays here because the uniqueness and pricing rules belong to this mod's vendor design.
 fn build_entries(
     items: HashMap<String, u32>,
     sellable: &HashSet<String>,
@@ -242,6 +257,8 @@ fn build_entries(
 /// it (research.md 24.11). Sold by the ResourseSaler.
 const SEWING_KIT_COST: i32 = 50;
 
+/// Adds the missing sewing kit to its intended MISERY resource seller.
+/// Stays here because the item, vendor, stock, and price are specific game-content choices.
 fn add_sewing_kit(comp: *mut u8) {
     let already = buy_entry_names(comp)
         .iter()
@@ -266,6 +283,7 @@ fn add_sewing_kit(comp: *mut u8) {
 /// Item name + FName index of every entry on this vendor's buy
 /// list. The FName comes straight from the buy entry, so no
 /// DataTable lookup is needed.
+/// Stays here because it reads MISERY's verified vendor-entry layout.
 fn buy_entry_names(comp: *const u8) -> Vec<(String, u32)> {
     let mut items = Vec::new();
     let Some(rt) = ue::try_runtime() else { return items };
@@ -295,6 +313,7 @@ struct NewEntry {
 /// buy; STRIDE picks the layout), growing the TArray when
 /// needed. Entry 0 is cloned as the template; vanilla entries
 /// are never modified. Returns true when everything was written.
+/// Stays here because both supported layouts and their ownership behavior were measured in MISERY.
 fn append_entries<const STRIDE: usize>(
     comp: *mut u8,
     list_offset: usize,
@@ -366,4 +385,3 @@ fn append_entries<const STRIDE: usize>(
     ));
     true
 }
-
