@@ -171,3 +171,34 @@ impl LevelStreamer {
         STREAMER.store(0, Ordering::Relaxed);
     }
 }
+
+/// The streamer this mod registered, if any.
+static REGISTERED: parking_lot::Mutex<Option<LevelStreamer>> = parking_lot::Mutex::new(None);
+
+/// Tell the framework where this game keeps its streamed levels.
+///
+/// Call once at init. Anything in ueforge that needs to know
+/// whether a world is up then gets a cheap answer instead of
+/// searching for one: see [`world_is_up`].
+pub fn register(streamer: LevelStreamer) {
+    *REGISTERED.lock() = Some(streamer);
+}
+
+/// Is a world loaded?
+///
+/// Cheap: a cached pointer and an array length, no object search.
+/// `None` when no streamer has been registered, which means "no
+/// idea" rather than "no world", so a caller must fall back to
+/// whatever it did before rather than assume.
+///
+/// Game thread only.
+///
+/// This is the bit a load-watcher actually needs. Watching for a
+/// world to go away by re-running an expensive search and seeing
+/// nothing costs 100 ms to learn one bit, and MISERY was paying
+/// it every three seconds for the life of the process
+/// (`misery-mod/docs/performance.md`).
+pub fn world_is_up() -> Option<bool> {
+    let streamer = *REGISTERED.lock();
+    streamer.map(|s| !s.loaded_levels().is_empty())
+}

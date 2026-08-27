@@ -315,8 +315,19 @@ pub fn find_objects_by_chain(class_needle: &str) -> Vec<*const u8> {
 /// Spawn a background thread that calls `on_load` each time a
 /// finder function returns `Some`. The finder is polled every
 /// `poll_interval`. After `on_load` runs, the thread watches
-/// for the finder to return `None` (player returned to main
-/// menu), then re-polls and re-applies on the next load.
+/// for the world to go away, then re-polls and re-applies on the
+/// next load.
+///
+/// The finder is EXPENSIVE: it searches the object list, which is
+/// 100 ms and 185,000 objects in a streamed-in world. So it is
+/// called only while actually hunting for the thing. Waiting for
+/// a world, and waiting for one to end, both ask
+/// [`crate::ue::streaming::world_is_up`] instead, which is a
+/// cached pointer and an array length.
+///
+/// A mod that has not called `streaming::register` gets the old
+/// behaviour, the finder run on every poll forever, because that
+/// is all it has given us to work with.
 ///
 /// The thread runs for the lifetime of the process.
 pub fn on_each_load<P, F>(
@@ -360,7 +371,26 @@ pub fn on_each_load<P, F>(
             found.ok()?.as_u64().map(|a| a as usize)
         }
 
+        /// Is a world loaded? Cheap when the mod has registered
+        /// where its streamed levels live, and `None` when it has
+        /// not, which means "no idea" rather than "no world".
+        fn world() -> Option<bool> {
+            crate::game_thread::run(
+                || Ok(serde_json::json!(crate::ue::streaming::world_is_up())),
+                TIMEOUT,
+            )
+            .ok()?
+            .as_bool()
+        }
+
         loop {
+            // Waiting for a world. Searching for the thing before
+            // there is a world to hold it is 100 ms spent to
+            // learn nothing.
+            if world() == Some(false) {
+                std::thread::sleep(poll_interval);
+                continue;
+            }
             std::thread::sleep(poll_interval);
             let Some(addr) = look(&finder) else {
                 continue;
@@ -375,13 +405,33 @@ pub fn on_each_load<P, F>(
                 TIMEOUT,
             );
 
+            // Applied. Now the only question is whether the world
+            // goes away, and that is ONE BIT. Asking it by
+            // re-running the finder and seeing nothing costs a
+            // full object search every poll, for the life of the
+            // process: 1009 ms per 30 seconds in MISERY, the
+            // biggest single cost in the mod once everything else
+            // was fixed.
             loop {
                 std::thread::sleep(poll_interval);
-                if look(&finder).is_none() {
-                    crate::log::log(format_args!(
-                        "{label}: gone (main menu?), waiting for reload"
-                    ));
-                    break;
+                match world() {
+                    Some(true) => continue,
+                    Some(false) => {
+                        crate::log::log(format_args!(
+                            "{label}: world gone, waiting for the next one"
+                        ));
+                        break;
+                    }
+                    // No streamer registered, so fall back to the
+                    // old way: run the finder and see.
+                    None => {
+                        if look(&finder).is_none() {
+                            crate::log::log(format_args!(
+                                "{label}: gone (main menu?), waiting for reload"
+                            ));
+                            break;
+                        }
+                    }
                 }
             }
         }

@@ -109,6 +109,12 @@ fn on_unreal_init() {
 
     debug::spawn(DEBUG_PORT);
 
+    // Where MISERY keeps its loaded squares. Registering it lets
+    // anything in the framework answer "is a world up" with a
+    // cached pointer and an array length, instead of searching
+    // every object in the game to find out (worldgen.md 10).
+    ueforge::ue::streaming::register(spawning::STREAMER);
+
     // EVERY GAMEPLAY FEATURE IS OFF (2026-08-26).
     //
     // Turned off to find what actually touches the game, after a

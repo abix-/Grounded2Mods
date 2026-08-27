@@ -157,6 +157,52 @@ workspace uses.
 Same disease `spawning` and the notice watcher have now been
 cured of, in shared code.
 
+### Fifth run: nothing searches at all
+
+```text
+held for 1.1 ms over 30.0 s
+that is 0.04 ms per second of play
+
+name                              calls    total ms     avg us    worst ms
+misery-spawning                       6       31.21     5201.6       12.17
+misery-autoload                      15        0.01        0.4        0.00
+```
+
+**126.14 to 0.04 ms per second.** Every search row is absent, not
+smaller: `find_actors_by_chain`, `find_objects_by_chain`,
+`find_object` and `objects_read` were not called once in 30
+seconds of play. The mod read zero objects.
+
+What changed: `ue::actor::on_each_load` was watching for the
+world to go away by re-running its expensive finder and seeing
+nothing. That is 100 ms spent to learn ONE BIT, every three
+seconds, for the life of the process.
+
+It now asks `ue::streaming::world_is_up`, a cached pointer and an
+array length. The finder is called only while actually hunting
+for the thing. A mod that has not registered a streamer gets the
+old behaviour, because that is all it has given the framework to
+work with.
+
+The same check fixed the other half nobody had noticed: the
+watcher used to search every three seconds while sitting at the
+MAIN MENU, hunting for an object that cannot exist until a world
+does.
+
+Everything still works. From the same session's log:
+
+```text
+[01:48:22] vendors: found, applying
+[01:48:22] vendors: 7 vendor(s) found
+```
+
+**The honest caveat.** No square streamed in during those 30
+seconds. A pass where one does still pays for searches, because
+finding the NPCs in a square needs the level's own actor list and
+that offset is not measured yet. What this run proves is the
+thing that matters for feel: standing still, and playing without
+crossing a square boundary, now costs nothing.
+
 How to read the first run:
 
 - 6,443,370 objects read across 37 searches is **174,000 objects
@@ -186,7 +232,7 @@ off code are worth what they cost.
 | One search of the object list | see below | game | **94 ms**, reading about **174,000 objects**. Every other cost in this table is a multiple of this one. | MEASURED |
 | `strange` watcher | OFF since 2026-08-26 | game | Was three searches a pass: **291 ms average, 305 ms worst**, then spawning up to 48 actors into a square. Switched off; see below. | MEASURED |
 | `spawning` watcher | every 5 s | game | Rebuilt 2026-08-26. **5.97 ms average, 10.6 ms worst**, no search at all: it reads the generator's streaming list and compares. Was 246 ms a pass. Only a square that streamed in costs a search. | MEASURED |
-| `vendors` finder | every 3 s, forever | game | **The biggest cost left: 10 searches and 1009 ms per 30 seconds.** Polls the whole object list for a vendor for the life of the process, so it can re-apply after a return to the main menu. Shared code, `ue::actor::on_each_load`. | MEASURED |
+| `vendors` and `speed_default` finders | every 3 s | game | Fixed 2026-08-26. **Zero searches.** They search only while hunting for the thing, and ask `streaming::world_is_up` the rest of the time. Used to cost 1009 ms per 30 seconds between them. | MEASURED |
 | `nag` watcher | until the notice is dismissed, then never | game | Fixed 2026-08-26. Dismisses once, uninstalls its hook, ends itself. Gone from the report entirely. Used to tick twice a second for the life of the process and leave a hook firing on every widget. | MEASURED |
 | `find_object`, one object by class | as the finders run | game | **20 ms average**, cheaper than a full search because it stops at the first match. Used by `speed_default`, `vendors` and `nag`. | MEASURED |
 | `autoload` watcher | every 2 s | game | **0.4 microseconds a tick.** Returns immediately once the load has been attempted. Nothing to fix. | MEASURED |
@@ -231,12 +277,10 @@ Nothing below has been done.
   square streams in.
 - It runs on a fixed timer, so most passes re-answer a question
   whose answer has not changed.
-- `ue::actor::on_each_load` searches the whole object list on a
-  timer FOREVER, so that a feature can re-apply after a return to
-  the main menu. It should apply once and then stop, and be woken
-  by the world going away rather than polling for it. This is the
-  pattern the notice watcher and `spawning` have both now been
-  fixed to follow, and it is shared by every game.
+- A pass where a square DOES stream in still searches, because
+  finding the NPCs in that square needs the level's own actor
+  list and that offset is not measured yet. See worldgen.md 10:
+  `read_bytes` must be guarded first.
 - **The price of a search grows with the world.** Any fix that
   keeps searching on a timer will get worse the more of the map is
   loaded around the player.
