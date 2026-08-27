@@ -114,43 +114,6 @@ fn game_instance_selector(api: &common::Api) -> String {
     inst.addr_selector.clone()
 }
 
-/// Decode an `FString` parm block: `{ TCHAR* Data; int32 Num;
-/// int32 Max; }`, UTF-16 characters.
-fn read_fstring(api: &common::Api, parms_hex: &str) -> String {
-    let bytes = hex_to_bytes(parms_hex);
-    if bytes.len() < 16 {
-        return String::new();
-    }
-    let ptr = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
-    let num = i32::from_le_bytes(bytes[8..12].try_into().unwrap());
-    if ptr == 0 || num <= 0 {
-        return String::new();
-    }
-    let r = api.op(
-        "read_bytes",
-        json!({
-            "instance_selector": format!("addr:0x{ptr:X}"),
-            "offset": 0,
-            "length": (num as usize) * 2,
-        }),
-    );
-    if !r.ok {
-        return format!("<read_bytes failed: {:?}>", r.error);
-    }
-    let raw = hex_to_bytes(r.result["bytes_hex"].as_str().unwrap_or(""));
-    let units: Vec<u16> = raw
-        .chunks_exact(2)
-        .map(|c| u16::from_le_bytes([c[0], c[1]]))
-        .take_while(|c| *c != 0)
-        .collect();
-    String::from_utf16_lossy(&units)
-}
-
-fn hex_to_bytes(s: &str) -> Vec<u8> {
-    (0..s.len() / 2)
-        .filter_map(|i| u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).ok())
-        .collect()
-}
 
 /// What does the game currently think it should load? Read-only,
 /// and the first proof that a Blueprint call actually executes
@@ -188,7 +151,7 @@ fn read_current_slot() {
     assert!(name.ok, "SGK GetSaveGameSlotName failed: {:?}", name.error);
     println!("SGK GetSaveGameSlotName raw -> {}", name.result);
     let hex = name.result["parms_hex_after"].as_str().unwrap_or("");
-    println!("slot name: {:?}", read_fstring(&api, hex));
+    println!("slot name: {:?}", modforge::client::read_fstring(&api, hex));
 }
 
 /// Where does `FindExistingSave` put its answer?
@@ -214,7 +177,7 @@ fn find_existing_save_layout() {
     );
     assert!(name.ok, "SGK GetSaveGameSlotName failed: {:?}", name.error);
     let slot_fstring = name.result["parms_hex_after"].as_str().unwrap_or("").to_string();
-    println!("slot {:?} -> FString {slot_fstring}", read_fstring(&api, &slot_fstring));
+    println!("slot {:?} -> FString {slot_fstring}", modforge::client::read_fstring(&api, &slot_fstring));
 
     let hosts = modforge::client::walk_class_chain_instances(&api, "BP_HostNewGameServer_C", 8);
     let host = hosts
@@ -278,7 +241,7 @@ fn load_current_slot() {
         }),
     );
     assert!(name.ok, "SGK GetSaveGameSlotName failed: {:?}", name.error);
-    let slot = read_fstring(&api, name.result["parms_hex_after"].as_str().unwrap_or(""));
+    let slot = modforge::client::read_fstring(&api, name.result["parms_hex_after"].as_str().unwrap_or(""));
     println!("slot to load: {slot:?}");
     assert!(!slot.is_empty(), "no slot name set; refusing to load");
 

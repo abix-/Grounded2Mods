@@ -80,14 +80,6 @@ fn dump_worldgen_state() {
     print_state(&api, "state");
 }
 
-fn write_bytes_op(api: &Api, sel: &str, offset: u64, data: &[u8]) -> bool {
-    let r = api.op(
-        "write_bytes",
-        serde_json::json!({"instance_selector": sel, "offset": offset,
-               "bytes_hex": hex::encode(data)}),
-    );
-    r.ok
-}
 
 const LEVELS_POOL: u64 = 0x2C8;
 const LEVELS_REFRESHED_POOL: u64 = 0x2D8;
@@ -152,7 +144,7 @@ fn pool_swap_meadows_into_paneli() {
     if let Some(victim_idx) = p_pool.iter().position(|(n, _)| n == VICTIM) {
         println!("writing {DONOR} over Paneli slot {victim_idx} ({VICTIM})");
         let sel = format!("addr:0x{p_ptr:x}");
-        assert!(write_bytes_op(&api, &sel, victim_idx as u64 * POOL_STRIDE, &donor.1));
+        assert!(modforge::client::write_bytes_at(&api, &sel, victim_idx as u64 * POOL_STRIDE, &donor.1));
         let (_, p_after) = pool_entries(&api, paneli.addr).expect("paneli pool unreadable");
         assert_eq!(p_after[victim_idx].0, DONOR, "write did not land");
     } else {
@@ -240,7 +232,7 @@ fn mixed_pool_area() {
             .get(*name)
             .unwrap_or_else(|| panic!("{name} not found in either pool"));
         assert!(
-            write_bytes_op(&api, &sel, slot as u64 * POOL_STRIDE, elem),
+            modforge::client::write_bytes_at(&api, &sel, slot as u64 * POOL_STRIDE, elem),
             "write failed for slot {slot}"
         );
     }
@@ -314,7 +306,7 @@ fn size_mismatch_probe() {
     let original = p_pool[0].1.clone();
     println!("writing {DONOR} (16500) over Paneli slot 0 ({})", p_pool[0].0);
     let sel = format!("addr:0x{p_ptr:x}");
-    assert!(write_bytes_op(&api, &sel, 0, &donor.1));
+    assert!(modforge::client::write_bytes_at(&api, &sel, 0, &donor.1));
 
     let m = manager(&api).expect("no global manager");
     let mut placed: Option<String> = None;
@@ -338,7 +330,7 @@ fn size_mismatch_probe() {
     }
 
     // Restore the pool slot regardless of outcome.
-    assert!(write_bytes_op(&api, &sel, 0, &original), "slot restore failed");
+    assert!(modforge::client::write_bytes_at(&api, &sel, 0, &original), "slot restore failed");
     println!("pool slot 0 restored");
 
     match &placed {
@@ -364,7 +356,7 @@ fn factory_via_generate_biom() {
     }
     let m = manager(&api).expect("no global manager");
     print_state(&api, "before");
-    assert!(write_bytes_op(&api, &m.addr_selector, CURRENT_GENERATED_LEVEL, &[1u8]));
+    assert!(modforge::client::write_bytes_at(&api, &m.addr_selector, CURRENT_GENERATED_LEVEL, &[1u8]));
     println!("wrote CurrentGeneratedLevel=1, calling GenerateBiom()");
     api.call_ufunction("BP_GlobalManager_C", "GenerateBiom", &m.addr_selector, &[])
         .expect("GenerateBiom failed");

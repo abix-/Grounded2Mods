@@ -61,7 +61,7 @@ fn load_through_the_singleplayer_object() {
 
     // What is it about to load?
     let before = call(&api, GAME_INSTANCE, "SGK GetSaveGameSlotName", &gi.sel, 16);
-    println!("slot name: {:?}", read_fstring(&api, &before));
+    println!("slot name: {:?}", modforge::client::read_fstring(&api, &before));
 
     // Load a save rather than start a new game. LoadLevel is the
     // New Game path too, so this flag is the only thing that
@@ -183,40 +183,3 @@ fn wait_for_world(api: &common::Api) -> Option<String> {
     None
 }
 
-/// Decode an `FString` parm block: `{ TCHAR* Data; int32 Num;
-/// int32 Max; }`, UTF-16 characters.
-fn read_fstring(api: &common::Api, parms_hex: &str) -> String {
-    let bytes = hex_to_bytes(parms_hex);
-    if bytes.len() < 16 {
-        return String::new();
-    }
-    let ptr = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
-    let num = i32::from_le_bytes(bytes[8..12].try_into().unwrap());
-    if ptr == 0 || num <= 0 {
-        return String::new();
-    }
-    let r = api.op(
-        "read_bytes",
-        json!({
-            "instance_selector": format!("addr:0x{ptr:X}"),
-            "offset": 0,
-            "length": (num as usize) * 2,
-        }),
-    );
-    if !r.ok {
-        return format!("<read_bytes failed: {:?}>", r.error);
-    }
-    let raw = hex_to_bytes(r.result["bytes_hex"].as_str().unwrap_or(""));
-    let units: Vec<u16> = raw
-        .chunks_exact(2)
-        .map(|c| u16::from_le_bytes([c[0], c[1]]))
-        .take_while(|c| *c != 0)
-        .collect();
-    String::from_utf16_lossy(&units)
-}
-
-fn hex_to_bytes(s: &str) -> Vec<u8> {
-    (0..s.len() / 2)
-        .filter_map(|i| u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).ok())
-        .collect()
-}

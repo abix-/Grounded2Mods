@@ -216,14 +216,6 @@ fn dump_level_pools() {
     }
 }
 
-fn write_bytes_op(api: &Api, sel: &str, offset: u64, data: &[u8]) -> bool {
-    let r = api.op(
-        "write_bytes",
-        serde_json::json!({"instance_selector": sel, "offset": offset,
-               "bytes_hex": hex::encode(data)}),
-    );
-    r.ok
-}
 
 /// Raise the spawn point's NPC count from 1 to 5 and turn on
 /// respawn. The game's own Blueprint logic does the spawning;
@@ -248,9 +240,9 @@ fn set_spawn_point_more() {
         read_i32_at(&api, p.addr, CURRENT_SPAWNED_OFFSET),
     );
     let sel = &p.addr_selector;
-    assert!(write_bytes_op(&api, sel, SPAWN_AI_COUNT_OFFSET, &5i32.to_le_bytes()));
-    assert!(write_bytes_op(&api, sel, RESPAWN_OFFSET, &[1u8]));
-    assert!(write_bytes_op(&api, sel, RESPAWN_TIME_OFFSET, &5.0f64.to_le_bytes()));
+    assert!(modforge::client::write_bytes_at(&api, sel, SPAWN_AI_COUNT_OFFSET, &5i32.to_le_bytes()));
+    assert!(modforge::client::write_bytes_at(&api, sel, RESPAWN_OFFSET, &[1u8]));
+    assert!(modforge::client::write_bytes_at(&api, sel, RESPAWN_TIME_OFFSET, &5.0f64.to_le_bytes()));
     println!(
         "after: count={} respawn={} respawn_time={}",
         read_i32_at(&api, p.addr, SPAWN_AI_COUNT_OFFSET),
@@ -289,7 +281,7 @@ fn set_spawn_point_entity() {
         donor.name,
         object_name(&api, class_ptr),
     );
-    assert!(write_bytes_op(&api, &p.addr_selector, SPAWN_AI_CLASS_OFFSET, &class_ptr.to_le_bytes()));
+    assert!(modforge::client::write_bytes_at(&api, &p.addr_selector, SPAWN_AI_CLASS_OFFSET, &class_ptr.to_le_bytes()));
     let after = client::read_bytes(&api, p.addr, SPAWN_AI_CLASS_OFFSET, 8);
     println!(
         "spawn point now spawns {}",

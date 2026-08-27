@@ -30,14 +30,6 @@ const OVERRIDES: &[SpeedOverride] = &[
     SpeedOverride { key: 5, value: 200.0, label: "crouch" },
 ];
 
-fn write_bytes_op(api: &common::Api, sel: &str, offset: u64, data: &[u8]) -> bool {
-    let r = api.op(
-        "write_bytes",
-        json!({"instance_selector": sel, "offset": offset,
-               "bytes_hex": hex::encode(data)}),
-    );
-    r.ok
-}
 
 #[test]
 #[ignore = "writes to live game"]
@@ -95,7 +87,7 @@ fn set_movement_map_speeds() {
         let base = slot as u64 * TMAP_STRIDE;
         let old = client::from_le_f64(&data, slot * 24 + 8);
         let value_offset = base + 8;
-        let ok = write_bytes_op(&api, &format!("addr:0x{elem_ptr:x}"), value_offset, &ov.value.to_le_bytes());
+        let ok = modforge::client::write_bytes_at(&api, &format!("addr:0x{elem_ptr:x}"), value_offset, &ov.value.to_le_bytes());
         if ok {
             println!("{}: {} -> {} (slot {slot})", ov.label, old, ov.value);
         } else {

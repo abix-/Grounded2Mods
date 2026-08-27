@@ -899,3 +899,160 @@ pub fn parse_vec3(v: &Value) -> Option<(f64, f64, f64)> {
         _ => None,
     }
 }
+
+// ---- Reading engine shapes over the control plane ----
+//
+// These were each written two or three times across one game's
+// research tests before being collected here. None of them is
+// about a particular game: an FString is an FString in every
+// Unreal title, and a UObject's class and name sit at the same
+// two offsets.
+
+/// A UE `TArray` header: `{ void* Data; int32 Num; int32 Max; }`.
+pub const TARRAY_BYTES: u64 = 16;
+
+/// A `UObject` header: its class pointer and its name.
+pub const UOBJECT_CLASS: u64 = 0x10;
+pub const UOBJECT_NAME: u64 = 0x18;
+
+/// Read a `TArray` header: `(data pointer, length, capacity)`.
+///
+/// All zeroes when the read fails, which reads the same as an
+/// empty array, and an empty array is what a caller should do
+/// nothing with either way.
+pub fn read_tarray<S: DeserializeOwned>(
+    api: &Api<S>,
+    addr: u64,
+    offset: u64,
+) -> (u64, usize, usize) {
+    let b = read_bytes(api, addr, offset, TARRAY_BYTES);
+    if b.len() < TARRAY_BYTES as usize {
+        return (0, 0, 0);
+    }
+    let data = u64::from_le_bytes(b[0..8].try_into().unwrap());
+    let num = i32::from_le_bytes(b[8..12].try_into().unwrap());
+    let max = i32::from_le_bytes(b[12..16].try_into().unwrap());
+    (data, num.max(0) as usize, max.max(0) as usize)
+}
+
+/// Read one pointer out of a `TArray` of pointers.
+pub fn read_tarray_entry<S: DeserializeOwned>(api: &Api<S>, data: u64, index: usize) -> u64 {
+    read_u64(api, data, index as u64 * 8)
+}
+
+/// A `UObject`'s own name, read out of its header and resolved
+/// through the name table.
+///
+/// Use this when `inspect_address` will not answer, which is
+/// often: it reports nothing for menu widgets and for streaming
+/// levels.
+///
+/// NEVER call this on an address you found by reading memory
+/// unless you know it is a live object. Offset 0 of a UObject is
+/// its VTABLE, and asking the name table about a vtable pointer
+/// took a game down three times in one evening.
+pub fn object_name<S: DeserializeOwned>(api: &Api<S>, addr: u64) -> Option<String> {
+    let raw = read_u64(api, addr, UOBJECT_NAME);
+    if raw == 0 {
+        return None;
+    }
+    fname_to_string(api, raw)
+}
+
+/// A `UObject`'s full name: every outer, outermost first, joined
+/// with dots, the way the engine reports it.
+///
+/// The object's OWN name is often not the useful one. Every
+/// streamed level in the game is called `PersistentLevel`; which
+/// level it is lives in its outers.
+///
+/// Safe on a live object: each outer is itself a live object.
+/// Bounded so a corrupt chain cannot loop forever.
+pub fn object_full_name<S: DeserializeOwned>(api: &Api<S>, addr: u64) -> String {
+    let mut parts = Vec::new();
+    let mut cur = addr;
+    for _ in 0..16 {
+        if cur == 0 {
+            break;
+        }
+        match object_name(api, cur) {
+            Some(n) => parts.push(n),
+            None => break,
+        }
+        cur = read_u64(api, cur, UOBJECT_OUTER);
+    }
+    parts.reverse();
+    parts.join(".")
+}
+
+/// A `UObject`'s outer, or 0 when it has none.
+pub const UOBJECT_OUTER: u64 = 0x20;
+
+/// A `UObject`'s class pointer, or `None` when it has none.
+pub fn object_class<S: DeserializeOwned>(api: &Api<S>, addr: u64) -> Option<u64> {
+    let class = read_u64(api, addr, UOBJECT_CLASS);
+    (class != 0).then_some(class)
+}
+
+/// Decode an `FString` parm block: `{ TCHAR* Data; int32 Num;
+/// int32 Max; }`, whose characters are UTF-16 behind the pointer.
+///
+/// Takes the hex a `call` returned in `parms_hex_after`, so a
+/// caller can read a string a game function handed back.
+pub fn read_fstring<S: DeserializeOwned>(api: &Api<S>, parms_hex: &str) -> String {
+    let Ok(bytes) = hex::decode(parms_hex) else {
+        return String::new();
+    };
+    read_fstring_bytes(api, &bytes)
+}
+
+/// The same, from bytes already decoded.
+pub fn read_fstring_bytes<S: DeserializeOwned>(api: &Api<S>, bytes: &[u8]) -> String {
+    if bytes.len() < 16 {
+        return String::new();
+    }
+    let ptr = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
+    let num = i32::from_le_bytes(bytes[8..12].try_into().unwrap());
+    if ptr == 0 || num <= 0 {
+        return String::new();
+    }
+    let raw = read_bytes(api, ptr, 0, num as u64 * 2);
+    let units: Vec<u16> = raw
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .take_while(|c| *c != 0)
+        .collect();
+    String::from_utf16_lossy(&units)
+}
+
+/// Write bytes at an address. True when the write reported ok.
+///
+/// The counterpart to [`read_bytes`], and the thing three vendor
+/// tests each wrote their own copy of.
+pub fn write_bytes<S: DeserializeOwned>(
+    api: &Api<S>,
+    addr: u64,
+    offset: u64,
+    data: &[u8],
+) -> bool {
+    write_bytes_at(api, &format!("addr:0x{addr:X}"), offset, data)
+}
+
+/// The same, for a selector that is not a plain address:
+/// `live_player`, `singleton:Foo`, and the rest of the grammar.
+pub fn write_bytes_at<S: DeserializeOwned>(
+    api: &Api<S>,
+    selector: &str,
+    offset: u64,
+    data: &[u8],
+) -> bool {
+    api.op(
+        "write_bytes",
+        json!({
+            "instance_selector": selector,
+            "offset": offset,
+            "bytes_hex": hex::encode(data),
+        }),
+    )
+    .ok
+}
