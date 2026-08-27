@@ -48,6 +48,12 @@ Move Schedule 1's verified engine-independent and Unity-specific helper implemen
 
 ## Last session summary
 
+- Removed Schedule 1's local managed-handle decoder, unsafe owned-object wrapper, and manual borrowed-object wrappers from loot, farming, kill credit, and combat tracing.
+- Routed transient handles through Unityforge's owned-object helper and retained singleton handles through its borrowed-object helper, preserving release and cache lifetimes.
+- Kept all Schedule 1 classes, fields, cash spawning, influence behavior, kill attribution, and combat trace policy in the mod. Added no tests and made no game behavior changes.
+- Verified `k3sc cargo-lock check -p unityforge -p schedule1-mod`.
+- Verified `k3sc cargo-lock check -p schedule1-mod --tests`; it retains three existing warnings in research tests.
+- Verified `k3sc cargo-lock test -p unityforge --lib`: all 6 existing tests pass.
 - Removed Schedule 1's two duplicate Vector3 parsers and routed production and research callers to the existing `modforge::client::parse_vec3` authority.
 - Preserved the accepted string and tagged-string inputs, f64 output, and failure behavior. Added no tests and made no game behavior changes.
 - Documented every named function in `schedule1-mod/src` with a concise player-readable purpose and an explicit Modforge or Unityforge ownership boundary.
@@ -199,7 +205,7 @@ Move Schedule 1's verified engine-independent and Unity-specific helper implemen
 
 ## Next steps
 
-- Migrate Schedule 1's local managed-handle decoding and wrappers to Unityforge.
+- Migrate Schedule 1's lowest-level automatic skill spending loop to the existing Modforge RPG tracker operation.
 - Run the existing Grounded 2 in-game smoke checks for the completed extraction batch.
 - Exercise Survivalist's Load/Unload re-init path through a live story switch and confirm `ReinitAfterUnload` works.
 

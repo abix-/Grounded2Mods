@@ -19,9 +19,8 @@ use parking_lot::Mutex;
 use serde_json::Value as Json;
 
 use modforge::client::parse_vec3;
-use unityforge::bridge::MonoHandle;
 use unityforge::hook::{self, HOOK_REGISTRY, HookCtx};
-use unityforge::mono::{self, LogLevel, MonoObject};
+use unityforge::mono::{self, LogLevel};
 
 use crate::skills::TRACKER;
 
@@ -106,9 +105,7 @@ fn npc_info(health_h: i32) -> Option<(i64, Option<(f64, f64, f64)>, f32)> {
     if health_h == 0 {
         return None;
     }
-    // SAFETY: the shim acquired this handle for this callback and
-    // we own it; Drop releases it.
-    let obj = unsafe { MonoObject::from_handle(MonoHandle(health_h)) };
+    let obj = mono::owned_object(health_h);
     let max_health = obj
         .read_field("MaxHealth")
         .ok()
@@ -117,13 +114,11 @@ fn npc_info(health_h: i32) -> Option<(i64, Option<(f64, f64, f64)>, f32)> {
     let v = obj.read_field("npc").ok()?;
     let ptr = v.get("ptr").and_then(Json::as_i64)?;
     let mut pos = None;
-    if let Some(h) = v.get("handle").and_then(Json::as_i64) {
-        // SAFETY: chained handle from the read above; we own it.
-        let npc = unsafe { MonoObject::from_handle(MonoHandle(h as i32)) };
+    if let Some(h) = mono::json_handle(&v) {
+        let npc = mono::owned_object(h);
         if let Ok(t) = npc.read_field("transform") {
-            if let Some(th) = t.get("handle").and_then(Json::as_i64) {
-                // SAFETY: chained handle, same ownership rule.
-                let transform = unsafe { MonoObject::from_handle(MonoHandle(th as i32)) };
+            if let Some(th) = mono::json_handle(&t) {
+                let transform = mono::owned_object(th);
                 pos = transform
                     .invoke("get_position", &Json::Array(vec![]))
                     .ok()
@@ -141,9 +136,7 @@ fn npc_info(health_h: i32) -> Option<(i64, Option<(f64, f64, f64)>, f32)> {
 /// Stays here because the settling policy protects this mod's Schedule 1 callbacks; Unityforge owns the managed handle wrapper.
 fn release_only(health_h: i32) {
     if health_h != 0 {
-        // SAFETY: the shim acquired this handle for this callback
-        // and we own it; Drop releases it.
-        drop(unsafe { MonoObject::from_handle(MonoHandle(health_h)) });
+        drop(mono::owned_object(health_h));
     }
 }
 

@@ -24,9 +24,8 @@ use serde_json::{Value as Json, json};
 
 use modforge::ops::{OP_REGISTRY, OpDef};
 use unityforge::hook::{self, Hook, HookCtx};
-use unityforge::bridge::MonoHandle;
 use unityforge::main_thread_queue::MAIN_QUEUE;
-use unityforge::mono::MonoObject;
+use unityforge::mono;
 
 const CLASS: &str = "Il2CppScheduleOne.NPCs.NPCHealth";
 const MAX_EVENTS: usize = 512;
@@ -69,15 +68,12 @@ fn record(event: &str, health_h: i32) {
     let ms = started.map_or(0, |t| t.elapsed().as_millis() as u64);
     let (mut npc, mut npc_ptr, mut health) = (Json::Null, Json::Null, Json::Null);
     if health_h != 0 {
-        // SAFETY: the shim acquired this handle for this callback
-        // and we own it; Drop releases it.
-        let obj = unsafe { MonoObject::from_handle(MonoHandle(health_h)) };
+        let obj = mono::owned_object(health_h);
         if let Ok(v) = obj.read_field("npc") {
             npc = v.get("str").cloned().unwrap_or(Json::Null);
             npc_ptr = v.get("ptr").cloned().unwrap_or(Json::Null);
-            if let Some(h) = v.get("handle").and_then(Json::as_i64) {
-                // SAFETY: releasing the chained handle we just took.
-                drop(unsafe { MonoObject::from_handle(MonoHandle(h as i32)) });
+            if let Some(h) = mono::json_handle(&v) {
+                drop(mono::owned_object(h));
             }
         }
         if let Ok(v) = obj.read_field("Health") {

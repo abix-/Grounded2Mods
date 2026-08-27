@@ -13,14 +13,12 @@
 //! Runs queued on the main thread, one frame after the kill, so
 //! nothing heavy executes inside the Die/KnockOut prefix.
 
-use std::mem::ManuallyDrop;
 use std::sync::atomic::{AtomicI32, Ordering};
 
-use serde_json::{Value as Json, json};
+use serde_json::json;
 
-use unityforge::bridge::MonoHandle;
 use unityforge::main_thread_queue::MAIN_QUEUE;
-use unityforge::mono::{self, LogLevel, MonoObject, MonoType};
+use unityforge::mono::{self, LogLevel, MonoType};
 
 const TEMPLATE_NAME: &str = "Dynamic Amount Cash Pickup";
 
@@ -45,20 +43,6 @@ pub fn drop_cash_at(x: f64, y: f64, z: f64, toughness: f32) {
     });
 }
 
-/// Reads a managed-object handle from the JSON shape returned by Schedule 1's Unity shim.
-/// Should move to Unityforge because bridge-value handle decoding is Unity integration, not Schedule 1 behavior.
-pub(crate) fn handle_of(v: &Json) -> Option<i64> {
-    v.get("handle").and_then(Json::as_i64)
-}
-
-/// SAFETY wrapper: own a handle so Drop releases it.
-/// Should move to Unityforge because managed-handle ownership and release behavior are framework responsibilities.
-pub(crate) fn own(h: i64) -> MonoObject {
-    // SAFETY: caller passes a handle just acquired from the shim
-    // for this call path; ownership transfers here.
-    unsafe { MonoObject::from_handle(MonoHandle(h as i32)) }
-}
-
 /// Finds and retains Schedule 1's inactive cash-pickup template for later drops.
 /// Stays here because the concrete class and template name are game content; Unityforge owns type walking and managed handles.
 fn cached_template() -> Result<i32, String> {
@@ -73,11 +57,13 @@ fn cached_template() -> Result<i32, String> {
     let mut found = None;
     for i in &list {
         let name = i["name"].as_str().unwrap_or("");
-        let Some(ih) = i["handle"].as_i64() else { continue };
+        let Some(ih) = mono::json_handle(i) else {
+            continue;
+        };
         if found.is_none() && name == TEMPLATE_NAME {
-            found = Some(ih as i32);
+            found = Some(ih);
         } else {
-            drop(own(ih));
+            drop(mono::owned_object(ih));
         }
     }
     let th = found.ok_or("cash template not found in scene")?;
@@ -87,15 +73,19 @@ fn cached_template() -> Result<i32, String> {
 
 /// Finds and retains FishNet's live server manager so Schedule 1 cash clones can enter the networked world.
 /// Stays here because this cache serves the game's cash-spawn recipe; Unityforge owns static invocation and handle wrappers.
-fn cached_server_mgr() -> Result<ManuallyDrop<MonoObject>, String> {
+fn cached_server_mgr() -> Result<i32, String> {
     let h = SERVER_MGR_HANDLE.load(Ordering::Relaxed);
     if h != 0 {
-        return Ok(ManuallyDrop::new(unsafe { MonoObject::from_handle(MonoHandle(h)) }));
+        return Ok(h);
     }
-    let sm = mono::invoke_static("Il2CppFishNet.InstanceFinder", "get_ServerManager", &json!([]))?;
-    let sh = handle_of(&sm).ok_or("no ServerManager")? as i32;
+    let sm = mono::invoke_static(
+        "Il2CppFishNet.InstanceFinder",
+        "get_ServerManager",
+        &json!([]),
+    )?;
+    let sh = mono::json_handle(&sm).ok_or("no ServerManager")?;
     SERVER_MGR_HANDLE.store(sh, Ordering::Relaxed);
-    Ok(ManuallyDrop::new(unsafe { MonoObject::from_handle(MonoHandle(sh)) }))
+    Ok(sh)
 }
 
 /// Clones, positions, network-spawns, prices, and refreshes one Schedule 1 cash pickup.
@@ -108,7 +98,9 @@ fn spawn_cash(x: f64, y: f64, z: f64, amount: f64) -> Result<(), String> {
         "Instantiate",
         &json!([{"$handle": template_h}]),
     )?;
-    drop(own(handle_of(&clone_v).ok_or("Instantiate returned no handle")?));
+    drop(mono::owned_object(
+        mono::json_handle(&clone_v).ok_or("Instantiate returned no handle")?,
+    ));
 
     // Re-find the clone as a CashPickup (the Instantiate return
     // is typed as UnityEngine.Object; the shim cannot resolve
@@ -122,23 +114,25 @@ fn spawn_cash(x: f64, y: f64, z: f64, amount: f64) -> Result<(), String> {
     let mut clone_h = None;
     for i in &list {
         let name = i["name"].as_str().unwrap_or("");
-        let Some(h) = i["handle"].as_i64() else { continue };
+        let Some(h) = mono::json_handle(i) else {
+            continue;
+        };
         if clone_h.is_none() && name.ends_with("(Clone)") {
             clone_h = Some(h);
         } else {
-            drop(own(h));
+            drop(mono::owned_object(h));
         }
     }
-    let cash = own(clone_h.ok_or("clone not found after Instantiate")?);
+    let cash = mono::owned_object(clone_h.ok_or("clone not found after Instantiate")?);
 
     // Activate (the template is parked inactive) + position.
     let go = cash.invoke("get_gameObject", &json!([]))?;
-    let go_h = handle_of(&go).ok_or("no gameObject handle")?;
-    let go_obj = own(go_h);
+    let go_h = mono::json_handle(&go).ok_or("no gameObject handle")?;
+    let go_obj = mono::owned_object(go_h);
     go_obj.invoke("SetActive", &json!([true]))?;
     let transform = cash.read_field("transform")?;
-    if let Some(th) = handle_of(&transform) {
-        let t = own(th);
+    if let Some(th) = mono::json_handle(&transform) {
+        let t = mono::owned_object(th);
         t.invoke("set_position", &json!([{"x": x, "y": y + 0.3, "z": z}]))?;
     }
 
@@ -147,10 +141,12 @@ fn spawn_cash(x: f64, y: f64, z: f64, amount: f64) -> Result<(), String> {
     // NetworkObject as a property (avoids the GetComponent
     // type-resolution issue in IL2CPP).
     let net_obj = cash.invoke("get_NetworkObject", &json!([]))?;
-    let net_h = handle_of(&net_obj).ok_or("no NetworkObject on cash clone")?;
-    let sm = cached_server_mgr()?;
-    sm.invoke("Spawn", &json!([{"$handle": net_h}, null, {}]))?;
-    drop(own(net_h));
+    let net_h = mono::json_handle(&net_obj).ok_or("no NetworkObject on cash clone")?;
+    let sm_h = cached_server_mgr()?;
+    mono::with_object(sm_h, |sm| {
+        sm.invoke("Spawn", &json!([{"$handle": net_h}, null, {}]))
+    })?;
+    drop(mono::owned_object(net_h));
 
     cash.write_field("Value", &json!(amount))?;
     cash.invoke("UpdateCashStackVisuals", &json!([]))?;

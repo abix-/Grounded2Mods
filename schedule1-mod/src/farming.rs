@@ -21,7 +21,6 @@
 //! GoonPool.SpawnGoon, AttackEntity, goon Health/Movement
 //! writes, SetDestination.
 
-use std::mem::ManuallyDrop;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::time::{Duration, Instant};
 
@@ -29,10 +28,7 @@ use parking_lot::Mutex;
 use serde_json::json;
 
 use modforge::client::parse_vec3;
-use unityforge::bridge::MonoHandle;
-use unityforge::mono::{self, LogLevel, MonoObject, MonoType};
-
-use crate::loot::{handle_of, own};
+use unityforge::mono::{self, LogLevel, MonoType};
 
 #[derive(Clone, Copy, PartialEq)]
 enum Faction {
@@ -245,10 +241,10 @@ static INFLUENCE_HANDLE: AtomicI32 = AtomicI32::new(0);
 
 /// Finds and retains Schedule 1's live cartel-influence service for the current scene.
 /// Stays here because the concrete class and scene lifetime are game facts; Unityforge owns type walking and handles.
-fn cartel_influence_cached() -> Result<ManuallyDrop<MonoObject>, String> {
+fn cartel_influence_handle() -> Result<i32, String> {
     let h = INFLUENCE_HANDLE.load(Ordering::Relaxed);
     if h != 0 {
-        return Ok(ManuallyDrop::new(unsafe { MonoObject::from_handle(MonoHandle(h)) }));
+        return Ok(h);
     }
     let ty = MonoType::find("Il2CppScheduleOne.Cartel.CartelInfluence")
         .ok_or("CartelInfluence type not found")?;
@@ -256,20 +252,21 @@ fn cartel_influence_cached() -> Result<ManuallyDrop<MonoObject>, String> {
     let ih = walked
         .as_array()
         .and_then(|a| a.first())
-        .and_then(|i| i["handle"].as_i64())
+        .and_then(mono::json_handle)
         .ok_or("no live CartelInfluence")?;
-    INFLUENCE_HANDLE.store(ih as i32, Ordering::Relaxed);
-    Ok(ManuallyDrop::new(unsafe { MonoObject::from_handle(MonoHandle(ih as i32)) }))
+    INFLUENCE_HANDLE.store(ih, Ordering::Relaxed);
+    Ok(ih)
 }
 
 /// Reads the cartel's current influence value for one Schedule 1 region.
 /// Stays here because the service method and region indexing belong to the game; Unityforge owns managed invocation.
 fn get_influence(region_idx: usize) -> Result<f64, String> {
-    let inst = cartel_influence_cached()?;
-    Ok(inst
-        .invoke("GetInfluence", &json!([region_idx as i64]))?
-        .as_f64()
-        .unwrap_or(0.0))
+    let handle = cartel_influence_handle()?;
+    Ok(mono::with_object(handle, |inst| {
+        inst.invoke("GetInfluence", &json!([region_idx as i64]))
+    })?
+    .as_f64()
+    .unwrap_or(0.0))
 }
 
 /// Move a region's influence through the game's own machinery
@@ -279,11 +276,13 @@ fn get_influence(region_idx: usize) -> Result<f64, String> {
 /// invoke (the value never moves).
 /// Stays here because the verified RpcLogic method is specific to Schedule 1; Unityforge owns generic method invocation.
 fn change_influence(region_idx: usize, delta: f64) -> Result<f64, String> {
-    let inst = cartel_influence_cached()?;
-    inst.invoke(
-        "RpcLogic___ChangeInfluence_2792544924",
-        &json!([region_idx as i64, delta]),
-    )?;
+    let handle = cartel_influence_handle()?;
+    mono::with_object(handle, |inst| {
+        inst.invoke(
+            "RpcLogic___ChangeInfluence_2792544924",
+            &json!([region_idx as i64, delta]),
+        )
+    })?;
     get_influence(region_idx)
 }
 
@@ -293,8 +292,8 @@ fn load_regions() -> Result<usize, String> {
     let map_ty = MonoType::find("Il2CppScheduleOne.Map.Map").ok_or("Map type not found")?;
     let map = map_ty.singleton_instance().ok_or("no Map singleton")?;
     let regions_v = map.read_field("Regions")?;
-    let rh = handle_of(&regions_v).ok_or("Regions carried no handle")?;
-    let regions_arr = own(rh);
+    let rh = mono::json_handle(&regions_v).ok_or("Regions carried no handle")?;
+    let regions_arr = mono::owned_object(rh);
     let n = regions_arr
         .invoke("get_Length", &json!([]))?
         .as_i64()
@@ -302,8 +301,10 @@ fn load_regions() -> Result<usize, String> {
     let mut out = Vec::new();
     for i in 0..n {
         let item = regions_arr.invoke("get_Item", &json!([i]))?;
-        let Some(reg_h) = handle_of(&item) else { continue };
-        let reg = own(reg_h);
+        let Some(reg_h) = mono::json_handle(&item) else {
+            continue;
+        };
+        let reg = mono::owned_object(reg_h);
         let name = reg
             .read_field("Name")
             .ok()
@@ -326,22 +327,28 @@ fn load_regions() -> Result<usize, String> {
         // tests/research_zones.rs.)
         let mut posts = Vec::new();
         if let Ok(dl) = reg.read_field("RegionDeliveryLocations") {
-            if let Some(dlh) = handle_of(&dl) {
-                let list = own(dlh);
+            if let Some(dlh) = mono::json_handle(&dl) {
+                let list = mono::owned_object(dlh);
                 let count = list
                     .invoke("get_Count", &json!([]))
                     .ok()
                     .and_then(|v| v.as_i64())
                     .unwrap_or(0);
                 for j in 0..count {
-                    let Ok(e) = list.invoke("get_Item", &json!([j])) else { continue };
-                    let Some(eh) = handle_of(&e) else { continue };
-                    let loc = own(eh);
+                    let Ok(e) = list.invoke("get_Item", &json!([j])) else {
+                        continue;
+                    };
+                    let Some(eh) = mono::json_handle(&e) else {
+                        continue;
+                    };
+                    let loc = mono::owned_object(eh);
                     if let Ok(t) = loc.read_field("transform") {
-                        if let Some(th) = handle_of(&t) {
-                            let tr = own(th);
-                            if let Some((x, y, z)) =
-                                tr.invoke("get_position", &json!([])).ok().and_then(|p| parse_vec3(&p))
+                        if let Some(th) = mono::json_handle(&t) {
+                            let tr = mono::owned_object(th);
+                            if let Some((x, y, z)) = tr
+                                .invoke("get_position", &json!([]))
+                                .ok()
+                                .and_then(|p| parse_vec3(&p))
                             {
                                 let jx = x + (fastrand::f64() - 0.5) * 2.0 * ANCHOR_JITTER;
                                 let jz = z + (fastrand::f64() - 0.5) * 2.0 * ANCHOR_JITTER;
@@ -391,13 +398,13 @@ fn war_pass() -> Result<(), String> {
     let player_h = players
         .as_array()
         .and_then(|a| a.first())
-        .and_then(|i| i["handle"].as_i64())
+        .and_then(mono::json_handle)
         .ok_or("no live Player")?;
-    let player = own(player_h);
+    let player = mono::owned_object(player_h);
     let ppos = {
         let transform = player.read_field("transform")?;
-        let th = handle_of(&transform).ok_or("no player transform")?;
-        let t = own(th);
+        let th = mono::json_handle(&transform).ok_or("no player transform")?;
+        let t = mono::owned_object(th);
         parse_vec3(&t.invoke("get_position", &json!([]))?).ok_or("bad player position")?
     };
 
