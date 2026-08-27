@@ -219,15 +219,63 @@ interlock. So the module size is the SPACING BETWEEN NEIGHBOURS,
 and the only place that exists is in real placements.
 
 **The vanilla buildings give us the attachment points.** Read a
-level's placed pieces with their transforms, group by mesh, and
-the common distances between neighbours ARE the module. A tile
-that always sits 400 cm from the next one is a 4 m module
-whatever its box says and whatever it is called. The offsets
-between DIFFERENT meshes are the attachment points, and the pairs
-that occur are the instructions.
+level's placed pieces with their transforms, and the offset
+between two that are touching is a join we did not have to guess.
 
 We cannot trust the names and we cannot trust the boxes. We can
 trust where the designers put things.
+
+### A join is evidence. A STUD is the model.
+
+One observed join yields TWO studs, one on each piece, each
+expressed in THAT PIECE'S OWN local frame. That is the whole
+point, and an edge list cannot express it.
+
+Measured 2026-08-27: a wall sits 350 cm above a floor tile's
+origin, turned 90 degrees, in 231 sightings. That single join
+gives:
+
+```text
+the FLOOR  a stud at local (0, +350, 0)   something attaches above me
+the WALL   a stud at local (0, -350, 0)   I attach to something below me
+```
+
+(the wall's, after undoing its 90 degree turn, which is why local
+frames matter: two pieces placed at different angles are only
+comparable once each is read in its own.)
+
+**Then substitution works.** Any other piece with a stud at local
+`(0, -350, 0)` can take that wall's place. Recording the join as
+"this wall meets this floor" could never tell us that; recording
+it as a stud on each piece does.
+
+So:
+
+- **`parts.json` is the model, and studs are per PIECE**, next to
+  its size and shape. To place a piece you need only its own
+  studs and the studs of what is already there. The pair is never
+  looked up.
+- **Observations are working, not the model.** Kept so the studs
+  can be RE-DERIVED when a threshold changes, the way a build log
+  is kept rather than only the binary. Store what you SAW, derive
+  what it MEANS.
+- **Observations accumulate across sessions.** We only ever see
+  the squares that happen to be loaded, eleven at a time out of
+  hundreds. Each run merges its sightings in rather than
+  overwriting, and the count is the confidence: 231 sightings in
+  twelve squares is a rule, four in one square is a maybe.
+
+Prior art: Wave Function Collapse learns which tiles were
+observed adjacent to which in an example, then generates from
+that. Same idea, in three dimensions, with a real building as the
+example.
+
+**Open, and the data will answer it:** whether a stud needs a
+TYPE beyond its position and facing. In real Lego a stud is a
+stud and anything fits anything. Here a wall's base and a wall's
+end might land on similar local positions while being different
+kinds of connection, and position alone would then let us build
+joins the game never makes.
 
 Then the rule that says when two of those points may join. Kinds
 that are allowed to meet, facings that must oppose, sizes that
