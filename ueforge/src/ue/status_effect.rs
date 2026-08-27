@@ -39,7 +39,27 @@
 
 use std::ffi::c_void;
 
-use crate::ue::{UFunction, UObject};
+use crate::ue::{FName, UFunction, UObject};
+
+/// Game-supplied offsets for reading the active status effects on an actor.
+#[derive(Debug, Clone, Copy)]
+pub struct StatusEffectLayout {
+    pub component_offset: usize,
+    pub effects_array_offset: usize,
+    pub row_handle_offset: usize,
+    pub type_offset: usize,
+    pub value_offset: usize,
+    pub max_effects: usize,
+}
+
+/// One active status effect resolved through its data-table row handle.
+#[derive(Debug, Clone)]
+pub struct StatusEffectEntry {
+    pub row: String,
+    pub table: String,
+    pub stat_type: Option<u8>,
+    pub value: Option<f32>,
+}
 
 /// Default byte offset of the `Value: f32` field within a UE5
 /// status-effect row struct (`FStatusEffectData` in Maine; varies
@@ -78,17 +98,102 @@ pub unsafe fn read_row_type(row_ptr: *const u8, offset: usize) -> u8 {
 /// Same as [`read_row_value`]. Mutating a shared row affects
 /// every consumer of that row. Pick a benign / per-skill row
 /// to avoid cross-contamination.
-pub unsafe fn write_row_value(
-    row_ptr: *const u8,
-    offset: usize,
-    new_value: f32,
-) -> f32 {
+pub unsafe fn write_row_value(row_ptr: *const u8, offset: usize, new_value: f32) -> f32 {
     unsafe {
         let p = row_ptr.add(offset) as *mut f32;
         let prev = p.read_unaligned();
         p.write_unaligned(new_value);
         prev
     }
+}
+
+/// Read the active status effects attached to `actor` using the supplied
+/// game layout.
+pub fn read_active(actor: &UObject, layout: StatusEffectLayout) -> Vec<StatusEffectEntry> {
+    let mut entries = Vec::new();
+    // SAFETY: the caller supplies the actor's component-pointer offset.
+    let component = unsafe {
+        let ptr: *mut UObject = actor
+            .field_ptr(layout.component_offset)
+            .cast::<*mut UObject>()
+            .read_unaligned();
+        match ptr.as_ref() {
+            Some(component) => component,
+            None => return entries,
+        }
+    };
+    // SAFETY: the caller supplies the component's TArray header offset.
+    let (data_ptr, count) = unsafe {
+        let base = component.field_ptr(layout.effects_array_offset);
+        let data = (base as *const *const *mut UObject).read_unaligned();
+        let count = (base.add(8) as *const i32).read_unaligned();
+        (data, count.max(0) as usize)
+    };
+    if data_ptr.is_null() || count == 0 {
+        return entries;
+    }
+
+    for index in 0..count.min(layout.max_effects) {
+        // SAFETY: the TArray header supplies `count` entries, capped by the
+        // caller, and each entry is a UObject pointer.
+        let effect = unsafe {
+            let ptr = data_ptr.add(index).read_unaligned();
+            match ptr.as_ref() {
+                Some(effect) => effect,
+                None => continue,
+            }
+        };
+        // SAFETY: the caller supplies the FDataTableRowHandle offset, whose
+        // first field is the table pointer and whose second field is FName.
+        let (table_ptr, raw_fname) = unsafe {
+            let handle = effect.field_ptr(layout.row_handle_offset);
+            (
+                handle.cast::<*mut UObject>().read_unaligned(),
+                (handle.add(8) as *const u64).read_unaligned(),
+            )
+        };
+        // SAFETY: the active UE runtime owns the FName resolver.
+        let row = unsafe {
+            crate::ue::runtime()
+                .name_resolver
+                .to_string(FName::from_u64(raw_fname))
+        };
+        // SAFETY: table_ptr came from the live effect's row handle.
+        let table = unsafe {
+            table_ptr
+                .as_ref()
+                .map(UObject::full_name)
+                .unwrap_or_else(|| "<null-table>".to_string())
+        };
+        // SAFETY: table_ptr and raw_fname came from the live row handle;
+        // the caller supplies the row's Type and Value offsets.
+        let row_meta = unsafe {
+            table_ptr.as_ref().and_then(|table| {
+                crate::ue::tmap::find_value_by_fname_key(
+                    table,
+                    crate::ue::offsets::datatable::ROW_MAP,
+                    raw_fname,
+                )
+                .map(|row_ptr| {
+                    (
+                        read_row_type(row_ptr, layout.type_offset),
+                        read_row_value(row_ptr, layout.value_offset),
+                    )
+                })
+            })
+        };
+        let (stat_type, value) = match row_meta {
+            Some((stat_type, value)) => (Some(stat_type), Some(value)),
+            None => (None, None),
+        };
+        entries.push(StatusEffectEntry {
+            row,
+            table,
+            stat_type,
+            value,
+        });
+    }
+    entries
 }
 
 /// `FDataTableRowHandle` parm shape for `CreateAndAddEffect`.

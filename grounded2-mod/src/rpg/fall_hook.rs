@@ -6,14 +6,14 @@
 //! - G2FallBinder: drains the debug PE queue, applies the
 //!   Fall Resistance velocity stomp, and fires
 //!   `TriggerCtx::Fall` to subscribers via `TRACKER.fire`.
-//! - Unrelated helpers that have historically lived in this file:
-//!   `snapshot_player_status_effects`, `lookup_data_table_row`.
+//! - The Grounded 2 layout and first-player selection for the
+//!   debug status-effect snapshot.
 
 use ueforge::fall::{FallBinder, FallHook, FallHookConfig};
 use ueforge::hook::ProcessEventHook;
 use ueforge::rpg::{FallEvent, TriggerCtx};
 use ueforge::ue::TypedField;
-use ueforge::ue::UObject;
+use ueforge::ue::status_effect::{self, StatusEffectEntry, StatusEffectLayout};
 
 use crate::rpg::{skills, tracker};
 
@@ -32,6 +32,15 @@ const G2_FALL_CONFIG: FallHookConfig = FallHookConfig {
 };
 
 static HOOK: FallHook<G2FallBinder> = FallHook::new(G2_FALL_CONFIG);
+
+const G2_STATUS_EFFECT_LAYOUT: StatusEffectLayout = StatusEffectLayout {
+    component_offset: 0x1378,
+    effects_array_offset: 0x01C8,
+    row_handle_offset: 0x0058,
+    type_offset: 0x30,
+    value_offset: 0x34,
+    max_effects: 64,
+};
 
 struct G2FallBinder;
 
@@ -105,128 +114,20 @@ fn current_fall_resistance_reduction() -> f32 {
 }
 
 // ---------------------------------------------------------------
-// Unrelated helpers: player status-effect snapshot (used by the
-// debug HTTP endpoint). Kept here for historical reasons; not
-// part of the fall hook.
+// Grounded 2 player selection for the debug status-effect snapshot.
 // ---------------------------------------------------------------
 
-/// Look up a row in a `UDataTable` by FName-as-u64. Thin wrapper
-/// over `ueforge::ue::tmap::find_value_by_fname_key` at the
-/// `UDataTable.RowMap` offset.
-/// Stays here because it supports Grounded 2's status-effect snapshot;
-/// Ueforge owns the reusable Unreal map lookup.
-pub(crate) fn lookup_data_table_row(table: &UObject, row_name: u64) -> Option<*const u8> {
-    use ueforge::ue::offsets::datatable;
-    unsafe { ueforge::ue::tmap::find_value_by_fname_key(table, datatable::ROW_MAP, row_name) }
-}
-
-/// Read `FStatusEffectData.Type` (u8 at +0x30) and `Value`
-/// (f32 at +0x34) from the row bytes.
-/// Stays here because these offsets are Grounded 2's status-effect row layout.
-fn read_status_effect_row(row: *const u8) -> (u8, f32) {
-    const TYPE_OFFSET: usize = 0x30;
-    const VALUE_OFFSET: usize = 0x34;
-    unsafe {
-        let stat_type = (row.add(TYPE_OFFSET) as *const u8).read_unaligned();
-        let value = (row.add(VALUE_OFFSET) as *const f32).read_unaligned();
-        (stat_type, value)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct StatusEffectEntry {
-    pub row: String,
-    pub table: String,
-    pub stat_type: Option<u8>,
-    pub value: Option<f32>,
-}
-
 /// Reports the status effects currently attached to the first live Grounded 2 player.
-/// Stays here because it interprets this game's component and data-table layouts;
-/// Ueforge owns generic object and map access.
+/// Stays here because Grounded 2 chooses the player and supplies its layout;
+/// Ueforge owns the reusable Unreal traversal and row inspection.
 pub fn snapshot_player_status_effects() -> Option<Vec<StatusEffectEntry>> {
     use crate::rpg::apply;
 
     let mut out: Option<Vec<StatusEffectEntry>> = None;
     apply::apply_to_live_player_characters(|player| {
         if out.is_none() {
-            out = Some(collect_status_effects(player));
+            out = Some(status_effect::read_active(player, G2_STATUS_EFFECT_LAYOUT));
         }
     });
     out
-}
-
-/// Collects Grounded 2 status-effect rows and values from one player character.
-/// Stays here because the component offsets and row metadata are specific to this game.
-fn collect_status_effects(player: &UObject) -> Vec<StatusEffectEntry> {
-    const ASC_STATUS_EFFECT_COMPONENT: usize = 0x1378;
-    const SEC_STATUS_EFFECTS_TARRAY: usize = 0x01C8;
-    const STATUS_EFFECT_ROW_HANDLE: usize = 0x0058;
-
-    let mut entries = Vec::new();
-    let sec = unsafe {
-        let p: *mut UObject = player
-            .field_ptr(ASC_STATUS_EFFECT_COMPONENT)
-            .cast::<*mut UObject>()
-            .read_unaligned();
-        match p.as_ref() {
-            Some(c) => c,
-            None => return entries,
-        }
-    };
-    let (data_ptr, num) = unsafe {
-        let base = sec.field_ptr(SEC_STATUS_EFFECTS_TARRAY);
-        let data = (base as *const *const *mut UObject).read_unaligned();
-        let num = (base.add(8) as *const i32).read_unaligned();
-        (data, num.max(0) as usize)
-    };
-    if data_ptr.is_null() || num == 0 {
-        return entries;
-    }
-    for i in 0..num.min(64) {
-        let effect = unsafe {
-            let p = data_ptr.add(i).read_unaligned();
-            match p.as_ref() {
-                Some(e) => e,
-                None => continue,
-            }
-        };
-        let table_ptr = unsafe {
-            effect
-                .field_ptr(STATUS_EFFECT_ROW_HANDLE)
-                .cast::<*mut UObject>()
-                .read_unaligned()
-        };
-        let raw_fname: u64 = unsafe {
-            let fname_ptr = effect.field_ptr(STATUS_EFFECT_ROW_HANDLE + 8);
-            (fname_ptr as *const u64).read_unaligned()
-        };
-        let row_name = unsafe {
-            ueforge::ue::runtime()
-                .name_resolver
-                .to_string(ueforge::ue::FName::from_u64(raw_fname))
-        };
-        let table_name = unsafe {
-            table_ptr
-                .as_ref()
-                .map(|t| t.full_name())
-                .unwrap_or_else(|| "<null-table>".to_string())
-        };
-        let row_meta = unsafe {
-            table_ptr
-                .as_ref()
-                .and_then(|t| lookup_data_table_row(t, raw_fname).map(read_status_effect_row))
-        };
-        let (stat_type, value) = match row_meta {
-            Some((ty, val)) => (Some(ty), Some(val)),
-            None => (None, None),
-        };
-        entries.push(StatusEffectEntry {
-            row: row_name,
-            table: table_name,
-            stat_type,
-            value,
-        });
-    }
-    entries
 }

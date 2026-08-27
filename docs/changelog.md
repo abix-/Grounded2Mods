@@ -25,6 +25,7 @@ Newest first.
 
 | System | Item | Done when |
 |---|---|---|
+| `ueforge` | [x] Move Grounded 2's existing active status-effect traversal into Ueforge | Ueforge walks the component and effect array, resolves row handles and FNames, looks up data-table rows, and reads Type and Value while Grounded 2 keeps every layout offset, first-player selection, and snapshot presentation. |
 | `ueforge` | [x] Move the existing parameterized ImpactReversalEffect out of Grounded 2 and into Ueforge's standard RPG effects | Ueforge owns the unchanged damage-event filtering, level scaling, post-damage health reversal, log, and formatting while Grounded 2 keeps its damage layout, health offset, marker, tuning, and catalog static. |
 | `ueforge` | [x] Move the existing parameterized LifestealEffect out of Grounded 2 and into Ueforge's standard RPG effects | Ueforge owns the unchanged damage-event filtering, level scaling, health-component write, log, and formatting while Grounded 2 keeps its player reference, offsets, tuning, and catalog static. |
 | `ueforge` | [x] Lift transient live-object lookup, checked byte-buffer UFunction calls, and game-thread live-object hook installation from MISERY | MISERY autoload retains its save checks, Blueprint names, and parameter layouts; notice suppression retains its exact class filter, re-entry guard, dismissal handler, and logs while Ueforge stops its poller and removes its hook after dismissal. |

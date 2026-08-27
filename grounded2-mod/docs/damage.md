@@ -1415,7 +1415,7 @@ read path. Steps 2-4 are the proof-of-concept; Step 5 is the
 catalog migration.
 
 1. **Fix the linear `RowMap` walk**
-   (`grounded2-mod/src/rpg/fall_hook.rs::lookup_data_table_row`).
+   (now owned by `ueforge::ue::status_effect::read_active`).
    `TMap<K,V>` is backed by `TSet<TPair<K,V>>` whose element is
    `TSetElement<TPair> { pair: 16, HashNextId: i32, HashIndex: i32 }`
    = 24 bytes, stored in a `TSparseArray` with a separate

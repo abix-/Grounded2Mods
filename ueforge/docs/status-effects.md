@@ -153,6 +153,11 @@ declare a catalog row with the table-finder, component class,
 row FName, value-at-max, and a `VanillaCache<u64, f32>`; the
 framework handles mutate-row + invoke `CreateAndAddEffect`.
 
+For inspection, [`ue::status_effect::read_active`](../src/ue/status_effect.rs)
+walks a live actor's component and effect array, resolves each row handle,
+and reads its Type and Value. The game supplies all layout offsets and the
+maximum number of entries to inspect.
+
 ## Probing a new game
 
 To wire this against a game ueforge hasn't been tested on:
