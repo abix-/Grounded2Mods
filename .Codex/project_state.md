@@ -58,6 +58,7 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 
 ## Last session summary
 
+- Stopped the latest live route after confirming it violated `misery-mod/docs/performance.md`: setup still used global player and door searches, stuck handling ran multiple class-chain scans, and expedition entry polled another global player search every 250 ms. No further live acceptance may run until those paths are gone and forbidden timing rows are absent.
 - The latest restarted acceptance reached the bunker metal door but three focused `E` attempts did not open it. The player remained 110.3 cm from the door, so reliable player-input delivery is the first remaining loot-flow task.
 - The zero-global-scan actor path selected a real `BP_WoodenCrate2_C` through `GetAllActorsOfClass`. Unreal reported a complete 6575.8 cm path, but `SimpleMoveToLocation` stopped 773.5 cm from the approach, proving that observed traversal must invalidate a path blocked by geometry the navmesh does not model.
 - Rejected the first loot prototype on performance grounds. It repeatedly walked the 174,000 to 230,000-object global UObject list on the game thread during candidate selection and UI polling, violating `misery-mod/docs/performance.md`. The replacement batch uses one Unreal world-actor enumeration, cached pointers and function layouts, bounded navigation work across frames, event-captured container UI, direct inventory-count observation, and a zero-global-scan acceptance gate.
@@ -280,10 +281,12 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 
 ## Next steps
 
-- Make cold bunker-door `E` input reliable across three restarted runs.
-- Remove global-object polling from expedition entry and the remaining loot diagnostics.
+- Expose the retained MISERY player pointer and enumerate both doors through Unreal's actor collections.
+- Remove scan-based stuck diagnostics and observe expedition entry through the retained player.
+- Delete or convert every remaining scan-based navigation diagnostic.
+- Aim at the door's colliding-bounds center from the active camera and gate `E` on interaction range.
 - Complete ranked crate fallback, retained-state opening, UI transfer, and inventory-count evidence.
-- Enforce the zero-scan 16.7 ms performance gate and run the cold end-to-end acceptance.
+- Enforce absent search counters and the 16.7 ms frame budget before running another cold acceptance.
 - Add one alternate stop-to-stop edge and run the first measured high-level A* reroute after looting is complete.
 - Compile the BepInEx IL2CPP shim when a BepInEx 6 IL2CPP reference directory is available.
 - Namespace Unityforge's managed handle table by generation so stale handles cannot collide after a hot swap.
