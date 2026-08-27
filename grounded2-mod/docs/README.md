@@ -11,7 +11,7 @@
 |---|---|
 | [building.md](building.md) | Build, install, deploy. Prereqs, cargo commands, deploy script, configuration. |
 | [features.md](features.md) | User-facing feature list. What the mod does in-game. |
-| [rpg.md](rpg.md) | RPG subsystem: catalog, sqrt curve, persistence, code map, Effect trait + per-skill static instances, and the three game-specific Effect impls in effects.rs. |
+| [rpg.md](rpg.md) | RPG subsystem: catalog, sqrt curve, persistence, code map, shared Effect implementations, and Grounded 2 configuration. |
 | [damage.md](damage.md) | Grounded 2 damage internals: Maine combat / fall / environmental pipelines, instigator resolution, status-effect data table layout. |
 | [inventory.md](inventory.md) | Backpack patch internals (Maine InventoryComponent CDO) + viewport rebind binder. |
 | [engine.md](engine.md) | Grounded 2 engine specifics: pak, exes, GObjects offsets, shipping caveats. |

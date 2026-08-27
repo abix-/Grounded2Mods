@@ -4,16 +4,14 @@
 // Per the workspace composition model
 // (../../../ueforge/docs/architecture.md), each thing we research
 // and figure out how to do in the game is one Effect type. This
-// module owns the two Maine-specific operations:
+// module owns the Maine-specific backpack operation:
 //
 //   - BackpackSlotsEffect     . Write inventory slot count to
 //                                 every InventoryComponent CDO
-//   - SurvivalDrainEffect     . Scale hunger/thirst drain on
-//                                 the SurvivalComponent CDO
 //
-// The fall-damage effect implementation is shared by Ueforge;
-// this module supplies its Grounded 2 classes, offsets, caches,
-// and tuning.
+// The survival-drain and fall-damage effect implementations are
+// shared by Ueforge; this module supplies their Grounded 2 classes,
+// offsets, settings, caches, and tuning.
 //
 // The framework's standard effects (PlayerFloat, SubcomponentMultiply,
 // etc.) are used directly in `skills.rs` static declarations. No
@@ -25,11 +23,11 @@ use ueforge::rpg::Effect;
 
 use crate::inv_hook;
 use crate::patch;
-use crate::rpg::apply::{self, apply_to_survival_component_cdos};
+use crate::rpg::apply;
 use crate::rpg::skills::{
     self, ASC_FALL_DAMAGE_RATIO, ASC_MINIMUM_FALL_DAMAGE_VELOCITY, ASC_TAKE_FALL_DAMAGE,
     GMS_FALL_DAMAGE_MULTIPLIER, SMMC_CUSTOM_FALL_DAMAGE_MULTIPLIER, SURVIVAL_HUNGER_OFFSET,
-    SURVIVAL_THIRST_OFFSET, skill_bonus,
+    SURVIVAL_THIRST_OFFSET,
 };
 use crate::rpg::world_loader;
 
@@ -79,76 +77,32 @@ pub static BACKPACK: BackpackSlotsEffect = BackpackSlotsEffect {
 };
 
 // ---------------------------------------------------------------
-// SurvivalDrainEffect. Scales hunger or thirst drain on every
-// SurvivalComponent CDO. Final value =
-//   vanilla * settings_mult * (1 - max_reduction * progress)
+// SurvivalDrainEffect configuration. Ueforge owns the calculation
+// and CDO write; Grounded 2 owns every input.
 // ---------------------------------------------------------------
 
-#[derive(Clone, Copy)]
-pub enum SurvivalKind {
-    Hunger,
-    Thirst,
+fn hunger_settings_multiplier() -> Option<f32> {
+    world_loader::loaded_settings().map(|settings| settings.survival.hunger_multiplier)
 }
 
-pub struct SurvivalDrainEffect {
-    pub field_offset: usize,
-    pub max_reduction: f32,
-    pub kind: SurvivalKind,
+fn thirst_settings_multiplier() -> Option<f32> {
+    world_loader::loaded_settings().map(|settings| settings.survival.thirst_multiplier)
 }
 
-impl Effect<ueforge::rpg::UeEngine> for SurvivalDrainEffect {
-    /// Reduces Grounded 2's hunger or thirst drain from its untouched rate and player setting.
-    /// Stays here because the survival fields and combination with this mod's settings are game-specific;
-    /// Modforge owns effect dispatch and progression math, and Ueforge owns Unreal field access.
-    fn apply(&self, level: u32, _max_level: u32, _ctx: &ueforge::rpg::TriggerCtx<'_>) {
-        let Some(settings) = world_loader::loaded_settings() else {
-            return;
-        };
-        let vanilla = match self.kind {
-            SurvivalKind::Hunger => apply::vanilla_hunger(),
-            SurvivalKind::Thirst => apply::vanilla_thirst(),
-        };
-        let settings_mult = match self.kind {
-            SurvivalKind::Hunger => settings.survival.hunger_multiplier,
-            SurvivalKind::Thirst => settings.survival.thirst_multiplier,
-        };
-        let Some(v) = vanilla else {
-            return;
-        };
-        let skill_mult = (1.0 - skill_bonus(self.max_reduction, level)).max(0.0);
-        let target = v * settings_mult * skill_mult;
-        let count = apply_to_survival_component_cdos(self.field_offset, target);
-        ueforge::log!(
-            "rpg/effects: survival_drain level={} target={:.4} (vanilla={:.4} * settings={:.3} * skill={:.3}) written to {} CDO(s)",
-            level,
-            target,
-            v,
-            settings_mult,
-            skill_mult,
-            count
-        );
-    }
-
-    /// Describes the hunger or thirst reduction granted at the current level.
-    /// Stays here because the maximum reduction is Grounded 2 skill tuning;
-    /// Modforge owns the effect display contract.
-    fn format(&self, level: u32, _max_level: u32) -> String {
-        let mult = (1.0 - skill_bonus(self.max_reduction, level)).max(0.0);
-        let pct = ((1.0 - mult) * 100.0).round() as i32;
-        format!("-{pct}% drain ({mult:.2}x)")
-    }
-}
-
-pub static HUNGER_DRAIN: SurvivalDrainEffect = SurvivalDrainEffect {
+pub static HUNGER_DRAIN: ueforge::rpg::SurvivalDrainEffect = ueforge::rpg::SurvivalDrainEffect {
+    class: &apply::CLASS_SURVIVAL_COMPONENT,
     field_offset: SURVIVAL_HUNGER_OFFSET,
+    vanilla: apply::vanilla_hunger,
+    settings_multiplier: hunger_settings_multiplier,
     max_reduction: 0.75,
-    kind: SurvivalKind::Hunger,
 };
 
-pub static THIRST_DRAIN: SurvivalDrainEffect = SurvivalDrainEffect {
+pub static THIRST_DRAIN: ueforge::rpg::SurvivalDrainEffect = ueforge::rpg::SurvivalDrainEffect {
+    class: &apply::CLASS_SURVIVAL_COMPONENT,
     field_offset: SURVIVAL_THIRST_OFFSET,
+    vanilla: apply::vanilla_thirst,
+    settings_multiplier: thirst_settings_multiplier,
     max_reduction: 0.75,
-    kind: SurvivalKind::Thirst,
 };
 
 // ---------------------------------------------------------------

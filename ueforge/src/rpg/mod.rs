@@ -48,7 +48,7 @@ pub use effect::{
     ClassFieldsMultiplyEffect, Effect, EffectDef, FallDamageReductionEffect, ImpactReversalEffect,
     LifestealEffect, PlayerFloatEffect, RuntimeEffect, StatusEffectApply,
     SubcomponentAdditiveEffect, SubcomponentFloatEffect, SubcomponentMultiplyEffect,
-    SubcomponentU32MaskEffect,
+    SubcomponentU32MaskEffect, SurvivalDrainEffect,
 };
 pub use format::PercentFormat;
 pub use poller::{PollerHandle, SlotPoller, spawn_interval};

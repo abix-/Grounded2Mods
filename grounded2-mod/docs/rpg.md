@@ -370,7 +370,7 @@ tested without grinding XP.
 | File                                    | Authority                                            |
 | --------------------------------------- | ---------------------------------------------------- |
 | `rpg/skills.rs`                         | Catalog + per-level math + format_effect dispatch.   |
-| `rpg/apply.rs`                          | Apply step: Tracker iterates the catalog and calls `effect.apply` per row; the 3 game-specific Effect impls live in effects.rs. |
+| `rpg/apply.rs`                          | Apply step: Tracker iterates the catalog and calls `effect.apply` per row; the backpack Effect remains game-specific. |
 | `rpg/tracker.rs`                        | Thin shim over `ueforge::rpg::Tracker<A>`. |
 | `rpg/world_loader.rs`                   | Thin shim over `ueforge::rpg::SlotPoller`. |
 | `rpg/save_slot.rs`                      | Resolves the playthrough GUID for the active save.   |

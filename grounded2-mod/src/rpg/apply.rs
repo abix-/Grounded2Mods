@@ -20,7 +20,7 @@ use std::sync::OnceLock;
 
 // Re-export field helpers under crate::rpg::apply so debug.rs +
 // effects.rs can pull them from one place.
-pub(crate) use ueforge::ue::field::{read_component_ptr, read_f32, read_u32, write_f32};
+pub(crate) use ueforge::ue::field::{read_component_ptr, read_f32, read_u32};
 use ueforge::ue::{self, GObjectsView, UObject};
 
 use crate::survival;
@@ -152,7 +152,7 @@ pub fn capture_vanilla() {
 
 pub(crate) static PLAYER: ue::PlayerRef =
     ue::PlayerRef::new("SurvivalCharacter", Some("BP_SurvivalPlayerCharacter"));
-static CLASS_SURVIVAL_COMPONENT: ue::ClassRef = ue::ClassRef::new("SurvivalComponent");
+pub(crate) static CLASS_SURVIVAL_COMPONENT: ue::ClassRef = ue::ClassRef::new("SurvivalComponent");
 pub(crate) static CLASS_SURVIVAL_MODE_MANAGER_COMPONENT: ue::ClassRef =
     ue::ClassRef::new("SurvivalModeManagerComponent");
 pub(crate) static CLASS_SURVIVAL_GAME_MODE_SETTINGS: ue::ClassRef =
@@ -164,12 +164,4 @@ pub(crate) static CLASS_GLOBAL_COMBAT_DATA: ue::ClassRef = ue::ClassRef::new("Gl
 /// Stays here because it supplies this game's player-class filter to Ueforge's reusable walker.
 pub(crate) fn apply_to_live_player_characters(f: impl FnMut(&UObject)) -> usize {
     PLAYER.for_each_live(f)
-}
-
-/// Writes a survival value across Grounded 2's survival-component class defaults.
-/// Stays here because the component class belongs to this game; Ueforge owns class walking and writes.
-pub(crate) fn apply_to_survival_component_cdos(offset: usize, value: f32) -> usize {
-    CLASS_SURVIVAL_COMPONENT.for_each_cdo_subclass(|obj| {
-        write_f32(obj, offset, value);
-    })
 }

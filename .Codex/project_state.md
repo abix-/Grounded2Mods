@@ -43,6 +43,10 @@ Extract the verified reusable Grounded 2 effect and inspection implementations i
 
 ## Last session summary
 
+- Moved Grounded 2's existing parameterized survival-drain effect into Ueforge's standard RPG effect library.
+- Grounded 2 now keeps only the SurvivalComponent class reference, hunger and thirst offsets, captured vanilla access, settings access, reduction tuning, and catalog statics.
+- Added no tests and preserved the existing settings-first early return, vanilla fallback, reduction curve, target calculation, class-default writes, log text, and effect text.
+- Verified `k3sc cargo-lock check -p ueforge -p grounded2-mod`, `k3sc cargo-lock check -p grounded2-mod --tests`, and all 53 existing Ueforge library tests. The Grounded 2 test check retains its existing unused-field warning.
 - Moved Grounded 2's existing parameterized fall-damage effect into Ueforge's standard RPG effect library.
 - Grounded 2 now keeps only its player and related class references, field offsets, four vanilla caches, minimum-velocity and disable thresholds, maximum reduction, and catalog static.
 - Added no tests and preserved the existing vanilla capture rules, reduction curve, write order, target objects, log text, and effect text.

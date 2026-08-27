@@ -25,8 +25,8 @@
 //!
 //! Standard operations the framework ships are below
 //! ([`PlayerFloatEffect`], [`SubcomponentMultiplyEffect`],
-//! [`FallDamageReductionEffect`], [`LifestealEffect`],
-//! [`ImpactReversalEffect`], etc.).
+//! [`SurvivalDrainEffect`], [`FallDamageReductionEffect`],
+//! [`LifestealEffect`], [`ImpactReversalEffect`], etc.).
 //! Game-specific operations live in the game crate and follow
 //! the same pattern.
 
@@ -414,6 +414,47 @@ impl Effect<UeEngine> for FallDamageReductionEffect {
                 word: "fall damage",
             },
         )
+    }
+}
+
+/// Scale a survival drain field from its captured vanilla value,
+/// the consumer's current setting, and skill progress.
+pub struct SurvivalDrainEffect {
+    pub class: &'static ClassRef,
+    pub field_offset: usize,
+    pub vanilla: fn() -> Option<f32>,
+    pub settings_multiplier: fn() -> Option<f32>,
+    pub max_reduction: f32,
+}
+
+impl Effect<UeEngine> for SurvivalDrainEffect {
+    fn apply(&self, level: u32, max_level: u32, _ctx: &crate::rpg::TriggerCtx<'_>) {
+        let Some(settings_mult) = (self.settings_multiplier)() else {
+            return;
+        };
+        let Some(v) = (self.vanilla)() else {
+            return;
+        };
+        let skill_mult = (1.0 - self.max_reduction * sqrt_progress(level, max_level)).max(0.0);
+        let target = v * settings_mult * skill_mult;
+        let count = self.class.for_each_cdo_subclass(|obj| {
+            crate::ue::field::write_f32(obj, self.field_offset, target);
+        });
+        crate::log!(
+            "rpg/effects: survival_drain level={} target={:.4} (vanilla={:.4} * settings={:.3} * skill={:.3}) written to {} CDO(s)",
+            level,
+            target,
+            v,
+            settings_mult,
+            skill_mult,
+            count
+        );
+    }
+
+    fn format(&self, level: u32, max_level: u32) -> String {
+        let mult = (1.0 - self.max_reduction * sqrt_progress(level, max_level)).max(0.0);
+        let pct = ((1.0 - mult) * 100.0).round() as i32;
+        format!("-{pct}% drain ({mult:.2}x)")
     }
 }
 
