@@ -103,13 +103,33 @@ down three times last night.
 **Guess the tag names.** Not evidence, and a wrong guess is
 indistinguishable from a missing tag.
 
-**So: LOAD AND MEASURE.** `load_asset` works, measuring works,
-and the on-disk parts list makes it a one-time cost rather than a
-per-launch one. That was always the fallback; it is now the plan.
+### Unblocked the same day
 
-If a string-to-`FName` primitive ever lands, `GetTagValue` is one
-call away and this becomes cheap. Worth revisiting then, not
-before.
+The `FName` problem was the only real block, and patternsleuth
+already shipped the resolver for the engine's own constructor.
+`ue::fname::from_str` now turns a string into an `FName`
+(research.md 28), so `GetTagValue` can be asked for a tag by
+name.
+
+Which tag names this build has, read live 2026-08-27:
+
+```text
+ApproxSize    yes     Triangles   yes     Vertices     yes
+Bounds        yes     Materials   yes     LODs         yes
+MinLOD        yes     UVChannels  yes     PhysicsAsset yes
+CollisionPrims yes    NaniteEnabled yes   BoundsExtent no
+```
+
+**`ApproxSize` and `Bounds` are both there.** Those are the two
+that would carry a mesh's dimensions.
+
+Still to do: call `GetTagValue` for one of them on a real static
+mesh and see what the VALUE looks like. A tag name existing means
+the engine knows the word; it does not yet prove this build cooked
+a value in for every mesh. If the values are there, the parts list
+is one registry pass with no loading at all. If they are empty,
+load and measure, which works and is a one-time cost thanks to the
+on-disk list.
 
 **2. The studs.** Where a piece can attach. Derived from its
 measured bounds and its marker: which face, where on it, which

@@ -2807,15 +2807,43 @@ reach. It blocked reading the asset registry's cooked tags:
 (4 parms, 129 bytes), but its second argument is the tag name as
 an `FName`, and we cannot make one.
 
-The two ways out, neither attempted:
+### SOLVED the same day
 
-- **The engine's own constructor.** `FName::FName(const TCHAR*)`
-  resolved by patternsleuth, then called. One function, and it is
-  the general answer.
-- **Walk the name pool** comparing strings. Around half a million
-  entries, and `NameResolver::to_arc` leaks one buffer per unique
-  name resolved (`fname.rs`), so a full sweep leaks heavily. Fine
-  once for research, wrong as a primitive.
+patternsleuth already ships the resolver, `FNameCtorWchar`, for
+`FName::FName(wchar_t const*, EFindName)`. It simply was not
+wired up. `ue::fname::from_str` calls it, and the
+`string_to_fname` control exposes it.
 
-Until then, if a call needs a name, the name has to be found on
-something rather than typed.
+**Find, not Add.** `EFindName` decides what happens when the name
+is not in the pool: add it, or say it is not there. Finding is
+what a mod wants. A name the game cooked in already exists, and a
+name that does not is a question with a real answer; adding would
+turn that into a silent yes.
+
+Proven live 2026-08-27 by `tests/research_fname.rs`:
+
+```text
+StaticMesh                -> found, round trip "StaticMesh"
+ThisNameCannotExist_...   -> not found, and NOT invented
+```
+
+The round trip is the proof. A non-zero `FName` only says
+something came back; the same text says it is the right one. And
+the miss matters as much as the hit: if find-mode quietly added
+names, every "does this build have X" question would answer yes.
+
+### What it immediately unlocked
+
+Which asset registry tag names this build actually cooked in:
+
+```text
+ApproxSize    yes     Triangles   yes     Vertices     yes
+Bounds        yes     Materials   yes     LODs         yes
+MinLOD        yes     UVChannels  yes     PhysicsAsset yes
+CollisionPrims yes    NaniteEnabled yes   BoundsExtent no
+```
+
+**`ApproxSize` and `Bounds` both exist**, which are the two that
+would carry a mesh's dimensions. So `GetTagValue` can now be
+asked for them, and the parts list may not need to load 1,500
+meshes after all. See pieces.md.
