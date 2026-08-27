@@ -45,6 +45,7 @@ input.cursor.get    input.foreground.hwnd    input.find_hwnd_by_pid    input.sel
 
 **Open items for future sessions:**
 
+- MISERY 3D route proof: record a live player trail as world-space waypoints, replay it through closed-loop movement and look input, and make the live action journal wait on waypoint arrival. Start with the recorded trail as the traversability graph; add A* when more than one proven route exists.
 - HorseyInputSurface v2: direct mouse-state struct writes + direct keyboard buffer writes (per the engine-internal findings above).
 - HK1 Shift+Click transfer migration. Now unblocked by L3; pending an in-save smoke run.
 - Cross-game proof: grounded2-mod or schedule1 ships its own `InputSurface` impl.
@@ -62,6 +63,8 @@ input.cursor.get    input.foreground.hwnd    input.find_hwnd_by_pid    input.sel
 **Input replay format:** JSON event stream with absolute `t_ms`, `type` enum, `backend` selector in context. See PR-9.
 
 **Live action journal:** injected games are not deterministic simulations owned by Modforge. Their journal records semantic control-plane operations, then waits for observable conditions and asserts the resulting values. Raw timed input remains one operation type, not the authority for progress.
+
+**3D route replay:** record the player's world-space trail as waypoints, not as one long timed keyboard and mouse stream. A route follower continuously reads player position and camera rotation, holds movement keys, and emits relative look-axis input until each waypoint is reached. The journal starts the follower and advances only when arrival is observed. A* selects among known traversable waypoint edges; it does not infer walkability from empty space.
 
 **Anti-cheat:** all current targets are LOW risk. Tag `dwExtraInfo` and restore foreground anyway (cheap insurance).
 
@@ -418,9 +421,48 @@ Properties:
 ### Verdict (PR-9)
 
 - Adopt the JSON shape above for `modforge::input::Replay`.
-- v1 records what the cmdlets execute; record-the-real-user is out of scope (would need a `WH_MOUSE_LL` hook, separate problem).
+- The shipped first slice records what the cmdlets execute. The next MISERY slice records at L3 by observing Unreal's normalized key, button, and relative look-axis input together with the player's world transform. Win32 `WH_MOUSE_LL` and `WH_KEYBOARD_LL` capture remains a fallback for games without an accessible engine input path.
 - Keep Topside's fixed-tick `actions::Journal` for simulations whose step and seed Modforge owns.
 - For injected games, record versioned operation actions, condition waits, and assertions. A replay advances from a wait only when the observation matches or fails with the last observed value. Wall-clock delays bound a wait; they never decide that gameplay completed.
+
+### 3D route recording and pathing
+
+A long first-person route is not authoritative as raw timed input. One collision, frame hitch, loading pause, or changed enemy position can invalidate every later mouse delta. The durable recording is a sequence of world-space waypoints derived from the path the player actually walked.
+
+Each waypoint records:
+
+- a stable route-local ID;
+- world position and an arrival radius;
+- optional required facing for doors, interactions, or transitions;
+- optional observed completion such as entering an expedition or returning to spawn.
+
+Recording samples player position, camera rotation, key transitions, mouse-button transitions, and relative look axes on the game tick. It reduces the position trail into waypoints while retaining turns, narrow passages, elevation changes, and action locations. Raw input may remain as evidence, but replay uses the waypoints as its movement intent.
+
+The route follower owns movement and look input while travel is active. On each game tick it:
+
+1. reads the player position and camera rotation;
+2. selects the current waypoint;
+3. calculates the yaw and pitch error to that waypoint;
+4. emits relative look-axis input and holds the required movement keys;
+5. marks arrival only when the player enters the waypoint radius;
+6. reports stuck when distance does not improve within a bounded interval.
+
+Only one active controller may write movement and look input. Combat pauses or replaces route following, aims at the live target position, and returns control to the route follower after the combat completion observation succeeds.
+
+The first route graph consists only of edges the player successfully traversed while recording. Once recordings create alternate edges, A* chooses the lowest-cost known route between waypoint IDs. Edge cost begins with traversed distance and may later include observed traversal time, danger, failures, or temporary blockage. A* plans over this graph; a separate observer proves whether an edge is currently usable. An unobserved straight line between two positions is never assumed walkable.
+
+The live action journal coordinates the route without becoming the pathing loop:
+
+```text
+start route follower: spawn -> expedition
+wait until expedition waypoint is reached
+start combat controller for the selected live enemy
+wait until that enemy is dead
+start route follower: expedition -> spawn
+wait until spawn waypoint is reached
+```
+
+The first measured proof is a manually walked MISERY trail from spawn to the expedition, saved as waypoints and replayed without teleporting. Acceptance requires reaching every waypoint in order, reporting position and steering error while moving, restoring all held input on completion or failure, and returning a precise stuck waypoint with the last observed position when the route cannot continue. The A* proof follows when the graph contains a fork: block or reject one known edge and verify that replay reaches the goal through the alternate recorded edge.
 
 ---
 
@@ -467,6 +509,7 @@ All current target games are LOW risk. Document the patterns above so we know wh
 // modforge::input  (sketch, lands in I-1)
 
 pub enum Backend { L1SendInput, L2WindowMessage, L3GameInternal }
+pub enum Axis { MouseX, MouseY }
 
 pub trait Mouse {
     fn move_abs(&self, x: i32, y: i32, b: Backend) -> Result<()>;
@@ -489,6 +532,7 @@ pub trait InputSurface {
     fn name(&self) -> &'static str;
     fn click(&self, btn: Button, x: i32, y: i32) -> Result<()>;
     fn key(&self, k: Key, down: bool) -> Result<()>;
+    fn axis(&self, axis: Axis, value: f32, delta_time: f32) -> Result<()>;
 }
 ```
 
@@ -499,6 +543,7 @@ pub trait InputSurface {
 - `input.mouse.drag {button, from:[x,y], to:[x,y], duration_ms?, backend?}`
 - `input.mouse.scroll {dx, dy, backend?}`
 - `input.key.down|up|press|type {key|text, hold_ms?, backend?}`
+- `input.axis {axis, value, delta_time, backend?}`
 - `input.combo {keys: [...], then: {...}}`
 - `input.state.get {}` -> reads game's own mouse/key state for verification
 - `input.replay.play {events: [...]}`
@@ -513,5 +558,6 @@ pub trait InputSurface {
 ### Open follow-ups (not blockers)
 
 - Humanize-curve mouse moves (PR-3). Defer to v2.
-- Input-recording (capture real-user events) via `WH_MOUSE_LL` + `WH_KEYBOARD_LL`. Separate problem; defer.
+- MISERY L3 recording of real key, button, relative look-axis, position, and camera samples into a waypoint route.
+- Win32 real-input capture via `WH_MOUSE_LL` + `WH_KEYBOARD_LL` for games without an L3 capture surface.
 - Interception driver FFI for raw-input-only games. Defer until we hit one.

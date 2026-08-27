@@ -2,13 +2,16 @@
 
 ## Current focus
 
-Build a recordable and replayable live action journal, with MISERY as the first proof because it is the game the operator is playing.
+Turn the MISERY live action journal into recorded waypoint routes with closed-loop movement and look control, then add A* when recorded routes form alternate traversable edges.
 
 ## Design goals
 
 - Topside-style fixed-tick journals remain authoritative for simulations Modforge owns.
 - Injected games use the same producer and consumer separation, but replay operation actions through the existing control plane and advance only after observable condition gates.
 - MISERY is the first proof: record a movement-speed write, wait for the live read, assert it, restore the original value, and replay the saved journal.
+- A recorded MISERY journey is a world-space waypoint route derived from where the player walked, not a long timed keyboard and mouse tape.
+- One route follower owns movement and look input during travel, corrects toward each waypoint from live position and camera observations, and releases every held input on completion or failure.
+- A* may select only among waypoint edges proven traversable by recording; it never treats an unobserved straight line through the 3D world as walkable.
 - Generation loading, hot reload, rollback, shutdown, and bridge lifetime have one implementation in `cs-shim-common/GenerationLoader.cs`.
 - Each C# shim retains only its loader integration, logging, backend bridge, and host-specific frame callback.
 - Every Grounded 2 source function explains its player-facing purpose and its verified ownership boundary with Modforge and Ueforge.
@@ -53,6 +56,7 @@ Build a recordable and replayable live action journal, with MISERY as the first 
 
 ## Last session summary
 
+- Updated the synthetic-input design for MISERY 3D route recording: world-space waypoints, relative look axes, closed-loop waypoint following, stuck evidence, combat handoff, and A* over recorded traversable edges.
 - Added `modforge::client::live_journal`, a versioned JSON journal for injected games that records control-plane actions, waits for observed JSON values, and asserts resulting state with precise step and value evidence on failure.
 - Added five behavioral tests covering round-trip, ordered replay, condition polling, recording, operation failure, and assertion failure.
 - Made MISERY the first live proof without adding a game-specific operation: the permanent test uses the existing `walk_class`, `read_bytes`, and `write_bytes` controls to change player movement speed, wait for observation, assert it, restore it, save and load the journal, replay it, and restore it again.
@@ -253,7 +257,7 @@ Build a recordable and replayable live action journal, with MISERY as the first 
 
 ## Next steps
 
-- Record the first user-visible MISERY interaction through the same journal so input, operations, and observed completion share one replay path.
+- Record a live MISERY trail from spawn to the expedition as world-space waypoints, then replay it through movement and relative look input while the journal waits on observed waypoint arrival.
 - Compile the BepInEx IL2CPP shim when a BepInEx 6 IL2CPP reference directory is available.
 - Namespace Unityforge's managed handle table by generation so stale handles cannot collide after a hot swap.
 - Run the existing Grounded 2 in-game smoke checks for the completed extraction batch.
