@@ -60,6 +60,9 @@ static SHOWN: modforge::read_once::ReadOnce<Vec<MapEntry>> =
 /// Returns every player movement speed currently active in MISERY.
 /// Stays here because it translates MISERY's movement-state map into this feature's values.
 pub fn current_all() -> Result<Vec<MapEntry>, String> {
+    // Counted so "the tab reads once" is a number rather than a
+    // claim. With the tab open for 30 seconds this should read 1.
+    let _m = modforge::counters::measure("misery-speed-read");
     let inv = inventory_ptr()?;
     // SAFETY: `inventory_ptr` returns a live BP_PlayerInventory_C object and
     // MOVEMENT_SPEEDS_MAP is its verified TMap<u8, f64> field.
