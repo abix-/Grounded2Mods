@@ -27,14 +27,13 @@ use modforge::ops::{OP_REGISTRY, OpDef};
 use modforge::rpg::poller::{PollerHandle, SlotPoller};
 use modforge::rpg::vanilla::VanillaCache;
 use modforge::rpg::xp::Curve;
-use modforge::rpg::{Effect, EffectDef, TriggerCtx};
+use modforge::rpg::EffectDef;
 
 use unityforge::main_thread_queue::MAIN_QUEUE;
 use unityforge::mono::MonoType;
-use unityforge::rpg::engine::UnityEngine;
 use unityforge::rpg::{
-    SkillDef, SkillRegistry, Tracker, UnityInstancePropMultiplyEffect,
-    UnityStaticPropAdditiveEffect,
+    SkillDef, SkillRegistry, Tracker, UnityGuardedMainThreadEffect,
+    UnityInstancePropMultiplyEffect, UnityStaticPropAdditiveEffect,
 };
 
 // ---- Effects --------------------------------------------------------
@@ -43,39 +42,12 @@ use unityforge::rpg::{
 /// carries only the proven-safe instance-property effect; the
 /// effects_enable op can still disarm for future bisections.
 static EFFECTS_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+const EFFECT_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Reports whether Schedule 1's researched skill writes are armed.
 /// Stays here because this switch isolates crashes in this game's effects; Modforge owns effects and Unityforge owns Unity writes.
 fn effects_enabled() -> bool {
     EFFECTS_ENABLED.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// IL2CPP wrapper: hops through MAIN_QUEUE and checks the
-/// effects_enabled bisection guard before delegating to the
-/// inner framework effect.
-struct Il2CppGuardedEffect<E: Effect<UnityEngine> + Sync> {
-    label: &'static str,
-    inner: &'static E,
-}
-
-impl<E: Effect<UnityEngine> + Sync> Effect<UnityEngine> for Il2CppGuardedEffect<E> {
-    /// Applies a Schedule 1 skill effect on Unity's main thread when the local crash guard is armed.
-    /// Stays here because the guard and timeout are Schedule 1 research policy; Unityforge owns the queue and inner Unity effect.
-    fn apply(&self, level: u32, max_level: u32, _ctx: &TriggerCtx<'_, UnityEngine>) {
-        if !effects_enabled() {
-            return;
-        }
-        let inner = self.inner;
-        let _ = MAIN_QUEUE.run(self.label, Duration::from_secs(2), move || {
-            inner.apply(level, max_level, &TriggerCtx::SlotChange);
-        });
-    }
-
-    /// Shows the underlying skill effect's player-facing value without touching the game.
-    /// Stays here as part of Schedule 1's guarded wrapper; Modforge owns the shared effect display contract.
-    fn format(&self, level: u32, max_level: u32) -> String {
-        self.inner.format(level, max_level)
-    }
 }
 
 #[allow(dead_code)]
@@ -89,10 +61,13 @@ static VITALITY_INNER: UnityStaticPropAdditiveEffect = UnityStaticPropAdditiveEf
     &VITALITY_VANILLA,
 );
 #[allow(dead_code)]
-static VITALITY_EFFECT: Il2CppGuardedEffect<UnityStaticPropAdditiveEffect> = Il2CppGuardedEffect {
-    label: "vitality",
-    inner: &VITALITY_INNER,
-};
+static VITALITY_EFFECT: UnityGuardedMainThreadEffect<UnityStaticPropAdditiveEffect> =
+    UnityGuardedMainThreadEffect::new(
+        "vitality",
+        EFFECT_TIMEOUT,
+        effects_enabled,
+        &VITALITY_INNER,
+    );
 
 #[allow(dead_code)]
 static REGENERATION_VANILLA: VanillaCache<&'static str, f32> = VanillaCache::new();
@@ -105,11 +80,13 @@ static REGENERATION_INNER: UnityStaticPropAdditiveEffect = UnityStaticPropAdditi
     &REGENERATION_VANILLA,
 );
 #[allow(dead_code)]
-static REGENERATION_EFFECT: Il2CppGuardedEffect<UnityStaticPropAdditiveEffect> =
-    Il2CppGuardedEffect {
-        label: "regeneration",
-        inner: &REGENERATION_INNER,
-    };
+static REGENERATION_EFFECT: UnityGuardedMainThreadEffect<UnityStaticPropAdditiveEffect> =
+    UnityGuardedMainThreadEffect::new(
+        "regeneration",
+        EFFECT_TIMEOUT,
+        effects_enabled,
+        &REGENERATION_INNER,
+    );
 
 static HEAVY_HANDS_VANILLA: VanillaCache<&'static str, f32> = VanillaCache::new();
 static HEAVY_HANDS_INNER: UnityInstancePropMultiplyEffect =
@@ -120,11 +97,13 @@ static HEAVY_HANDS_INNER: UnityInstancePropMultiplyEffect =
         "punch damage",
         &HEAVY_HANDS_VANILLA,
     );
-static HEAVY_HANDS_EFFECT: Il2CppGuardedEffect<UnityInstancePropMultiplyEffect> =
-    Il2CppGuardedEffect {
-        label: "heavy_hands",
-        inner: &HEAVY_HANDS_INNER,
-    };
+static HEAVY_HANDS_EFFECT: UnityGuardedMainThreadEffect<UnityInstancePropMultiplyEffect> =
+    UnityGuardedMainThreadEffect::new(
+        "heavy_hands",
+        EFFECT_TIMEOUT,
+        effects_enabled,
+        &HEAVY_HANDS_INNER,
+    );
 
 // ---- Catalog --------------------------------------------------------
 

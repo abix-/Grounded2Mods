@@ -17,8 +17,8 @@ pub use engine::{UnityEngine, UnityEvent};
 pub use skill::{SkillDef, SkillRegistry};
 pub use slot_key::UnitySlotKey;
 pub use std_effect::{
-    UnityFieldAdditiveEffect, UnityFieldMultiplyEffect, UnityInstancePropMultiplyEffect,
-    UnityMethodInvokeEffect, UnityStaticPropAdditiveEffect,
+    UnityFieldAdditiveEffect, UnityFieldMultiplyEffect, UnityGuardedMainThreadEffect,
+    UnityInstancePropMultiplyEffect, UnityMethodInvokeEffect, UnityStaticPropAdditiveEffect,
 };
 pub use tracker::Tracker;
 pub use trigger_harmony::{

@@ -18,25 +18,71 @@
 //!   class, take the first, read/write via instance `get_X`/
 //!   `set_X` method pairs. Multiplicative across multiple
 //!   properties.
+//! - [`UnityGuardedMainThreadEffect`]. Check a caller-supplied
+//!   guard, then apply another Unity effect through the main-thread
+//!   queue with the caller's label and timeout.
 //!
 //! Each calls through the runtime-tagged bridge so the same
 //! struct works on Mono and IL2CPP without recompilation; the
 //! active shim populates the bridge entries.
 //!
-//! All three cache the resolved `MonoType` (lazy `OnceLock`)
-//! so the hot path is one bridge call to fetch the singleton
-//! instance + the field/method op, not a full type lookup.
+//! Effects that resolve a `MonoType` cache it in a lazy
+//! `OnceLock`, avoiding a full type lookup on every application.
 
 use std::sync::OnceLock;
 
-use modforge::rpg::{Effect, TriggerCtx, vanilla::VanillaCache};
-use modforge::rpg::progress::sqrt_progress;
 use modforge::rpg::format;
+use modforge::rpg::progress::sqrt_progress;
+use modforge::rpg::{Effect, TriggerCtx, vanilla::VanillaCache};
 use serde_json::json;
 
 use crate::bridge::MonoHandle;
+use crate::main_thread_queue::MAIN_QUEUE;
 use crate::mono::{self, MonoObject, MonoType};
 use crate::rpg::engine::UnityEngine;
+
+/// Guard and dispatch another Unity effect through the main-thread queue.
+///
+/// The caller retains the guard, queue label, timeout, and concrete effect;
+/// Unityforge owns only the reusable dispatch and delegation.
+pub struct UnityGuardedMainThreadEffect<E: Effect<UnityEngine> + Sync> {
+    label: &'static str,
+    timeout: std::time::Duration,
+    enabled: fn() -> bool,
+    inner: &'static E,
+}
+
+impl<E: Effect<UnityEngine> + Sync> UnityGuardedMainThreadEffect<E> {
+    pub const fn new(
+        label: &'static str,
+        timeout: std::time::Duration,
+        enabled: fn() -> bool,
+        inner: &'static E,
+    ) -> Self {
+        Self {
+            label,
+            timeout,
+            enabled,
+            inner,
+        }
+    }
+}
+
+impl<E: Effect<UnityEngine> + Sync> Effect<UnityEngine> for UnityGuardedMainThreadEffect<E> {
+    fn apply(&self, level: u32, max_level: u32, _ctx: &TriggerCtx<'_, UnityEngine>) {
+        if !(self.enabled)() {
+            return;
+        }
+        let inner = self.inner;
+        let _ = MAIN_QUEUE.run(self.label, self.timeout, move || {
+            inner.apply(level, max_level, &TriggerCtx::SlotChange);
+        });
+    }
+
+    fn format(&self, level: u32, max_level: u32) -> String {
+        self.inner.format(level, max_level)
+    }
+}
 
 /// `vanilla + max_bonus * progress` on a singleton field.
 ///

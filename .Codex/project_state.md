@@ -48,6 +48,13 @@ Move Schedule 1's verified engine-independent and Unity-specific helper implemen
 
 ## Last session summary
 
+- Moved Schedule 1's guarded main-thread effect dispatch and delegation into Unityforge's standard effects.
+- Kept the crash-bisection flag and operation, effect labels, two-second timeout, and concrete effect configurations in Schedule 1. Added no tests and made no game behavior changes.
+- Verified `k3sc cargo-lock check -p unityforge -p schedule1-mod`.
+- Verified `k3sc cargo-lock check -p schedule1-mod --tests`; it retains three existing warnings in research tests.
+- Verified `k3sc cargo-lock test -p unityforge --lib`: all 6 existing tests pass.
+- Verified `k3sc cargo-lock test -p schedule1-mod --lib`; its library target has zero tests.
+- `k3sc cargo-lock fmt -p unityforge -- --check` remains red on existing formatting differences across Unityforge; the changed wrapper code follows the reported format without rewriting unrelated files.
 - Replaced Schedule 1's manually capped combat-trace vector with the existing Modforge `Ring`.
 - Kept the 512-entry cap, JSON event shape, event recording policy, drop-oldest order, report output, and optional clear behavior in Schedule 1. Added no tests and made no game behavior changes.
 - Verified `k3sc cargo-lock check -p modforge -p schedule1-mod`.
@@ -220,7 +227,7 @@ Move Schedule 1's verified engine-independent and Unity-specific helper implemen
 
 ## Next steps
 
-- Move Schedule 1's existing guarded main-thread Effect wrapper into Unityforge.
+- Review Schedule 1 again for remaining direct Modforge or Unityforge extraction candidates.
 - Run the existing Grounded 2 in-game smoke checks for the completed extraction batch.
 - Exercise Survivalist's Load/Unload re-init path through a live story switch and confirm `ReinitAfterUnload` works.
 
