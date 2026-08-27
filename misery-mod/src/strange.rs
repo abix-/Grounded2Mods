@@ -13,9 +13,11 @@
 //! phenomena are rare enough to stay stories.
 
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
+use modforge::storyteller::{
+    PhenomenonConfig, PhenomenonDef, PhenomenonNature as Nature, PhenomenonPlanner,
+};
 use ueforge::ue::{self, UObject, read_at};
 
 use crate::dispatch;
@@ -29,7 +31,7 @@ const PHENOMENA_AT_ZERO: f64 = 0.6;
 const PHENOMENA_PER_EMISSION: f64 = 0.03;
 const PHENOMENA_CAP: usize = 4;
 /// Session cap on spawned props.
-const SESSION_CAP: u64 = 400;
+const SESSION_CAP: usize = 400;
 /// Keep phenomena off the square's very edge (units).
 const EDGE_MARGIN: f64 = 1200.0;
 const POLL: Duration = Duration::from_secs(5);
@@ -39,19 +41,7 @@ const TILE_SIZE_OFFSET: usize = 0x2C0;
 const STREAMING_LEVELS_OFFSET: usize = 0x2E8;
 const EMISSIONS_PAST_OFFSET: usize = 0x2F8;
 
-static SPAWNED_TOTAL: AtomicU64 = AtomicU64::new(0);
-static PHENOMENA_TOTAL: AtomicU64 = AtomicU64::new(0);
-
-/// What a phenomenon does to the player: worth taking, worth
-/// fearing, or neither. Rewards get a danger placed on top of
-/// them so the prize is visibly guarded: the feeling wanted is
-/// excited AND scared, not one or the other.
-#[derive(PartialEq, Clone, Copy)]
-enum Nature {
-    Reward,
-    Danger,
-    Neutral,
-}
+static PLANNER: std::sync::Mutex<Option<PhenomenonPlanner<String>>> = std::sync::Mutex::new(None);
 
 /// One kind of phenomenon: what to spawn, how many, how tightly
 /// clustered, and how its odds move with the shining count.
@@ -59,16 +49,7 @@ struct Phenomenon {
     name: &'static str,
     /// Classes to draw from; each prop picks one at random.
     classes: &'static [&'static str],
-    /// Prop count range.
-    count: (usize, usize),
-    /// Cluster radius in world units.
-    spread: f64,
-    /// Selection weight at emission 0.
-    weight_base: f64,
-    /// Weight added per emission (can be negative for early-game
-    /// phenomena that fade as the world gets stranger).
-    weight_per_emission: f64,
-    nature: Nature,
+    planning: PhenomenonDef,
 }
 
 /// The catalog. Classes come from the game's own actors
@@ -77,101 +58,142 @@ static PHENOMENA: &[Phenomenon] = &[
     Phenomenon {
         name: "anomaly_field",
         classes: &["BP_AnomalyZone_C", "BP_AnomalyCluster_C"],
-        count: (3, 7),
-        spread: 1800.0,
-        weight_base: 1.0,
-        weight_per_emission: 0.04,
-        nature: Nature::Danger,
+        planning: PhenomenonDef {
+            count_min: 3,
+            count_max: 7,
+            spread: 1800.0,
+            weight_base: 1.0,
+            weight_per_level: 0.04,
+            nature: Nature::Danger,
+        },
     },
     Phenomenon {
         name: "artifact_seam",
         classes: &["BP_ArtifactSpawner_C"],
-        count: (2, 5),
-        spread: 1200.0,
-        weight_base: 0.8,
-        weight_per_emission: 0.01,
-        nature: Nature::Reward,
+        planning: PhenomenonDef {
+            count_min: 2,
+            count_max: 5,
+            spread: 1200.0,
+            weight_base: 0.8,
+            weight_per_level: 0.01,
+            nature: Nature::Reward,
+        },
     },
     Phenomenon {
         name: "wandering_lights",
         classes: &["BP_WanderingLights_C", "BP_WanderingLightOrigin_C"],
-        count: (2, 5),
-        spread: 2500.0,
-        weight_base: 1.0,
-        weight_per_emission: 0.0,
-        nature: Nature::Neutral,
+        planning: PhenomenonDef {
+            count_min: 2,
+            count_max: 5,
+            spread: 2500.0,
+            weight_base: 1.0,
+            weight_per_level: 0.0,
+            nature: Nature::Neutral,
+        },
     },
     Phenomenon {
         name: "teleport_nest",
         classes: &["BP_TeleportAnomaly_C"],
-        count: (2, 4),
-        spread: 1500.0,
-        weight_base: 0.3,
-        weight_per_emission: 0.03,
-        nature: Nature::Danger,
+        planning: PhenomenonDef {
+            count_min: 2,
+            count_max: 4,
+            spread: 1500.0,
+            weight_base: 0.3,
+            weight_per_level: 0.03,
+            nature: Nature::Danger,
+        },
     },
     Phenomenon {
         name: "trampoline_garden",
         classes: &["BP_Tramplin_Anomaly_C"],
-        count: (4, 9),
-        spread: 2200.0,
-        weight_base: 0.4,
-        weight_per_emission: 0.01,
-        nature: Nature::Neutral,
+        planning: PhenomenonDef {
+            count_min: 4,
+            count_max: 9,
+            spread: 2200.0,
+            weight_base: 0.4,
+            weight_per_level: 0.01,
+            nature: Nature::Neutral,
+        },
     },
     Phenomenon {
         name: "garbage_drift",
         classes: &["BP_AnomalyGarbage_C"],
-        count: (3, 8),
-        spread: 2000.0,
-        weight_base: 0.6,
-        weight_per_emission: 0.0,
-        nature: Nature::Neutral,
+        planning: PhenomenonDef {
+            count_min: 3,
+            count_max: 8,
+            spread: 2000.0,
+            weight_base: 0.6,
+            weight_per_level: 0.0,
+            nature: Nature::Neutral,
+        },
     },
     Phenomenon {
         name: "hedge_maze",
         classes: &["BP_Hedge_C"],
-        count: (5, 12),
-        spread: 2000.0,
-        weight_base: 0.5,
-        weight_per_emission: 0.0,
-        nature: Nature::Neutral,
+        planning: PhenomenonDef {
+            count_min: 5,
+            count_max: 12,
+            spread: 2000.0,
+            weight_base: 0.5,
+            weight_per_level: 0.0,
+            nature: Nature::Neutral,
+        },
     },
     Phenomenon {
         name: "floating_debris",
         classes: &["BP_FloatingMesh_C"],
-        count: (3, 8),
-        spread: 2000.0,
-        weight_base: 0.5,
-        weight_per_emission: 0.01,
-        nature: Nature::Neutral,
+        planning: PhenomenonDef {
+            count_min: 3,
+            count_max: 8,
+            spread: 2000.0,
+            weight_base: 0.5,
+            weight_per_level: 0.01,
+            nature: Nature::Neutral,
+        },
     },
     Phenomenon {
         name: "abandoned_camp",
-        classes: &["BP_Tent_Start_C", "BP_WoodenBoxResource_C", "BP_StashStart_C"],
-        count: (3, 6),
-        spread: 900.0,
-        weight_base: 1.0,
-        weight_per_emission: -0.01,
-        nature: Nature::Reward,
+        classes: &[
+            "BP_Tent_Start_C",
+            "BP_WoodenBoxResource_C",
+            "BP_StashStart_C",
+        ],
+        planning: PhenomenonDef {
+            count_min: 3,
+            count_max: 6,
+            spread: 900.0,
+            weight_base: 1.0,
+            weight_per_level: -0.01,
+            nature: Nature::Reward,
+        },
     },
     Phenomenon {
         name: "supply_cache",
-        classes: &["BP_GradBigCrate_C", "BP_WoodenBoxResource_C", "BP_AirCrate_C"],
-        count: (2, 5),
-        spread: 700.0,
-        weight_base: 0.9,
-        weight_per_emission: -0.01,
-        nature: Nature::Reward,
+        classes: &[
+            "BP_GradBigCrate_C",
+            "BP_WoodenBoxResource_C",
+            "BP_AirCrate_C",
+        ],
+        planning: PhenomenonDef {
+            count_min: 2,
+            count_max: 5,
+            spread: 700.0,
+            weight_base: 0.9,
+            weight_per_level: -0.01,
+            nature: Nature::Reward,
+        },
     },
     Phenomenon {
         name: "black_hole",
         classes: &["BP_BlackHole_C"],
-        count: (1, 1),
-        spread: 0.0,
-        weight_base: 0.08,
-        weight_per_emission: 0.012,
-        nature: Nature::Danger,
+        planning: PhenomenonDef {
+            count_min: 1,
+            count_max: 1,
+            spread: 0.0,
+            weight_base: 0.08,
+            weight_per_level: 0.012,
+            nature: Nature::Danger,
+        },
     },
 ];
 
@@ -242,7 +264,7 @@ pub fn live_squares() -> Vec<(String, i32, i32)> {
 }
 
 /// Starts the alternate-reality overlay that adds phenomena to newly loaded squares.
-/// Stays here because it composes shared rolls and spawning around MISERY content and progression.
+/// Stays here because it connects Modforge planning to MISERY polling and Unreal spawning.
 pub fn install() {
     register_ops();
     // Stoppable so the DLL can unload cleanly on a hot reload.
@@ -254,110 +276,88 @@ pub fn install() {
     ));
 }
 
-/// Squares already rolled for phenomena.
-static DONE: std::sync::Mutex<Option<HashSet<String>>> = std::sync::Mutex::new(None);
-
 /// Notices each newly loaded square and schedules its phenomena on the game thread.
-/// Stays here because the once-per-square session policy belongs to this MISERY feature.
+/// Stays here because live-square discovery and game-thread dispatch are MISERY integration.
 fn watcher() {
-    let mut guard = DONE.lock().unwrap_or_else(|e| e.into_inner());
-    let done = guard.get_or_insert_with(HashSet::new);
+    if ue::try_runtime().is_none() {
+        return;
+    }
     {
-        if ue::try_runtime().is_none() {
+        let mut guard = PLANNER.lock().unwrap_or_else(|e| e.into_inner());
+        let planner = guard.get_or_insert_with(|| PhenomenonPlanner::new(PHENOMENON_CONFIG));
+        if planner.is_full() {
             return;
         }
-        if SPAWNED_TOTAL.load(Ordering::Relaxed) >= SESSION_CAP {
-            return;
+    }
+    let squares = live_squares();
+    let live: HashSet<String> = squares.iter().map(|(name, _, _)| name.clone()).collect();
+    {
+        let mut guard = PLANNER.lock().unwrap_or_else(|e| e.into_inner());
+        guard
+            .get_or_insert_with(|| PhenomenonPlanner::new(PHENOMENON_CONFIG))
+            .retain_places(|place| live.contains(place));
+    }
+
+    let Some(tile) = active_tile_size() else {
+        return;
+    };
+    let emissions = emission_level();
+    let defs: Vec<PhenomenonDef> = PHENOMENA.iter().map(|p| p.planning).collect();
+
+    for (name, cx, cy) in squares {
+        let plan = {
+            let mut guard = PLANNER.lock().unwrap_or_else(|e| e.into_inner());
+            guard
+                .get_or_insert_with(|| PhenomenonPlanner::new(PHENOMENON_CONFIG))
+                .plan_place(name.clone(), emissions as f64, &defs)
+        };
+        let Some(plan) = plan else {
+            continue;
+        };
+        if plan.phenomena.is_empty() {
+            ueforge::log::log(format_args!("strange: {name} stays mundane"));
+            continue;
         }
-        let squares = live_squares();
-        let live: HashSet<String> = squares.iter().map(|(n, _, _)| n.clone()).collect();
-        // A square that unloaded rolls fresh when it returns.
-        done.retain(|s| live.contains(s));
-
-        let Some(tile) = active_tile_size() else { return };
-        let emissions = emission_level();
-
-        for (name, cx, cy) in squares {
-            if done.contains(&name) {
-                continue;
-            }
-            done.insert(name.clone());
-            let plan = roll_square(emissions);
-            if plan.is_empty() {
-                ueforge::log::log(format_args!("strange: {name} stays mundane"));
-                continue;
-            }
-            let labels: Vec<&str> = plan.iter().map(|p| p.name).collect();
-            ueforge::log::log(format_args!(
-                "strange: {name} rolls {labels:?} (emissions {emissions})"
-            ));
-            let centre = (cx as f64 * tile, cy as f64 * tile);
-            let half = tile / 2.0 - EDGE_MARGIN;
-            // `run`, not `enqueue`: this watcher already runs ON
-            // the game thread, and queueing from there waits for
-            // a drain that cannot start until we return.
-            let r = ueforge::game_thread::run(
-                move || place_phenomena(&plan, centre, half),
-                Duration::from_secs(15),
-            );
-            if let Err(e) = r {
-                ueforge::log::log(format_args!("strange: placement failed: {e}"));
-            }
+        let labels: Vec<&str> = plan
+            .phenomena
+            .iter()
+            .map(|&index| PHENOMENA[index].name)
+            .collect();
+        ueforge::log::log(format_args!(
+            "strange: {name} rolls {labels:?} (emissions {emissions})"
+        ));
+        let centre = (cx as f64 * tile, cy as f64 * tile);
+        let half = tile / 2.0 - EDGE_MARGIN;
+        // `run`, not `enqueue`: this watcher already runs ON
+        // the game thread, and queueing from there waits for
+        // a drain that cannot start until we return.
+        let r = ueforge::game_thread::run(
+            move || place_phenomena(&plan.phenomena, centre, half),
+            Duration::from_secs(15),
+        );
+        if let Err(e) = r {
+            ueforge::log::log(format_args!("strange: placement failed: {e}"));
         }
     }
 }
 
-/// Roll which phenomena a square gets. Weighted draw without
-/// replacement so one square rarely doubles a phenomenon.
-/// How many phenomena a square gets. The curve, the quiet
-/// chance, the cap and the weighted picking are
-/// `modforge::roll`, which is unit-tested; what stays here is
-/// the phenomena themselves and the reward-needs-a-danger rule.
-const BUDGET: modforge::roll::Budget = modforge::roll::Budget {
-    quiet_chance: QUIET_CHANCE,
-    at_zero: PHENOMENA_AT_ZERO,
-    per_level: PHENOMENA_PER_EMISSION,
-    intensity: INTENSITY,
-    max: PHENOMENA_CAP,
+/// MISERY's tuning values for Modforge's phenomenon planner.
+const PHENOMENON_CONFIG: PhenomenonConfig = PhenomenonConfig {
+    budget: modforge::roll::Budget {
+        quiet_chance: QUIET_CHANCE,
+        at_zero: PHENOMENA_AT_ZERO,
+        per_level: PHENOMENA_PER_EMISSION,
+        intensity: INTENSITY,
+        max: PHENOMENA_CAP,
+    },
+    session_cap: SESSION_CAP,
 };
-
-/// Chooses a varied set of rewards, dangers, and scenery for one MISERY square.
-/// Stays here because Modforge supplies generic rolls while this mod owns the phenomenon catalog and guard rule.
-fn roll_square(emissions: i32) -> Vec<&'static Phenomenon> {
-    if BUDGET.is_quiet() {
-        return Vec::new();
-    }
-    let level = emissions as f64;
-    let count = BUDGET.roll_count(level);
-    let weights: Vec<modforge::roll::Weight> = PHENOMENA
-        .iter()
-        .map(|p| modforge::roll::Weight::new(p.weight_base, p.weight_per_emission))
-        .collect();
-    let mut chosen: Vec<&'static Phenomenon> = modforge::roll::pick_distinct(&weights, level, count)
-        .into_iter()
-        .map(|i| &PHENOMENA[i])
-        .collect();
-
-    // A reward with nothing guarding it is just a gift. If the
-    // square rolled something worth taking but nothing worth
-    // fearing, draw a danger to sit on top of it.
-    let has_reward = chosen.iter().any(|p| p.nature == Nature::Reward);
-    let has_danger = chosen.iter().any(|p| p.nature == Nature::Danger);
-    if has_reward && !has_danger {
-        let dangers: Vec<&'static Phenomenon> =
-            PHENOMENA.iter().filter(|p| p.nature == Nature::Danger).collect();
-        if !dangers.is_empty() {
-            chosen.push(dangers[fastrand::usize(0..dangers.len())]);
-        }
-    }
-    chosen
-}
 
 /// Game thread. Place each phenomenon at its own random point in
 /// the square, props scattered within its spread.
-/// Stays here because the Blueprint classes, ground placement, and reward guarding are MISERY gameplay.
+/// Stays here because Blueprint lookup, ground traces, and Unreal spawning are MISERY integration.
 fn place_phenomena(
-    plan: &[&'static Phenomenon],
+    plan: &[usize],
     centre: (f64, f64),
     half: f64,
 ) -> Result<serde_json::Value, String> {
@@ -366,95 +366,77 @@ fn place_phenomena(
         .next()
         .ok_or("no player for world context")?;
 
-    // Rewards are placed first so a danger drawn after them can
-    // land on the prize instead of somewhere harmless.
-    let mut ordered: Vec<&'static Phenomenon> = plan.to_vec();
-    ordered.sort_by_key(|p| match p.nature {
-        Nature::Reward => 0,
-        Nature::Danger => 1,
-        Nature::Neutral => 2,
-    });
-
-    // Where the square's reward sits, so its guard can be placed
-    // on the same spot rather than somewhere harmless.
-    let mut reward_spot: Option<(f64, f64)> = None;
-    let mut placed = 0usize;
-    for phenomenon in &ordered {
-        let (px, py) = match (phenomenon.nature, reward_spot) {
-            // The guard lands on the prize: you see both at once.
-            (Nature::Danger, Some(spot)) => spot,
-            _ => (
-                centre.0 + (fastrand::f64() * 2.0 - 1.0) * half,
-                centre.1 + (fastrand::f64() * 2.0 - 1.0) * half,
-            ),
-        };
-        if phenomenon.nature == Nature::Reward && reward_spot.is_none() {
-            reward_spot = Some((px, py));
-        }
-        let n = phenomenon.count.0
-            + fastrand::usize(0..=(phenomenon.count.1 - phenomenon.count.0));
-        for _ in 0..n {
-            if SPAWNED_TOTAL.load(Ordering::Relaxed) >= SESSION_CAP {
-                break;
-            }
-            let ang = fastrand::f64() * std::f64::consts::TAU;
-            let dist = fastrand::f64() * phenomenon.spread;
-            let x = px + ang.cos() * dist;
-            let y = py + ang.sin() * dist;
+    let defs: Vec<PhenomenonDef> = PHENOMENA.iter().map(|p| p.planning).collect();
+    let mut guard = PLANNER.lock().unwrap_or_else(|e| e.into_inner());
+    let planner = guard.get_or_insert_with(|| PhenomenonPlanner::new(PHENOMENON_CONFIG));
+    let placed = planner.execute(
+        plan,
+        &defs,
+        centre,
+        half,
+        |x, y| {
             // SAFETY: world_ctx is a live actor, game thread.
-            let Some(z) = (unsafe {
+            unsafe {
                 ueforge::ue::trace::ground_z(world_ctx, x, y, crate::TRACE_UP, crate::TRACE_DOWN)
-            }) else {
-                continue;
-            };
-            let class_name =
-                phenomenon.classes[fastrand::usize(0..phenomenon.classes.len())];
-            let Some(class) = ue::find_class_fast(class_name) else { continue };
-            let yaw = fastrand::f64() * std::f64::consts::TAU;
+            }
+        },
+        |index| PHENOMENA[index].classes.len(),
+        |index, variant| {
+            let class_name = PHENOMENA[index].classes[variant];
+            ue::find_class_fast(class_name).map(|class| class.as_object().as_ptr() as u64)
+        },
+        |request| {
             // SAFETY: world_ctx is a live actor and the class came
             // from this frame's lookup; game thread.
             let actor = unsafe {
                 ueforge::ue::spawn::spawn_actor(
                     world_ctx,
-                    class.as_object().as_ptr() as u64,
-                    (x, y, z),
-                    yaw,
+                    request.class,
+                    request.position,
+                    request.yaw,
                     1.0,
                 )
             };
-            if actor != 0 {
-                SPAWNED_TOTAL.fetch_add(1, Ordering::Relaxed);
-                placed += 1;
-            }
-        }
-        PHENOMENA_TOTAL.fetch_add(1, Ordering::Relaxed);
-    }
+            actor != 0
+        },
+    );
     ueforge::log::log(format_args!("strange: placed {placed} prop(s)"));
     Ok(serde_json::json!({"placed": placed}))
 }
-
 
 /// Adds phenomenon status and manual placement controls to the MISERY debug API.
 /// Stays here because these operations expose this mod's alternate-reality content.
 fn register_ops() {
     ueforge::ops::OP_REGISTRY.register_many([
-        ueforge::ops::OpDef::new("strange_stats", "Alternate-reality overlay counters", "{}", |_a| {
-            Ok(serde_json::json!({
-                "props_spawned": SPAWNED_TOTAL.load(Ordering::Relaxed),
-                "phenomena_placed": PHENOMENA_TOTAL.load(Ordering::Relaxed),
-                "emissions": emission_level(),
-                "tile_size": active_tile_size(),
-            }))
-        }),
+        ueforge::ops::OpDef::new(
+            "strange_stats",
+            "Alternate-reality overlay counters",
+            "{}",
+            |_a| {
+                let mut guard = PLANNER.lock().unwrap_or_else(|e| e.into_inner());
+                let planner =
+                    guard.get_or_insert_with(|| PhenomenonPlanner::new(PHENOMENON_CONFIG));
+                Ok(serde_json::json!({
+                    "props_spawned": planner.spawned_total(),
+                    "phenomena_placed": planner.phenomena_total(),
+                    "emissions": emission_level(),
+                    "tile_size": active_tile_size(),
+                }))
+            },
+        ),
         ueforge::ops::OpDef::new(
             "strange_here",
             "Place one named phenomenon at the player (testing)",
             "{name: str}",
             |args| {
-                let want = args.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let p = PHENOMENA
+                let want = args
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let index = PHENOMENA
                     .iter()
-                    .find(|p| p.name == want)
+                    .position(|p| p.name == want)
                     .ok_or_else(|| format!("unknown phenomenon '{want}'"))?;
                 dispatch::DRAIN.queue().enqueue(
                     move || {
@@ -466,7 +448,7 @@ fn register_ops() {
                         // SAFETY: live player actor, game thread.
                         let loc = unsafe { ueforge::ue::transform::world_location(player) }
                             .ok_or("no player location")?;
-                        place_phenomena(&[p], (loc.0, loc.1), 400.0)
+                        place_phenomena(&[index], (loc.0, loc.1), 400.0)
                     },
                     Duration::from_secs(15),
                 )

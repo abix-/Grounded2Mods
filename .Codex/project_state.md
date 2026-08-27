@@ -23,6 +23,8 @@ Extract the remaining engine-independent and Unreal-specific systems from MISERY
 - Survivalist retains Unity target observations, threat checks, game handles, zombie spawning, liveness reads, movement commands, content values, logging, and chronicle text.
 - Adaptive encounter place tracking, budget rolls, encounter composition, anchor and class selection, scatter placement, and successful-spawn caps belong to `modforge::storyteller`.
 - MISERY retains Unreal progression and creature observation, enemy exclusions, tuning values, spawn execution, logging, and controls.
+- Phenomenon region tracking, weighted selection, reward guarding, count and cluster rolls, placement requests, successful-spawn caps, and counters belong to `modforge::storyteller`.
+- MISERY retains its phenomenon catalog, live-square and progression observation, Blueprint lookup, ground traces, Unreal spawning, logging, and controls.
 - The root README is a concise workspace map with capability tables; detailed framework and decompilation material stays in the owning crate documentation.
 
 ## Last session summary
@@ -73,10 +75,13 @@ Extract the remaining engine-independent and Unreal-specific systems from MISERY
 - Added typed scalar key/value entries and live value mutation to `ueforge::ue::tmap`, then removed MISERY's raw map header, stride, slot lookup, read, and write helpers while preserving its movement keys, baseline speeds, multiplier, and UI.
 - Expanded `modforge::storyteller` with adaptive encounter configuration and state, including place lifecycle, copy, escalation, and pack rolls, anchor and class selection, scatter placement, session caps, and successful-spawn accounting.
 - Migrated MISERY spawning to supply live Unreal snapshots and game-specific policy, then execute Modforge's requests through Ueforge while preserving its emissions curve, random roll order, caps, exclusions, logs, controls, and spawn behavior.
+- Expanded `modforge::storyteller` with phenomenon definitions and planning state for region re-entry, weighted distinct selection, reward-danger pairing, ordered guard placement, count and cluster rolls, class-variant choices, placement requests, caps, and counters.
+- Migrated MISERY phenomena to supply its catalog and live Unreal facts, resolve ground and Blueprint classes, and execute Modforge's requests while preserving random roll order, placement, counters, logs, controls, and spawn behavior.
+- Verified the MISERY library compiles. Modforge built and 312 tests passed; the full library target remains red only on the existing `input::tests::backend_parse_rejects_garbage` mismatch where `l3` is accepted.
 
 ## Next steps
 
-- Move MISERY's engine-independent phenomenon planning into Modforge while retaining Unreal observation and execution in MISERY and Ueforge.
+- Move MISERY's engine-independent vendor offer planning into Modforge while retaining Unreal inventory mutation in MISERY and Ueforge.
 
 ## Open questions
 

@@ -249,6 +249,203 @@ where
     }
 }
 
+/// How a phenomenon relates to player risk and reward.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhenomenonNature {
+    Reward,
+    Danger,
+    Neutral,
+}
+
+/// Caller-supplied planning facts for one phenomenon type.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PhenomenonDef {
+    pub count_min: usize,
+    pub count_max: usize,
+    pub spread: f64,
+    pub weight_base: f64,
+    pub weight_per_level: f64,
+    pub nature: PhenomenonNature,
+}
+
+/// Engine-independent policy for phenomena placed into streamed regions.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PhenomenonConfig {
+    pub budget: Budget,
+    pub session_cap: usize,
+}
+
+/// Phenomenon types selected for one region.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhenomenonPlan<P> {
+    pub place: P,
+    pub phenomena: Vec<usize>,
+}
+
+/// One resolved phenomenon spawn for the caller to execute.
+pub struct PhenomenonSpawn<C> {
+    pub phenomenon: usize,
+    pub class: C,
+    pub position: (f64, f64, f64),
+    pub yaw: f64,
+}
+
+/// Phenomenon region lifecycle, selection, placement, and session caps.
+pub struct PhenomenonPlanner<P> {
+    config: PhenomenonConfig,
+    processed: HashSet<P>,
+    spawned_total: usize,
+    phenomena_total: usize,
+}
+
+impl<P> PhenomenonPlanner<P>
+where
+    P: Clone + Eq + Hash,
+{
+    pub fn new(config: PhenomenonConfig) -> Self {
+        Self {
+            config,
+            processed: HashSet::new(),
+            spawned_total: 0,
+            phenomena_total: 0,
+        }
+    }
+
+    /// Forget regions that are no longer loaded so they can roll on re-entry.
+    pub fn retain_places(&mut self, mut is_loaded: impl FnMut(&P) -> bool) {
+        self.processed.retain(|place| is_loaded(place));
+    }
+
+    /// Claim a newly loaded region and select its distinct phenomenon types.
+    pub fn plan_place(
+        &mut self,
+        place: P,
+        level: f64,
+        defs: &[PhenomenonDef],
+    ) -> Option<PhenomenonPlan<P>> {
+        if !self.processed.insert(place.clone()) {
+            return None;
+        }
+
+        let mut plan = PhenomenonPlan {
+            place,
+            phenomena: Vec::new(),
+        };
+        if self.config.budget.is_quiet() {
+            return Some(plan);
+        }
+
+        let count = self.config.budget.roll_count(level);
+        let weights: Vec<crate::roll::Weight> = defs
+            .iter()
+            .map(|def| crate::roll::Weight::new(def.weight_base, def.weight_per_level))
+            .collect();
+        plan.phenomena = crate::roll::pick_distinct(&weights, level, count);
+
+        let has_reward = plan
+            .phenomena
+            .iter()
+            .any(|&index| defs[index].nature == PhenomenonNature::Reward);
+        let has_danger = plan
+            .phenomena
+            .iter()
+            .any(|&index| defs[index].nature == PhenomenonNature::Danger);
+        if has_reward && !has_danger {
+            let dangers: Vec<usize> = defs
+                .iter()
+                .enumerate()
+                .filter_map(|(index, def)| {
+                    (def.nature == PhenomenonNature::Danger).then_some(index)
+                })
+                .collect();
+            if !dangers.is_empty() {
+                plan.phenomena
+                    .push(dangers[fastrand::usize(0..dangers.len())]);
+            }
+        }
+        Some(plan)
+    }
+
+    /// Generate clustered placement requests and let the caller resolve ground,
+    /// engine classes, and spawning. Only successful spawns consume the cap.
+    pub fn execute<C>(
+        &mut self,
+        phenomena: &[usize],
+        defs: &[PhenomenonDef],
+        centre: (f64, f64),
+        half_extent: f64,
+        mut ground: impl FnMut(f64, f64) -> Option<f64>,
+        mut variant_count: impl FnMut(usize) -> usize,
+        mut resolve: impl FnMut(usize, usize) -> Option<C>,
+        mut spawn: impl FnMut(PhenomenonSpawn<C>) -> bool,
+    ) -> usize {
+        let mut ordered = phenomena.to_vec();
+        ordered.sort_by_key(|&index| match defs[index].nature {
+            PhenomenonNature::Reward => 0,
+            PhenomenonNature::Danger => 1,
+            PhenomenonNature::Neutral => 2,
+        });
+
+        let mut reward_spot = None;
+        let mut placed = 0;
+        for index in ordered {
+            let def = &defs[index];
+            let (px, py) = match (def.nature, reward_spot) {
+                (PhenomenonNature::Danger, Some(spot)) => spot,
+                _ => (
+                    centre.0 + (fastrand::f64() * 2.0 - 1.0) * half_extent,
+                    centre.1 + (fastrand::f64() * 2.0 - 1.0) * half_extent,
+                ),
+            };
+            if def.nature == PhenomenonNature::Reward && reward_spot.is_none() {
+                reward_spot = Some((px, py));
+            }
+
+            let count = def.count_min + fastrand::usize(0..=def.count_max - def.count_min);
+            for _ in 0..count {
+                if self.is_full() {
+                    break;
+                }
+                let angle = fastrand::f64() * std::f64::consts::TAU;
+                let distance = fastrand::f64() * def.spread;
+                let x = px + angle.cos() * distance;
+                let y = py + angle.sin() * distance;
+                let Some(z) = ground(x, y) else {
+                    continue;
+                };
+                let variant = fastrand::usize(0..variant_count(index));
+                let Some(class) = resolve(index, variant) else {
+                    continue;
+                };
+                let request = PhenomenonSpawn {
+                    phenomenon: index,
+                    class,
+                    position: (x, y, z),
+                    yaw: fastrand::f64() * std::f64::consts::TAU,
+                };
+                if spawn(request) {
+                    self.spawned_total += 1;
+                    placed += 1;
+                }
+            }
+            self.phenomena_total += 1;
+        }
+        placed
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.spawned_total >= self.config.session_cap
+    }
+
+    pub fn spawned_total(&self) -> usize {
+        self.spawned_total
+    }
+
+    pub fn phenomena_total(&self) -> usize {
+        self.phenomena_total
+    }
+}
+
 /// One caller-observed target for adaptive pressure. The caller
 /// supplies engine facts; Modforge owns eligibility, threshold,
 /// and strongest-target selection.
