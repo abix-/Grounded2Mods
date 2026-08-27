@@ -35,9 +35,14 @@ Extract every engine-independent or Unity-specific mechanism identified by the S
 - Managed handle ownership, bridge-value decoding, managed-list traversal, Unity coordinate decoding, synchronous main-thread dispatch, and Rust/C# pointer and string plumbing belong to Unityforge.
 - Survivalist retains its game class and field names, object selection, gameplay policy, Unity actions, content, logging, and presentation.
 - Rectangular annex geometry and deterministic identity-based selection belong to Modforge; Survivalist retains construction and encounter policy plus game observation and execution.
+- Delayed craft-result readiness, retry, timeout, removal, error routing, and cleanup belong to `modforge::crafting`; Survivalist retains its Harmony observation, Unity result lookup, quality policy, and item replacement.
 
 ## Last session summary
 
+- Recorded the remaining Survivalist extraction candidates in `docs/todo.md` with explicit Modforge and Survivalist ownership boundaries.
+- Added `modforge::crafting::CraftResultQueue` and migrated Survivalist's delayed craft-result jobs to it without changing readiness, retry, timeout, error, or managed-handle cleanup behavior.
+- Kept quality tier and sibling rolls in `modforge::quality`; Survivalist still owns hooks, recipe and skill reads, product discovery, workbench bonuses, odds, and item swaps.
+- Added no tests and did not build, following the direct instruction for this extraction work.
 - Added Unityforge managed-object helpers for owned and borrowed handles, bridge JSON handle decoding, typed managed-list counts and entries, managed-list fields, and Unity coordinate decoding.
 - Migrated every Survivalist raw managed-list `get_Count` and `get_Item` call to Unityforge and removed the local handle, borrowed-object, coordinate, and list-count implementations from `common.rs`.
 - Preserved Survivalist's existing error propagation, soft-failure defaults, handle ownership, stale-list behavior, game fields, and gameplay policy.
@@ -141,6 +146,7 @@ Extract every engine-independent or Unity-specific mechanism identified by the S
 
 ## Next steps
 
+- Extract Survivalist's population assignment planning into Modforge, then migrate growth recruitment to consume the plan.
 - Exercise Survivalist's Load/Unload re-init path through a live story switch and confirm `ReinitAfterUnload` works.
 
 ## Open questions

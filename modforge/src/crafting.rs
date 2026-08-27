@@ -4,7 +4,89 @@
 //! a recipe: checks inputs, removes them, calls item::create for the
 //! output with quality rolled at that moment.
 
+use parking_lot::Mutex;
+
 use crate::item::{self, Inventory, ItemRegistry, ItemStack};
+
+struct PendingCraftResult<T> {
+    payload: T,
+    ready_at: f32,
+    deadline: f32,
+}
+
+/// Engine-independent lifecycle for craft results that appear after
+/// the originating craft call returns.
+///
+/// Consumers provide the game-specific payload, result lookup, error
+/// handling, and cleanup. The queue owns readiness delays, retries,
+/// deadline expiry, removal, and exactly-once cleanup.
+pub struct CraftResultQueue<T> {
+    jobs: Mutex<Vec<PendingCraftResult<T>>>,
+}
+
+impl<T> CraftResultQueue<T> {
+    pub const fn new() -> Self {
+        Self {
+            jobs: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Queue a result lookup. Both delays are measured from `now`.
+    pub fn push(&self, payload: T, now: f32, ready_delay: f32, timeout: f32) {
+        self.jobs.lock().push(PendingCraftResult {
+            payload,
+            ready_at: now + ready_delay,
+            deadline: now + timeout,
+        });
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.jobs.lock().is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.jobs.lock().len()
+    }
+
+    /// Try every ready result, retaining unresolved work until its
+    /// deadline. Completed, expired, and failed jobs are removed and
+    /// passed to `cleanup` exactly once.
+    pub fn advance(
+        &self,
+        now: f32,
+        mut try_resolve: impl FnMut(&T, f32) -> Result<bool, String>,
+        mut on_error: impl FnMut(&T, &str),
+        mut cleanup: impl FnMut(T),
+    ) {
+        let mut jobs = self.jobs.lock();
+        let mut index = 0;
+        while index < jobs.len() {
+            let job = &jobs[index];
+            if now < job.ready_at {
+                index += 1;
+                continue;
+            }
+            let done = match try_resolve(&job.payload, now) {
+                Ok(resolved) => resolved || now >= job.deadline,
+                Err(error) => {
+                    on_error(&job.payload, &error);
+                    true
+                }
+            };
+            if done {
+                cleanup(jobs.remove(index).payload);
+            } else {
+                index += 1;
+            }
+        }
+    }
+}
+
+impl<T> Default for CraftResultQueue<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum StationKind {
