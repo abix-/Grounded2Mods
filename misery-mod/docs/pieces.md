@@ -270,6 +270,58 @@ observed adjacent to which in an example, then generates from
 that. Same idea, in three dimensions, with a real building as the
 example.
 
+### The format
+
+A part in `parts.json`, with the real measured numbers:
+
+```json
+{
+  "name": "SM_Floor_300x400",
+  "package": "/Game/.../SM_Floor_300x400",
+  "extent": [1.5, 0.1, 2.0],
+  "shape": "Slab",
+  "triangles": 44, "vertices": 24, "materials": 1, "lods": 1,
+
+  "studs": [
+    {
+      "at": [0.0, 3.5, 0.0],
+      "turn": 90,
+      "seen": 231,
+      "with": { "SM_Wall_400x400BrokenCrouch": 231 }
+    }
+  ]
+}
+```
+
+- **`at`** is in the piece's OWN local frame, metres, y up: the
+  same units and axes as `extent` directly above it. The
+  measurement is in centimetres and converts on the way in,
+  because two units in one file is how mistakes happen.
+- **`turn`** is how far the attached piece is turned relative to
+  this one, degrees. Position alone is not enough: a wall laid
+  across a floor and one stood along it sit at the same spot.
+- **`seen`** is the confidence, left visible rather than
+  collapsed into a boolean. 231 is a rule; 4 is a maybe.
+- **`with`** is which pieces were actually seen there, counted.
+  It answers "what does the game put here", and it is what biases
+  generation toward looking like this game rather than merely
+  being legal.
+
+The document header says how far to trust the whole thing:
+
+```json
+{
+  "count": 2407,
+  "units": "half-extent and stud positions in metres, y up",
+  "observed": { "sightings": 50328, "squares": 11, "sessions": 3 },
+  "derived_with": { "touching_m": 9.0, "round_cm": 1.0, "min_sightings": 4 }
+}
+```
+
+Those thresholds are the ones that will change. Recording them
+means a reader can tell whether a stud list was built with the
+loose settings or the strict ones, instead of guessing.
+
 **Open, and the data will answer it:** whether a stud needs a
 TYPE beyond its position and facing. In real Lego a stud is a
 stud and anything fits anything. Here a wall's base and a wall's
