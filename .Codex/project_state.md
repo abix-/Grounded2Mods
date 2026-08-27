@@ -50,6 +50,7 @@ Share Unityforge's generation-versioned Rust DLL lifecycle across every C# host 
 
 ## Last session summary
 
+- Cleaned the workspace backlog by moving 30 completed MISERY, Survivalist, and Schedule 1 rows into the dated changelog, verifying nine existing Grounded 2, Ueforge, Modforge documentation, and IL2CPP shim entries, and removing all 39 checked rows from `docs/todo.md`.
 - Linked the BepInEx IL2CPP shim to the existing shared `GenerationLoader` and removed its duplicate DLL discovery, symbol resolution, bridge pinning, direct tick delegate, shutdown, and `FreeLibrary` implementation.
 - Kept BepInEx logging, Harmony setup, IL2CPP class injection, input polling, and the injected frame driver in the IL2CPP shim.
 - The shared loader now supplies initial loading, generation-file hot reload, rollback, ticking, and final shutdown to the IL2CPP shim. No new tests were added.
