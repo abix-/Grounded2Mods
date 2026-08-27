@@ -4,6 +4,7 @@ Survivalist extraction means moving existing engine-independent code out of the 
 
 | Priority | System | Todo | Done when |
 |---:|---|---|---|
+| 1 | Ueforge input | [ ] Resolve the player's controller through the reflected `APawn.Controller` field instead of the unavailable `Pawn::GetController` function | A live MISERY follower reads control yaw and sends its first movement batch without `Pawn has no GetController`. |
 | 1 | MISERY navigation | [ ] Read `UNavigationPath.PathPoints` through its reflected property instead of calling the native-only `FNavigationPath::GetPathPoints` method | A restarted route receives at least two Unreal path points without a missing-function error. |
 | 1 | MISERY navigation | [ ] Live-verify Unreal path-point extraction and shared player-input following from spawn through both doors | A restarted run reaches the expedition without `SimpleMoveToLocation`, every follower tick uses one strict in-process command batch, and movement is released at both stops and on failure. |
 | 1 | `modforge::input` | [ ] Prove the same player-command sequence through a second engine's `InputSurface` | One non-Unreal consumer passes the shared movement, look, action, and release conformance test without changing the command sequence. |

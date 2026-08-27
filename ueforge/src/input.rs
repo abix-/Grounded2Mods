@@ -310,6 +310,14 @@ mod tests {
     use super::movement_direction;
 
     #[test]
+    fn controller_comes_from_the_reflected_pawn_field() {
+        let source = include_str!("input.rs");
+        let unavailable_function = ["Get", "Controller"].concat();
+        assert!(!source.contains(&format!("\"{unavailable_function}\"")));
+        assert!(source.contains("\"Controller\""));
+    }
+
+    #[test]
     fn movement_axes_follow_control_yaw() {
         let forward = movement_direction(90.0, 1.0, 0.0);
         assert!(forward.0.abs() < 1.0e-12);
