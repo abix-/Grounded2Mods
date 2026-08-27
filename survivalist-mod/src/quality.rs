@@ -35,7 +35,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use parking_lot::Mutex;
 use serde_json::{Value as Json, json};
 
-use modforge::crafting::CraftResultQueue;
+use modforge::crafting::advance_pending_results;
 use modforge::ops::{OP_REGISTRY, OpDef};
 use modforge::quality::{roll_sibling, roll_tier};
 use unityforge::hook::{self, HOOK_REGISTRY, HookCtx};
@@ -111,9 +111,11 @@ struct CraftJob {
     crafter_h: i32,
     product: String,
     surplus: i64,
+    ready_at: f32,
+    deadline: f32,
 }
 
-static CRAFT_JOBS: CraftResultQueue<CraftJob> = CraftResultQueue::new();
+static CRAFT_JOBS: Mutex<Vec<CraftJob>> = Mutex::new(Vec::new());
 static CRAFT_ROLLS: AtomicU32 = AtomicU32::new(0);
 
 /// Install the craft hooks: two prefixes on the game's ONE
@@ -228,16 +230,13 @@ extern "C" fn on_craft_carrier(ctx: *const c_void) -> i32 {
     let surplus = (level - recipe_level).max(0);
     let now = f32::from_bits(LAST_NOW_BITS.load(Ordering::Relaxed));
     std::mem::forget(crafter); // the job owns the handle
-    CRAFT_JOBS.push(
-        CraftJob {
-            crafter_h: h,
-            product,
-            surplus,
-        },
-        now,
-        CRAFT_SETTLE_SECS,
-        CRAFT_JOB_TIMEOUT_SECS,
-    );
+    CRAFT_JOBS.lock().push(CraftJob {
+        crafter_h: h,
+        product,
+        surplus,
+        ready_at: now + CRAFT_SETTLE_SECS,
+        deadline: now + CRAFT_JOB_TIMEOUT_SECS,
+    });
     0
 }
 
@@ -252,11 +251,14 @@ fn craft_odds(surplus: i64) -> [u64; 4] {
 /// Walk the queued craft rolls: find the product in the crafter's
 /// hands, roll the tier by skill, swap on a hit.
 /// Stays here because Survivalist owns product discovery, tier policy,
-/// and inventory swaps; Modforge owns the craft-result lifecycle and
-/// quality rolls.
+/// inventory swaps, and queue state; Modforge owns only the existing
+/// collection advancement and quality rolls.
 fn process_craft_jobs(now: f32) {
-    CRAFT_JOBS.advance(
+    let mut jobs = CRAFT_JOBS.lock();
+    advance_pending_results(
+        &mut jobs,
         now,
+        |job| (job.ready_at, job.deadline),
         try_craft_roll,
         |_job, error| {
             mono::log(
@@ -399,7 +401,7 @@ pub fn upgrade_band_gear(band_h: i32, now: f32, military: bool) {
 pub fn tick(now: f32) {
     LAST_NOW_BITS.store(now.to_bits(), Ordering::Relaxed);
     // Queued craft rolls settle on their own clock, every pass.
-    if !CRAFT_JOBS.is_empty() {
+    if !CRAFT_JOBS.lock().is_empty() {
         process_craft_jobs(now);
     }
     let last = f32::from_bits(LAST_TRADER_SCAN_BITS.load(Ordering::Relaxed));
@@ -636,7 +638,7 @@ fn quality_status(_args: &Json) -> Result<Json, String> {
             "last_swap": LAST_SWAP.lock().clone(),
             "traders_rolled": ROLLED_TRADERS.lock().len(),
             "craft_rolls": CRAFT_ROLLS.load(Ordering::Relaxed),
-            "craft_jobs_pending": CRAFT_JOBS.len(),
+            "craft_jobs_pending": CRAFT_JOBS.lock().len(),
         }))
     })
 }

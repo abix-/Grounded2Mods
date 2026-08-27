@@ -35,20 +35,18 @@ Extract every engine-independent or Unity-specific mechanism identified by the S
 - Managed handle ownership, bridge-value decoding, managed-list traversal, Unity coordinate decoding, synchronous main-thread dispatch, and Rust/C# pointer and string plumbing belong to Unityforge.
 - Survivalist retains its game class and field names, object selection, gameplay policy, Unity actions, content, logging, and presentation.
 - Rectangular annex geometry and deterministic identity-based selection belong to Modforge; Survivalist retains construction and encounter policy plus game observation and execution.
-- Delayed craft-result readiness, retry, timeout, removal, error routing, and cleanup belong to `modforge::crafting`; Survivalist retains its Harmony observation, Unity result lookup, quality policy, and item replacement.
-- Reachable-destination matching and committed capacity consumption belong to `modforge::faction`; Survivalist retains arrival and settlement eligibility, Unity observation, member transfer, role updates, and conscript policy.
-- Stored-goods filtering, blocked-store rejection, valuable-first selection, transfer caps, and round-robin carrier assignment belong to `modforge::item`; Survivalist retains managed inventory discovery, nutrition and value observation, Secure checks, and Take and Add execution.
+- Delayed craft-result collection advancement belongs to one small function in `modforge::crafting`; Survivalist retains CraftJob, its queue, timing fields, Harmony observation, Unity result lookup, quality policy, and item replacement.
+- First-reachable destination calculation belongs to one small function in `modforge::faction`; Survivalist retains OpenDoor, headroom, destination order, eligibility, Unity observation, member transfer, role updates, and conscript policy.
+- The existing goods filter belongs to `modforge::item`; Survivalist retains the valuable-first selection and transfer loops, blocked stores, caps, round-robin distribution, managed inventory discovery, Secure checks, and Take and Add execution.
 
 ## Last session summary
 
-- Added `modforge::item::GoodsFilter` and `GoodsTransferPlanner` for blocked-store handling, valuable-first stack selection, stable ties, transfer caps, and round-robin carriers.
-- Migrated Survivalist's stored-goods transfer and counting paths while preserving per-transfer rescans, successful-take accounting, failed-take stopping, Secure behavior, managed inventory calls, and carry-capacity behavior.
-- Added no tests and did not build, following the direct instruction for this extraction work.
-- Added `modforge::faction::PopulationPlanner` for first-reachable assignment across multiple anchors and caller-confirmed capacity consumption.
-- Migrated Survivalist growth recruitment to use the planner while preserving destination order, reach, actual-move capacity accounting, Unity transfers, press-gang behavior, logging, and presentation.
+- Removed the speculative GoodsTransferPlanner, PopulationPlanner, and CraftResultQueue APIs.
+- Kept Survivalist's original CraftJob queue, OpenDoor state, goods transfer loop, caps, blocked-store check, and round-robin counter.
+- Moved only the existing engine-independent operations: delayed collection advancement, first-reachable calculation, and the existing goods filter.
 - Added no tests and did not build, following the direct instruction for this extraction work.
 - Recorded the remaining Survivalist extraction candidates in `docs/todo.md` with explicit Modforge and Survivalist ownership boundaries.
-- Added `modforge::crafting::CraftResultQueue` and migrated Survivalist's delayed craft-result jobs to it without changing readiness, retry, timeout, error, or managed-handle cleanup behavior.
+- Initially added a CraftResultQueue wrapper, then removed it in favor of a small collection-advance function while returning CraftJob, CRAFT_JOBS, and timing fields to Survivalist.
 - Kept quality tier and sibling rolls in `modforge::quality`; Survivalist still owns hooks, recipe and skill reads, product discovery, workbench bonuses, odds, and item swaps.
 - Added no tests and did not build, following the direct instruction for this extraction work.
 - Added Unityforge managed-object helpers for owned and borrowed handles, bridge JSON handle decoding, typed managed-list counts and entries, managed-list fields, and Unity coordinate decoding.

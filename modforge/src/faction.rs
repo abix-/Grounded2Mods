@@ -8,64 +8,25 @@
 
 use std::collections::HashMap;
 
-/// One place that can receive arriving people. Anchors are the
-/// positions from which it can reach arrivals.
-pub struct PopulationDestination {
-    pub anchors: Vec<(f32, f32)>,
-    pub capacity: usize,
-}
-
-/// A destination selected for one arrival and the maximum number
-/// of people it can currently receive.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PopulationAssignment {
-    pub destination: usize,
-    pub capacity: usize,
-}
-
-/// Match arrivals to the first reachable destination with capacity.
-/// The caller reports how many people actually moved so later
-/// assignments observe the remaining capacity.
-pub struct PopulationPlanner {
-    destinations: Vec<PopulationDestination>,
-    reach_squared: f32,
-}
-
-impl PopulationPlanner {
-    pub fn new(destinations: Vec<PopulationDestination>, reach: f32) -> Self {
-        Self {
-            destinations,
-            reach_squared: reach * reach,
-        }
-    }
-
-    pub fn assign(&self, arrival: (f32, f32)) -> Option<PopulationAssignment> {
-        self.destinations
-            .iter()
-            .enumerate()
-            .find(|(_, destination)| {
-                destination.capacity > 0
-                    && destination.anchors.iter().any(|anchor| {
-                        let dx = arrival.0 - anchor.0;
-                        let dy = arrival.1 - anchor.1;
-                        dx * dx + dy * dy <= self.reach_squared
-                    })
-            })
-            .map(|(destination, state)| PopulationAssignment {
-                destination,
-                capacity: state.capacity,
-            })
-    }
-
-    /// Consume capacity after the caller performs an assignment.
-    /// Returns the destination's remaining capacity.
-    pub fn consume(&mut self, destination: usize, moved: usize) -> usize {
-        let Some(state) = self.destinations.get_mut(destination) else {
-            return 0;
-        };
-        state.capacity = state.capacity.saturating_sub(moved);
-        state.capacity
-    }
+/// Return the first destination with capacity and an anchor within
+/// reach of the arrival.
+pub fn first_reachable_destination<'a>(
+    arrival: (f32, f32),
+    reach: f32,
+    destinations: impl IntoIterator<Item = (usize, usize, &'a [(f32, f32)])>,
+) -> Option<usize> {
+    let reach_squared = reach * reach;
+    destinations
+        .into_iter()
+        .find(|(_, capacity, anchors)| {
+            *capacity > 0
+                && anchors.iter().any(|anchor| {
+                    let dx = arrival.0 - anchor.0;
+                    let dy = arrival.1 - anchor.1;
+                    dx * dx + dy * dy <= reach_squared
+                })
+        })
+        .map(|(index, _, _)| index)
 }
 
 /// What a faction wants (design.md): hostile ones want your stuff,

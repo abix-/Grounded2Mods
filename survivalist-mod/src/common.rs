@@ -3,7 +3,6 @@
 
 use serde_json::{Value as Json, json};
 pub use modforge::item::GoodsFilter;
-use modforge::item::{GoodsCandidate, GoodsTransferPlanner};
 use unityforge::mono::{self, LogLevel, MonoObject, MonoType};
 
 pub use unityforge::mono::{
@@ -194,8 +193,9 @@ fn secure_blocks(building: &MonoObject) -> bool {
 /// upgrades) are tested and a held lock keeps that whole
 /// building's stores. Willing loads (a camp loading its own
 /// wares, paying for goods or work) never test locks.
-/// Stays here because Survivalist observes and mutates its managed
-/// inventories; Modforge owns selection, limits, and distribution.
+/// Stays here because Survivalist owns the transfer loop, limits,
+/// distribution, Secure policy, and managed inventory operations;
+/// Modforge owns only the goods filter.
 pub fn carry_off_stored_goods(
     from: &MonoObject,
     carriers: &[i32],
@@ -208,14 +208,14 @@ pub fn carry_off_stored_goods(
     };
     let blist = own(b_h);
     let nb = blist.list_len_or_zero()?;
-    let mut planner =
-        GoodsTransferPlanner::new(filter, max_stacks.max(1) as usize, carriers.len());
+    let mut carried = 0i64;
+    let mut carrier_ix = 0usize;
     for bi in 0..nb {
         let Some(bh) = blist.list_handle(bi)? else {
             continue;
         };
         let building = own(bh);
-        if !planner.can_take_from(hostile && secure_blocks(&building)) {
+        if hostile && secure_blocks(&building) {
             continue;
         }
         let Some(inv_h) = handle_of(&building.read_field("Inventory")?) else {
@@ -229,20 +229,15 @@ pub fn carry_off_stored_goods(
         // container, so re-scan each time.
         loop {
             let count = inv.list_len().unwrap_or(0);
-            let mut items = Vec::new();
-            let mut candidates = Vec::new();
+            let mut pick: Option<i32> = None;
+            let mut pick_price = -1.0f64;
             for i in 0..count {
                 let Some(item_h) = handle_of(&inv.invoke("GetItem", &json!([i]))?) else {
                     continue;
                 };
                 let item = own(item_h);
-                let is_food = if filter == GoodsFilter::Any {
-                    false
-                } else {
-                    goods_match(GoodsFilter::Food, &item)
-                };
-                let value = if filter.matches(is_food) {
-                    item
+                if goods_match(filter, &item) {
+                    let price = item
                         .invoke("GetPrototype", &json!([]))
                         .ok()
                         .as_ref()
@@ -254,19 +249,18 @@ pub fn carry_off_stored_goods(
                                 .and_then(|v| v.as_f64())
                                 .unwrap_or(0.0)
                         })
-                        .unwrap_or(0.0)
-                } else {
-                    0.0
-                };
-                items.push(item);
-                candidates.push(GoodsCandidate { value, is_food });
+                        .unwrap_or(0.0);
+                    if price > pick_price {
+                        if let Some(old) = pick.replace(item_h) {
+                            drop(own(old));
+                        }
+                        pick_price = price;
+                        std::mem::forget(item);
+                    }
+                }
             }
-            let Some(selection) = planner.next(&candidates) else {
-                break;
-            };
-            let item = items.swap_remove(selection.candidate);
-            drop(items);
-            let item_h = item.handle().0;
+            let Some(item_h) = pick else { break };
+            let item = own(item_h);
             let amount = item
                 .invoke("GetAmount", &json!([]))
                 .ok()
@@ -285,19 +279,20 @@ pub fn carry_off_stored_goods(
             // capacity; anything that doesn't fit is dropped at the
             // site by the game, which is realistic (they took what
             // they could carry).
-            let carrier = own(carriers[selection.carrier]);
+            let carrier = own(carriers[carrier_ix % carriers.len()]);
             let _ = carrier.invoke(
                 "Add",
                 &json!([{ "handle": carrier.handle().0 }, { "handle": taken_h }]),
             );
             std::mem::forget(carrier);
-            planner.record_success();
-            if planner.complete() {
-                return Ok(planner.transferred() as i64);
+            carrier_ix += 1;
+            carried += 1;
+            if carried >= max_stacks {
+                return Ok(carried);
             }
         }
     }
-    Ok(planner.transferred() as i64)
+    Ok(carried)
 }
 
 /// Count a community's stored stacks matching the filter, up to

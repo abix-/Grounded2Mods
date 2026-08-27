@@ -40,7 +40,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use serde_json::{Value as Json, json};
 
-use modforge::faction::{PopulationDestination, PopulationPlanner};
+use modforge::faction::first_reachable_destination;
 use modforge::ops::{OP_REGISTRY, OpDef};
 use unityforge::hook::{self, HOOK_REGISTRY, HookCtx};
 use unityforge::mono::{self, LogLevel, MonoObject};
@@ -184,6 +184,10 @@ pub fn tick(now: f32) {
 struct OpenDoor {
     com: MonoObject,
     name: String,
+    /// The settlement's base anchor plus, for looters, every
+    /// roaming squad leader's position (press-gang reach).
+    anchors: Vec<(f32, f32)>,
+    headroom: i64,
     /// Looter press-gang vs Normal welcome (log wording +
     /// doctrine gates differ).
     press_gang: bool,
@@ -242,7 +246,7 @@ fn recruit_scan() -> Result<(), String> {
     // near their base or any roaming squad (beds required, food
     // not checked: they take people hungry and raid for the
     // rest).
-    let mut doors: Vec<(OpenDoor, PopulationDestination)> = Vec::new();
+    let mut doors: Vec<OpenDoor> = Vec::new();
     let mut refugees: Vec<MonoObject> = Vec::new();
     for_each_community(|com| {
         let t = ctype(&com);
@@ -303,29 +307,21 @@ fn recruit_scan() -> Result<(), String> {
             return Ok(true);
         }
         let name = display_name(&com);
-        doors.push((
-            OpenDoor {
-                com,
-                name,
-                press_gang,
-            },
-            PopulationDestination {
-                anchors,
-                capacity: headroom as usize,
-            },
-        ));
+        doors.push(OpenDoor {
+            com,
+            name,
+            anchors,
+            headroom,
+            press_gang,
+        });
         Ok(true)
     })?;
     if doors.is_empty() || refugees.is_empty() {
         return Ok(());
     }
 
-    let (doors, destinations): (Vec<OpenDoor>, Vec<PopulationDestination>) =
-        doors.into_iter().unzip();
-    let mut planner = PopulationPlanner::new(destinations, RECRUIT_RANGE);
-
-    // Pass 2: Modforge selects the first reachable door with room;
-    // Survivalist performs the game's real member transfers.
+    // Pass 2: any refugee group within reach of a door is taken
+    // in (as many as there are beds).
     for group in refugees {
         let lead_h = match handle_of(&group.read_field("Leader")?) {
             Some(h) => h,
@@ -334,12 +330,17 @@ fn recruit_scan() -> Result<(), String> {
         let Some(gpos) = pos_of(&own(lead_h)) else {
             continue;
         };
-        let Some(assignment) = planner.assign(gpos) else {
+        let Some(destination) = first_reachable_destination(
+            gpos,
+            RECRUIT_RANGE,
+            doors.iter().enumerate().map(|(index, door)| {
+                (index, door.headroom.max(0) as usize, door.anchors.as_slice())
+            }),
+        ) else {
             continue;
         };
-        let door = &doors[assignment.destination];
-        let moved = absorb_group(&group, door, assignment.capacity)?;
-        let remaining = planner.consume(assignment.destination, moved as usize);
+        let door = &mut doors[destination];
+        let moved = absorb_group(&group, door)?;
         if moved > 0 {
             let verb = if door.press_gang {
                 "press-gangs"
@@ -350,7 +351,7 @@ fn recruit_scan() -> Result<(), String> {
                 LogLevel::Info,
                 &format!(
                     "survivalist-mod: growth -- {} {} {} refugee(s) ({} bed(s) left)",
-                    door.name, verb, moved, remaining
+                    door.name, verb, moved, door.headroom
                 ),
             );
         }
@@ -358,12 +359,12 @@ fn recruit_scan() -> Result<(), String> {
     Ok(())
 }
 
-/// Move up to `capacity` living members of `group` into the
+/// Move up to `door.headroom` living members of `group` into the
 /// settlement via the game's own join path. Returns how many
 /// moved.
 /// Stays here because it invokes Survivalist's member and role APIs
 /// and applies the mod's conscript rule.
-fn absorb_group(group: &MonoObject, door: &OpenDoor, capacity: usize) -> Result<i64, String> {
+fn absorb_group(group: &MonoObject, door: &mut OpenDoor) -> Result<i64, String> {
     let Some(m_h) = handle_of(&group.read_field("Members")?) else {
         return Ok(0);
     };
@@ -372,7 +373,7 @@ fn absorb_group(group: &MonoObject, door: &OpenDoor, capacity: usize) -> Result<
     // Collect handles first: SetCommunity mutates the source list.
     let mut joiners: Vec<i32> = Vec::new();
     for i in 0..count {
-        if joiners.len() >= capacity {
+        if (joiners.len() as i64) >= door.headroom {
             break;
         }
         if let Some(h) = mlist.list_handle(i)? {
@@ -408,6 +409,7 @@ fn absorb_group(group: &MonoObject, door: &OpenDoor, capacity: usize) -> Result<
             }
         }
         moved += 1;
+        door.headroom -= 1;
     }
     Ok(moved)
 }
