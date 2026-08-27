@@ -26,7 +26,7 @@ End state after the 2026-05-16 session: **all three layers shipped + smoke green
 | I-6: live action journal | `d18f3726` | Versioned operation actions, observed-value waits, and assertions in `modforge::client::live_journal`; recorded, saved, loaded, replayed, and restored live against MISERY movement speed. |
 | I-7: waypoint routes | `d331b31d`, `96242512` | Versioned world-space routes, recorded traversable edges, A*, trail reduction, closed-loop steering, relative mouse input, stuck evidence, and journal-owned semantic route actions. Five unit tests and the 9.31-second live MISERY outward-and-return replay are green. |
 | I-8: engine navigation route discovery | `2db361e5` | UFunction layout discovery, live endpoint projection, Unreal player-controller navigation, automatic diagnostic sampling, nearby-door diagnosis, bounded interaction recovery, and a cold MISERY spawn-to-expedition proof. The final cold run saved exactly three stop waypoints and two edges, opened the bunker door once, entered the expedition once, and completed in 23.94 seconds. |
-| I-9: live target discovery and looting | pending | Discover the nearest placed loot box in an expedition, use the box itself as the only new semantic waypoint, follow the A* result through Unreal navigation, interact like the player, and observe that its contents were transferred. |
+| I-9: live target discovery and looting | in progress | Exact pushed build `b9d41c7f` entered the expedition scan-free, rejected two unreachable crates, selected the lowest-cost reachable `BP_StashMid_C`, and traversed its one A* edge. Remaining: aim through player-controller yaw and pitch input when foreground mouse capture is absent, then open and loot the retained crate. |
 
 **Cmdlets shipped** (14 total under `input.*`):
 
@@ -69,7 +69,7 @@ input.cursor.get    input.foreground.hwnd    input.find_hwnd_by_pid    input.sel
 
 **3D route replay:** store meaningful stops as world-space waypoints, not every sampled position and not one long timed keyboard and mouse stream. An edge means travel between two stops. Modforge A* selects stop-to-stop edges, while the host game's navigation system or Modforge's fallback follower handles the detailed movement within one edge. Dense position samples are diagnostic breadcrumbs only.
 
-**Live target discovery:** a discovered world target such as a loot box is itself a semantic waypoint. The game adapter finds the live actor and projects its position onto the navigation surface. It does not author intermediate graph nodes. Modforge A* selects an available stop-to-target edge, the host navigation system resolves the detailed path, and completion requires an observed gameplay result after player-like interaction.
+**Live target discovery:** a discovered world target such as a loot box is itself a semantic waypoint. The game adapter finds live actors, projects their positions onto the navigation surface, and rejects invalid or partial paths. Straight-line proximity does not prove reachability. It does not author intermediate graph nodes. Modforge A* selects an available stop-to-target edge by the host's measured complete-path cost, the host navigation system resolves the detailed path, and completion requires an observed gameplay result after player-like interaction.
 
 **Anti-cheat:** all current targets are LOW risk. Tag `dwExtraInfo` and restore foreground anyway (cheap insurance).
 

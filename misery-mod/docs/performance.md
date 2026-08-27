@@ -45,6 +45,23 @@ Two things decide the cost of anything in this list:
 
 ## The measurement
 
+### Bot route acceptance, 2026-08-27
+
+The exact pushed build at `b9d41c7f` restarted at spawn and entered an
+expedition in 21.32 seconds. The route retained one player and both doors,
+used exactly three stop waypoints and two A* edges, opened the bunker door
+once, and used the expedition door once.
+
+The timing gate passed. Every global-search row was absent. Unreal actor
+collection enumeration measured 0.50 ms worst and retained component lookup
+measured 0.09 ms worst, both far below the 16.7 ms frame budget.
+
+From the entered expedition, the same build rejected two unreachable crates,
+selected the lowest-cost reachable `BP_StashMid_C`, and traversed to its one
+new semantic waypoint in about eight seconds. The run stopped at aiming because
+the foreground viewport had lost mouse capture. That is now an input task, not
+a navigation or performance failure.
+
 ```text
 === game thread ===
 held for 3784.2 ms over 30.0 s
