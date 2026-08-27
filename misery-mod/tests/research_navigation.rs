@@ -22,6 +22,12 @@ use serde_json::{Value, json};
 const PLAYER_CLASS: &str = "BP_SGKMasterCharacter_C";
 const METAL_DOOR_CLASS: &str = "BP_MetalDoor_C";
 const EXPEDITION_DOOR_CLASS: &str = "BP_ExpeditionDoor_C";
+const LOOT_BOX_CLASSES: [&str; 4] = [
+    "BP_GradBigCrate_C",
+    "BP_AirCrate_C",
+    "BP_WoodenBoxResource_C",
+    "BP_DestroyedStorageBag_C",
+];
 const ARRIVAL_CM: f64 = 175.0;
 const SAMPLE_CM: f64 = 100.0;
 const METAL_DOOR_APPROACH_CM: f64 = 200.0;
@@ -429,6 +435,40 @@ fn player_interaction_surface_is_discoverable() {
     println!(
         "player_sgk_interact_layout={}",
         function_layout(&api, PLAYER_CLASS, "SGK Interact")
+    );
+}
+
+#[test]
+#[ignore = "discovers placed loot boxes in a live MISERY expedition"]
+fn nearby_expedition_loot_box_is_discoverable() {
+    let Some(api) = api_or_skip() else { return };
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+    let player = client::find_live_instance(&api, PLAYER_CLASS)
+        .expect("enter an expedition so the live player exists");
+    let player_location = actor_location(&api, &player.addr_selector);
+    let mut seen = HashSet::new();
+    let mut candidates = Vec::new();
+    for class in LOOT_BOX_CLASSES {
+        for actor in client::walk_class_chain_instances(&api, class, 256) {
+            if !seen.insert(actor.addr) {
+                continue;
+            }
+            let location = actor_location(&api, &actor.addr_selector);
+            let nearby = distance(player_location, location);
+            println!(
+                "loot_box_candidate={} location={location:?} distance={nearby:.1}",
+                actor.full_name
+            );
+            candidates.push((nearby, actor, location));
+        }
+    }
+    let nearest = candidates
+        .into_iter()
+        .min_by(|left, right| left.0.total_cmp(&right.0))
+        .expect("the live expedition has no known placed loot box");
+    println!(
+        "nearest_loot_box={} location={:?} distance={:.1}",
+        nearest.1.full_name, nearest.2, nearest.0
     );
 }
 

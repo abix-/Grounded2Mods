@@ -1282,7 +1282,9 @@ system survived the same update without issue.
 
 ## 23. Items, containers, and storage
 
-Research from the UE4SS object dump. No live reads yet.
+The class model came from the UE4SS object dump. A live expedition
+walk on 2026-08-27 found placed `BP_WoodenBoxResource_C` actors and
+selected the nearest one by world-space distance from the player.
 
 ### 23.1 Inventory class hierarchy
 

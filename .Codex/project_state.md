@@ -2,7 +2,7 @@
 
 ## Current focus
 
-Run one cold acceptance of the combined MISERY three-stop route. The exact graph, bunker-door recovery, targeted expedition-door `E` input, observed entry gate, and separate breadcrumbs are implemented.
+Make MISERY enter an expedition, discover the nearest placed loot box, use the box itself as the only new semantic waypoint, navigate to it through A*, and loot it with player-like input.
 
 ## Design goals
 
@@ -57,6 +57,8 @@ Run one cold acceptance of the combined MISERY three-stop route. The exact graph
 
 ## Last session summary
 
+- Closed the cold three-stop acceptance gap. From a restarted game, the permanent live test saved exactly three waypoints and two edges, opened the bunker metal door once, entered the expedition once, and completed in 23.94 seconds with 75 diagnostic breadcrumbs outside the graph.
+- Added a permanent live loot-box discovery test. In the entered expedition it found placed `BP_WoodenBoxResource_C` actors and selected the nearest at `[32192.64, 96474.68, 67.82]`, 3560.9 cm from the player.
 - Built and round-tripped the exact `spawn -> metal-door -> expedition-door` graph with three waypoints and two edges. The live flow saves it under `target/misery-routes`, while one-meter positions remain diagnostic breadcrumbs outside the graph.
 - Added player-like door handling: Unreal owns movement along each edge, the bunker metal door receives a bounded targeted `E` keypress only after observed blockage, and the expedition door receives `E` at arrival.
 - Proved expedition entry live from the existing door stop. A targeted `E` keypress moved the player from the safe-area door to `[28643.14, 48716.50, 208.66]` in 0.65 seconds, and the permanent test passed only after observing that transition.

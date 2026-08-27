@@ -25,6 +25,7 @@ Newest first.
 
 | System | Item | Done when |
 |---|---|---|
+| `modforge::route` | [x] Distill MISERY spawn-to-expedition travel into exactly three durable stop waypoints with player-like door interaction | A cold live run saved three waypoints and two edges, opened the closed bunker metal door once, entered the expedition with one targeted `E` keypress, and completed in 23.94 seconds with 75 diagnostic breadcrumbs kept outside the graph. |
 | `modforge::route` | [x] Add versioned world-space waypoint graphs, trail reduction, A* over recorded traversable edges, closed-loop steering, arrival, and stuck evidence | Five route tests prove schema round-trip, reduced trail retention, alternate-edge A*, shortest-turn steering, arrival, and progress-based stuck detection. |
 | `modforge::input` | [x] Select a game's viewport instead of its diagnostics console when one process owns multiple visible windows | The live MISERY proof selected the largest visible client area, transferred focus to the viewport, and Win32 held-key and relative-mouse input reached the game. |
 | `misery-mod` | [x] Make MISERY the first saved waypoint-route and journal replay proof | Live in 9.31 seconds: record a collision-aware local route, save and load it, return, journal-replay outward and back without teleporting, restore facing, release forward input, and wait on the recorded final waypoint. |

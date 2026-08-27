@@ -25,7 +25,8 @@ End state after the 2026-05-16 session: **all three layers shipped + smoke green
 | Unit tests | `054053d3` | 8 parser tests (`Backend`/`Button`/`Key`). |
 | I-6: live action journal | `d18f3726` | Versioned operation actions, observed-value waits, and assertions in `modforge::client::live_journal`; recorded, saved, loaded, replayed, and restored live against MISERY movement speed. |
 | I-7: waypoint routes | `d331b31d`, `96242512` | Versioned world-space routes, recorded traversable edges, A*, trail reduction, closed-loop steering, relative mouse input, stuck evidence, and journal-owned semantic route actions. Five unit tests and the 9.31-second live MISERY outward-and-return replay are green. |
-| I-8: engine navigation route discovery | pending | UFunction layout discovery, live endpoint projection, Unreal player-controller navigation, automatic diagnostic sampling, nearby-door diagnosis, bounded interaction recovery, and a 53.72-second cold-start MISERY spawn-to-expedition proof with 72 one-meter breadcrumbs. The permanent flow now builds and saves exactly three stop waypoints, and a targeted `E` keypress live-proved expedition entry in 0.65 seconds from the existing door stop. One cold run of the combined three-stop flow remains. |
+| I-8: engine navigation route discovery | `2db361e5` | UFunction layout discovery, live endpoint projection, Unreal player-controller navigation, automatic diagnostic sampling, nearby-door diagnosis, bounded interaction recovery, and a cold MISERY spawn-to-expedition proof. The final cold run saved exactly three stop waypoints and two edges, opened the bunker door once, entered the expedition once, and completed in 23.94 seconds. |
+| I-9: live target discovery and looting | pending | Discover the nearest placed loot box in an expedition, use the box itself as the only new semantic waypoint, follow the A* result through Unreal navigation, interact like the player, and observe that its contents were transferred. |
 
 **Cmdlets shipped** (14 total under `input.*`):
 
@@ -47,7 +48,7 @@ input.cursor.get    input.foreground.hwnd    input.find_hwnd_by_pid    input.sel
 
 **Open items for future sessions:**
 
-- Run one cold combined acceptance of the saved `spawn -> metal-door -> expedition-door` graph, including conditional bunker-door interaction and observed expedition entry. Then add an alternate stop-to-stop edge for a measured high-level A* reroute proof.
+- Discover and loot the nearest placed MISERY expedition box with the box itself as the target waypoint. Then add an alternate stop-to-stop edge for a measured high-level A* reroute proof.
 - HorseyInputSurface v2: direct mouse-state struct writes + direct keyboard buffer writes (per the engine-internal findings above).
 - HK1 Shift+Click transfer migration. Now unblocked by L3; pending an in-save smoke run.
 - Cross-game proof: grounded2-mod or schedule1 ships its own `InputSurface` impl.
@@ -67,6 +68,8 @@ input.cursor.get    input.foreground.hwnd    input.find_hwnd_by_pid    input.sel
 **Live action journal:** injected games are not deterministic simulations owned by Modforge. Their journal records semantic control-plane operations, then waits for observable conditions and asserts the resulting values. Raw timed input remains one operation type, not the authority for progress.
 
 **3D route replay:** store meaningful stops as world-space waypoints, not every sampled position and not one long timed keyboard and mouse stream. An edge means travel between two stops. Modforge A* selects stop-to-stop edges, while the host game's navigation system or Modforge's fallback follower handles the detailed movement within one edge. Dense position samples are diagnostic breadcrumbs only.
+
+**Live target discovery:** a discovered world target such as a loot box is itself a semantic waypoint. The game adapter finds the live actor and projects its position onto the navigation surface. It does not author intermediate graph nodes. Modforge A* selects an available stop-to-target edge, the host navigation system resolves the detailed path, and completion requires an observed gameplay result after player-like interaction.
 
 **Anti-cheat:** all current targets are LOW risk. Tag `dwExtraInfo` and restore foreground anyway (cheap insurance).
 
