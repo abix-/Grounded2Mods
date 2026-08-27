@@ -4,11 +4,33 @@ Written 2026-08-26, after the game felt like it was freezing.
 
 Read this before blaming the mod, and before defending it.
 
-**Measured 2026-08-26, 30 seconds of play in the operator's own
-save. The mod is the freezing.** It held the game thread for
-**126 ms of every second**, in lumps as large as 305 ms. A frame
-at 60 fps is 16.7 ms, so the worst single pass cost about
-eighteen frames in a row.
+**Where it started, 2026-08-26:** the mod WAS the freezing. It
+held the game thread for **126 ms of every second**, in lumps as
+large as 305 ms. A frame at 60 fps is 16.7 ms, so the worst
+single pass cost about eighteen frames in a row.
+
+**Where it ended the same evening: 0.03 ms per second**, with a
+tab open. Nothing searches the object list on a timer, no watcher
+polls for a change it can be told about, and no tab reads the
+game to draw a number that has not changed.
+
+Every fix is in shared code, so any game in the workspace gets
+them:
+
+| What | Where |
+|---|---|
+| the list of loaded regions, from the game's own array | `ue::streaming::LevelStreamer` |
+| only the regions that are NEW since last time | `ue::streaming::NewLevels` |
+| is a world up, without searching for one | `ue::streaming::world_is_up` |
+| an actor found once and kept | `ue::actor::LiveActor` |
+| anything else worked out once and kept | `modforge::read_once::ReadOnce` |
+| a repeating job that ends itself | `PollerHandle::stop_soon` |
+| a hook that comes out when its job is done | `ue::hook::remove` |
+| timing by name, off by default | `modforge::counters` |
+
+The rest of this file is how it got from one number to the other,
+in the order it happened, because the wrong turns are worth as
+much as the right ones.
 
 Two things decide the cost of anything in this list:
 
@@ -265,6 +287,9 @@ It had two holes, both since fixed:
   `LiveActor::anywhere` was added alongside `LiveActor::new` and
   now holds it.
 
+Confirmed live by the operator, 2026-08-26: the tab comes up
+already filled, with no Refresh click.
+
 So the rule the three tabs settle between them:
 
 > A tab redraws every frame whether you like it or not. Make the
@@ -303,7 +328,7 @@ off code are worth what they cost.
 | `spawning` watcher | every 5 s | game | Rebuilt 2026-08-26. **5.97 ms average, 10.6 ms worst**, no search at all: it reads the generator's streaming list and compares. Was 246 ms a pass. Only a square that streamed in costs a search. | MEASURED |
 | Speed tab | every frame it is open | game | Fixed 2026-08-26. **Zero searches and zero reads**, measured with the tab open. Was a full object search per frame. | MEASURED |
 | Shining tab | once a second while open | game | 0.5 microseconds a read, which is the countdown's display resolution rather than a cache over an expensive read. | MEASURED |
-| Gameplay tab | on load, on Refresh, on an edit | game | Fills itself once a world is up and reloads on a new world. Never per frame. | code, not measured |
+| Gameplay tab | on load, on Refresh, on an edit | game | Fills itself once a world is up and reloads on a new world. Never per frame. Operator confirmed it comes up filled. | confirmed live |
 | `vendors` and `speed_default` finders | every 3 s | game | Fixed 2026-08-26. **Zero searches.** They search only while hunting for the thing, and ask `streaming::world_is_up` the rest of the time. Used to cost 1009 ms per 30 seconds between them. | MEASURED |
 | `nag` watcher | until the notice is dismissed, then never | game | Fixed 2026-08-26. Dismisses once, uninstalls its hook, ends itself. Gone from the report entirely. Used to tick twice a second for the life of the process and leave a hook firing on every widget. | MEASURED |
 | `find_object`, one object by class | as the finders run | game | **20 ms average**, cheaper than a full search because it stops at the first match. Used by `speed_default`, `vendors` and `nag`. | MEASURED |
