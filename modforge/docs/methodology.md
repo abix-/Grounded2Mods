@@ -18,12 +18,41 @@
 4. **Capture the finding as a test.** Write the question,
    the curl, and the expected envelope shape under the mod's
    `tests/` directory. Now it is a regression check.
-5. **Refactor the discovery into a Skill / Effect / Trigger
-   / Hook**. Once the operation is well-understood, it
-   becomes a reusable framework concept.
+5. **Move the proven capability into the shared crate.**
+   modforge if it names no engine, ueforge or unityforge if it
+   does. It becomes a Skill / Effect / Trigger / Hook, or a
+   plain module. This step is not optional and it is the one
+   that keeps getting skipped.
+6. **THEN the mod uses it to do something**, once the operator
+   has asked for that something.
 
 The discipline: every research question turns into a test.
 Every regression has a test ready to catch it.
+
+## Research proves a concept. It is not the feature.
+
+Step 4 answers "can this be done". It does not decide that it
+SHOULD be done, how much of it, or how often. Those are the
+operator's, and asking costs one sentence.
+
+Skipping steps 5 and 6 is what produced four features nobody
+asked for, all in 2026-08-25 and all deleted on 2026-08-26:
+
+| Feature | What the research proved | What appeared instead |
+|---|---|---|
+| `harvest.rs` | a square's pieces can be read with transforms | a repeating harvest-and-rebuild pass |
+| `places.rs` | pieces can be composed into a structure | monuments placed into the world on a timer |
+| `rooms.rs` | the game's modular kit can build a room | a room generator with a hand-typed parts table |
+| `strange.rs` | actors can be spawned at rolled positions | eleven kinds of phenomenon, up to 48 spawned actors per square, written into the player's save every five seconds |
+
+In each case the generic half was left in the game crate rather
+than moved out, so the same work had to be done again later, and
+the feature itself was never wanted.
+
+**The tell:** if you cannot quote the words the operator used to
+ask for the behaviour, you are on step 6 without permission. Stop
+and ask. A research test that proves a thing is a complete piece
+of work on its own, and it is often the whole job.
 
 ## Why HTTP
 
