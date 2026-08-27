@@ -232,20 +232,11 @@ fn try_install() {
     if engine_tick::is_installed() || RESOLVE_FAILED.load(Ordering::Acquire) {
         return;
     }
-    let Some(ptr) = crate::ue::actor::find_objects_by_chain(ENGINE_CLASS)
-        .into_iter()
-        .find(|p| {
-            // SAFETY: p came from that call's GObjects iteration.
-            let obj = unsafe { &*(*p as *const crate::ue::UObject) };
-            obj.full_name().contains("/Engine/Transient")
-        })
-    else {
+    let Some(engine) = crate::ue::actor::find_transient_object(ENGINE_CLASS, None) else {
         // The engine object is not up yet. Not a failure; try
         // again next frame.
         return;
     };
-    // SAFETY: ptr came from the GObjects iteration above.
-    let engine = unsafe { &*(ptr as *const crate::ue::UObject) };
 
     let addr = match crate::ue::resolvers::resolve_game_engine_tick() {
         Ok(a) => a,

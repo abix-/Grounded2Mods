@@ -86,14 +86,15 @@ pub fn find_actor(class_name: &str, name_filter: Option<&str>) -> Option<*const 
     find_object(class_name, name_filter, true)
 }
 
-/// Find a non-CDO instance by class name. When
-/// `require_level` is false, matches any non-CDO instance
-/// (useful for widgets and other non-actor objects).
-pub fn find_object(
+/// Find a live non-CDO object by exact class name. The optional
+/// filter matches the object's short name. Callers must use the
+/// returned reference only on the game thread and must not retain
+/// it across an unload.
+pub fn find_live_object(
     class_name: &str,
     name_filter: Option<&str>,
     require_level: bool,
-) -> Option<*const u8> {
+) -> Option<&'static UObject> {
     let _m = modforge::counters::measure("ue:find_object");
     let rt = ue::try_runtime()?;
     let view = unsafe { ue::GObjectsView::from_image(rt.image_base, rt.platform_offsets) };
@@ -116,9 +117,53 @@ pub fn find_object(
         if require_level && !obj.full_name().contains("PersistentLevel") {
             continue;
         }
-        return Some(obj.as_ptr());
+        // SAFETY: UObject storage is owned by the engine's global
+        // object array. The public contract forbids retaining the
+        // reference across an unload.
+        return Some(unsafe { &*(obj as *const UObject) });
     }
     None
+}
+
+/// Find a non-CDO instance by class name. When
+/// `require_level` is false, matches any non-CDO instance
+/// (useful for widgets and other non-actor objects).
+pub fn find_object(
+    class_name: &str,
+    name_filter: Option<&str>,
+    require_level: bool,
+) -> Option<*const u8> {
+    find_live_object(class_name, name_filter, require_level).map(UObject::as_ptr)
+}
+
+/// Find the first non-CDO object in `/Engine/Transient` whose
+/// class chain contains `class_needle`. The optional filter
+/// matches the full object name so callers can distinguish
+/// Blueprint widget instances that share a class.
+///
+/// Callers must use the returned reference only on the game
+/// thread and must not retain it across an unload.
+pub fn find_transient_object(
+    class_needle: &str,
+    full_name_filter: Option<&str>,
+) -> Option<&'static UObject> {
+    find_objects_by_chain(class_needle)
+        .into_iter()
+        .find_map(|ptr| {
+            // SAFETY: ptr came from this call's GObjects walk and
+            // is consumed immediately on the game thread.
+            let obj = unsafe { &*(ptr as *const UObject) };
+            let full_name = obj.full_name();
+            if !full_name.contains("/Engine/Transient") {
+                return None;
+            }
+            if let Some(filter) = full_name_filter {
+                if !full_name.contains(filter) {
+                    return None;
+                }
+            }
+            Some(obj)
+        })
 }
 
 /// Find all live world actors whose class chain (own class or

@@ -29,6 +29,8 @@ Extract the remaining engine-independent and Unreal-specific systems from MISERY
 - MISERY retains vendor and item discovery, category and economy values, offer precedence, sewing-kit policy, and Unreal list mutation.
 - Raw TArray capacity checks, engine-allocator growth, template cloning, appended slot writes, and count updates belong to `ueforge::ue::tarray`.
 - MISERY retains vendor list offsets, item identifiers, price-array construction, stock and price byte patches, labels, and logging.
+- Live non-CDO and transient-object lookup, checked raw UFunction parameter calls, zeroed parameter allocation, and game-thread live-object hook installation and completed-hook teardown belong to Ueforge.
+- MISERY retains its autoload save checks, Blueprint names, parameter layouts, notice filtering, re-entry guard, dismissal function, diagnostics, and logs.
 - The root README is a concise workspace map with capability tables; detailed framework and decompilation material stays in the owning crate documentation.
 
 ## Last session summary
@@ -88,11 +90,18 @@ Extract the remaining engine-independent and Unreal-specific systems from MISERY
 - Added raw clone-and-append support to `ueforge::ue::tarray`, including engine-allocator growth, template cloning, slot writes, and count updates.
 - Migrated MISERY vendors to provide only item, price, and stock byte patches while preserving its offsets, spare-capacity policy, logging, and failure behavior.
 - Verified all 53 Ueforge library tests pass and the MISERY library compiles with its existing unused `STACK_TWEAK` warning.
+- Added Ueforge live-object lookup for exact classes and transient class-chain matches, then reused the transient lookup in the engine-tick installer and MISERY autoload.
+- Added checked byte-buffer and zeroed-parameter UFunction calls to `ueforge::ue::pe_call`, then removed MISERY's local call helper and raw dismissal call.
+- Added game-thread live-object hook installation and completed-hook teardown to Ueforge, then removed MISERY's notice poller, installed flag, raw object cast, hook installation, registration, and post-dismissal lifecycle boilerplate.
+- Preserved MISERY's save decisions, exact Blueprint names and parameter layouts, notice class filter, re-entry guard, dismissal behavior, diagnostics, and logs. Added no tests.
+- Verified `k3sc cargo-lock check -p ueforge -p misery-mod`; both crates compile with only MISERY's existing unused `STACK_TWEAK` warning.
+- Verified `k3sc cargo-lock test -p ueforge --lib`: all 53 existing tests pass. Rechecked `k3sc cargo-lock check -p misery-mod` after the hook-lifecycle completion; it still compiles with only the existing warning.
+- Verified the changed Modforge poller through `k3sc cargo-lock test -p modforge --lib`: its existing tests pass within the 312 passing tests. The full target remains red only on the existing `input::tests::backend_parse_rejects_garbage` mismatch where `l3` is accepted.
 
 ## Next steps
 
-- Move MISERY's transient live-object lookup, checked byte-buffer UFunction calls, and game-thread live-object hook installation into Ueforge.
+- No remaining MISERY extraction row is recorded. Choose the next existing todo item before expanding scope.
 
 ## Open questions
 
-- None for the completed item, upgrade, mission, ballot, reinforcement, settlement survival, and adaptive-pressure extractions.
+- None for the completed item, upgrade, mission, ballot, reinforcement, settlement survival, adaptive-pressure, and MISERY Unreal-helper extractions.

@@ -27,11 +27,10 @@
 //! other thread appear to work and then crash the game
 //! (research.md 26.6).
 
-use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use ueforge::ue::{self, UObject};
+use ueforge::ue;
 
 const GAME_INSTANCE: &str = "BP_SGKGameInstance_C";
 
@@ -110,16 +109,18 @@ const WAITING: &str = "waiting";
 /// Game thread. Returns what happened, as a sentence for the log.
 /// Stays here because it follows MISERY's exact save-slot flags and load-screen functions.
 fn attempt() -> String {
-    let Some(gi) = find_live(GAME_INSTANCE, None) else {
+    let Some(gi) = ue::actor::find_transient_object(GAME_INSTANCE, None) else {
         return WAITING.to_string();
     };
-    let Some(host) = find_live(HOST_CLASS, Some(SINGLEPLAYER)) else {
+    let Some(host) = ue::actor::find_transient_object(HOST_CLASS, Some(SINGLEPLAYER)) else {
         return WAITING.to_string();
     };
 
     // Which slot does the game already intend to load?
     let mut slot = [0u8; FSTRING_PARMS];
-    if let Err(e) = call(gi, GAME_INSTANCE, "SGK GetSaveGameSlotName", &mut slot) {
+    if let Err(e) = unsafe {
+        ue::pe_call::call_ufunction_bytes(gi, GAME_INSTANCE, "SGK GetSaveGameSlotName", &mut slot)
+    } {
         return format!("could not read the slot name ({e})");
     }
     let num = i32::from_le_bytes([slot[8], slot[9], slot[10], slot[11]]);
@@ -132,7 +133,9 @@ fn attempt() -> String {
     // save from turning into a new game.
     let mut find = [0u8; FIND_PARMS];
     find[..FSTRING_PARMS].copy_from_slice(&slot);
-    if let Err(e) = call(host, HOST_CLASS, "FindExistingSave", &mut find) {
+    if let Err(e) = unsafe {
+        ue::pe_call::call_ufunction_bytes(host, HOST_CLASS, "FindExistingSave", &mut find)
+    } {
         return format!("could not check whether the save exists ({e})");
     }
     if find[FIND_RESULT_BYTE] == 0 {
@@ -143,11 +146,15 @@ fn attempt() -> String {
     // is the New Game path too, and this flag is the only thing
     // that separates them.
     let mut on = [1u8];
-    if let Err(e) = call(gi, GAME_INSTANCE, "SGK SetLoadSaveGame", &mut on) {
+    if let Err(e) = unsafe {
+        ue::pe_call::call_ufunction_bytes(gi, GAME_INSTANCE, "SGK SetLoadSaveGame", &mut on)
+    } {
         return format!("could not set the load flag ({e})");
     }
     let mut back = [0u8];
-    if let Err(e) = call(gi, GAME_INSTANCE, "SGK GetLoadSaveGame", &mut back) {
+    if let Err(e) = unsafe {
+        ue::pe_call::call_ufunction_bytes(gi, GAME_INSTANCE, "SGK GetLoadSaveGame", &mut back)
+    } {
         return format!("could not read the load flag back ({e})");
     }
     if back[0] != 1 {
@@ -155,54 +162,10 @@ fn attempt() -> String {
     }
 
     let mut none: [u8; 0] = [];
-    if let Err(e) = call(host, HOST_CLASS, "LoadLevel", &mut none) {
+    if let Err(e) =
+        unsafe { ue::pe_call::call_ufunction_bytes(host, HOST_CLASS, "LoadLevel", &mut none) }
+    {
         return format!("LoadLevel failed ({e})");
     }
     "loading the saved game".to_string()
-}
-
-/// The live object of `class`, optionally whose name contains
-/// `name_part`.
-///
-/// Only `/Engine/Transient` objects are real. A class-chain search
-/// also returns the template inside the `/Game/...WidgetTree`
-/// package, and calling a template returns success and does
-/// nothing.
-/// Stays here because the transient-object rule was verified against MISERY's menu widgets.
-fn find_live(class: &str, name_part: Option<&str>) -> Option<&'static UObject> {
-    ue::actor::find_objects_by_chain(class).into_iter().find_map(|p| {
-        // SAFETY: p came from that call's GObjects iteration.
-        let obj = unsafe { &*(p as *const UObject) };
-        let name = obj.full_name();
-        if !name.contains("/Engine/Transient") {
-            return None;
-        }
-        if let Some(part) = name_part {
-            if !name.contains(part) {
-                return None;
-            }
-        }
-        Some(obj)
-    })
-}
-
-/// Call a UFunction on `obj`. Game thread only.
-///
-/// The parm block is checked against the function's own
-/// `ParmsSize`: passing a short buffer lets the callee write past
-/// the end of it.
-/// Stays here because it is a narrow helper for MISERY's autoload calls, not a new shared call API.
-fn call(obj: &UObject, class: &str, func: &str, parms: &mut [u8]) -> Result<(), String> {
-    let cls = obj.class().ok_or("instance has no class")?;
-    let f = cls
-        .get_function(class, func)
-        .ok_or_else(|| format!("{class} has no {func}"))?;
-    let need = f.parms_size() as usize;
-    if parms.len() < need {
-        return Err(format!("{func} needs {need} parm bytes, got {}", parms.len()));
-    }
-    // SAFETY: live object on the game thread, function resolved
-    // from its own class, and the buffer is at least ParmsSize.
-    unsafe { obj.process_event(f, parms.as_mut_ptr() as *mut c_void) };
-    Ok(())
 }

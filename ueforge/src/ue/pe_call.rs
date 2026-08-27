@@ -16,7 +16,74 @@
 
 use std::ffi::c_void;
 
-use crate::ue::{ClassRef, UObject};
+use crate::ue::{ClassRef, UFunction, UObject};
+
+fn find_object_function<'a>(
+    target: &'a UObject,
+    class_name: &str,
+    function_name: &str,
+) -> Result<&'a UFunction, String> {
+    let class = target.class().ok_or("instance has no class")?;
+    class
+        .get_function(class_name, function_name)
+        .ok_or_else(|| format!("{class_name} has no {function_name}"))
+}
+
+unsafe fn invoke_bytes(
+    target: &UObject,
+    function: &UFunction,
+    function_name: &str,
+    parms: &mut [u8],
+) -> Result<(), String> {
+    let required = function.parms_size() as usize;
+    if parms.len() < required {
+        return Err(format!(
+            "{function_name} needs {required} parm bytes, got {}",
+            parms.len()
+        ));
+    }
+    unsafe {
+        target.process_event(function, parms.as_mut_ptr() as *mut c_void);
+    }
+    Ok(())
+}
+
+/// Resolve a UFunction from a live object's class and invoke it
+/// with a caller-owned byte buffer. The buffer is checked against
+/// the UFunction's `ParmsSize` before Unreal can read or write it.
+/// OUT parameters remain in `parms` when the call returns.
+///
+/// # Safety
+/// The bytes must match the UFunction's parameter layout and the
+/// call must run on the game thread.
+pub unsafe fn call_ufunction_bytes<'a>(
+    target: &'a UObject,
+    class_name: &str,
+    function_name: &str,
+    parms: &mut [u8],
+) -> Result<&'a UFunction, String> {
+    let function = find_object_function(target, class_name, function_name)?;
+    unsafe { invoke_bytes(target, function, function_name, parms)? };
+    Ok(function)
+}
+
+/// Resolve a UFunction, allocate a zeroed parameter block from
+/// its own `ParmsSize`, and invoke it. This is for engine event
+/// handlers whose declared input values should all use defaults.
+///
+/// # Safety
+/// The call must run on the game thread, and zero must be a valid
+/// default bit pattern for every declared parameter.
+pub unsafe fn call_ufunction_zeroed<'a>(
+    target: &'a UObject,
+    class_name: &str,
+    function_name: &str,
+) -> Result<&'a UFunction, String> {
+    let function = find_object_function(target, class_name, function_name)?;
+    let mut parms = vec![0u8; function.parms_size().max(1) as usize];
+    unsafe { invoke_bytes(target, function, function_name, &mut parms)? };
+    Ok(function)
+}
 
 /// Call a UFunction by name on `target`, passing a `#[repr(C)]`
 /// parm struct by mutable reference. The engine may write OUT
