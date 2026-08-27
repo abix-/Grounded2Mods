@@ -4,6 +4,8 @@ Survivalist extraction means moving existing engine-independent code out of the 
 
 | Priority | System | Todo | Done when |
 |---:|---|---|---|
+| 1 | `modforge::client` | [ ] Extend the action journal to injected games: record operation actions, condition waits, and assertions in versioned JSON, then replay them through the existing control-plane client | Unit tests prove JSON round-trip, ordered action execution, polling until an observed value matches, assertion failure evidence, and operation failure evidence. |
+| 1 | `misery-mod` | [ ] Make MISERY the first live action-journal proof by recording a player movement-speed write, waiting until `read_bytes` observes it, asserting it, restoring the original bytes, then replaying the saved journal | The ignored live test runs against MISERY, restores the original movement speed even on failure, and the recorded journal replays successfully. |
 | 3 | `wwm-mod` | [ ] Verify the hot-reload cycle works in-game: launch WWM, observe gen 0 ready, run build_and_deploy.ps1 -Hot, watch BepInEx log for hot reload 0 -> 1, confirm curl ops still answer | Hot-reload verified in-game. |
 | 3 | `wwm-mod` | [ ] Fix the janky jump: investigate PlayerController per-frame movement to find what clobbers position/velocity; likely needs a Harmony prefix on the per-frame movement method to inject a jump-velocity boost | Jump feels correct and reliable. |
 | 3 | `wwm-mod` | [ ] Ship UnitySkillProxyEffect and repoint Strong Back at SkillsManager.SetSkillLevel("Bag", N) (the game already grows the slot list; verified live 5->12 slots) | Strong Back uses the game's built-in Bag skill API. |
@@ -23,7 +25,6 @@ Survivalist extraction means moving existing engine-independent code out of the 
 | 8 | `horsey-mod` | [ ] I-R5: PostMessage smoke: does PostMessage(hwnd, WM_LBUTTONDOWN, ...) trigger an in-game click? | L2 viability confirmed or ruled out for Horsey. |
 | 8 | `modforge` | [ ] I-3: Coordinate spaces: explicit input.client_to_screen + DPI awareness (L2 already uses client-area px) | Coordinate space conversions handle DPI correctly. |
 | 8 | `horsey-mod` | [ ] I-4: L3 game-internal pokes v2: direct mouse-state struct writes via FUN_14018c5c0() accessor + direct keyboard buffer writes via FUN_140183330(0)+0xe1 | L3 input bypasses OS entirely for cursor and keyboard. |
-| 8 | `modforge` | [ ] I-6: Replay format: JSON event stream [(t_ms, event, args)]; record, save, replay | input.replay op plays back recorded event streams. |
 | 8 | `modforge` | [ ] I-2b: input.state.get op that reads game's own mouse/keyboard state for verification (needs per-game InputSurface impl) | input.state.get returns game-side state for test verification. |
 | 8 | `horsey-mod` | [ ] I-2d: HK1 Shift+Click migration: once calibration gives screen-to-game-coord ratio, ship input.combo with shift + input.mouse.drag | Shift+Click transfer uses modforge::input instead of custom vtable helpers. |
 | 8 | `modforge` | [ ] End-to-end test exercising a click-driven flow (open Horses tab, click row 3, assert detail panel opens) | Click-driven UI test passes. |

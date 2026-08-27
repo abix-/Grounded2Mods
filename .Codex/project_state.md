@@ -2,10 +2,13 @@
 
 ## Current focus
 
-Keep Modforge on the current stable Rust toolchain and current compatible crate releases while preserving each engine integration.
+Build a recordable and replayable live action journal, with MISERY as the first proof because it is the game the operator is playing.
 
 ## Design goals
 
+- Topside-style fixed-tick journals remain authoritative for simulations Modforge owns.
+- Injected games use the same producer and consumer separation, but replay operation actions through the existing control plane and advance only after observable condition gates.
+- MISERY is the first proof: record a movement-speed write, wait for the live read, assert it, restore the original value, and replay the saved journal.
 - Generation loading, hot reload, rollback, shutdown, and bridge lifetime have one implementation in `cs-shim-common/GenerationLoader.cs`.
 - Each C# shim retains only its loader integration, logging, backend bridge, and host-specific frame callback.
 - Every Grounded 2 source function explains its player-facing purpose and its verified ownership boundary with Modforge and Ueforge.

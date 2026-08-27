@@ -47,7 +47,7 @@ input.cursor.get    input.foreground.hwnd    input.find_hwnd_by_pid    input.sel
 - HorseyInputSurface v2: direct mouse-state struct writes + direct keyboard buffer writes (per the engine-internal findings above).
 - HK1 Shift+Click transfer migration. Now unblocked by L3; pending an in-save smoke run.
 - Cross-game proof: grounded2-mod or schedule1 ships its own `InputSurface` impl.
-- I-6 replay format. Pure JSON shape work; deferred until a successful flow is worth recording.
+- I-6 live action journal. Active with MISERY as the first proof: record a movement-speed operation, wait for the generic memory read to observe it, assert it, restore it, and replay the saved journal.
 
 ## TL;DR
 
@@ -59,7 +59,9 @@ input.cursor.get    input.foreground.hwnd    input.find_hwnd_by_pid    input.sel
 
 **Why not other crates:** `rdev` carries a listen-side hook we don't need; `autopilot` carries an `image` dep; `winput` is small and clean but 21 stars and inactive; `mouce` is mouse-only; `InputBot` is too opinionated.
 
-**Replay format:** JSON event stream with absolute `t_ms`, `type` enum, `backend` selector in context. See PR-9.
+**Input replay format:** JSON event stream with absolute `t_ms`, `type` enum, `backend` selector in context. See PR-9.
+
+**Live action journal:** injected games are not deterministic simulations owned by Modforge. Their journal records semantic control-plane operations, then waits for observable conditions and asserts the resulting values. Raw timed input remains one operation type, not the authority for progress.
 
 **Anti-cheat:** all current targets are LOW risk. Tag `dwExtraInfo` and restore foreground anyway (cheap insurance).
 
@@ -417,6 +419,8 @@ Properties:
 
 - Adopt the JSON shape above for `modforge::input::Replay`.
 - v1 records what the cmdlets execute; record-the-real-user is out of scope (would need a `WH_MOUSE_LL` hook, separate problem).
+- Keep Topside's fixed-tick `actions::Journal` for simulations whose step and seed Modforge owns.
+- For injected games, record versioned operation actions, condition waits, and assertions. A replay advances from a wait only when the observation matches or fails with the last observed value. Wall-clock delays bound a wait; they never decide that gameplay completed.
 
 ---
 
