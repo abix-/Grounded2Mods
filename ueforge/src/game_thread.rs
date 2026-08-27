@@ -35,6 +35,10 @@ use parking_lot::Mutex;
 use crate::hook::engine_tick::{self, OriginalTick};
 use crate::pe_queue::GameThread;
 
+/// Shorter than the HTTP client's timeout so a failed ping
+/// returns a structured error instead of a dead connection.
+const OP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
 /// The engine object carrying `Tick`. `UGameEngine` in a packaged
 /// game, matched by class chain so subclasses count.
 const ENGINE_CLASS: &str = "GameEngine";
@@ -58,6 +62,40 @@ static TICK_SLOT: AtomicUsize = AtomicUsize::new(usize::MAX);
 pub fn serve(queue: &'static GameThread) {
     *QUEUE.lock() = Some(queue);
     crate::frame::on_update(try_install);
+}
+
+/// Register the standard game-thread call, ping, and status
+/// operations for a queue served by [`serve`].
+pub fn register_ops(queue: &'static GameThread, timeout_hint: &'static str) {
+    crate::debug::register_pe_call(queue, timeout_hint, crate::selector::resolve);
+    crate::ops::OP_REGISTRY.register_many([
+        crate::ops::OpDef::new(
+            "pe_ping",
+            "Run a no-op job on the game thread",
+            "{}",
+            move |_args| {
+                queue
+                    .queue()
+                    .enqueue(|| Ok(serde_json::json!({"game_thread": true})), OP_TIMEOUT)
+            },
+        ),
+        crate::ops::OpDef::new(
+            "pe_stats",
+            "Game-thread dispatch counters",
+            "{}",
+            move |_args| {
+                Ok(serde_json::json!({
+                    "drain_calls": queue.drain_calls(),
+                    "drained_cmds": queue.drained_cmds(),
+                    "queue_len": queue.len(),
+                    "peak": queue.peak(),
+                    "frames": crate::frame::frames(),
+                    "frame_thread": crate::frame::thread_id(),
+                    "game_thread": status(),
+                }))
+            },
+        ),
+    ]);
 }
 
 /// True when the caller is already on the game thread.
@@ -222,7 +260,9 @@ fn try_install() {
             ));
         }
         Err(e) => {
-            crate::log::log(format_args!("game_thread: engine tick install failed ({e})"));
+            crate::log::log(format_args!(
+                "game_thread: engine tick install failed ({e})"
+            ));
             RESOLVE_FAILED.store(true, Ordering::Release);
         }
     }
