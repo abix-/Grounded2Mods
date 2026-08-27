@@ -36,6 +36,11 @@ use super::transform;
 /// Unreal centimetres in a modforge metre.
 const CM_PER_M: f64 = 100.0;
 
+/// Long enough for a busy frame during streaming; short enough
+/// that a wedged game thread returns an error rather than hanging
+/// the caller.
+const ENGINE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// A piece read out of a level, still in Unreal's numbers.
 ///
 /// Kept only long enough to work out the set's middle, because
@@ -334,12 +339,23 @@ pub fn register_ops() {
                             .collect()
                     })
                     .unwrap_or_default();
-                let pieces = read_level(&level, &classes);
-                Ok(serde_json::json!({
-                    "level": level,
-                    "count": pieces.len(),
-                    "pieces": pieces.iter().map(piece_json).collect::<Vec<_>>(),
-                }))
+                // ON THE GAME THREAD. Reading the object list from
+                // the control plane's own thread crashed the game
+                // on 2026-08-27, faulting inside `read_level` on a
+                // pointer the game had moved underneath it. The
+                // ops in `ops.rs` were routed for this reason and
+                // these were missed.
+                crate::game_thread::run(
+                    move || {
+                        let pieces = read_level(&level, &classes);
+                        Ok(serde_json::json!({
+                            "level": level,
+                            "count": pieces.len(),
+                            "pieces": pieces.iter().map(piece_json).collect::<Vec<_>>(),
+                        }))
+                    },
+                    ENGINE_TIMEOUT,
+                )
             },
         ),
         crate::ops::OpDef::new(
@@ -348,7 +364,14 @@ pub fn register_ops() {
             "{level: str}",
             |args| {
                 let level = crate::args::arg_str(args, "level")?.to_string();
-                let counts = class_counts(&level);
+                let for_job = level.clone();
+                // Game thread, as above.
+                let counts = crate::game_thread::run(
+                    move || Ok(serde_json::json!(class_counts(&for_job))),
+                    ENGINE_TIMEOUT,
+                )?;
+                let counts: std::collections::HashMap<String, usize> =
+                    serde_json::from_value(counts).map_err(|e| e.to_string())?;
                 let total: usize = counts.values().sum();
                 let mut rows: Vec<(String, usize)> = counts.into_iter().collect();
                 rows.sort_by(|a, b| b.1.cmp(&a.1));
@@ -368,7 +391,14 @@ pub fn register_ops() {
             "{prefix: str}",
             |args| {
                 let prefix = crate::args::arg_str(args, "prefix")?.to_string();
-                let rows = measured_meshes(&prefix);
+                // Game thread, as above.
+                let for_job = prefix.clone();
+                let rows = crate::game_thread::run(
+                    move || Ok(serde_json::json!(measured_meshes(&for_job))),
+                    ENGINE_TIMEOUT,
+                )?;
+                let rows: Vec<(String, (f64, f64, f64), (f64, f64, f64))> =
+                    serde_json::from_value(rows).map_err(|e| e.to_string())?;
                 Ok(serde_json::json!({
                     "prefix": prefix,
                     "count": rows.len(),
@@ -405,17 +435,23 @@ pub fn register_ops() {
                 );
                 let turn = args.get("turn").and_then(|v| v.as_f64()).unwrap_or(0.0);
                 let limit = crate::args::arg_u64(args, "limit", Some(u64::MAX))? as usize;
-                let ctx = super::actor::any_world_actor()
-                    .ok_or("no level loaded, so nowhere to place anything")?;
-                // SAFETY: ctx is a live actor from the search
-                // above; the caller is responsible for being on
-                // the game thread.
-                let out = unsafe { spawn(ctx, &pieces, at, turn, limit) };
-                Ok(serde_json::json!({
-                    "placed": out.placed,
-                    "failed": out.failed,
-                    "at": [at.0, at.1, at.2],
-                }))
+                // Game thread: this searches for a world actor and
+                // then spawns into it.
+                crate::game_thread::run(
+                    move || {
+                        let ctx = super::actor::any_world_actor()
+                            .ok_or("no level loaded, so nowhere to place anything")?;
+                        // SAFETY: ctx is a live actor from the
+                        // search just above, on the game thread.
+                        let out = unsafe { spawn(ctx, &pieces, at, turn, limit) };
+                        Ok(serde_json::json!({
+                            "placed": out.placed,
+                            "failed": out.failed,
+                            "at": [at.0, at.1, at.2],
+                        }))
+                    },
+                    ENGINE_TIMEOUT,
+                )
             },
         ),
     ]);

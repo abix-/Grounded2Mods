@@ -82,17 +82,26 @@ pub fn register_ops(kit: Kit) {
                 let x = crate::args::arg_f64(args, "x")?;
                 let y = crate::args::arg_f64(args, "y")?;
                 let pieces = kit.pieces(&modforge::structure::room_from_json(args));
-                let z = super::trace::ground_at(x, y, kit.trace_up, kit.trace_down)
-                    .ok_or("no ground there")?;
-                let world = super::actor::any_world_actor().ok_or("no level loaded")?;
-                // SAFETY: world came from the search above; the
-                // caller is responsible for the game thread.
-                let out = unsafe { super::pieces::spawn(world, &pieces, (x, y, z), 0.0, usize::MAX) };
-                Ok(serde_json::json!({
-                    "placed": out.placed,
-                    "failed": out.failed,
-                    "at": [x, y, z],
-                }))
+                // Game thread: traces, searches and spawns.
+                crate::game_thread::run(
+                    move || {
+                        let z = super::trace::ground_at(x, y, kit.trace_up, kit.trace_down)
+                            .ok_or("no ground there")?;
+                        let world =
+                            super::actor::any_world_actor().ok_or("no level loaded")?;
+                        // SAFETY: world came from the search just
+                        // above, on the game thread.
+                        let out = unsafe {
+                            super::pieces::spawn(world, &pieces, (x, y, z), 0.0, usize::MAX)
+                        };
+                        Ok(serde_json::json!({
+                            "placed": out.placed,
+                            "failed": out.failed,
+                            "at": [x, y, z],
+                        }))
+                    },
+                    std::time::Duration::from_secs(10),
+                )
             },
         ),
         crate::ops::OpDef::new(
@@ -100,22 +109,31 @@ pub fn register_ops(kit: Kit) {
             "Every kit part placed in a level, with position and facing",
             "{level: str}",
             move |args| {
-                let level = crate::args::arg_str(args, "level")?.to_string();
-                let all = super::pieces::read_level(&level, &[]);
-                let rows: Vec<serde_json::Value> = all
-                    .iter()
-                    .filter(|p| match &p.asset {
-                        Some(m) => kit.prefixes.iter().any(|pre| m.starts_with(pre)),
-                        None => false,
-                    })
-                    .map(piece_json)
-                    .collect();
-                Ok(serde_json::json!({
-                    "level": level,
-                    "kit_pieces": rows.len(),
-                    "total_pieces": all.len(),
-                    "pieces": rows,
-                }))
+                let for_job = crate::args::arg_str(args, "level")?.to_string();
+                // Game thread: reads the object list. The
+                // filtering happens INSIDE the job, because a
+                // `PieceDef` is not serialisable and does not need
+                // to leave the thread that read it.
+                crate::game_thread::run(
+                    move || {
+                        let all = super::pieces::read_level(&for_job, &[]);
+                        let rows: Vec<serde_json::Value> = all
+                            .iter()
+                            .filter(|p| match &p.asset {
+                                Some(m) => kit.prefixes.iter().any(|pre| m.starts_with(pre)),
+                                None => false,
+                            })
+                            .map(piece_json)
+                            .collect();
+                        Ok(serde_json::json!({
+                            "level": for_job,
+                            "kit_pieces": rows.len(),
+                            "total_pieces": all.len(),
+                            "pieces": rows,
+                        }))
+                    },
+                    std::time::Duration::from_secs(10),
+                )
             },
         ),
     ]);
