@@ -4,6 +4,7 @@
 
 | Area | Shipped | Verification |
 |---|---|---|
+| `modforge::input` + `modforge::route` | [x] Execute calculated paths as ordered player input | Input tests prove ordered movement, look, and key dispatch. Route tests prove aim, movement, path-point advancement, arrival, stuck handling, cancellation, and neutral release. |
 | `misery` | [x] Retained current-world player selector and Unreal actor-collection discovery for expedition and metal doors | Exact pushed commit `b9d41c7f` completed cold setup with no global UObject scan row. |
 | `misery` | [x] Scan-free bunker-door handling and expedition-entry observation | Restarted live route opened the retained bunker door once and observed entry through the retained player pointer. Source proof rejects every former navigation scan helper. |
 | `misery` + `modforge::route` | [x] Ranked expedition crate traversal with one discovered target waypoint | Live run rejected two unreachable crates, selected the lowest-cost reachable `BP_StashMid_C`, saved one A* edge, and reached it in about eight seconds. |

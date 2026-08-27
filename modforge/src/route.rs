@@ -9,6 +9,8 @@ use std::collections::{BinaryHeap, HashMap};
 
 use serde::{Deserialize, Serialize};
 
+use crate::input::{Axis, InputSurface, PlayerCommand, dispatch_player_commands};
+
 pub const SCHEMA: &str = "modforge.route@v1";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -520,5 +522,112 @@ impl StuckDetector {
             return false;
         }
         now_ms.saturating_sub(self.last_progress_ms) >= self.stuck_after_ms
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FollowStatus {
+    Moving { path_index: usize },
+    Arrived,
+    Stuck,
+    Cancelled,
+}
+
+/// Executes path points by emitting the same movement and look axes available
+/// to a player. The engine remains responsible only for calculating the path
+/// and reporting the current pose.
+pub struct PathFollower {
+    path: Vec<Waypoint>,
+    path_index: usize,
+    steering: SteeringConfig,
+    min_progress: f64,
+    stuck_after_ms: u64,
+    stuck: StuckDetector,
+    terminal: Option<FollowStatus>,
+}
+
+impl PathFollower {
+    pub fn new(
+        path: Vec<Waypoint>,
+        steering: SteeringConfig,
+        min_progress: f64,
+        stuck_after_ms: u64,
+    ) -> Result<Self, String> {
+        if path.is_empty() {
+            return Err("path follower requires at least one path point".into());
+        }
+        let stuck = StuckDetector::new(min_progress, stuck_after_ms)?;
+        Ok(Self {
+            path,
+            path_index: 0,
+            steering,
+            min_progress,
+            stuck_after_ms,
+            stuck,
+            terminal: None,
+        })
+    }
+
+    pub fn tick(
+        &mut self,
+        surface: &dyn InputSurface,
+        pose: Pose,
+        now_ms: u64,
+        delta_time: f32,
+    ) -> Result<FollowStatus, String> {
+        if let Some(status) = self.terminal {
+            return Ok(status);
+        }
+
+        loop {
+            let steering = steer(pose, &self.path[self.path_index], self.steering);
+            if !steering.arrived {
+                if self.stuck.observe(now_ms, steering.distance) {
+                    self.release(surface, delta_time)?;
+                    self.terminal = Some(FollowStatus::Stuck);
+                    return Ok(FollowStatus::Stuck);
+                }
+                dispatch_player_commands(
+                    surface,
+                    [
+                        PlayerCommand::axis(Axis::MouseX, steering.mouse_dx as f32, delta_time),
+                        PlayerCommand::axis(
+                            Axis::MoveForward,
+                            if steering.forward { 1.0 } else { 0.0 },
+                            delta_time,
+                        ),
+                        PlayerCommand::axis(Axis::MoveRight, 0.0, delta_time),
+                    ],
+                )?;
+                return Ok(FollowStatus::Moving {
+                    path_index: self.path_index,
+                });
+            }
+
+            self.path_index += 1;
+            if self.path_index == self.path.len() {
+                self.release(surface, delta_time)?;
+                self.terminal = Some(FollowStatus::Arrived);
+                return Ok(FollowStatus::Arrived);
+            }
+            self.stuck = StuckDetector::new(self.min_progress, self.stuck_after_ms)
+                .expect("validated path follower progress settings remain valid");
+        }
+    }
+
+    pub fn cancel(&mut self, surface: &dyn InputSurface, delta_time: f32) -> Result<(), String> {
+        self.release(surface, delta_time)?;
+        self.terminal = Some(FollowStatus::Cancelled);
+        Ok(())
+    }
+
+    fn release(&self, surface: &dyn InputSurface, delta_time: f32) -> Result<(), String> {
+        dispatch_player_commands(
+            surface,
+            [
+                PlayerCommand::axis(Axis::MoveForward, 0.0, delta_time),
+                PlayerCommand::axis(Axis::MoveRight, 0.0, delta_time),
+            ],
+        )
     }
 }

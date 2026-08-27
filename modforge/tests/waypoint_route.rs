@@ -1,7 +1,9 @@
+use modforge::input::{Axis, Button, InputSurface, Key};
 use modforge::route::{
-    Pose, Position, RouteEdge, RouteGraph, SteeringConfig, StuckDetector, TrailRecorder, Waypoint,
-    steer, steer_yaw,
+    FollowStatus, PathFollower, Pose, Position, RouteEdge, RouteGraph, SteeringConfig,
+    StuckDetector, TrailRecorder, Waypoint, steer, steer_yaw,
 };
+use std::sync::Mutex;
 
 fn position(x: f64, y: f64, z: f64) -> Position {
     Position::new(x, y, z)
@@ -16,7 +18,11 @@ fn recorded_trail_reduces_samples_and_round_trips() {
     assert!(!recorder.observe(position(75.0, 0.0, 0.0)));
 
     let route = recorder.finish("spawn to expedition").unwrap();
-    assert_eq!(route.waypoints().len(), 3, "the final observed position is retained");
+    assert_eq!(
+        route.waypoints().len(),
+        3,
+        "the final observed position is retained"
+    );
     assert_eq!(route.edges().len(), 2);
     assert_eq!(route.first_id(), Some("wp-0000"));
     assert_eq!(route.last_id(), Some("wp-0002"));
@@ -43,7 +49,9 @@ fn astar_uses_an_alternate_recorded_edge_when_the_direct_edge_is_blocked() {
     .unwrap();
 
     assert_eq!(
-        graph.shortest_path("start", "goal", |edge| edge.id != "direct").unwrap(),
+        graph
+            .shortest_path("start", "goal", |edge| edge.id != "direct")
+            .unwrap(),
         vec!["start", "fork", "goal"]
     );
 }
@@ -61,11 +69,7 @@ fn steering_takes_the_short_turn_across_the_yaw_wrap() {
         max_mouse_delta: 100,
         move_yaw_tolerance_deg: 10.0,
     };
-    let output = steer(
-        Pose::new(position(0.0, 0.0, 0.0), 179.0),
-        &waypoint,
-        config,
-    );
+    let output = steer(Pose::new(position(0.0, 0.0, 0.0), 179.0), &waypoint, config);
 
     assert!(!output.arrived);
     assert!(output.forward, "a two-degree correction may keep moving");
@@ -77,11 +81,7 @@ fn steering_takes_the_short_turn_across_the_yaw_wrap() {
 fn steering_stops_inside_the_waypoint_radius_and_can_restore_facing() {
     let waypoint = Waypoint::new("near", position(5.0, 0.0, 3.0), 10.0);
     let config = SteeringConfig::default();
-    let output = steer(
-        Pose::new(position(0.0, 0.0, 0.0), 90.0),
-        &waypoint,
-        config,
-    );
+    let output = steer(Pose::new(position(0.0, 0.0, 0.0), 90.0), &waypoint, config);
 
     assert!(output.arrived);
     assert!(!output.forward);
@@ -99,4 +99,98 @@ fn stuck_detection_resets_only_after_measured_progress() {
     assert!(!stuck.observe(1_100, 70.0));
     assert!(!stuck.observe(2_000, 65.0));
     assert!(stuck.observe(2_100, 65.0));
+}
+
+#[derive(Default)]
+struct RouteSurface {
+    axes: Mutex<Vec<(Axis, f32)>>,
+}
+
+impl InputSurface for RouteSurface {
+    fn name(&self) -> &'static str {
+        "route-test"
+    }
+    fn click(&self, _: Button, _: i32, _: i32) -> Result<(), String> {
+        unreachable!()
+    }
+    fn move_abs(&self, _: i32, _: i32) -> Result<(), String> {
+        unreachable!()
+    }
+    fn key(&self, _: Key, _: bool) -> Result<(), String> {
+        unreachable!()
+    }
+    fn axis(&self, axis: Axis, value: f32, _: f32) -> Result<(), String> {
+        self.axes.lock().unwrap().push((axis, value));
+        Ok(())
+    }
+}
+
+#[test]
+fn path_follower_aims_moves_advances_and_releases_at_arrival() {
+    let surface = RouteSurface::default();
+    let path = vec![
+        Waypoint::new("corner", position(100.0, 0.0, 0.0), 5.0),
+        Waypoint::new("goal", position(100.0, 100.0, 0.0), 5.0),
+    ];
+    let mut follower = PathFollower::new(path, SteeringConfig::default(), 1.0, 1_000).unwrap();
+
+    assert_eq!(
+        follower
+            .tick(&surface, Pose::new(position(0.0, 0.0, 0.0), 0.0), 0, 0.016)
+            .unwrap(),
+        FollowStatus::Moving { path_index: 0 }
+    );
+    assert_eq!(
+        follower
+            .tick(
+                &surface,
+                Pose::new(position(100.0, 0.0, 0.0), 90.0),
+                100,
+                0.016
+            )
+            .unwrap(),
+        FollowStatus::Moving { path_index: 1 }
+    );
+    assert_eq!(
+        follower
+            .tick(
+                &surface,
+                Pose::new(position(100.0, 100.0, 0.0), 90.0),
+                200,
+                0.016
+            )
+            .unwrap(),
+        FollowStatus::Arrived
+    );
+
+    assert!(
+        surface
+            .axes
+            .lock()
+            .unwrap()
+            .ends_with(&[(Axis::MoveForward, 0.0), (Axis::MoveRight, 0.0),])
+    );
+}
+
+#[test]
+fn path_follower_releases_movement_when_stuck_or_cancelled() {
+    let surface = RouteSurface::default();
+    let path = vec![Waypoint::new("goal", position(100.0, 0.0, 0.0), 5.0)];
+    let mut follower = PathFollower::new(path, SteeringConfig::default(), 1.0, 100).unwrap();
+    let pose = Pose::new(position(0.0, 0.0, 0.0), 0.0);
+
+    follower.tick(&surface, pose, 0, 0.016).unwrap();
+    assert_eq!(
+        follower.tick(&surface, pose, 100, 0.016).unwrap(),
+        FollowStatus::Stuck
+    );
+    follower.cancel(&surface, 0.016).unwrap();
+
+    assert!(
+        surface
+            .axes
+            .lock()
+            .unwrap()
+            .ends_with(&[(Axis::MoveForward, 0.0), (Axis::MoveRight, 0.0),])
+    );
 }

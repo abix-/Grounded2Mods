@@ -111,6 +111,9 @@ impl InputSurface for HorseyInputSurface {
     fn axis(&self, axis: Axis, value: f32, _delta_time: f32) -> Result<(), String> {
         let delta = value.round() as i32;
         match axis {
+            Axis::MoveForward | Axis::MoveRight => Err(format!(
+                "horsey input surface does not support movement axis {axis:?}"
+            )),
             Axis::MouseX => modforge::input::l1::move_rel(delta, 0),
             Axis::MouseY => modforge::input::l1::move_rel(0, delta),
         }

@@ -17,11 +17,11 @@
 //! `GetForegroundWindow`. L2 coords are CLIENT-RELATIVE to that hwnd;
 //! L1 coords are SCREEN pixels.
 
-use serde_json::{json, Value as Json};
+use serde_json::{Value as Json, json};
 
 use crate::ops::OpDef;
 
-use super::{l1, l2, Axis, Backend, Button, InputSurface, Key};
+use super::{Axis, Backend, Button, InputSurface, Key, l1, l2};
 
 /// Run an action through the registered L3 [`InputSurface`] if any;
 /// otherwise log a one-line warning and run `fallback` (typically L1).
@@ -33,7 +33,9 @@ where
     match super::input_surface() {
         Some(surface) => l3_action(surface),
         None => {
-            crate::log!("[input] L3 '{action_name}' requested but no surface registered; falling back to L1");
+            crate::log!(
+                "[input] L3 '{action_name}' requested but no surface registered; falling back to L1"
+            );
             fallback()
         }
     }
@@ -43,9 +45,7 @@ fn arg_i32(args: &Json, name: &str) -> Result<i32, String> {
     args.get(name)
         .and_then(Json::as_i64)
         .ok_or_else(|| format!("missing arg '{name}' (i32)"))
-        .and_then(|v| {
-            i32::try_from(v).map_err(|_| format!("arg '{name}' = {v} out of i32 range"))
-        })
+        .and_then(|v| i32::try_from(v).map_err(|_| format!("arg '{name}' = {v} out of i32 range")))
 }
 
 fn arg_u32(args: &Json, name: &str, default: Option<u32>) -> Result<u32, String> {
@@ -64,8 +64,7 @@ fn parse_hwnd(args: &Json) -> Result<Option<isize>, String> {
         return Ok(None);
     };
     let trimmed = s.trim_start_matches("0x").trim_start_matches("0X");
-    let v = u64::from_str_radix(trimmed, 16)
-        .map_err(|e| format!("bad hwnd '{s}': {e}"))?;
+    let v = u64::from_str_radix(trimmed, 16).map_err(|e| format!("bad hwnd '{s}': {e}"))?;
     Ok(Some(v as isize))
 }
 
@@ -93,9 +92,34 @@ fn parse_mods(args: &Json) -> (bool, bool) {
     let ctrl = args
         .get("mods")
         .and_then(Json::as_array)
-        .map(|a| a.iter().any(|v| v.as_str() == Some("ctrl") || v.as_str() == Some("control")))
+        .map(|a| {
+            a.iter()
+                .any(|v| v.as_str() == Some("ctrl") || v.as_str() == Some("control"))
+        })
         .unwrap_or(false);
     (shift, ctrl)
+}
+
+fn l1_axis(axis: Axis, value: f32) -> Result<(), String> {
+    match axis {
+        Axis::MoveForward => l1_direction_keys(Key(0x57), Key(0x53), value),
+        Axis::MoveRight => l1_direction_keys(Key(0x44), Key(0x41), value),
+        Axis::MouseX => l1::move_rel(value.round() as i32, 0),
+        Axis::MouseY => l1::move_rel(0, value.round() as i32),
+    }
+}
+
+fn l1_direction_keys(positive: Key, negative: Key, value: f32) -> Result<(), String> {
+    if value > 0.0 {
+        l1::key_up(negative)?;
+        l1::key_down(positive)
+    } else if value < 0.0 {
+        l1::key_up(positive)?;
+        l1::key_down(negative)
+    } else {
+        l1::key_up(positive)?;
+        l1::key_up(negative)
+    }
 }
 
 /// Every op declared in this module. Consumer mods call
@@ -116,11 +140,9 @@ pub fn all() -> Vec<OpDef> {
                         let h = resolve_l2_hwnd(args)?;
                         l2::move_client(h, x, y)?;
                     }
-                    Backend::L3 => l3_or_fallback(
-                        "mouse.move",
-                        |s| s.move_abs(x, y),
-                        || l1::move_abs(x, y),
-                    )?,
+                    Backend::L3 => {
+                        l3_or_fallback("mouse.move", |s| s.move_abs(x, y), || l1::move_abs(x, y))?
+                    }
                 }
                 Ok(json!({"ok": true, "backend": backend, "x": x, "y": y}))
             },
@@ -137,8 +159,7 @@ pub fn all() -> Vec<OpDef> {
                     Backend::L1 => l1::move_rel(dx, dy)?,
                     Backend::L2 => {
                         return Err(
-                            "relative mouse movement is unavailable through window messages"
-                                .into(),
+                            "relative mouse movement is unavailable through window messages".into(),
                         );
                     }
                     Backend::L3 => l3_or_fallback(
@@ -155,8 +176,8 @@ pub fn all() -> Vec<OpDef> {
         ),
         OpDef::new(
             "input.axis",
-            "Submit one relative look-axis sample.",
-            "{axis: mouse_x|mouse_y, value: f32, delta_time?: f32, backend?: l1|l3}",
+            "Submit one player movement or look-axis sample.",
+            "{axis: move_forward|move_right|mouse_x|mouse_y, value: f32, delta_time?: f32, backend?: l1|l3}",
             |args| {
                 let axis_text = arg_str_opt(args, "axis").ok_or("missing arg 'axis' (str)")?;
                 let axis = Axis::parse(axis_text)?;
@@ -164,26 +185,18 @@ pub fn all() -> Vec<OpDef> {
                     .get("value")
                     .and_then(Json::as_f64)
                     .ok_or("missing arg 'value' (f32)")? as f32;
-                let delta_time = args
-                    .get("delta_time")
-                    .and_then(Json::as_f64)
-                    .unwrap_or(0.0) as f32;
+                let delta_time =
+                    args.get("delta_time").and_then(Json::as_f64).unwrap_or(0.0) as f32;
                 let backend = parse_backend(args)?;
                 match backend {
-                    Backend::L1 => match axis {
-                        Axis::MouseX => l1::move_rel(value.round() as i32, 0)?,
-                        Axis::MouseY => l1::move_rel(0, value.round() as i32)?,
-                    },
+                    Backend::L1 => l1_axis(axis, value)?,
                     Backend::L2 => {
-                        return Err("look axes are unavailable through window messages".into());
+                        return Err("player axes are unavailable through window messages".into());
                     }
                     Backend::L3 => l3_or_fallback(
                         "axis",
                         |surface| surface.axis(axis, value, delta_time),
-                        || match axis {
-                            Axis::MouseX => l1::move_rel(value.round() as i32, 0),
-                            Axis::MouseY => l1::move_rel(0, value.round() as i32),
-                        },
+                        || l1_axis(axis, value),
                     )?,
                 }
                 Ok(json!({
@@ -209,11 +222,19 @@ pub fn all() -> Vec<OpDef> {
                 match backend {
                     Backend::L1 => {
                         // For L1 chord-clicks, press the mod keys around the click.
-                        if shift { l1::key_down(Key(0xA0))?; }
-                        if ctrl  { l1::key_down(Key(0xA2))?; }
+                        if shift {
+                            l1::key_down(Key(0xA0))?;
+                        }
+                        if ctrl {
+                            l1::key_down(Key(0xA2))?;
+                        }
                         let r = l1::click(button, x, y);
-                        if ctrl  { let _ = l1::key_up(Key(0xA2)); }
-                        if shift { let _ = l1::key_up(Key(0xA0)); }
+                        if ctrl {
+                            let _ = l1::key_up(Key(0xA2));
+                        }
+                        if shift {
+                            let _ = l1::key_up(Key(0xA0));
+                        }
                         r?
                     }
                     Backend::L2 => {
@@ -224,19 +245,35 @@ pub fn all() -> Vec<OpDef> {
                     Backend::L3 => l3_or_fallback(
                         "mouse.click",
                         |s| {
-                            if shift { s.key(Key(0xA0), true)?; }
-                            if ctrl  { s.key(Key(0xA2), true)?; }
+                            if shift {
+                                s.key(Key(0xA0), true)?;
+                            }
+                            if ctrl {
+                                s.key(Key(0xA2), true)?;
+                            }
                             let r = s.click(button, x, y);
-                            if ctrl  { let _ = s.key(Key(0xA2), false); }
-                            if shift { let _ = s.key(Key(0xA0), false); }
+                            if ctrl {
+                                let _ = s.key(Key(0xA2), false);
+                            }
+                            if shift {
+                                let _ = s.key(Key(0xA0), false);
+                            }
                             r
                         },
                         || {
-                            if shift { l1::key_down(Key(0xA0))?; }
-                            if ctrl  { l1::key_down(Key(0xA2))?; }
+                            if shift {
+                                l1::key_down(Key(0xA0))?;
+                            }
+                            if ctrl {
+                                l1::key_down(Key(0xA2))?;
+                            }
                             let r = l1::click(button, x, y);
-                            if ctrl  { let _ = l1::key_up(Key(0xA2)); }
-                            if shift { let _ = l1::key_up(Key(0xA0)); }
+                            if ctrl {
+                                let _ = l1::key_up(Key(0xA2));
+                            }
+                            if shift {
+                                let _ = l1::key_up(Key(0xA0));
+                            }
                             r
                         },
                     )?,
@@ -255,11 +292,9 @@ pub fn all() -> Vec<OpDef> {
                 match backend {
                     Backend::L1 => l1::key_down(key)?,
                     Backend::L2 => l2::key_down(resolve_l2_hwnd(args)?, key)?,
-                    Backend::L3 => l3_or_fallback(
-                        "key.down",
-                        |s| s.key(key, true),
-                        || l1::key_down(key),
-                    )?,
+                    Backend::L3 => {
+                        l3_or_fallback("key.down", |s| s.key(key, true), || l1::key_down(key))?
+                    }
                 }
                 Ok(json!({"ok": true, "backend": backend, "key": key_s, "vk": key.0}))
             },
@@ -275,11 +310,9 @@ pub fn all() -> Vec<OpDef> {
                 match backend {
                     Backend::L1 => l1::key_up(key)?,
                     Backend::L2 => l2::key_up(resolve_l2_hwnd(args)?, key)?,
-                    Backend::L3 => l3_or_fallback(
-                        "key.up",
-                        |s| s.key(key, false),
-                        || l1::key_up(key),
-                    )?,
+                    Backend::L3 => {
+                        l3_or_fallback("key.up", |s| s.key(key, false), || l1::key_up(key))?
+                    }
                 }
                 Ok(json!({"ok": true, "backend": backend, "key": key_s, "vk": key.0}))
             },
@@ -301,7 +334,9 @@ pub fn all() -> Vec<OpDef> {
                         |s| {
                             s.key(key, true)?;
                             if hold_ms > 0 {
-                                std::thread::sleep(std::time::Duration::from_millis(hold_ms as u64));
+                                std::thread::sleep(std::time::Duration::from_millis(
+                                    hold_ms as u64,
+                                ));
                             }
                             s.key(key, false)
                         },
@@ -362,11 +397,19 @@ duration_ms?: u32, steps?: u32, backend?: l1|l2, hwnd?: hex, mods?: [shift|ctrl]
                 let (shift, ctrl) = parse_mods(args);
                 match backend {
                     Backend::L1 => {
-                        if shift { l1::key_down(Key(0xA0))?; }
-                        if ctrl  { l1::key_down(Key(0xA2))?; }
+                        if shift {
+                            l1::key_down(Key(0xA0))?;
+                        }
+                        if ctrl {
+                            l1::key_down(Key(0xA2))?;
+                        }
                         let r = l1::drag(button, x1, y1, x2, y2, duration_ms, steps);
-                        if ctrl  { let _ = l1::key_up(Key(0xA2)); }
-                        if shift { let _ = l1::key_up(Key(0xA0)); }
+                        if ctrl {
+                            let _ = l1::key_up(Key(0xA2));
+                        }
+                        if shift {
+                            let _ = l1::key_up(Key(0xA0));
+                        }
                         r?
                     }
                     Backend::L2 => {
@@ -380,13 +423,21 @@ duration_ms?: u32, steps?: u32, backend?: l1|l2, hwnd?: hex, mods?: [shift|ctrl]
                         l3_or_fallback(
                             "mouse.drag",
                             |s| {
-                                if shift { s.key(Key(0xA0), true)?; }
-                                if ctrl  { s.key(Key(0xA2), true)?; }
+                                if shift {
+                                    s.key(Key(0xA0), true)?;
+                                }
+                                if ctrl {
+                                    s.key(Key(0xA2), true)?;
+                                }
                                 s.move_abs(x1, y1)?;
                                 s.click(button, x1, y1)?; // best-effort: single click sequence
                                 s.move_abs(x2, y2)?;
-                                if ctrl  { let _ = s.key(Key(0xA2), false); }
-                                if shift { let _ = s.key(Key(0xA0), false); }
+                                if ctrl {
+                                    let _ = s.key(Key(0xA2), false);
+                                }
+                                if shift {
+                                    let _ = s.key(Key(0xA0), false);
+                                }
                                 Ok(())
                             },
                             || l1::drag(button, x1, y1, x2, y2, duration_ms, steps),
@@ -456,7 +507,9 @@ combo runs the modifier presses through the SAME backend.",
                     keys.push(Key::parse(s)?);
                 }
                 let then = args.get("then").ok_or("missing arg 'then'")?;
-                let inner_op = then.get("op").and_then(Json::as_str)
+                let inner_op = then
+                    .get("op")
+                    .and_then(Json::as_str)
                     .ok_or("then.op missing")?;
                 let inner_args = then.get("args").cloned().unwrap_or(json!({}));
                 let backend = parse_backend(&inner_args)?;
@@ -464,7 +517,9 @@ combo runs the modifier presses through the SAME backend.",
                 // Press modifiers through the chosen backend.
                 let hwnd_for_l2 = if backend == Backend::L2 {
                     Some(resolve_l2_hwnd(&inner_args)?)
-                } else { None };
+                } else {
+                    None
+                };
                 for k in &keys {
                     match backend {
                         Backend::L1 => l1::key_down(*k)?,
@@ -485,11 +540,9 @@ combo runs the modifier presses through the SAME backend.",
                     let _ = match backend {
                         Backend::L1 => l1::key_up(*k),
                         Backend::L2 => l2::key_up(hwnd_for_l2.unwrap(), *k),
-                        Backend::L3 => l3_or_fallback(
-                            "combo.key.up",
-                            |s| s.key(*k, false),
-                            || l1::key_up(*k),
-                        ),
+                        Backend::L3 => {
+                            l3_or_fallback("combo.key.up", |s| s.key(*k, false), || l1::key_up(*k))
+                        }
                     };
                 }
                 match dispatched {

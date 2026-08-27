@@ -2,7 +2,7 @@
 
 ## Current focus
 
-Make MISERY enter an expedition, discover the nearest placed loot box, use the box itself as the only new semantic waypoint, navigate to it through A*, and loot it with player-like input.
+Make MISERY enter an expedition, discover the nearest placed loot box, use the box itself as the only new semantic waypoint, navigate to it through A*, and loot it through the same movement, look, and action input pipeline used by a player.
 
 ## Design goals
 
@@ -11,10 +11,10 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 - MISERY is the first proof: record a movement-speed write, wait for the live read, assert it, restore the original value, and replay the saved journal.
 - A waypoint is a meaningful stop for arrival, observation, action, or branch selection. Dense position samples are diagnostic breadcrumbs, never durable graph nodes.
 - The first MISERY graph is exactly `spawn -> metal-door -> expedition-door`. The metal-door waypoint opens the bunker door only when closed; the expedition-door waypoint interacts and waits until expedition entry is observed.
-- Modforge A* chooses stop-to-stop edges. Unreal navigation owns detailed movement within each edge; Modforge's closed-loop movement and look follower remains the fallback when the host has no usable navigation surface.
+- Modforge A* chooses stop-to-stop edges. Unreal navigation calculates detailed path points within each edge. Modforge's shared follower executes those points through `InputSurface`; the navigation system never moves the player directly.
 - A* may select only edges supplied by the live engine navigation path or proven traversable by recording. It never treats an unobserved straight line through the 3D world as walkable.
 - MISERY target discovery runs once through Unreal's world actor enumeration and retains actor, inventory, class, function, and widget pointers for the current world. Navigation, interaction, and observation loops never walk the global UObject list or rediscover function layouts.
-- Every MISERY bot command runs inside the game process. Movement uses Unreal navigation, looking uses player-controller yaw and pitch input, interaction uses the player's input action, and inventory uses the game's UI action path. The bot never focuses a window or sends OS mouse and keyboard input.
+- Every MISERY bot command runs inside the game process through one registered `InputSurface`. Movement and look use player axes, interactions use player keys or buttons, and inventory uses the game's UI action path. The bot never focuses a window or sends OS mouse and keyboard input.
 - Generation loading, hot reload, rollback, shutdown, and bridge lifetime have one implementation in `cs-shim-common/GenerationLoader.cs`.
 - Each C# shim retains only its loader integration, logging, backend bridge, and host-specific frame callback.
 - Every Grounded 2 source function explains its player-facing purpose and its verified ownership boundary with Modforge and Ueforge.
@@ -59,6 +59,9 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 
 ## Last session summary
 
+- Added forward and right movement axes plus ordered movement, look, and key dispatch to `modforge::input::InputSurface`.
+- Added the shared `modforge::route::PathFollower`. It consumes path points and observed poses, emits player axes, advances points, and releases movement on arrival, cancellation, or stuck detection.
+- Added two input tests and two follower tests. The focused suite passes all nine tests.
 - Replaced every OS input dependency in `research_navigation.rs`. Look commands now call `PlayerController::AddYawInput` and `AddPitchInput`, observe control-rotation movement, and fail after ten ignored commands. Interaction calls the retained player's Enhanced Input action directly. The source proof rejects OS mouse, keyboard, focus, foreground, and viewport lookup paths. Ten deterministic navigation tests pass and MISERY checks across all targets; live verification remains open.
 - Pushed `b9d41c7f` and deployed that exact clean commit. The restarted cold route passed in 21.32 seconds with three waypoints, two edges, one bunker-door interaction, one expedition-door interaction, and zero global UObject scan rows. `ue:actors_of_class` measured 0.50 ms worst and `ue:component_by_class` measured 0.09 ms worst.
 - From the entered expedition, the bot rejected two unreachable crates, selected the lowest-cost reachable `BP_StashMid_C`, and traversed to its one target waypoint in about eight seconds. Crate interaction did not start because four seconds of L1 relative mouse input left control rotation unchanged at yaw -90 degrees while the target required yaw 49.3 degrees. The next change must drive and observe the player controller's yaw and pitch input before another live run.
@@ -285,9 +288,9 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 
 ## Next steps
 
-- Expose the retained MISERY player pointer and enumerate both doors through Unreal's actor collections.
-- Remove scan-based stuck diagnostics and observe expedition entry through the retained player.
-- Delete or convert every remaining scan-based navigation diagnostic.
+- Add the reusable Ueforge `InputSurface` adapter and run every command on the Unreal game thread.
+- Extract Unreal navigation path points and feed them into the shared route follower instead of `SimpleMoveToLocation`.
+- Route MISERY door, expedition, crate, and inventory actions through the same registered input surface.
 - Aim at the door's colliding-bounds center from the active camera and gate `E` on interaction range.
 - Complete ranked crate fallback, retained-state opening, UI transfer, and inventory-count evidence.
 - Enforce absent search counters and the 16.7 ms frame budget before running another cold acceptance.

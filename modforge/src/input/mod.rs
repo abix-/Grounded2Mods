@@ -67,6 +67,8 @@ pub enum Button {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Axis {
+    MoveForward,
+    MoveRight,
     MouseX,
     MouseY,
 }
@@ -74,12 +76,42 @@ pub enum Axis {
 impl Axis {
     pub fn parse(value: &str) -> Result<Self, String> {
         match value.to_ascii_lowercase().as_str() {
+            "move_forward" | "moveforward" | "forward" => Ok(Self::MoveForward),
+            "move_right" | "moveright" | "right" => Ok(Self::MoveRight),
             "mouse_x" | "mousex" | "x" => Ok(Self::MouseX),
             "mouse_y" | "mousey" | "y" => Ok(Self::MouseY),
             other => Err(format!(
-                "unknown input axis '{other}' (expected mouse_x|mouse_y)"
+                "unknown input axis '{other}' (expected move_forward|move_right|mouse_x|mouse_y)"
             )),
         }
+    }
+}
+
+/// One ordered command sent through a game's player input surface.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum PlayerCommand {
+    Axis {
+        axis: Axis,
+        value: f32,
+        delta_time: f32,
+    },
+    Key {
+        key: Key,
+        down: bool,
+    },
+}
+
+impl PlayerCommand {
+    pub const fn axis(axis: Axis, value: f32, delta_time: f32) -> Self {
+        Self::Axis {
+            axis,
+            value,
+            delta_time,
+        }
+    }
+
+    pub const fn key(key: Key, down: bool) -> Self {
+        Self::Key { key, down }
     }
 }
 
@@ -144,8 +176,7 @@ impl Key {
             "capslock" => 0x14,
             _ => {
                 if let Some(hex) = lower.strip_prefix("0x") {
-                    u16::from_str_radix(hex, 16)
-                        .map_err(|e| format!("bad hex vk '{s}': {e}"))?
+                    u16::from_str_radix(hex, 16).map_err(|e| format!("bad hex vk '{s}': {e}"))?
                 } else if let Some(rest) = lower.strip_prefix('f') {
                     let n: u16 = rest
                         .parse()
@@ -164,7 +195,8 @@ impl Key {
                         return Err(format!("unrecognized single-char key '{s}'"));
                     }
                 } else {
-                    lower.parse::<u16>()
+                    lower
+                        .parse::<u16>()
                         .map_err(|_| format!("unrecognized key name '{s}'"))?
                 }
             }
@@ -185,6 +217,24 @@ pub trait InputSurface: Send + Sync + 'static {
     fn move_abs(&self, x: i32, y: i32) -> Result<(), String>;
     fn key(&self, key: Key, down: bool) -> Result<(), String>;
     fn axis(&self, axis: Axis, value: f32, delta_time: f32) -> Result<(), String>;
+}
+
+/// Send player commands in caller-provided order, stopping at the first error.
+pub fn dispatch_player_commands(
+    surface: &dyn InputSurface,
+    commands: impl IntoIterator<Item = PlayerCommand>,
+) -> Result<(), String> {
+    for command in commands {
+        match command {
+            PlayerCommand::Axis {
+                axis,
+                value,
+                delta_time,
+            } => surface.axis(axis, value, delta_time)?,
+            PlayerCommand::Key { key, down } => surface.key(key, down)?,
+        }
+    }
+    Ok(())
 }
 
 /// Global slot for the registered per-game [`InputSurface`]. First
@@ -230,12 +280,7 @@ pub fn window_pid(hwnd: isize) -> Option<u32> {
     use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
     let mut pid = 0;
     // SAFETY: Windows accepts any HWND value and writes only to the live `pid` local.
-    unsafe {
-        GetWindowThreadProcessId(
-            hwnd as windows_sys::Win32::Foundation::HWND,
-            &mut pid,
-        )
-    };
+    unsafe { GetWindowThreadProcessId(hwnd as windows_sys::Win32::Foundation::HWND, &mut pid) };
     (pid != 0).then_some(pid)
 }
 
@@ -330,13 +375,12 @@ pub fn find_hwnd_by_pid(pid: u32) -> Option<isize> {
         found: 0,
         area: -1,
     };
-    let _ok = unsafe {
-        EnumWindows(
-            Some(cb),
-            &mut ctx as *mut Ctx as *mut c_void as LPARAM,
-        )
-    };
-    if ctx.found == 0 { None } else { Some(ctx.found) }
+    let _ok = unsafe { EnumWindows(Some(cb), &mut ctx as *mut Ctx as *mut c_void as LPARAM) };
+    if ctx.found == 0 {
+        None
+    } else {
+        Some(ctx.found)
+    }
 }
 
 #[cfg(test)]
