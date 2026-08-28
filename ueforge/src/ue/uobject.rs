@@ -193,6 +193,19 @@ impl UObject {
     /// Returns silently if the runtime isn't initialized. We'd rather
     /// drop the engine call than abort the game on a setup race. The
     /// caller's parm buffer is left untouched.
+    /// Read the function pointer at `slot_index` in this object's vtable.
+    ///
+    /// # Safety
+    /// `slot_index` must be within bounds for this object's class vtable.
+    /// The caller must transmute the returned pointer to the correct
+    /// function signature before calling it.
+    pub unsafe fn vtable_fn(&self, slot_index: usize) -> *const c_void {
+        unsafe {
+            let vtable: *const *const c_void = self.read_field(offsets::uobject::VTABLE);
+            *vtable.add(slot_index)
+        }
+    }
+
     pub unsafe fn process_event(&self, function: &UFunction, parms: *mut c_void) {
         let Some(rt) = try_runtime() else {
             crate::log::log(format_args!(

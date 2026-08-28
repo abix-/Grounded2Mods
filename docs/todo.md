@@ -5,7 +5,7 @@ Survivalist extraction means moving existing engine-independent code out of the 
 | Priority | System | Todo | Done when |
 |---:|---|---|---|
 | 1 | MISERY player input | [x] Write the Rust executable-analysis research test for keyboard input | `misery-mod/tests/research_player_input.rs` finds the live player's controller, PlayerInput object, input component, key-to-action mappings, and key state data, and prints them for analysis. Pure discovery, no bot input. |
-| 1 | MISERY player input | [ ] Investigate exactly how MISERY handles real player keyboard input | The game's player-input implementation identifies the exact functions and data used for key press, held state, and release, with no substitute input route assumed. |
+| 1 | MISERY player input | [ ] Find the address of APlayerController::InputKey and call it to inject a virtual W press | See failed attempts below. InputKey is a native C++ virtual function (not a UFunction). Its address cannot be found through the reflection system. The function must be located by patternsleuth before it can be called. |
 | 1 | Ueforge input | [ ] Send key press, held state, and release exactly as MISERY sends player keyboard input | The bot uses the same functions and data identified in MISERY's player-input implementation for W/A/S/D/E. |
 | 1 | MISERY input proof | [ ] Run a permanent live test of the exact player W input mechanism | W moves the retained player, release stops movement, and the test records the before, moving, released, and final positions. |
 | 1 | MISERY player input | [ ] Investigate exactly how MISERY handles real player mouse movement | The game's player-input implementation identifies the exact functions and data used from mouse movement entering the game through view movement. |
@@ -106,3 +106,54 @@ Survivalist extraction means moving existing engine-independent code out of the 
 | 45 | `ueforge` | [ ] Phase B++: HTTP reload op that calls UE4SSProgram::queue_reinstall_mods directly | reload op triggers mod reinstall via HTTP. |
 | 50 | `workspace` | [ ] Absorb TimberbornMods C# repo into modforge (subtree-merge, preserves history) | Timberborn source lives in modforge workspace. |
 | 50 | `workspace` | [ ] Absorb Schedule1Mods C# repo into modforge (subtree-merge, preserves history) | Schedule 1 C# source lives in modforge workspace. |
+
+## InputKey research: confirmed facts
+
+These are verified facts from live testing. Do not repeat the failed approaches listed below.
+
+### What InputKey IS
+
+- `APlayerController::InputKey(const FInputKeyParams&)` is a native C++ virtual function.
+- It is NOT a UFunction. Tested all three classes (PlayerController, PlayerInput, EnhancedPlayerInput) via `class_functions_by_name`. Zero matches. ProcessEvent cannot reach it.
+- PlayerController has 162 UFunctions. Six are InputKey-related but read-only queries: `IsInputKeyDown`, `WasInputKeyJustPressed`, `WasInputKeyJustReleased`, `GetInputKeyTimeDown`, `GetInputAnalogKeyState`, `GetInputVectorKeyState`. All take FKey (24 bytes). None of them is InputKey itself.
+- InputKey is in the vtable of both the controller and EnhancedPlayerInput objects.
+
+### What the player chain looks like
+
+- `live_player` (+0x2C8) -> Controller (+0x408) -> PlayerInput (EnhancedPlayerInput)
+- EnhancedPlayerInput vtable has 120 entries. 16 are from the EnhancedInput plugin (slots 0, 9, 49, 87-99).
+- ActionInstanceData at +0x598 on EnhancedPlayerInput is OUTPUT (writing to it does not move the player). Confirmed by `inject_forward_input` test.
+- KeyStateMap is in the +0x5E8 region on EnhancedPlayerInput. This is where real key presses write.
+
+### FInputKeyParams struct (unverified layout)
+
+```
+FKey (24 bytes):
+  FName KeyName: comparison_index (i32) + number (u32) = 8 bytes
+  TSharedPtr<FKeyDetails>: pointer (8 bytes) + ref count pointer (8 bytes) = 16 bytes
+FVector2D Delta: likely double (UE5.4 LWC) = 16 bytes
+float DeltaTime: 4 bytes
+int32 NumSamples: 4 bytes
+EInputEvent event: 4 bytes (0=IE_Pressed, 1=IE_Released)
+FInputDeviceId: 4 bytes
+bool bIsGamepadOverride: 1 byte + 7 padding
+Total: 64 bytes (unverified, may be wrong)
+```
+
+### Failed attempts (do NOT repeat)
+
+1. **Vtable slot guessing on EnhancedPlayerInput (slots 88, 94, 98).** Slot 94 crashed the game twice. The function at slot 94 reads `rdx+0xA8` (168 bytes into the params), which means it expects a struct much larger than FInputKeyParams (64 bytes). Slot 94 is NOT InputKey. Slots 88 and 98 were never tested because the approach was abandoned.
+
+2. **Patternsleuth string xref for "InputKey".** Found the UTF-16 string "InputKey" at 17 locations in .rdata and the UTF-8 version at several more. Zero lea xrefs to any of them in .text. The function does not reference the string "InputKey" with a direct `lea reg, [rip+disp32]`. Also tried "APlayerController::InputKey", "IE_Pressed", "FInputKeyParams" as search strings. "APlayerController::InputKey" and "FInputKeyParams" not found in rdata at all. "IE_Pressed" found once but also zero xrefs.
+
+3. **Prologue byte scan for controller vtable slot 130.** Found a unique match at `0x7ff6a4b0d680` for prologue `40 55 57 41 57 48 8d 6c 24 b9 48 81 ec f0 00 00 00 f6 41 58 10`. Called it on the controller with FInputKeyParams for W. Returned true, no crash, but player did not move. This function might be InputKey (it reads controller+0x1A0 which is PlayerInput, and delegates to PlayerInput vtable), but the call produced no movement. Possible cause: null TSharedPtr<FKeyDetails> in the FKey struct, or wrong FInputKeyParams layout.
+
+4. **Calling controller vtable slot 130 directly.** Returned true but no movement. Nothing proves this function IS InputKey. The prologue scan found A function, not THE function.
+
+### What is needed next
+
+The address of `APlayerController::InputKey` must be found definitively, not guessed. Options that have not been tried:
+- Check if MISERY ships with a PDB or has debug symbols
+- Use RTTI (vtable[-1] has the MSVC Complete Object Locator with the class name) to map the controller vtable to known class hierarchies, then cross-reference with UE5.4 source for the InputKey slot index
+- Hook a candidate function and verify it fires when a real physical W key press happens (requires knowing a candidate address, which we have from the prologue scan)
+- Find what populates KeyStateMap (+0x5E8 on EnhancedPlayerInput) by scanning for instructions that write to offset 0x5E8, then trace the call chain backward to InputKey
