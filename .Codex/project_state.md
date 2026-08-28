@@ -11,10 +11,10 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 - MISERY is the first proof: record a movement-speed write, wait for the live read, assert it, restore the original value, and replay the saved journal.
 - A waypoint is a meaningful stop for arrival, observation, action, or branch selection. Dense position samples are diagnostic breadcrumbs, never durable graph nodes.
 - The first MISERY graph is exactly `spawn -> metal-door -> expedition-door`. The metal-door waypoint opens the bunker door only when closed; the expedition-door waypoint interacts and waits until expedition entry is observed.
-- Modforge A* chooses stop-to-stop edges. Unreal navigation calculates detailed path points within each edge. Modforge's shared follower executes those points through `InputSurface`; the navigation system never moves the player directly.
+- When alternate stop sequences exist, Modforge A* chooses the sequence. Unreal navigation's A* determines the detailed walkable route between each pair of stops and returns its path points. Neither A* moves the player or chooses controls. The shared follower turns the chosen path points into virtual player controls and never changes the route.
 - A* may select only edges supplied by the live engine navigation path or proven traversable by recording. It never treats an unobserved straight line through the 3D world as walkable.
 - MISERY target discovery runs once through Unreal's world actor enumeration and retains actor, inventory, class, function, and widget pointers for the current world. Navigation, interaction, and observation loops never walk the global UObject list or rediscover function layouts.
-- Every MISERY bot command runs inside the game process through one registered `InputSurface`. Movement and look use player axes, interactions use player keys or buttons, and inventory uses the game's UI action path. The bot never focuses a window or sends OS mouse and keyboard input.
+- Every MISERY bot command runs inside the game process through one registered `InputSurface`. That surface injects virtual W/A/S/D state, relative mouse movement, and `E` press/release into Unreal's normal player input processing. The game applies its existing bindings and performs movement, view rotation, and interaction. Direct movement, look, interaction-handler, navigation-movement, transform, physical mouse, window-focus, and OS-global input paths are forbidden.
 - Generation loading, hot reload, rollback, shutdown, and bridge lifetime have one implementation in `cs-shim-common/GenerationLoader.cs`.
 - Each C# shim retains only its loader integration, logging, backend bridge, and host-specific frame callback.
 - Every Grounded 2 source function explains its player-facing purpose and its verified ownership boundary with Modforge and Ueforge.
@@ -59,6 +59,7 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 
 ## Last session summary
 
+- Corrected the route design after two implementations bypassed the player's input route. A* chooses the route, Unreal navigation supplies detailed path points, the follower chooses virtual W/A/S/D and mouse controls, `InputSurface` injects those controls into normal game input processing, and the game alone performs movement, aiming, and interaction. Direct movement, look, and interaction calls are rejected even when they run inside the game process.
 - The exact restarted build retained the player before acceptance and reflected the controller successfully. Live calls then proved MISERY exposes `GetControlRotation` on neither `Controller` nor `Pawn`; Ueforge must read the reflected `AController.ControlRotation` field.
 - Two restarted acceptance attempts began before autoload retained the player because `restart.ps1` treated the HTTP listener as full readiness. The mod log proved the player was retained five seconds after the early acceptance failed.
 - Live verification resolved `NavigationPath.PathPoints` at `0x38`, found and projected all three route stops, and saved the route. The first follower tick then failed because MISERY does not expose `Pawn::GetController`; Ueforge must read the reflected `APawn.Controller` field instead.
@@ -297,11 +298,11 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 
 ## Next steps
 
-- Read yaw through the reflected `AController.ControlRotation` field.
-- Make `restart.ps1` wait for `live_player` before reporting readiness.
-- Replace the invalid `Pawn::GetController` call with one reflected `APawn.Controller` field read.
-- Replace the invalid `NavigationPath::GetPathPoints` call with one reflected `UNavigationPath.PathPoints` field read.
-- Live-verify the extracted Unreal path points and shared follower from spawn through both doors on a restarted local game.
+- Replace Ueforge's direct movement calls with virtual W/A/S/D injected through Unreal's normal player input processing.
+- Replace Ueforge's direct look calls with virtual relative mouse movement injected through Unreal's normal player input processing.
+- Replace MISERY's direct interaction-handler call with virtual `E` press/release injected through Unreal's normal player input processing.
+- Constrain the shared follower to virtual key state and relative mouse output, with no direct movement, look, interaction, or navigation-movement path.
+- Live-verify A* route selection, Unreal path points, and virtual player-input following from spawn through both doors on a restarted local game.
 - Aim at the door's colliding-bounds center from the active camera and gate `E` on interaction range.
 - Complete ranked crate fallback, retained-state opening, UI transfer, and inventory-count evidence.
 - Enforce absent search counters and the 16.7 ms frame budget before running another cold acceptance.
