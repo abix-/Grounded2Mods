@@ -62,6 +62,7 @@ Investigate exactly how MISERY handles real player keyboard input, use that same
 
 - Removed navigation scope creep: generated loot-box approach points, route persistence, walked-position recording, reverse routes, unused route metadata and cost calculation, source-text checks, and live function-discovery probes.
 - Loot boxes remain the waypoint while Unreal projection happens only inside the A* request. Bunker-door interaction now happens once at the metal-door stop when interaction is allowed, instead of after movement gets stuck.
+- Removed the extra expedition-entry loot waypoint and automatic E retries. Loot navigation now has only the selected box as its waypoint, and expedition-door and loot-box stops each send E once before reporting success or failure.
 - Preserved `modforge::client::live_journal` and its MISERY action-journal proof unchanged.
 - Verified all 6 shared waypoint-route tests pass and the MISERY navigation test target compiles with only the existing `STACK_TWEAK` warning.
 - Added `input.player.unreal`, which reads the retained player's reflected `Controller` and the controller's reflected `PlayerInput` field on the game thread. Both property offsets are cached after their first lookup.

@@ -318,11 +318,12 @@ fn spawn_to_expedition_route(
     .unwrap()
 }
 
-fn expedition_to_loot_route(start: [f64; 3], loot_box: [f64; 3]) -> Route {
-    Route::new(vec![
-        Waypoint::new("expedition-entry", position(start), ARRIVAL_CM),
-        Waypoint::new("loot-box", position(loot_box), ARRIVAL_CM),
-    ])
+fn expedition_to_loot_route(loot_box: [f64; 3]) -> Route {
+    Route::new(vec![Waypoint::new(
+        "loot-box",
+        position(loot_box),
+        ARRIVAL_CM,
+    )])
     .unwrap()
 }
 
@@ -748,17 +749,14 @@ fn open_loot_box(
     calls: &NavigationCalls,
     player_selector: &str,
     storage_inventory: u64,
-) -> usize {
-    for attempt in 1..=3 {
-        println!("loot_box_interact attempt={attempt}");
-        interact(api, calls, player_selector);
-        let started = Instant::now();
-        while started.elapsed() < ENTRY_TIMEOUT {
-            if client::read_i32(api, storage_inventory, INVENTORY_USING_PLAYERS_NUM_OFFSET) > 0 {
-                return attempt;
-            }
-            std::thread::sleep(Duration::from_millis(50));
+) {
+    interact(api, calls, player_selector);
+    let started = Instant::now();
+    while started.elapsed() < ENTRY_TIMEOUT {
+        if client::read_i32(api, storage_inventory, INVENTORY_USING_PLAYERS_NUM_OFFSET) > 0 {
+            return;
         }
+        std::thread::sleep(Duration::from_millis(50));
     }
     panic!("E was pressed at the loot box, but its inventory did not gain a using player")
 }
@@ -870,21 +868,18 @@ fn enter_expedition(
     calls: &NavigationCalls,
     player_selector: &str,
     expedition_door: [f64; 3],
-) -> ([f64; 3], usize) {
-    for attempt in 1..=3 {
-        println!("expedition_door_interact attempt={attempt}");
-        interact(api, calls, player_selector);
-        let started = Instant::now();
-        loop {
-            let current = actor_location(api, player_selector);
-            if expedition_entry_observed(expedition_door, current) {
-                return (current, attempt);
-            }
-            if started.elapsed() >= ENTRY_TIMEOUT {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(250));
+) -> [f64; 3] {
+    interact(api, calls, player_selector);
+    let started = Instant::now();
+    loop {
+        let current = actor_location(api, player_selector);
+        if expedition_entry_observed(expedition_door, current) {
+            return current;
         }
+        if started.elapsed() >= ENTRY_TIMEOUT {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(250));
     }
     panic!("E was pressed at the expedition door, but the player did not enter the expedition")
 }
@@ -978,9 +973,7 @@ fn unreal_navigation_opens_nearest_expedition_loot_box() {
     let targets = reachable_loot_boxes(&api, &calls, &player, start);
     let mut selected = None;
     for target in targets {
-        let current = actor_location(&api, &player.addr_selector);
-        let projected_start = wait_for_navigation(&api, &calls, player.addr, current);
-        let route = expedition_to_loot_route(projected_start, target.target);
+        let route = expedition_to_loot_route(target.target);
         match walk_to_waypoint(
             &api,
             &calls,
@@ -1006,11 +999,10 @@ fn unreal_navigation_opens_nearest_expedition_loot_box() {
     let mut live_loot_box_location = actor_location(&api, &loot_box.actor.addr_selector);
     live_loot_box_location[2] += 150.0;
     aim_at(&api, &player.addr_selector, live_loot_box_location);
-    let interaction_attempts =
-        open_loot_box(&api, &calls, &player.addr_selector, storage_inventory);
+    open_loot_box(&api, &calls, &player.addr_selector, storage_inventory);
     let timing_report = timing.finish();
     println!(
-        "loot_box_opened elapsed_s={:.2} target={} path_cost={:.1} interaction_attempts={interaction_attempts} storage_inventory=0x{storage_inventory:X} storage_items={storage_items_before} player_inventory=0x{player_inventory:X} player_items={player_items_before} waypoints={}",
+        "loot_box_opened elapsed_s={:.2} target={} path_cost={:.1} storage_inventory=0x{storage_inventory:X} storage_items={storage_items_before} player_inventory=0x{player_inventory:X} player_items={player_items_before} waypoints={}",
         started.elapsed().as_secs_f64(),
         loot_box.actor.full_name,
         loot_box.path_cost,
@@ -1045,10 +1037,9 @@ fn unreal_navigation_enters_expedition_through_three_stops() {
     let goal = door.2;
     if distance(start, goal) <= ARRIVAL_CM {
         let started = Instant::now();
-        let (entered_location, expedition_door_interactions) =
-            enter_expedition(&api, &calls, &player.addr_selector, goal);
+        let entered_location = enter_expedition(&api, &calls, &player.addr_selector, goal);
         println!(
-            "expedition_entered_from_existing_stop elapsed_s={:.2} location={entered_location:?} expedition_door_interactions={expedition_door_interactions}",
+            "expedition_entered_from_existing_stop elapsed_s={:.2} location={entered_location:?}",
             started.elapsed().as_secs_f64(),
         );
         println!("route_performance={}", timing.finish());
@@ -1120,10 +1111,9 @@ fn unreal_navigation_enters_expedition_through_three_stops() {
         expedition_door_waypoint,
     )
     .expect("metal door to expedition door traversal failed");
-    let (entered_location, expedition_door_interactions) =
-        enter_expedition(&api, &calls, &player.addr_selector, projected_goal);
+    let entered_location = enter_expedition(&api, &calls, &player.addr_selector, projected_goal);
     println!(
-        "expedition_entered elapsed_s={:.2} location={entered_location:?} waypoints={} bunker_door_opened={bunker_door_opened} expedition_door_interactions={expedition_door_interactions}",
+        "expedition_entered elapsed_s={:.2} location={entered_location:?} waypoints={} bunker_door_opened={bunker_door_opened}",
         started.elapsed().as_secs_f64(),
         route.waypoints().len(),
     );
@@ -1155,7 +1145,7 @@ fn expedition_entry_requires_the_player_to_leave_the_safe_area_door() {
 #[test]
 fn expedition_loot_route_adds_only_the_discovered_target() {
     let loot_box = [200.0, 100.0, 25.0];
-    let route = expedition_to_loot_route([0.0, 0.0, 0.0], loot_box);
+    let route = expedition_to_loot_route(loot_box);
 
     assert_eq!(
         route
@@ -1163,7 +1153,7 @@ fn expedition_loot_route_adds_only_the_discovered_target() {
             .iter()
             .map(|waypoint| waypoint.id.as_str())
             .collect::<Vec<_>>(),
-        ["expedition-entry", "loot-box"]
+        ["loot-box"]
     );
     assert_eq!(
         route.waypoint("loot-box").unwrap().position,
