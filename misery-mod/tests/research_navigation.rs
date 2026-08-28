@@ -588,6 +588,7 @@ fn navigation_path_cost(
     start: [f64; 3],
     goal: [f64; 3],
 ) -> Option<f64> {
+    let goal = try_project_to_navigation(api, calls, world_context, goal)?;
     find_navigation_path(api, calls, world_context, pathfinding_context, start, goal)
         .map(|(_, cost)| cost)
 }
@@ -600,6 +601,7 @@ fn navigation_path_points(
     start: [f64; 3],
     goal: [f64; 3],
 ) -> Option<Vec<[f64; 3]>> {
+    let goal = try_project_to_navigation(api, calls, world_context, goal)?;
     let (path, _) =
         find_navigation_path(api, calls, world_context, pathfinding_context, start, goal)?;
     let header = client::read_bytes(api, path, calls.path_points_offset as u64, 16);
@@ -718,28 +720,24 @@ fn reachable_loot_boxes(
     let projected_start = wait_for_navigation(api, calls, player.addr, player_location);
     let mut reachable = Vec::new();
     for (nearby, actor, location) in candidates.into_iter().take(20) {
-        let Some(target) = try_project_to_navigation(api, calls, player.addr, location) else {
-            println!("loot_box_unreachable={}", actor.full_name);
-            continue;
-        };
         let Some(path_cost) = navigation_path_cost(
             api,
             calls,
             player.addr,
             player.addr,
             projected_start,
-            target,
+            location,
         ) else {
             println!("loot_box_unreachable={}", actor.full_name);
             continue;
         };
         println!(
-            "loot_box_reachable={} location={location:?} nearby={nearby:.1} target={target:?} path_cost={path_cost:.1}",
+            "loot_box_reachable={} location={location:?} nearby={nearby:.1} path_cost={path_cost:.1}",
             actor.full_name
         );
         reachable.push(ReachableLootBox {
             actor,
-            target,
+            target: location,
             path_cost,
         });
     }
@@ -1342,7 +1340,8 @@ fn expedition_entry_requires_the_player_to_leave_the_safe_area_door() {
 
 #[test]
 fn expedition_loot_route_adds_only_the_discovered_target() {
-    let route = expedition_to_loot_route([0.0, 0.0, 0.0], [200.0, 100.0, 0.0]);
+    let loot_box = [200.0, 100.0, 25.0];
+    let route = expedition_to_loot_route([0.0, 0.0, 0.0], loot_box);
 
     assert_eq!(
         route
@@ -1351,6 +1350,10 @@ fn expedition_loot_route_adds_only_the_discovered_target() {
             .map(|waypoint| waypoint.id.as_str())
             .collect::<Vec<_>>(),
         ["expedition-entry", "loot-box"]
+    );
+    assert_eq!(
+        route.waypoint("loot-box").unwrap().position,
+        position(loot_box)
     );
 }
 

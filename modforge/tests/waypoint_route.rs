@@ -37,6 +37,7 @@ fn route_is_an_ordered_list_of_stops_without_pathfinding() {
             .collect::<Vec<_>>(),
         vec!["metal-door", "expedition-door"]
     );
+    assert!(route.waypoints_after("expedition-door", "spawn").is_err());
 }
 
 #[test]

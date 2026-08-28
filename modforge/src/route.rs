@@ -34,7 +34,7 @@ impl Position {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Waypoint {
     pub id: String,
     pub position: Position,
@@ -51,7 +51,7 @@ impl Waypoint {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Route {
     pub name: String,
     waypoints: Vec<Waypoint>,
@@ -80,14 +80,10 @@ impl Route {
         let goal_index = self.index(goal)?;
         if start_index < goal_index {
             Ok(self.waypoints[start_index + 1..=goal_index].to_vec())
-        } else if start_index > goal_index {
-            Ok(self.waypoints[goal_index..start_index]
-                .iter()
-                .rev()
-                .cloned()
-                .collect())
-        } else {
+        } else if start_index == goal_index {
             Ok(Vec::new())
+        } else {
+            Err(format!("route waypoint '{goal}' comes before '{start}'"))
         }
     }
 
