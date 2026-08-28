@@ -40,6 +40,7 @@ Newest first.
 
 | System | Item | Done when |
 |---|---|---|
+| Ueforge input | [x] Resolve the retained local player's controller and PlayerInput object on the game thread | The restarted live proof reports `BP_SGKController_C` and `EnhancedPlayerInput`, then repeats with identical non-null addresses and cached reflected offsets. All 63 Ueforge tests and the workspace check pass. |
 | MISERY input proof | [x] Add the permanent live W press-and-release test before implementing the replacement | Fourteen deterministic navigation tests pass. The exact restarted live test records the starting position, always attempts release, and currently fails on Ueforge's explicit unavailable error before any false movement claim. |
 | Ueforge input | [x] Remove the rejected Unreal console-command input implementation | The permanent source test rejects the three console-input commands, Ueforge returns an explicit unavailable error for player commands, all 63 Ueforge library tests pass, and `k3sc cargo-lock check --workspace --all-targets` passes. |
 | Workspace Rust | [x] Apply the current formatter consistently across every workspace crate | `k3sc cargo-lock fmt --all` completes and `k3sc cargo-lock check --workspace --all-targets` passes. |

@@ -2,7 +2,7 @@
 
 ## Current focus
 
-Resolve and retain the local player's actual Unreal input object on the game thread, then send W through `APlayerController::InputKey` and make the permanent live W test pass.
+Send W press, held state, and release through `APlayerController::InputKey`, then make the permanent live W test pass.
 
 ## Design goals
 
@@ -60,6 +60,8 @@ Resolve and retain the local player's actual Unreal input object on the game thr
 
 ## Last session summary
 
+- Added `input.player.unreal`, which reads the retained player's reflected `Controller` and the controller's reflected `PlayerInput` field on the game thread. Both property offsets are cached after their first lookup.
+- Restarted MISERY and proved the operation returns `BP_SGKController_C` and `EnhancedPlayerInput`. Two consecutive calls returned identical non-null object addresses and offsets. All 63 Ueforge tests and the workspace check pass.
 - Added the permanent live W press-and-release test. It records the starting, moving, released, stopped, and final positions, always attempts movement-key release, and fails unless W moves the player and release stops movement.
 - Restarted MISERY with the exact release build and ran only the W test. It recorded the starting position and failed immediately on Ueforge's explicit unavailable error, proving the test is red before the real input implementation.
 - A restarted MISERY test proved the Unreal console-command input experiment did not move the player. The player remained at the same position for ten seconds and the route correctly failed as stuck.
@@ -318,7 +320,7 @@ Resolve and retain the local player's actual Unreal input object on the game thr
 - Move the current Unreal navigation call and path decoding into Ueforge so MISERY receives the shared path format directly.
 - Make Unityforge inject the same virtual W/A/S/D, mouse, and interaction commands through Unity's normal player input.
 - Prove one live Unity waypoint trip through the same Modforge bot-navigation code used by MISERY.
-- Resolve and retain the local player's real Unreal input object on the game thread.
+- Send W press, held state, and release through `APlayerController::InputKey`.
 - Live-verify Unreal A* pathing from the player's current position to each selected waypoint, driven through virtual player input, from spawn through both doors on a restarted local game.
 - Aim at the door's colliding-bounds center from the active camera and gate `E` on interaction range.
 - Complete ranked crate fallback, retained-state opening, UI transfer, and inventory-count evidence.

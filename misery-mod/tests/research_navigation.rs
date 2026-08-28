@@ -1025,6 +1025,37 @@ fn real_player_input_moves_on_w_and_stops_on_release() {
 }
 
 #[test]
+#[ignore = "reads the live MISERY controller and PlayerInput object"]
+fn unreal_player_input_object_is_retained() {
+    let Some(api) = api_or_skip() else { return };
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+
+    let first = api.op("input.player.unreal", json!({}));
+    assert!(
+        first.ok,
+        "could not read Unreal player input status: {:?}",
+        first.error
+    );
+    for field in ["controller", "player_input"] {
+        let address = first.result[field]
+            .as_str()
+            .unwrap_or_else(|| panic!("input status has no {field} address"));
+        assert_ne!(address, "0x0", "input status returned a null {field}");
+    }
+    let second = api.op("input.player.unreal", json!({}));
+    assert!(second.ok, "second input status failed: {:?}", second.error);
+    for field in [
+        "controller",
+        "controller_offset",
+        "player_input",
+        "player_input_offset",
+    ] {
+        assert_eq!(first.result[field], second.result[field], "{field} changed");
+    }
+    println!("unreal_player_input={}", first.result);
+}
+
+#[test]
 #[ignore = "reads the live MISERY player's interaction functions"]
 fn player_interaction_surface_is_discoverable() {
     let Some(api) = api_or_skip() else { return };

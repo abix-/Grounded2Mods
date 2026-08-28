@@ -4,7 +4,6 @@ Survivalist extraction means moving existing engine-independent code out of the 
 
 | Priority | System | Todo | Done when |
 |---:|---|---|---|
-| 1 | Ueforge input | [ ] Resolve and retain the local player's actual Unreal input object on the game thread | Ueforge reports the retained player controller and its player input object without searching for either during repeated input. |
 | 1 | Ueforge input | [ ] Send W press, held state, and release through `APlayerController::InputKey` | Ueforge builds the same Unreal key input data used for a real W key and sends it to the retained local player without console, movement, or transform calls. |
 | 1 | MISERY input proof | [ ] Run the permanent live W test against the restarted release build | W moves the retained player, release stops movement, and the test records the before, moving, released, and final positions. |
 | 1 | Ueforge input | [ ] Send relative mouse movement through the same Unreal player-input path | Ueforge delivers MouseX and MouseY input to the retained local player without console commands, physical cursor movement, or direct rotation calls. |
