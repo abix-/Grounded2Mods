@@ -1,13 +1,12 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use modforge::input::{
-    Axis, Button, InputSurface, Key, PlayerCommand, PlayerPose, dispatch_player_commands,
-};
+use modforge::input::{Button, InputSurface, Key, PlayerCommand, dispatch_player_commands};
+use modforge::route::{PlayerObservation, Position};
 
 #[derive(Debug, PartialEq)]
 enum Seen {
-    Axis(Axis, f32, f32),
+    MouseDelta(i32, i32),
     Key(Key, bool),
 }
 
@@ -30,16 +29,13 @@ impl InputSurface for RecordingSurface {
         unreachable!()
     }
 
-    fn key(&self, key: Key, down: bool) -> Result<(), String> {
-        self.seen.lock().unwrap().push(Seen::Key(key, down));
+    fn move_rel(&self, dx: i32, dy: i32) -> Result<(), String> {
+        self.seen.lock().unwrap().push(Seen::MouseDelta(dx, dy));
         Ok(())
     }
 
-    fn axis(&self, axis: Axis, value: f32, delta_time: f32) -> Result<(), String> {
-        self.seen
-            .lock()
-            .unwrap()
-            .push(Seen::Axis(axis, value, delta_time));
+    fn key(&self, key: Key, down: bool) -> Result<(), String> {
+        self.seen.lock().unwrap().push(Seen::Key(key, down));
         Ok(())
     }
 
@@ -47,23 +43,18 @@ impl InputSurface for RecordingSurface {
         self.batches.fetch_add(1, Ordering::Relaxed);
         for command in commands {
             match *command {
-                PlayerCommand::Axis {
-                    axis,
-                    value,
-                    delta_time,
-                } => {
-                    self.axis(axis, value, delta_time)?;
-                }
+                PlayerCommand::MouseDelta { dx, dy } => self.move_rel(dx, dy)?,
                 PlayerCommand::Key { key, down } => self.key(key, down)?,
             }
         }
         Ok(())
     }
 
-    fn pose(&self) -> Result<PlayerPose, String> {
-        Ok(PlayerPose {
-            position: [1.0, 2.0, 3.0],
+    fn observe_player(&self) -> Result<PlayerObservation, String> {
+        Ok(PlayerObservation {
+            position: Position::new(1.0, 2.0, 3.0),
             yaw_deg: 90.0,
+            pitch_deg: -12.0,
         })
     }
 }
@@ -74,11 +65,11 @@ fn player_commands_reach_the_surface_in_order() {
     dispatch_player_commands(
         &surface,
         [
-            PlayerCommand::axis(Axis::MoveForward, 1.0, 0.016),
-            PlayerCommand::axis(Axis::MouseX, -3.0, 0.016),
+            PlayerCommand::key(Key::parse("w").unwrap(), true),
+            PlayerCommand::mouse_delta(-3, 2),
             PlayerCommand::key(Key::parse("e").unwrap(), true),
             PlayerCommand::key(Key::parse("e").unwrap(), false),
-            PlayerCommand::axis(Axis::MoveForward, 0.0, 0.016),
+            PlayerCommand::key(Key::parse("w").unwrap(), false),
         ],
     )
     .unwrap();
@@ -87,30 +78,24 @@ fn player_commands_reach_the_surface_in_order() {
     assert_eq!(
         *surface.seen.lock().unwrap(),
         vec![
-            Seen::Axis(Axis::MoveForward, 1.0, 0.016),
-            Seen::Axis(Axis::MouseX, -3.0, 0.016),
+            Seen::Key(Key(0x57), true),
+            Seen::MouseDelta(-3, 2),
             Seen::Key(Key(0x45), true),
             Seen::Key(Key(0x45), false),
-            Seen::Axis(Axis::MoveForward, 0.0, 0.016),
+            Seen::Key(Key(0x57), false),
         ]
     );
 }
 
 #[test]
-fn movement_axes_parse_by_player_meaning() {
-    assert_eq!(Axis::parse("move_forward").unwrap(), Axis::MoveForward);
-    assert_eq!(Axis::parse("move_right").unwrap(), Axis::MoveRight);
-}
-
-#[test]
 fn player_command_batch_round_trips_for_the_control_plane() {
     let commands = vec![
-        PlayerCommand::axis(Axis::MoveForward, 1.0, 0.016),
-        PlayerCommand::key(Key(0x45), true),
+        PlayerCommand::key(Key(0x57), true),
+        PlayerCommand::mouse_delta(4, -2),
     ];
     let json = serde_json::to_value(&commands).unwrap();
-    assert_eq!(json[0]["kind"], "axis");
-    assert_eq!(json[1]["kind"], "key");
+    assert_eq!(json[0]["kind"], "key");
+    assert_eq!(json[1]["kind"], "mouse_delta");
     assert_eq!(
         serde_json::from_value::<Vec<PlayerCommand>>(json).unwrap(),
         commands
@@ -118,8 +103,13 @@ fn player_command_batch_round_trips_for_the_control_plane() {
 }
 
 #[test]
-fn player_pose_round_trips_for_the_control_plane() {
-    let pose = RecordingSurface::default().pose().unwrap();
-    let json = serde_json::to_value(pose).unwrap();
-    assert_eq!(serde_json::from_value::<PlayerPose>(json).unwrap(), pose);
+fn player_observation_round_trips_with_yaw_and_pitch() {
+    let observation = RecordingSurface::default().observe_player().unwrap();
+    let json = serde_json::to_value(observation).unwrap();
+    assert_eq!(json["yaw_deg"], 90.0);
+    assert_eq!(json["pitch_deg"], -12.0);
+    assert_eq!(
+        serde_json::from_value::<PlayerObservation>(json).unwrap(),
+        observation
+    );
 }
