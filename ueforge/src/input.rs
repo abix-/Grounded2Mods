@@ -91,8 +91,7 @@ impl InputSurface for &'static UnrealInputSurface {
                 let position =
                     unsafe { crate::ue::transform::world_location(player.as_ptr() as *const u8) }
                         .ok_or("could not read the retained player's world location")?;
-                let controller = unsafe { pawn_controller(player)? };
-                let yaw_deg = unsafe { read_control_yaw(controller)? };
+                let yaw_deg = unsafe { read_control_yaw(player)? };
                 serde_json::to_value(PlayerPose {
                     position: [position.0, position.1, position.2],
                     yaw_deg,
@@ -120,53 +119,49 @@ impl InputSurface for &'static UnrealInputSurface {
                         axis,
                         value,
                         delta_time: _,
-                    } => {
-                        let controller = match controller {
-                            Some(controller) => controller,
-                            None => {
-                                let found = unsafe { pawn_controller(player)? };
-                                controller = Some(found);
-                                found
-                            }
-                        };
-                        match axis {
-                            Axis::MouseX => unsafe {
+                    } => match axis {
+                        Axis::MouseX | Axis::MouseY => {
+                            let controller = match controller {
+                                Some(controller) => controller,
+                                None => {
+                                    let found = unsafe { pawn_controller(player)? };
+                                    controller = Some(found);
+                                    found
+                                }
+                            };
+                            let function_name = match axis {
+                                Axis::MouseX => "AddYawInput",
+                                Axis::MouseY => "AddPitchInput",
+                                _ => unreachable!(),
+                            };
+                            unsafe {
                                 call_f32(
                                     controller,
                                     "PlayerController",
-                                    "AddYawInput",
+                                    function_name,
                                     "Val",
                                     value,
                                 )?
-                            },
-                            Axis::MouseY => unsafe {
-                                call_f32(
-                                    controller,
-                                    "PlayerController",
-                                    "AddPitchInput",
-                                    "Val",
-                                    value,
-                                )?
-                            },
-                            Axis::MoveForward | Axis::MoveRight => {
-                                let yaw = match control_yaw {
-                                    Some(yaw) => yaw,
-                                    None => {
-                                        let found = unsafe { read_control_yaw(controller)? };
-                                        control_yaw = Some(found);
-                                        found
-                                    }
-                                };
-                                let (forward, right) = match axis {
-                                    Axis::MoveForward => (value as f64, 0.0),
-                                    Axis::MoveRight => (0.0, value as f64),
-                                    _ => unreachable!(),
-                                };
-                                let direction = movement_direction(yaw, forward, right);
-                                unsafe { add_movement_input(player, direction, value.abs())? };
                             }
                         }
-                    }
+                        Axis::MoveForward | Axis::MoveRight => {
+                            let yaw = match control_yaw {
+                                Some(yaw) => yaw,
+                                None => {
+                                    let found = unsafe { read_control_yaw(player)? };
+                                    control_yaw = Some(found);
+                                    found
+                                }
+                            };
+                            let (forward, right) = match axis {
+                                Axis::MoveForward => (value as f64, 0.0),
+                                Axis::MoveRight => (0.0, value as f64),
+                                _ => unreachable!(),
+                            };
+                            let direction = movement_direction(yaw, forward, right);
+                            unsafe { add_movement_input(player, direction, value.abs())? };
+                        }
+                    },
                 }
             }
             Ok(())
@@ -244,12 +239,12 @@ fn reflected_property_offset(
     Ok(Some(property.offset as usize))
 }
 
-unsafe fn read_control_yaw(controller: &UObject) -> Result<f64, String> {
-    let function = function(controller, "Controller", "GetControlRotation")?;
+unsafe fn read_control_yaw(player: &UObject) -> Result<f64, String> {
+    let function = function(player, "Pawn", "GetControlRotation")?;
     let properties = function.iter_parameters();
     let return_value = property(&properties, "ReturnValue", 24)?;
     let mut parms = vec![0u8; function.parms_size().max(1) as usize];
-    unsafe { controller.process_event(function, parms.as_mut_ptr() as *mut c_void) };
+    unsafe { player.process_event(function, parms.as_mut_ptr() as *mut c_void) };
     read_f64(&parms, return_value.offset as usize + 8)
 }
 
