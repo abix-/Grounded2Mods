@@ -217,7 +217,10 @@ mod tests {
 
     use modforge::input::{Key, PlayerCommand};
 
-    use super::{forward_player_commands, reflected_property_offset};
+    use super::{
+        PlayerInputState, apply_commands, finish_mouse_tick, forward_player_commands,
+        reflected_property_offset,
+    };
     use crate::ue::uobject::NativeProperty;
 
     #[test]
@@ -264,5 +267,69 @@ mod tests {
         .unwrap();
 
         assert_eq!(*received.lock().unwrap(), commands);
+    }
+
+    #[test]
+    fn unreal_player_input_uses_keys_and_one_tick_mouse_values() {
+        let mut state = PlayerInputState::default();
+        let mut sent = Vec::new();
+        apply_commands(
+            &mut state,
+            &[
+                PlayerCommand::key(Key(0x57), true),
+                PlayerCommand::key(Key(0x57), true),
+                PlayerCommand::mouse_delta(5, -2),
+                PlayerCommand::key(Key(0x45), true),
+                PlayerCommand::key(Key(0x45), false),
+            ],
+            |command| {
+                sent.push(String::from_utf16(command).unwrap());
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            sent,
+            [
+                "Input.+key W",
+                "Input.+key MouseX X=5",
+                "Input.+key MouseY X=-2",
+                "Input.+key E",
+                "Input.-key E",
+            ]
+        );
+
+        let mut released = Vec::new();
+        finish_mouse_tick(&mut state, |command| {
+            released.push(String::from_utf16(command).unwrap());
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(released, ["Input.-key MouseX", "Input.-key MouseY"]);
+
+        let mut stopped = Vec::new();
+        apply_commands(
+            &mut state,
+            &[PlayerCommand::key(Key(0x57), false)],
+            |command| {
+                stopped.push(String::from_utf16(command).unwrap());
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(stopped, ["Input.-key W"]);
+    }
+
+    #[test]
+    fn unreal_player_input_rejects_keys_without_an_unreal_name() {
+        let mut state = PlayerInputState::default();
+        let error = apply_commands(
+            &mut state,
+            &[PlayerCommand::key(Key(0x01), true)],
+            |_| Ok(()),
+        )
+        .unwrap_err();
+        assert!(error.contains("0x01"));
     }
 }

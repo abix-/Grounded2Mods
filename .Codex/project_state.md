@@ -2,7 +2,7 @@
 
 ## Current focus
 
-Connect Ueforge's shared player commands to Unreal's normal key and mouse input, then make MISERY travel from spawn through both doors and loot one expedition crate without any direct gameplay call.
+Connect Ueforge's shared player commands through Unreal 5.4's built-in `Input.+key` and `Input.-key` simulation commands, then make MISERY travel from spawn through both doors and loot one expedition crate without any direct gameplay call. Ueforge will execute the commands on the game thread through `KismetSystemLibrary.ExecuteConsoleCommand`, keep W/A/S/D and `E` active until release, and release each relative mouse value after one Unreal tick.
 
 ## Design goals
 
