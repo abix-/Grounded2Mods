@@ -2904,3 +2904,113 @@ plane at all. 50,000 sightings is 12 MB of JSON and the client
 times out reading it. Evidence belongs on disk, where it also
 accumulates across sessions and can be re-derived from without
 the game running.
+
+## 31. Player input: Enhanced Input mapping decode (2026-08-27)
+
+MISERY uses Unreal 5.4 Enhanced Input, not legacy PlayerInput.
+
+### Pointer chain to the input objects
+
+```
+live_player (BP_SGKPlayerCharacter_C)
+  +0x2C8  Controller  -> BP_SGKController_C
+  +0x160  InputComponent -> EnhancedInputComponent
+
+BP_SGKController_C
+  +0x408  PlayerInput -> EnhancedPlayerInput
+  field "Mapping Context" -> InputMappingContext (SGKCharacterInputs)
+```
+
+### InputMappingContext: SGKCharacterInputs
+
+The controller holds a "Mapping Context" field pointing to an
+`InputMappingContext` object named `SGKCharacterInputs`. Its
+`Mappings` TArray (at offset +0x30 inside the object) holds 89
+`FEnhancedActionKeyMapping` entries.
+
+**Entry layout (stride 0x50 = 80 bytes):**
+
+```
++0x00  16 bytes  (unknown, often zeros)
++0x10  16 bytes  (unknown)
++0x20  8 bytes   UInputAction* (action pointer)
++0x28  8 bytes   FName (key name)
++0x30  16 bytes  (zeros)
++0x40  4 bytes   0x100 constant
++0x44  4 bytes   (padding)
++0x48  8 bytes   PlayerMappableKeySettings pointer
+```
+
+Each action appears 2 or 3 times: keyboard binding, a `<none>`
+slot (for remapping), and sometimes a gamepad binding.
+
+### Complete action-to-key table
+
+| Action | Keyboard | Gamepad |
+|---|---|---|
+| ForwardInput | W | Gamepad_LeftY |
+| BackwardInput | S | Gamepad_LeftY |
+| LeftInput | A | Gamepad_LeftX |
+| RightInput | D | Gamepad_LeftX |
+| InteractInput | E | Gamepad_FaceButton_Left |
+| JumpInput | SpaceBar | Gamepad_FaceButton_Bottom |
+| CrouchInput | LeftControl | (none) |
+| CrawlInput | C | (none) |
+| CrawlInput_Gamepad | RightControl | Gamepad_FaceButton_Right |
+| SprintInput | LeftShift | Gamepad_LeftThumbstick |
+| FireInput | LeftMouseButton | Gamepad_RightTriggerAxis |
+| AimInput | RightMouseButton | Gamepad_LeftTriggerAxis |
+| ReloadInput | R | Gamepad_FaceButton_Top |
+| TurnInput | MouseX | Gamepad_RightX |
+| LookupDownInput | MouseY | Gamepad_RightY |
+| ToggleInventoryInput | Tab | Gamepad_Special_Left |
+| ChatInput | Enter | Gamepad_DPad_Right |
+| CompasInput | Q | Gamepad_RightThumbstick |
+| ToggleCameraViewInput | V | (none) |
+| ToggleFlashlightAttachmentInput | MiddleMouseButton, L | Steam_Back_Left |
+| RotateBuildPartInput | R | Gamepad_FaceButton_Top |
+| QuickSlot1Input | One | (none) |
+| QuickSlot2Input | Two | (none) |
+| QuickSlot3Input | Three | (none) |
+| QuickSlot4Input | Four | (none) |
+| QuickSlot5Input | Five | (none) |
+| CycleQuickSlotInput | MouseWheelAxis | (none) |
+| QuickSlotWheelInput | (none) | Gamepad_LeftShoulder |
+| VoiceChatnput | CapsLock | Steam_Back_Right |
+| WhisleInput | (none) | Gamepad_RightShoulder |
+| HideHUDInput | One | (none) |
+| UpContextMenuInput | MouseScrollUp | Gamepad_DPad_Up |
+| DownContentMenuInput | MouseScrollDown | Gamepad_DPad_Down |
+| AltModifierInput | LeftAlt | (none) |
+| ShiftModifierInput | LeftShift | (none) |
+| EmoteWheelInput | (none) | Gamepad_DPad_Left |
+| MenuBack | (none) | Gamepad_FaceButton_Right |
+
+### EnhancedPlayerInput fields of interest
+
+```
+EnhancedPlayerInput (at Controller+0x408)
+  +0x538  EnhancedActionMappings  TArray (88 entries, stride unknown)
+  +0x598  ActionInstanceData      TArray (39 entries)
+  +0x688  KeysPressedThisTick     TArray
+  +0x6D8  InputsInjectedThisTick  TArray
+```
+
+The EnhancedActionMappings on EnhancedPlayerInput is a flattened
+copy with trigger/modifier data baked in. Its stride is larger
+than 0x50 and was not decoded. The InputMappingContext.Mappings
+array above is the cleaner source for the action-to-key table.
+
+### What this means for bot input
+
+The bot needs to inject key state that the Enhanced Input system
+reads on its normal tick. The next research step is finding where
+"is W currently held" lives in memory, which is one of:
+
+1. `KeysPressedThisTick` (+0x688 on EnhancedPlayerInput)
+2. `ActionInstanceData` (+0x598), which holds per-action state
+   including elapsed time and trigger state
+3. `InputsInjectedThisTick` (+0x6D8), which UE provides for
+   programmatic input injection
+
+The test file is `misery-mod/tests/research_player_input.rs`.

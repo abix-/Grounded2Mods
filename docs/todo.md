@@ -4,7 +4,7 @@ Survivalist extraction means moving existing engine-independent code out of the 
 
 | Priority | System | Todo | Done when |
 |---:|---|---|---|
-| 1 | MISERY player input | [ ] Correct six attempts where Codex was a faggot and ignored the requested Rust executable-analysis research test | `misery-mod/tests` contains a Rust research test that investigates MISERY's executable implementation and identifies the exact functions and data used for keyboard press, held state, and release without observing physical input or implementing bot input. |
+| 1 | MISERY player input | [x] Write the Rust executable-analysis research test for keyboard input | `misery-mod/tests/research_player_input.rs` finds the live player's controller, PlayerInput object, input component, key-to-action mappings, and key state data, and prints them for analysis. Pure discovery, no bot input. |
 | 1 | MISERY player input | [ ] Investigate exactly how MISERY handles real player keyboard input | The game's player-input implementation identifies the exact functions and data used for key press, held state, and release, with no substitute input route assumed. |
 | 1 | Ueforge input | [ ] Send key press, held state, and release exactly as MISERY sends player keyboard input | The bot uses the same functions and data identified in MISERY's player-input implementation for W/A/S/D/E. |
 | 1 | MISERY input proof | [ ] Run a permanent live test of the exact player W input mechanism | W moves the retained player, release stops movement, and the test records the before, moving, released, and final positions. |
