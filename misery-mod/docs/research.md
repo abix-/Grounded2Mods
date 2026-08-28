@@ -3014,3 +3014,64 @@ reads on its normal tick. The next research step is finding where
    programmatic input injection
 
 The test file is `misery-mod/tests/research_player_input.rs`.
+
+### Key state observation: idle vs holding W (2026-08-28)
+
+Took two snapshots of the entire EnhancedPlayerInput object (0xA00
+bytes): one while idle, one while physically holding W in-game.
+
+**KeysPressedThisTick (+0x688) is always empty between ticks.**
+It is populated during `ProcessInputStack` and cleared before the
+next frame. Reading it between frames always shows zero entries.
+Same for InputsInjectedThisTick (+0x6D8).
+
+**ActionInstanceData holds the persistent per-action state.** The
+39-entry array at +0x598 has stride 0x70 per entry. When W is
+held, the ForwardInput entry changes:
+
+```
+ActionInstanceData entry layout (0x70 bytes per entry):
+  +0x00  UInputAction* (pointer to the action object)
+  +0x08  same pointer repeated
+  +0x10  u8 trigger state: 0 = not triggered, 2 = triggered/held
+  +0x18  f32 timestamp (when the trigger last fired)
+  +0x40  f64 action value (0.0 idle, 1.0 full forward)
+  +0x58  f64 elapsed hold time
+```
+
+Observed ForwardInput action pointer: `0x1BE044EC700`.
+When W is held: trigger state = 2, action value = 1.0, elapsed
+time increases each frame. When released: trigger state = 0,
+action value = 0.0.
+
+**The parent UPlayerInput also stores key state** in what appears
+to be a TMap region between offsets +0x5E8 and +0x650 on the
+EnhancedPlayerInput object. Several values in this range change
+when W is held. This is likely `UPlayerInput::KeyStateMap`, which
+tracks per-FKey pressed/released state as bitflags. The exact
+layout of TMap entries has not yet been decoded.
+
+### What the bot must write
+
+To simulate W the same way the player does, the bot must write
+to the same data that the real input processing writes to. The
+candidates, in order of how close they are to the real path:
+
+1. **KeyStateMap** (the TMap in the +0x5E8 region): this is where
+   the real input stack records "W is pressed." If the bot writes
+   here, the Enhanced Input system reads it on the next tick and
+   fires the ForwardInput action through its normal trigger and
+   modifier pipeline. This is the closest to the real player path.
+
+2. **ActionInstanceData**: writing trigger state = 2 and value =
+   1.0 directly into the ForwardInput entry would skip the
+   key-to-action mapping but still let the game's movement code
+   see the action as triggered. Less faithful to the real path.
+
+3. **InputsInjectedThisTick**: UE's own programmatic injection
+   TArray. If populated before ProcessInputStack runs, the engine
+   treats these as real key events. Requires knowing the exact
+   entry format.
+
+The next step is decoding the KeyStateMap TMap to find the W
+entry and understand its format.

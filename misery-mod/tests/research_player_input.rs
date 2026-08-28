@@ -597,3 +597,110 @@ fn decode_enhanced_action_mappings() {
         }
     }
 }
+
+#[test]
+#[ignore = "snapshots key state fields on EnhancedPlayerInput while idle vs holding W"]
+fn observe_key_state_fields() {
+    let Some(api) = api_or_skip() else { return };
+    let api = api.with_timeout(std::time::Duration::from_secs(30));
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+
+    let player = client::resolve_selector(&api, "live_player")
+        .expect("no live player");
+    let controller = client::read_u64(
+        &api,
+        player.addr,
+        field_offset(&api, "Pawn", "Controller").expect("no Controller field"),
+    );
+    assert!(controller != 0, "controller is null");
+
+    let epi_offset = field_offset(&api, "PlayerController", "PlayerInput")
+        .expect("no PlayerInput field");
+    let epi = client::read_u64(&api, controller, epi_offset);
+    assert!(epi != 0, "EnhancedPlayerInput is null");
+    println!("EnhancedPlayerInput: 0x{epi:X}");
+
+    let dump_range: u64 = 0xA00;
+    let snap1 = client::read_bytes(&api, epi, 0, dump_range);
+    println!("snapshot 1 (idle): {} bytes from EnhancedPlayerInput", snap1.len());
+
+    let tarray_offsets: &[(&str, u64)] = &[
+        ("EnhancedActionMappings", 0x538),
+        ("ActionInstanceData", 0x598),
+        ("KeysPressedThisTick", 0x688),
+        ("InputsInjectedThisTick", 0x6D8),
+    ];
+
+    for &(name, off) in tarray_offsets {
+        if (off + 16) as usize <= snap1.len() {
+            let data = u64::from_le_bytes(snap1[off as usize..off as usize + 8].try_into().unwrap());
+            let num = u32::from_le_bytes(snap1[off as usize + 8..off as usize + 12].try_into().unwrap());
+            println!("  +0x{off:03X} {name}: {num} entries, data=0x{data:X}");
+        }
+    }
+
+    fn dump_tarray(api: &Api, snap: &[u8], off: usize, label: &str) {
+        let data = u64::from_le_bytes(snap[off..off + 8].try_into().unwrap());
+        let num = u32::from_le_bytes(snap[off + 8..off + 12].try_into().unwrap()) as usize;
+        if num > 0 && data > 0x1_0000_0000 {
+            let raw = client::read_bytes(api, data, 0, (num * 64).min(0x800) as u64);
+            println!("\n  {label} ({num} entries, {} bytes):", raw.len());
+            for row in 0..(raw.len() / 16) {
+                let o = row * 16;
+                let hex: Vec<String> = raw[o..o + 16].iter().map(|b| format!("{b:02X}")).collect();
+                println!("    +0x{o:04X}  {}", hex.join(" "));
+            }
+        } else {
+            println!("\n  {label}: empty");
+        }
+    }
+
+    dump_tarray(&api, &snap1, 0x688, "KeysPressedThisTick (idle)");
+    dump_tarray(&api, &snap1, 0x6D8, "InputsInjectedThisTick (idle)");
+    dump_tarray(&api, &snap1, 0x598, "ActionInstanceData (idle)");
+
+    println!("\n=== HOLD W NOW and keep holding it ===");
+    println!("(waiting 10 seconds before taking second snapshot)");
+    std::thread::sleep(std::time::Duration::from_secs(10));
+
+    let snap2 = client::read_bytes(&api, epi, 0, dump_range);
+    println!("\nsnapshot 2 (holding W): {} bytes", snap2.len());
+
+    println!("\n=== DIFF (changed 8-byte values) ===");
+    let compare_len = snap1.len().min(snap2.len());
+    for off in (0..compare_len).step_by(8) {
+        if off + 8 > compare_len { break; }
+        let v1 = u64::from_le_bytes(snap1[off..off + 8].try_into().unwrap());
+        let v2 = u64::from_le_bytes(snap2[off..off + 8].try_into().unwrap());
+        if v1 != v2 {
+            println!("  +0x{off:03X}: 0x{v1:016X} -> 0x{v2:016X}");
+        }
+    }
+
+    dump_tarray(&api, &snap2, 0x688, "KeysPressedThisTick (holding W)");
+    dump_tarray(&api, &snap2, 0x6D8, "InputsInjectedThisTick (holding W)");
+    dump_tarray(&api, &snap2, 0x598, "ActionInstanceData (holding W)");
+
+    // try to resolve FNames in KeysPressedThisTick
+    let kp_data2 = u64::from_le_bytes(snap2[0x688..0x690].try_into().unwrap());
+    let kp_num2 = u32::from_le_bytes(snap2[0x690..0x694].try_into().unwrap()) as usize;
+    if kp_num2 > 0 && kp_data2 > 0x1_0000_0000 {
+        let kp_raw2 = client::read_bytes(&api, kp_data2, 0, (kp_num2 * 64).min(0x400) as u64);
+        println!("\n  resolving KeysPressedThisTick FNames:");
+        for i in 0..kp_num2.min(20) {
+            // try every 8-byte value as a possible FName
+            for fname_off in (0..64).step_by(8) {
+                let entry_off = i * 64 + fname_off;
+                if entry_off + 8 > kp_raw2.len() { break; }
+                let fname = u64::from_le_bytes(kp_raw2[entry_off..entry_off + 8].try_into().unwrap());
+                if fname != 0 && fname < 0x1_0000_0000 {
+                    if let Some(name) = client::fname_to_string(&api, fname) {
+                        println!("    entry[{i}]+0x{fname_off:02X}: {name}");
+                    }
+                }
+            }
+        }
+    }
+
+    println!("\ndone");
+}
