@@ -6,6 +6,7 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 
 ## Design goals
 
+- `modforge/docs/bot-navigation.md` owns the route, A*, waypoint, door, loot-target, and player-input design. Input research documents may link to it but do not own bot navigation.
 - Topside-style fixed-tick journals remain authoritative for simulations Modforge owns.
 - Injected games use the same producer and consumer separation, but replay operation actions through the existing control plane and advance only after observable condition gates.
 - MISERY is the first proof: record a movement-speed write, wait for the live read, assert it, restore the original value, and replay the saved journal.
@@ -59,6 +60,7 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 
 ## Last session summary
 
+- Moved the bot-navigation design out of the synthetic-input prior-art document into dedicated `modforge/docs/bot-navigation.md`. The prior-art document now links to it and retains only input research and implementation history.
 - Corrected the route design after two implementations bypassed the player's input route and one design revision invented a second A* over semantic waypoints. The route selects the next waypoint, Unreal navigation's single A* determines the detailed path from the player to it, the bot chooses virtual W/A/S/D and mouse controls, `InputSurface` injects those controls into normal game input processing, and the game alone performs movement, aiming, and interaction.
 - The exact restarted build retained the player before acceptance and reflected the controller successfully. Live calls then proved MISERY exposes `GetControlRotation` on neither `Controller` nor `Pawn`; Ueforge must read the reflected `AController.ControlRotation` field.
 - Two restarted acceptance attempts began before autoload retained the player because `restart.ps1` treated the HTTP listener as full readiness. The mod log proved the player was retained five seconds after the early acceptance failed.
