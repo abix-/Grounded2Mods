@@ -6,6 +6,7 @@
 //! retained player and game-specific key action handler.
 
 use std::ffi::c_void;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use modforge::input::{Axis, Button, InputSurface, Key, PlayerCommand, PlayerPose};
@@ -16,6 +17,7 @@ use crate::ue::uobject::NativeProperty;
 use crate::ue::{UFunction, UObject};
 
 const INPUT_TIMEOUT: Duration = Duration::from_secs(3);
+static PAWN_CONTROLLER_OFFSET: OnceLock<Result<usize, String>> = OnceLock::new();
 
 type KeyHandler = dyn Fn(&UObject, Key, bool) -> Result<(), String> + Send + Sync;
 
@@ -193,16 +195,53 @@ fn movement_direction(yaw_deg: f64, forward: f64, right: f64) -> (f64, f64, f64)
 }
 
 unsafe fn pawn_controller(player: &UObject) -> Result<&'static UObject, String> {
-    let function = function(player, "Pawn", "GetController")?;
-    let properties = function.iter_parameters();
-    let return_value = property(&properties, "ReturnValue", 8)?;
-    let mut parms = vec![0u8; function.parms_size().max(1) as usize];
-    unsafe { player.process_event(function, parms.as_mut_ptr() as *mut c_void) };
-    let address = read_u64(&parms, return_value.offset as usize)?;
+    let offset = match PAWN_CONTROLLER_OFFSET
+        .get_or_init(|| class_property_offset(player, "Controller", 8))
+    {
+        Ok(offset) => *offset,
+        Err(error) => return Err(error.clone()),
+    };
+    let address = unsafe { (player.field_ptr(offset) as *const usize).read_unaligned() };
     if address == 0 {
         return Err("local player has no controller".into());
     }
     Ok(unsafe { &*(address as *const UObject) })
+}
+
+fn class_property_offset(object: &UObject, name: &str, minimum_size: u32) -> Result<usize, String> {
+    let mut class = object.class();
+    let mut depth = 0;
+    while let Some(current) = class {
+        if depth >= 64 {
+            return Err(format!(
+                "class chain exceeded 64 entries while resolving {name}"
+            ));
+        }
+        let properties = current.cached_native_properties();
+        if let Some(offset) = reflected_property_offset(&properties, name, minimum_size)? {
+            return Ok(offset);
+        }
+        class = current.super_class();
+        depth += 1;
+    }
+    Err(format!("player class chain has no reflected {name} field"))
+}
+
+fn reflected_property_offset(
+    properties: &[NativeProperty],
+    name: &str,
+    minimum_size: u32,
+) -> Result<Option<usize>, String> {
+    let Some(property) = properties.iter().find(|property| property.name == name) else {
+        return Ok(None);
+    };
+    if property.element_size < minimum_size {
+        return Err(format!(
+            "reflected field {name} is {} bytes, expected at least {minimum_size}",
+            property.element_size
+        ));
+    }
+    Ok(Some(property.offset as usize))
 }
 
 unsafe fn read_control_yaw(controller: &UObject) -> Result<f64, String> {
@@ -307,7 +346,8 @@ fn read_f64(buffer: &[u8], offset: usize) -> Result<f64, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::movement_direction;
+    use super::{movement_direction, reflected_property_offset};
+    use crate::ue::uobject::NativeProperty;
 
     #[test]
     fn controller_comes_from_the_reflected_pawn_field() {
@@ -315,6 +355,25 @@ mod tests {
         let unavailable_function = ["Get", "Controller"].concat();
         assert!(!source.contains(&format!("\"{unavailable_function}\"")));
         assert!(source.contains("\"Controller\""));
+    }
+
+    #[test]
+    fn reflected_controller_field_resolves_by_name_and_size() {
+        let properties = [NativeProperty {
+            name: "Controller".into(),
+            offset: 0x2A0,
+            element_size: 8,
+        }];
+
+        assert_eq!(
+            reflected_property_offset(&properties, "Controller", 8),
+            Ok(Some(0x2A0))
+        );
+        assert_eq!(
+            reflected_property_offset(&properties, "Missing", 8),
+            Ok(None)
+        );
+        assert!(reflected_property_offset(&properties, "Controller", 16).is_err());
     }
 
     #[test]
