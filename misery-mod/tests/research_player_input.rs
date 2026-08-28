@@ -1329,6 +1329,150 @@ fn find_inputkey_write() {
 }
 
 #[test]
+#[ignore = "reads W's real FKey (with FKeyDetails) from the InputMappingContext"]
+fn dump_w_fkey() {
+    let Some(api) = api_or_skip() else { return };
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+
+    let player = client::resolve_selector(&api, "live_player").expect("no live player");
+    let controller = client::read_u64(&api, player.addr, 0x2C8);
+
+    let mc_off = field_offset(&api, "BP_SGKController_C", "Mapping Context")
+        .expect("no Mapping Context field");
+    let mc = client::read_u64(&api, controller, mc_off);
+    assert_ne!(mc, 0, "null mapping context");
+    println!("Mapping Context: 0x{mc:X}");
+
+    // Mappings TArray at +0x30 inside InputMappingContext, stride 0x50,
+    // action ptr at entry+0x20, FKey (FName + FKeyDetails) at entry+0x28.
+    let (data, num, _max) = {
+        let b = client::read_bytes(&api, mc, 0x30, 16);
+        (
+            u64::from_le_bytes(b[0..8].try_into().unwrap()),
+            u32::from_le_bytes(b[8..12].try_into().unwrap()) as usize,
+            0,
+        )
+    };
+    println!("Mappings: {num} entries at 0x{data:X}\n");
+
+    let stride = 0x50usize;
+    for i in 0..num {
+        let entry = data + (i * stride) as u64;
+        let action_ptr = client::read_u64(&api, entry, 0x20);
+        let action = client::object_name(&api, action_ptr).unwrap_or_default();
+        if action != "ForwardInput" {
+            continue;
+        }
+        let fkey = client::read_bytes(&api, entry, 0x28, 24);
+        if fkey.len() < 24 {
+            continue;
+        }
+        let ci = u32::from_le_bytes(fkey[0..4].try_into().unwrap());
+        let num_f = u32::from_le_bytes(fkey[4..8].try_into().unwrap());
+        let details = u64::from_le_bytes(fkey[8..16].try_into().unwrap());
+        let details_ref = u64::from_le_bytes(fkey[16..24].try_into().unwrap());
+        let key_name = client::fname_to_string(&api, ci as u64).unwrap_or_default();
+        println!(
+            "ForwardInput mapping entry 0x{entry:X}: key={key_name} FName(ci={ci},num={num_f}) \
+             details=0x{details:X} details_ref=0x{details_ref:X}"
+        );
+        let valid = details > 0x1_0000_0000;
+        println!("  FKeyDetails pointer is {}", if valid { "VALID (usable)" } else { "null/invalid" });
+    }
+}
+
+#[test]
+#[ignore = "finds InputKey's vtable slot: the one whose call makes IsInputKeyDown(W) return true"]
+fn find_inputkey_slot_via_iskeydown() {
+    let Some(api) = api_or_skip() else { return };
+    let api = api.with_timeout(std::time::Duration::from_secs(30));
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+
+    let player = client::resolve_selector(&api, "live_player").expect("no live player");
+    let controller = client::read_u64(&api, player.addr, 0x2C8);
+    assert_ne!(controller, 0, "no controller");
+    let sel = format!("addr:0x{controller:X}");
+
+    let epi = client::read_u64(&api, controller, 0x408);
+    let w = api.op("string_to_fname", json!({"text": "W"})).result["fname"]
+        .as_u64()
+        .expect("no W FName");
+    let w_ci = (w & 0xFFFF_FFFF) as u32;
+
+    // Lift a real W FKey (FName + valid FKeyDetails pointer) from an EPI
+    // block that carries one; native input code derefs the details, so
+    // a name-only FKey crashes it.
+    let fkey: [u8; 24] = keystatemap_w_entries(&api, epi, w_ci)
+        .into_iter()
+        .find_map(|(_, entry)| {
+            let b = client::read_bytes(&api, entry, 0, 24);
+            let details = u64::from_le_bytes(b[8..16].try_into().unwrap());
+            (b.len() == 24 && details > 0x1_0000_0000).then(|| {
+                let mut a = [0u8; 24];
+                a.copy_from_slice(&b);
+                a
+            })
+        })
+        .expect("no W FKey with valid FKeyDetails found on the EPI object");
+    let fkey_hex = hex::encode(fkey);
+    println!(
+        "using real W FKey: details=0x{:X}\n",
+        u64::from_le_bytes(fkey[8..16].try_into().unwrap())
+    );
+
+    // Parm block for APlayerController::IsInputKeyDown(FKey Key) -> bool:
+    // FKey (24 bytes, real) at +0x00, ReturnValue bool at +0x18.
+    let make_parms = || -> [u8; 0x20] {
+        let mut p = [0u8; 0x20];
+        p[0..24].copy_from_slice(&fkey);
+        p
+    };
+    let is_down = |api: &Api| -> bool {
+        match api.call_ufunction("PlayerController", "IsInputKeyDown", &sel, &make_parms()) {
+            Ok((out, _)) => out.get(0x18).copied().unwrap_or(0) != 0,
+            Err(e) => {
+                println!("  IsInputKeyDown failed: {e}");
+                false
+            }
+        }
+    };
+
+    println!("baseline IsInputKeyDown(W) = {}\n", is_down(&api));
+
+    // EnhancedInput override slots from the vtable dump; 91 and 93 hang
+    // or crash when called with FInputKeyParams, so skip them.
+    let slots = [87usize, 88, 89, 90, 92, 94, 95, 96, 97, 98, 99];
+    for slot in slots {
+        let press = api.op(
+            "try_inputkey",
+            json!({"slot": slot, "key_name": "W", "pressed": true, "fkey_hex": fkey_hex}),
+        );
+        if !press.ok {
+            println!("slot {slot}: press failed: {:?}", press.error);
+            continue;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let down = is_down(&api);
+        let _ = api.op(
+            "try_inputkey",
+            json!({"slot": slot, "key_name": "W", "pressed": false, "fkey_hex": fkey_hex}),
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let after = is_down(&api);
+        println!("slot {slot}: after press IsInputKeyDown(W)={down}, after release={after}");
+        if down && !after {
+            println!("\n*** slot {slot} IS InputKey: it set W down in KeyStateMap and release cleared it ***");
+            let _ = api.op(
+                "try_inputkey",
+                json!({"slot": slot, "key_name": "W", "pressed": false, "fkey_hex": fkey_hex}),
+            );
+            return;
+        }
+    }
+    println!("\nno slot toggled IsInputKeyDown(W). If none worked, InputKey may need a valid FKeyDetails.");
+}
+
+#[test]
 #[ignore = "calls each EnhancedInput vtable slot as InputKey(W) and checks if the ForwardInput action fires"]
 fn verify_inputkey_via_action() {
     let Some(api) = api_or_skip() else { return };

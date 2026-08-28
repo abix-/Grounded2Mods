@@ -3196,25 +3196,35 @@ now calls `EnhancedPlayerInput.vtable[slot](epi, &params)` with the
 params in a 256-byte zeroed buffer (so a wrong slot that reads past
 the struct hits zeros, not a fault).
 
-**Where this stands on MISERY (UE 5.4):** `dump_epi_vtable_rvas`
-shows the EnhancedInput plugin overrides occupy vtable slots 87-99
-(functions in the same + 0x42f / + 0x3cb code region as the store).
-InputKey is one of these. Calling slots 87-90 and 92 returns a bool
-cleanly; 91 and 93 hang or crash (wrong-shaped callees, e.g.
-InputAxis, so not InputKey). But none of the clean slots fired the
-ForwardInput action (`verify_inputkey_via_action`, trigger stayed
-0). Two open possibilities, not yet resolved:
+**SOLVED on MISERY (UE 5.4): InputKey is EnhancedPlayerInput vtable
+slot 88** (RVA + 0x42f5970 this build). `find_inputkey_slot_via_iskeydown`
+proves it against the game's own state query, no gameplay needed:
 
-- The auto-loaded save may not be in active gameplay (paused / at a
-  menu), so no slot would fire regardless. The physical-W tests that
-  DID work were run while actively in-game.
-- InputKey may need a valid FKeyDetails in this build (the null-plus-
-  lazy-resolve assumption may not hold on this path). W's FKey with
-  a real FKeyDetails pointer can be read from the InputMappingContext
-  (SGKCharacterInputs) mappings or a live KeyStateMap W entry.
+```
+baseline IsInputKeyDown(W) = false
+slot 88: after InputKey(W, pressed)  IsInputKeyDown(W) = true
+         after InputKey(W, released) IsInputKeyDown(W) = false
+```
 
-So InputKey is NOT yet confirmed on MISERY. The method is correct
-and the candidate set is 87-99 (minus the hang/crash slots); the
-remaining step is to verify a slot while the game is confirmed in
-active gameplay, and if needed supply a real FKeyDetails.
+Calling `EnhancedPlayerInput.vtable[88](epi, &params)` records W in
+the KeyStateMap exactly as a physical press does, and release clears
+it. Two things were required and are both in `try_inputkey` now:
+
+1. The correct `FInputKeyParams` layout above.
+2. A REAL FKey with a valid FKeyDetails pointer. The
+   InputMappingContext (SGKCharacterInputs) FKeys have NULL details,
+   so they are useless; the EnhancedActionMappings / KeyStateMap
+   blocks on the EPI object carry FKeys with a valid details pointer.
+   `keystatemap_w_entries` lifts one; native input code dereferences
+   FKeyDetails, so a name-only FKey crashes it (that was the cause of
+   several game crashes during this work).
+
+`dump_epi_vtable_rvas` shows the EnhancedInput overrides occupy slots
+87-99; of those, 91 and 93 hang/crash when called as InputKey (they
+are other virtuals, e.g. InputAxis). Slot 88 is the one.
+
+This is verified by KeyStateMap state, not by player movement.
+Confirming end-to-end movement (and mouse/E) still wants a run while
+the character is actively controllable, but the key mechanism is
+proven correct.
 

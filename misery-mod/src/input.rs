@@ -13,19 +13,32 @@ fn register_ops() {
         ueforge::ops::OpDef::new(
             "try_inputkey",
             "Call InputKey at a vtable slot on the PlayerInput object (research)",
-            "{slot: u64, key_name: str, pressed: bool}",
+            "{slot: u64, key_name: str, pressed: bool, fkey_hex?: str}",
             |args| {
                 let slot = args["slot"].as_u64().ok_or("missing slot")? as usize;
                 let key_name =
                     args["key_name"].as_str().ok_or("missing key_name")?.to_string();
                 let pressed = args["pressed"].as_bool().ok_or("missing pressed")?;
                 let dry_run = args["dry_run"].as_bool().unwrap_or(false);
+                // Optional real 24-byte FKey (FName + a valid
+                // TSharedPtr<FKeyDetails>), lifted from the live game so
+                // InputKey does not deref a null details pointer.
+                let fkey: Option<[u8; 24]> = args["fkey_hex"].as_str().and_then(|h| {
+                    if h.len() < 48 {
+                        return None;
+                    }
+                    let mut a = [0u8; 24];
+                    for i in 0..24 {
+                        a[i] = u8::from_str_radix(&h[i * 2..i * 2 + 2], 16).ok()?;
+                    }
+                    Some(a)
+                });
                 ueforge::game_thread::run(
                     move || {
                         if dry_run {
                             dry_run_inputkey(slot, &key_name)
                         } else {
-                            try_inputkey(slot, &key_name, pressed)
+                            try_inputkey(slot, &key_name, pressed, fkey)
                         }
                     },
                     Duration::from_secs(5),
@@ -380,6 +393,7 @@ fn try_inputkey(
     slot: usize,
     key_name: &str,
     pressed: bool,
+    fkey: Option<[u8; 24]>,
 ) -> Result<serde_json::Value, String> {
     let player = crate::speed::PLAYER
         .retained()
@@ -401,15 +415,28 @@ fn try_inputkey(
     }
     let epi = unsafe { &*(epi_addr as *const ueforge::ue::UObject) };
 
-    let fname = ueforge::ue::fname::from_str(key_name, ueforge::ue::fname::FindName::Find)
-        .ok_or_else(|| format!("FName not found for key '{key_name}'"))?;
+    // Use the real FKey bytes if supplied (with a valid FKeyDetails
+    // pointer); otherwise build a name-only FKey. Native input code
+    // dereferences FKeyDetails, so a real one avoids a crash.
+    let (key_ci, key_num, details_ptr, details_ref) = if let Some(k) = fkey {
+        (
+            i32::from_le_bytes(k[0..4].try_into().unwrap()),
+            u32::from_le_bytes(k[4..8].try_into().unwrap()),
+            usize::from_le_bytes(k[8..16].try_into().unwrap()),
+            usize::from_le_bytes(k[16..24].try_into().unwrap()),
+        )
+    } else {
+        let fname = ueforge::ue::fname::from_str(key_name, ueforge::ue::fname::FindName::Find)
+            .ok_or_else(|| format!("FName not found for key '{key_name}'"))?;
+        (fname.comparison_index, fname.number, 0, 0)
+    };
 
     let event: i32 = if pressed { 0 } else { 1 };
     let params = FInputKeyParams {
-        key_fname_ci: fname.comparison_index,
-        key_fname_num: fname.number,
-        key_details_ptr: 0,
-        key_details_ref: 0,
+        key_fname_ci: key_ci,
+        key_fname_num: key_num,
+        key_details_ptr: details_ptr,
+        key_details_ref: details_ref,
         input_device: 0,
         event,
         num_samples: 1,
