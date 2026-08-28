@@ -1329,6 +1329,95 @@ fn find_inputkey_write() {
 }
 
 #[test]
+#[ignore = "moves the character via Enhanced Input StartContinuousInputInjectionForAction(ForwardInput)"]
+fn test_inject_action_movement() {
+    let Some(api) = api_or_skip() else { return };
+    let api = api.with_timeout(std::time::Duration::from_secs(30));
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+
+    let player = client::resolve_selector(&api, "live_player").expect("no live player");
+    let sel = format!("addr:0x{:X}", player.addr);
+    let controller = client::read_u64(&api, player.addr, 0x2C8);
+    let epi = client::read_u64(&api, controller, 0x408);
+
+    // The Enhanced Input subsystem instance.
+    let ss = api.op("walk_class", json!({"class": "EnhancedInputLocalPlayerSubsystem", "max": 1}));
+    let subsystem = ss.result["instances"][0]["addr"]
+        .as_str()
+        .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
+        .expect("no EnhancedInputLocalPlayerSubsystem");
+    let ss_sel = format!("addr:0x{subsystem:X}");
+    println!("subsystem: 0x{subsystem:X}");
+
+    // The ForwardInput UInputAction pointer.
+    let aid = client::read_u64(&api, epi, 0x598);
+    let aid_num = client::read_u64(&api, epi, 0x5A0) as u32 as usize;
+    let mut action = 0u64;
+    for i in 0..aid_num {
+        let ptr = client::read_u64(&api, aid, (i * 0x70) as u64);
+        if client::object_name(&api, ptr).as_deref() == Some("ForwardInput") {
+            action = ptr;
+            break;
+        }
+    }
+    assert_ne!(action, 0, "ForwardInput action not found");
+    println!("ForwardInput action: 0x{action:X}\n");
+
+    // Parm block (72 bytes) for StartContinuousInputInjectionForAction:
+    //   +0x00 UInputAction* Action
+    //   +0x08 FInputActionValue RawValue (FVector Value + ValueType), 32 bytes
+    //   +0x28 TArray Modifiers (empty)
+    //   +0x38 TArray Triggers (empty)
+    // ForwardInput is a 1D axis; Value.X = 1.0, ValueType = Axis1D(1).
+    let mut start = [0u8; 72];
+    start[0..8].copy_from_slice(&action.to_le_bytes());
+    start[8..16].copy_from_slice(&1.0f64.to_le_bytes()); // Value.X
+    start[32] = 1; // ValueType at RawValue+0x18 = Axis1D
+
+    let before = actor_location(&api, &sel);
+    println!("before: {:.1}, {:.1}, {:.1}", before[0], before[1], before[2]);
+
+    let r = api.call_ufunction(
+        "EnhancedInputSubsystemInterface",
+        "StartContinuousInputInjectionForAction",
+        &ss_sel,
+        &start,
+    );
+    println!("StartContinuousInputInjectionForAction: {:?}", r.map(|_| "ok"));
+
+    for _ in 0..6 {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        let p = actor_location(&api, &sel);
+        let d = {
+            let (dx, dy, dz) = (p[0] - before[0], p[1] - before[1], p[2] - before[2]);
+            (dx * dx + dy * dy + dz * dz).sqrt()
+        };
+        println!("  injecting ForwardInput=1.0: moved {d:.1}");
+    }
+
+    // Stop: parm is just the Action pointer (8 bytes).
+    let mut stop = [0u8; 8];
+    stop.copy_from_slice(&action.to_le_bytes());
+    let _ = api.call_ufunction(
+        "EnhancedInputSubsystemInterface",
+        "StopContinuousInputInjectionForAction",
+        &ss_sel,
+        &stop,
+    );
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    let after = actor_location(&api, &sel);
+    let (dx, dy, dz) = (after[0] - before[0], after[1] - before[1], after[2] - before[2]);
+    let moved = (dx * dx + dy * dy + dz * dz).sqrt();
+    println!("after: {:.1}, {:.1}, {:.1}\ntotal moved: {moved:.1}", after[0], after[1], after[2]);
+    if moved > 20.0 {
+        println!("\n*** SUCCESS: Enhanced Input injection walked the character {moved:.0} units ***");
+    } else {
+        println!("\nno movement ({moved:.1}); try ValueType=Boolean(0) or check the character is on foot");
+    }
+}
+
+#[test]
 #[ignore = "finds the Enhanced Input subsystem and InjectInputForAction parm layout"]
 fn research_inject_action() {
     let Some(api) = api_or_skip() else { return };
@@ -1343,24 +1432,36 @@ fn research_inject_action() {
         println!("walk_class_chain({class}): ok={} -> {}", r2.ok, r2.result);
     }
 
-    // List the subsystem's functions containing "inject" or "action".
-    println!("\n=== subsystem functions (inject/action) ===");
-    let r = api.op("class_functions_by_name", json!({"class": "EnhancedInputLocalPlayerSubsystem"}));
-    if let Some(fns) = r.result["functions"].as_array() {
-        for f in fns {
-            let n = f["name"].as_str().unwrap_or("");
-            let l = n.to_ascii_lowercase();
-            if l.contains("inject") || l.contains("action") {
-                println!(
-                    "  {n} ({} parms, {} bytes)",
-                    f["num_parms"].as_u64().unwrap_or(0),
-                    f["parms_size"].as_u64().unwrap_or(0)
-                );
-                print_function_parameters(&api, "EnhancedInputLocalPlayerSubsystem", n);
+    // List inject/action functions across the subsystem + interface.
+    for class in [
+        "EnhancedInputLocalPlayerSubsystem",
+        "EnhancedInputSubsystemInterface",
+        "EnhancedInputWorldSubsystem",
+    ] {
+        println!("\n=== {class} functions (inject/action) ===");
+        let r = api.op("class_functions_by_name", json!({"class": class}));
+        match r.result["functions"].as_array() {
+            Some(fns) => {
+                let mut any = false;
+                for f in fns {
+                    let n = f["name"].as_str().unwrap_or("");
+                    let l = n.to_ascii_lowercase();
+                    if l.contains("inject") || l.contains("action") {
+                        any = true;
+                        println!(
+                            "  {n} ({} parms, {} bytes)",
+                            f["num_parms"].as_u64().unwrap_or(0),
+                            f["parms_size"].as_u64().unwrap_or(0)
+                        );
+                        print_function_parameters(&api, class, n);
+                    }
+                }
+                if !any {
+                    println!("  ({} total functions, none inject/action)", fns.len());
+                }
             }
+            None => println!("  lookup failed: {:?}", r.error),
         }
-    } else {
-        println!("  no functions array: {}", r.result);
     }
     println!("\n=== FInputActionValue struct ===");
     for s in ["InputActionValue", "FInputActionValue"] {

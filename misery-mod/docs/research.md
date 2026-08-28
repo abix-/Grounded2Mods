@@ -3243,18 +3243,48 @@ the character does not move. MISERY's movement is bound through
 Enhanced Input actions, and a raw out-of-band InputKey does not
 drive the action evaluation.
 
-### The right mechanism: InjectInputForAction (Enhanced Input)
+### SOLVED: movement via Enhanced Input action injection (2026-08-28)
 
-Prior art (`Lyall/WukongTweak`, PalWorld/Wukong SDK dumps, found via
-`gh`): the sanctioned way to drive an Enhanced Input action
-programmatically is
-`IEnhancedInputSubsystemInterface::InjectInputForAction(UInputAction*
-Action, FInputActionValue RawValue, TArray<UInputModifier*>
-Modifiers, TArray<UInputTrigger*> Triggers)`, a BlueprintCallable
-UFunction on `UEnhancedInputLocalPlayerSubsystem`. It injects the
-action for one tick, so it is re-called each frame while the input
-is held. This targets the `ForwardInput` (etc.) UInputAction
-directly and is what actually moves the character. InputKey (slot
-88) stays the correct answer for raw key state, but movement runs
-through the action layer, so the bot injects at the action layer.
+The bot moves the character by injecting the Enhanced Input ACTION,
+not the raw key. All of these are BlueprintCallable UFunctions on
+`EnhancedInputSubsystemInterface` (reflected, callable via
+ProcessEvent, no vtable/crash risk), found with `class_functions_by_name`:
+
+```
+InjectInputForAction(UInputAction* Action, FInputActionValue RawValue,
+                     TArray Modifiers, TArray Triggers)   72 bytes  (one tick)
+StartContinuousInputInjectionForAction(...same...)         72 bytes  (persists)
+StopContinuousInputInjectionForAction(UInputAction* Action) 8 bytes
+```
+
+`StartContinuousInputInjectionForAction` is the bot primitive: it
+holds the action until stopped, so no per-frame re-injection.
+
+**Verified live (`test_inject_action_movement`):** calling
+`StartContinuousInputInjectionForAction(ForwardInput, value=1.0)` on
+the `EnhancedInputLocalPlayerSubsystem` walked the character 677
+units (33 -> 135 -> 264 -> 393 -> 523 -> 652 over ~1.5 s), and
+`StopContinuousInputInjectionForAction(ForwardInput)` stopped it.
+Position moved from (19399, 24920, -273) to (19133, 25540, -229).
+
+**How to call it:**
+
+- Subsystem: `walk_class("EnhancedInputLocalPlayerSubsystem")`.
+- Action: the `ForwardInput` UInputAction pointer (from
+  ActionInstanceData, or the mapping context). W/A/S/D/E map to
+  ForwardInput / BackwardInput / LeftInput / RightInput /
+  InteractInput.
+- Parm block (72 bytes) for Start/Inject:
+  `+0x00` Action ptr; `+0x08` FInputActionValue { FVector Value
+  (Value.X = 1.0 for full forward), `+0x18` ValueType = Axis1D(1) };
+  `+0x28` Modifiers TArray (empty); `+0x38` Triggers TArray (empty).
+- Stop parm block (8 bytes): the Action pointer.
+
+**Relationship to InputKey.** InputKey (EnhancedPlayerInput vtable
+slot 88) correctly sets raw key state (IsInputKeyDown) but does NOT
+fire the Enhanced Input action out-of-band, so it does not move the
+character. Movement runs through the action layer, and the injection
+UFunctions above are the right, prior-art-backed mechanism. Keep
+InputKey for anything that reads raw key state; use action injection
+for movement / interaction.
 
