@@ -11,7 +11,7 @@ Steps, in order:
      removing any stale main-new.dll. Validate file size and
      timestamp match the build output.
   4. Launch the game through Steam.
-  5. Wait until the mod's control plane answers on port 17176.
+  5. Wait until the control plane answers and retains the current-world player.
 
 .PARAMETER SkipBuild
 Skip step 1 and deploy whatever is already built.
@@ -125,11 +125,35 @@ while ((Get-Date) -lt $deadline) {
         }
     }
     catch {
-        Start-Sleep -Seconds 3
+        Write-Verbose "[wait] player readiness request failed: $($_.Exception.Message)"
     }
 }
 if (-not $cpReady) {
     Write-Warning "control plane not answering after 180s; check UE4SS console"
+    exit 1
+}
+
+Write-Host "[wait] retained current-world player (up to 180s)" -ForegroundColor Cyan
+$deadline = (Get-Date).AddSeconds(180)
+$playerReady = $false
+while ((Get-Date) -lt $deadline) {
+    try {
+        $r = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/debug" -Method Post `
+            -Body '{"op":"resolve_selector","args":{"selector":"live_player"}}' `
+            -ContentType "application/json" -TimeoutSec 2
+        if ($r.ok -eq $true) {
+            Write-Host "[ready] current-world player retained" -ForegroundColor Green
+            $playerReady = $true
+            break
+        }
+    }
+    catch {
+        Start-Sleep -Seconds 3
+    }
+    Start-Sleep -Seconds 3
+}
+if (-not $playerReady) {
+    Write-Warning "current-world player not retained after 180s; check autoload and the active save"
     exit 1
 }
 
