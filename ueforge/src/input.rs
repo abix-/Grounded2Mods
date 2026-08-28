@@ -377,6 +377,13 @@ mod tests {
     }
 
     #[test]
+    fn control_yaw_comes_from_the_pawn() {
+        let source = include_str!("input.rs");
+        assert!(source.contains("function(player, \"Pawn\", \"GetControlRotation\")"));
+        assert!(!source.contains("function(controller, \"Controller\", \"GetControlRotation\")"));
+    }
+
+    #[test]
     fn movement_axes_follow_control_yaw() {
         let forward = movement_direction(90.0, 1.0, 0.0);
         assert!(forward.0.abs() < 1.0e-12);
