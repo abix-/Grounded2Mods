@@ -1329,6 +1329,161 @@ fn find_inputkey_write() {
 }
 
 #[test]
+#[ignore = "proves the read_bytes op rejects bad pointers instead of crashing the game"]
+fn read_op_guards_bad_pointer() {
+    let Some(api) = api_or_skip() else { return };
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+
+    // A valid read still works: the live player object.
+    let player = client::resolve_selector(&api, "live_player").expect("no live player");
+    let good = api.op(
+        "read_bytes",
+        json!({"instance_selector": format!("addr:0x{:X}", player.addr), "length": 16}),
+    );
+    assert!(good.ok, "valid read failed: {:?}", good.error);
+    println!("valid read of player object: ok, {} bytes", 16);
+
+    // Bad pointers that would have faulted the copy before the guard:
+    // a near-null address and high addresses no user allocation reaches.
+    let bad_addrs: [u64; 3] = [0x1, 0xDEAD_0000_0000, 0x7FFF_FFFF_0000];
+    for a in bad_addrs {
+        let r = api.op(
+            "read_bytes",
+            json!({"instance_selector": format!("addr:0x{a:X}"), "length": 64}),
+        );
+        println!("read 0x{a:X}: ok={} error={:?}", r.ok, r.error);
+        assert!(!r.ok, "read of bad address 0x{a:X} should be rejected, not succeed");
+    }
+
+    // The decisive proof: the game and its control plane are still
+    // alive after the bad reads (before the guard, they crashed it).
+    // Re-read the valid player object; a response means the process
+    // and its listener survived.
+    let after = api.op(
+        "read_bytes",
+        json!({"instance_selector": format!("addr:0x{:X}", player.addr), "length": 16}),
+    );
+    assert!(after.ok, "control plane died after bad reads: {:?}", after.error);
+    println!("\nSUCCESS: bad pointers rejected, game still alive (valid read still works)");
+}
+
+#[test]
+#[ignore = "empirically locates FInputKeyParams by finding W's FName index in the arg registers' memory"]
+fn decode_inputkeyparams() {
+    let Some(api) = api_or_skip() else { return };
+    let api = api.with_timeout(std::time::Duration::from_secs(45));
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+
+    let player = client::resolve_selector(&api, "live_player").expect("no live player");
+    let controller = client::read_u64(&api, player.addr, 0x2C8);
+    let epi = client::read_u64(&api, controller, 0x408);
+    println!("controller: 0x{controller:X}  EPI: 0x{epi:X}");
+
+    let w_idx = api.op("string_to_fname", json!({"text": "W"})).result["fname"]
+        .as_u64()
+        .map(|f| f as u32)
+        .expect("no W FName");
+    println!("W FName comparison_index = {w_idx} (0x{w_idx:X})\n");
+
+    // exe base.
+    let probe = api.op("watch_writes", json!({"addr": epi, "len": 8, "duration_ms": 1}));
+    let base = u64::from_str_radix(
+        probe.result["exe_base"].as_str().unwrap().trim_start_matches("0x"),
+        16,
+    )
+    .unwrap();
+
+    // Target: APlayerController::InputKey by default.
+    let rva = std::env::var("IK_RVA")
+        .ok()
+        .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
+        .unwrap_or(0x39f1210);
+    let addr = base + rva;
+
+    let secs = 10u64;
+    println!("=== TAP W steadily for ~{secs}s (exec on +0x{rva:X}) ===\n");
+    let res = api
+        .op(
+            "watch_writes",
+            json!({"addr": addr, "mode": "exec", "len": 1, "duration_ms": secs * 1000}),
+        )
+        .result;
+    let Some(rec) = res["records"].as_array().and_then(|r| r.first()) else {
+        println!("function did not run; press W during the window");
+        return;
+    };
+
+    let reg = |name: &str| -> u64 {
+        u64::from_str_radix(rec[name].as_str().unwrap_or("0x0").trim_start_matches("0x"), 16)
+            .unwrap_or(0)
+    };
+    let regs = [("rcx", reg("rcx")), ("rdx", reg("rdx")), ("r8", reg("r8")), ("r9", reg("r9"))];
+    for (n, v) in &regs {
+        println!("  {n} = 0x{v:X}");
+    }
+    println!();
+
+    let heap_lo = 0x1_0000_0000u64;
+    let heap_hi = 0x8000_0000_0000u64;
+
+    // Read one region (a single control-plane call) and scan the local
+    // buffer for W's FName index. NO pointer chasing: recursive reads
+    // hang the control plane, and the region either holds W or it does
+    // not. Returns the pointer-sized values seen, for one manual step
+    // deeper if needed.
+    let scan = |label: &str, at: u64| -> Vec<u64> {
+        if at < heap_lo || at >= heap_hi {
+            println!("{label}: 0x{at:X} not a heap address");
+            return Vec::new();
+        }
+        let buf = client::read_bytes(&api, at, 0, 0x80);
+        if buf.is_empty() {
+            println!("{label}: 0x{at:X} unreadable");
+            return Vec::new();
+        }
+        println!("{label} at 0x{at:X}:");
+        for row in 0..(buf.len() / 16) {
+            let o = row * 16;
+            let hex: Vec<String> = buf[o..o + 16].iter().map(|x| format!("{x:02X}")).collect();
+            println!("  +0x{o:02X}  {}", hex.join(" "));
+        }
+        let mut off = 0usize;
+        while off + 4 <= buf.len() {
+            let v = u32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
+            if v == w_idx {
+                println!("  *** W FName index at {label}+0x{off:X} (abs 0x{:X}) ***", at + off as u64);
+            }
+            off += 4;
+        }
+        let mut ptrs = Vec::new();
+        let mut o = 0usize;
+        while o + 8 <= buf.len() {
+            ptrs.push(u64::from_le_bytes(buf[o..o + 8].try_into().unwrap()));
+            o += 8;
+        }
+        ptrs
+    };
+
+    // rdx is the presumed parameter pointer. Dump it and its distinct
+    // heap-pointer fields, one level, each a single bounded read.
+    let rdx_ptrs = scan("rdx", reg("rdx"));
+    println!();
+    let mut seen: Vec<u64> = Vec::new();
+    for p in rdx_ptrs {
+        if p >= heap_lo && p < heap_hi && !seen.contains(&p) {
+            seen.push(p);
+            if seen.len() > 8 {
+                break;
+            }
+            scan(&format!("  rdx->*(0x{p:X})"), p);
+        }
+    }
+    println!();
+    scan("r9", reg("r9"));
+    println!("\ndone.");
+}
+
+#[test]
 #[ignore = "names InputKey by its `this` register and dumps the real FInputKeyParams"]
 fn name_inputkey_by_rcx() {
     let Some(api) = api_or_skip() else { return };

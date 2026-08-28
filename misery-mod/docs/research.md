@@ -3278,31 +3278,60 @@ EnhancedPlayerInput addresses:
 + 0x3213800   rcx = RecastNavMesh-Default   NOT input (red herring)
 ```
 
-So, at stable image-relative offsets:
+So, at stable image-relative offsets, these two functions run only
+on the input thread and sit on the KeyStateMap write path:
 
-- **`APlayerController::InputKey` = + 0x39f1210** (this = PlayerController)
-- **PlayerInput-level `InputKey` = + 0x3cb9360** (this = EnhancedPlayerInput)
+- + 0x39f1210 has `this = PlayerController`
+- + 0x3cb9360 has `this = EnhancedPlayerInput`
 
-Both run only on the input thread and are on the KeyStateMap write
-path. The earlier "outer = entry" and "inner = store" guesses were
-both wrong; only the rcx measurement settled it.
+The earlier "outer = entry" and "inner = store" guesses were both
+wrong; the + 0x3213800 candidate was a RecastNavMesh method and
++ 0x11aee60 an inner helper. Only the rcx measurement ruled those
+out.
 
-**Open: the FInputKeyParams layout.** The rdx bytes captured at
-`APlayerController::InputKey` (this = controller) do NOT match the
-assumed 64-byte, FName-first FInputKeyParams:
+### Correction: + 0x39f1210 is NOT InputKey (2026-08-28)
+
+Decoding the parameter (`decode_inputkeyparams`) walked back the
+InputKey naming. It is a CORRECTION to the two lines above: matching
+rcx to the controller proved only that + 0x39f1210 is A controller
+method on the input path, not that it is `APlayerController::InputKey`.
+
+The rdx captured at + 0x39f1210 is not an FInputKeyParams:
 
 ```
-rdx = 0x...F630, first 0x40 bytes:
-  +0x00  A0 14 37 EF 6F 01 00 00   (a heap pointer, not an FName)
-  +0x08  02 00 00 00 00 00 00 00   (= 2, could be EInputEvent or a count)
-  +0x10  00 80 2E EF 6F 01 00 00   (heap pointer)
-  ...
+rdx first 0x30 bytes:
+  +0x00  80 14 A4 3C F1 01 00 00   heap pointer (-> a TArray of objects)
+  +0x08  02 00 00 00 00 00 00 00   = 2 (a count)
+  +0x10  00 80 84 3C F1 01 00 00   heap pointer (-> a UObject; first
+                                    qword is a 0x7FF6... vtable)
+  +0x20  80 CA 3D 65 F1 01 00 00   heap pointer (-> a UObject)
 ```
 
-The first field is a pointer, not an FName, so either this build's
-`InputKey` uses the pre-5.1 signature `InputKey(FKey, EInputEvent,
-float, bool)` (FKey passed by hidden pointer in rdx), or rdx points
-at a wrapper. The next step decodes the real layout from these
-captured bytes (and from r8/r9), then hooks + 0x39f1210 to replay a
-press with a byte-exact parameter block, rather than guessing the
-struct as before.
+FInputKeyParams begins with an FKey whose first 8 bytes are an FName
+(two small integers), never a pointer. W's FName index (0xD08) did
+not appear anywhere reachable from rdx. And + 0x39f1210 overwrites
+edx with a global right after entry, so its second argument is not
+even used the way InputKey would use `FInputKeyParams&`. So
++ 0x39f1210 is some other controller input method (a Tick / process
+step), not InputKey. The same doubt applies to + 0x3cb9360, whose
+captured rdx was a code address, not a parameter pointer.
+
+**What still stands:** KeyStateMap at EPI + 0x788, the store
+instruction + 0x42f25d0, and the input-thread call chain to it are
+all measured and solid. What is NOT settled is which chain frame is
+`APlayerController::InputKey`.
+
+**Blocker found:** the `read_bytes` op faults the game when handed a
+bad or code pointer. The two decode runs each hung or crashed the
+game while chasing pointers out of the captured registers. Before
+more live pointer-walking, the read op needs a `VirtualQuery`
+/is_addr_readable guard on every address so a stale pointer returns
+empty instead of killing the process.
+
+**Better next step than guessing the frame:** find InputKey by its
+parameter, not its position. At each input-thread chain frame, read
+only the incoming argument registers' shallow memory (guarded, no
+deep chase) and look for W's FName index followed by W's known
+FKeyDetails pointer (from the KeyStateMap W entry). The frame whose
+parameter contains W's FKey is InputKey. That identifies it by what
+it receives, not by where it sits.

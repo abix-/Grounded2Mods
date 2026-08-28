@@ -589,6 +589,31 @@ where
 /// pathological reads from hanging the listener.
 pub const BYTE_OP_CAP: usize = 0x10_0000;
 
+/// True only if every page the range `[addr, addr + len)` touches is
+/// committed and readable. A raw `addr:` selector can point anywhere
+/// (a stale pointer chased out of captured registers, a code address),
+/// and `copy_nonoverlapping` over an unmapped page faults and kills
+/// the game. Checking each page with `VirtualQuery` first turns that
+/// crash into a clean error. Cheap: one query per 4 KiB page, and the
+/// length is already capped at 1 MiB (256 pages).
+fn range_readable(addr: usize, len: usize) -> bool {
+    if len == 0 {
+        return true;
+    }
+    let Some(end) = addr.checked_add(len) else {
+        return false;
+    };
+    let mut p = addr;
+    while p < end {
+        if !crate::winproc::is_addr_readable(p) {
+            return false;
+        }
+        // Advance to the next page boundary.
+        p = (p & !0xFFF) + 0x1000;
+    }
+    true
+}
+
 /// When the resolved object's class is known, clamp
 /// `offset + length` to `class.properties_size()`. Returns
 /// `Err` if the range falls completely outside the class extent.
@@ -631,8 +656,17 @@ where
         check_object_bounds(obj, offset, length)?;
     }
     let mut out = vec![0u8; length];
+    // SAFETY: `field_ptr` only computes an address; no deref yet.
+    let base = unsafe { obj.field_ptr(offset) };
+    if !range_readable(base as usize, length) {
+        return Err(format!(
+            "unreadable range at 0x{:X} + 0x{length:X} (stale or unmapped pointer)",
+            base as usize
+        ));
+    }
+    // SAFETY: every page of the range was just confirmed committed and
+    // readable, so the copy cannot fault.
     unsafe {
-        let base = obj.field_ptr(offset);
         std::ptr::copy_nonoverlapping(base, out.as_mut_ptr(), length);
     }
     Ok(serde_json::json!({
