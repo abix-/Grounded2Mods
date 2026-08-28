@@ -3162,3 +3162,59 @@ The target is the frame whose argument register points to a struct
 whose first 8 bytes are W's FName (0xD08) and whose next 8 are W's
 FKeyDetails pointer.
 
+### Prior art: how InputKey is actually called (2026-08-28)
+
+The from-scratch reverse-engineering above was unnecessary. Calling
+InputKey in a UE game is a solved problem. Two facts from public
+code, found via `gh`:
+
+**1. The real FInputKeyParams layout** (Epic's
+`Engine/Source/Runtime/Engine/Classes/GameFramework/PlayerInput.h`,
+mirrored on GitHub; `bl-sdk/oak2-mod-manager` uses the same):
+
+```
+FKey            Key;                // +0x00, 24 bytes (FName + TSharedPtr<FKeyDetails>)
+FInputDeviceId  InputDevice;        // +0x18, 4
+EInputEvent     Event;              // +0x1C, 4  (0 = IE_Pressed, 1 = IE_Released)
+int32           NumSamples;         // +0x20, 4
+float           DeltaTime;          // +0x24, 4
+FVector         Delta;              // +0x28, 24 (3 doubles)
+bool            bIsGamepadOverride; // +0x40, 1
+                                    // size 0x48
+```
+
+The mod's earlier hand-rolled struct put Delta right after the key,
+so Event landed at the wrong offset. That, not a wrong address, is
+why every prior "call InputKey" returned true and did nothing.
+`misery-mod/src/input.rs` now uses the correct layout.
+
+**2. InputKey is a vtable virtual on the PlayerInput object.**
+`bl-sdk` calls it as `InputKey(UEnhancedPlayerInput* this,
+FInputKeyParams* params)` from the EnhancedPlayerInput vtable at an
+index near 85 (its value for Borderlands' engine). `try_inputkey`
+now calls `EnhancedPlayerInput.vtable[slot](epi, &params)` with the
+params in a 256-byte zeroed buffer (so a wrong slot that reads past
+the struct hits zeros, not a fault).
+
+**Where this stands on MISERY (UE 5.4):** `dump_epi_vtable_rvas`
+shows the EnhancedInput plugin overrides occupy vtable slots 87-99
+(functions in the same + 0x42f / + 0x3cb code region as the store).
+InputKey is one of these. Calling slots 87-90 and 92 returns a bool
+cleanly; 91 and 93 hang or crash (wrong-shaped callees, e.g.
+InputAxis, so not InputKey). But none of the clean slots fired the
+ForwardInput action (`verify_inputkey_via_action`, trigger stayed
+0). Two open possibilities, not yet resolved:
+
+- The auto-loaded save may not be in active gameplay (paused / at a
+  menu), so no slot would fire regardless. The physical-W tests that
+  DID work were run while actively in-game.
+- InputKey may need a valid FKeyDetails in this build (the null-plus-
+  lazy-resolve assumption may not hold on this path). W's FKey with
+  a real FKeyDetails pointer can be read from the InputMappingContext
+  (SGKCharacterInputs) mappings or a live KeyStateMap W entry.
+
+So InputKey is NOT yet confirmed on MISERY. The method is correct
+and the candidate set is 87-99 (minus the hang/crash slots); the
+remaining step is to verify a slot while the game is confirmed in
+active gameplay, and if needed supply a real FKeyDetails.
+

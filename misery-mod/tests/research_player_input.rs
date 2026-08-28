@@ -1329,6 +1329,174 @@ fn find_inputkey_write() {
 }
 
 #[test]
+#[ignore = "calls each EnhancedInput vtable slot as InputKey(W) and checks if the ForwardInput action fires"]
+fn verify_inputkey_via_action() {
+    let Some(api) = api_or_skip() else { return };
+    let api = api.with_timeout(std::time::Duration::from_secs(30));
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+
+    let player = client::resolve_selector(&api, "live_player").expect("no live player");
+    let controller = client::read_u64(&api, player.addr, 0x2C8);
+    let epi = client::read_u64(&api, controller, 0x408);
+    assert_ne!(epi, 0, "no EnhancedPlayerInput");
+
+    // Find the ForwardInput entry in ActionInstanceData (+0x598, stride
+    // 0x70). Its trigger byte (+0x10) and value (+0x40) change when a
+    // real W press propagates through the input pipeline.
+    let aid_data = client::read_u64(&api, epi, 0x598);
+    let aid_num = client::read_u64(&api, epi, 0x5A0) as u32 as usize;
+    let stride: usize = 0x70;
+    let mut fi_entry = 0u64;
+    for i in 0..aid_num {
+        let ptr = client::read_u64(&api, aid_data, (i * stride) as u64);
+        if client::object_name(&api, ptr).as_deref() == Some("ForwardInput") {
+            fi_entry = aid_data + (i * stride) as u64;
+            break;
+        }
+    }
+    assert_ne!(fi_entry, 0, "ForwardInput not found in ActionInstanceData");
+    println!("ForwardInput entry: 0x{fi_entry:X}\n");
+
+    let read_trigger = |api: &Api| -> (u8, f64) {
+        let t = client::read_bytes(api, fi_entry, 0x10, 1);
+        let v = client::read_bytes(api, fi_entry, 0x40, 8);
+        let tb = t.first().copied().unwrap_or(0);
+        let vf = if v.len() == 8 {
+            f64::from_le_bytes(v.try_into().unwrap())
+        } else {
+            0.0
+        };
+        (tb, vf)
+    };
+
+    // EnhancedInput override slots from the vtable dump, minus 93 which
+    // crashes when called with FInputKeyParams (wrong-shaped callee).
+    let slots = [87usize, 88, 89, 90, 91, 92, 94, 95, 96, 97, 98, 99];
+    for slot in slots {
+        let press = api.op("try_inputkey", json!({"slot": slot, "key_name": "W", "pressed": true}));
+        if !press.ok {
+            println!("slot {slot}: press failed: {:?}", press.error);
+            continue;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let (tb, vf) = read_trigger(&api);
+        let _ = api.op("try_inputkey", json!({"slot": slot, "key_name": "W", "pressed": false}));
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let (tb_after, vf_after) = read_trigger(&api);
+        println!(
+            "slot {slot}: returned={} -> ForwardInput trigger={tb} value={vf:.2} (after release: trigger={tb_after} value={vf_after:.2})",
+            press.result["returned"]
+        );
+        if tb == 2 || vf > 0.5 {
+            println!("\n*** slot {slot} IS InputKey: calling it fired the ForwardInput action ***");
+            let _ = api.op("try_inputkey", json!({"slot": slot, "key_name": "W", "pressed": false}));
+            return;
+        }
+    }
+    println!("\nno slot fired ForwardInput. If none worked, the game may be paused/at a menu, \
+              or InputKey needs a valid FKeyDetails.");
+}
+
+#[test]
+#[ignore = "dumps EnhancedPlayerInput vtable slots as RVAs and flags the input-path function"]
+fn dump_epi_vtable_rvas() {
+    let Some(api) = api_or_skip() else { return };
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+
+    let player = client::resolve_selector(&api, "live_player").expect("no live player");
+    let controller = client::read_u64(&api, player.addr, 0x2C8);
+    let epi = client::read_u64(&api, controller, 0x408);
+    assert_ne!(epi, 0, "no EnhancedPlayerInput");
+
+    let probe = api.op("watch_writes", json!({"addr": epi, "len": 8, "duration_ms": 1}));
+    let base = u64::from_str_radix(
+        probe.result["exe_base"].as_str().unwrap().trim_start_matches("0x"),
+        16,
+    )
+    .unwrap();
+    let exe_end = base
+        + u64::from_str_radix(
+            probe.result["exe_size"].as_str().unwrap().trim_start_matches("0x"),
+            16,
+        )
+        .unwrap();
+
+    let vtable = client::read_u64(&api, epi, 0);
+    println!("EPI 0x{epi:X} vtable 0x{vtable:X} exe base 0x{base:X}\n");
+
+    // The this=EPI input-path function the write watchpoint captured.
+    let target_rva: u64 = 0x3cb9360;
+
+    for slot in 0u64..120 {
+        let fn_addr = client::read_u64(&api, vtable, slot * 8);
+        if fn_addr == 0 {
+            println!("slot {slot}: null (vtable end)");
+            break;
+        }
+        let in_exe = fn_addr >= base && fn_addr < exe_end;
+        let rva = if in_exe { fn_addr - base } else { 0 };
+        let mark = if in_exe && rva == target_rva {
+            "  <== this=EPI input-path fn (+0x3cb9360)"
+        } else {
+            ""
+        };
+        let where_ = if in_exe {
+            format!("+0x{rva:x}")
+        } else {
+            format!("0x{fn_addr:X} (plugin/other module)")
+        };
+        println!("slot {slot:3}: {where_}{mark}");
+    }
+}
+
+#[test]
+#[ignore = "sweeps EnhancedPlayerInput vtable slots calling InputKey(W); the slot that moves the player is InputKey"]
+fn sweep_inputkey_slots() {
+    let Some(api) = api_or_skip() else { return };
+    let api = api.with_timeout(std::time::Duration::from_secs(30));
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+
+    let player = client::resolve_selector(&api, "live_player").expect("no live player");
+    let sel = format!("addr:0x{:X}", player.addr);
+
+    // bl-sdk calls InputKey at EnhancedPlayerInput vtable index ~85;
+    // MISERY's EnhancedInput plugin virtuals sit at slots 87-99.
+    let start: usize = std::env::var("SLOT_START").ok().and_then(|s| s.parse().ok()).unwrap_or(85);
+    let end: usize = std::env::var("SLOT_END").ok().and_then(|s| s.parse().ok()).unwrap_or(100);
+
+    println!("sweeping EnhancedPlayerInput vtable slots {start}..{end} calling InputKey(W)\n");
+
+    for slot in start..end {
+        let before = actor_location(&api, &sel);
+        let press = api.op("try_inputkey", json!({"slot": slot, "key_name": "W", "pressed": true}));
+        if !press.ok {
+            println!("slot {slot}: press failed: {:?}", press.error);
+            continue;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        let _rel = api.op("try_inputkey", json!({"slot": slot, "key_name": "W", "pressed": false}));
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let after = actor_location(&api, &sel);
+        let dx = after[0] - before[0];
+        let dy = after[1] - before[1];
+        let dz = after[2] - before[2];
+        let moved = (dx * dx + dy * dy + dz * dz).sqrt();
+        println!(
+            "slot {slot}: returned={} moved={moved:.2}",
+            press.result["returned"]
+        );
+        if moved > 5.0 {
+            println!("\n*** slot {slot} IS InputKey: calling it with W moved the player {moved:.1} units ***");
+            // Make sure the key is released.
+            let _ = api.op("try_inputkey", json!({"slot": slot, "key_name": "W", "pressed": false}));
+            return;
+        }
+    }
+    println!("\nno slot in {start}..{end} moved the player. Widen the range, or the \
+              player cannot move right now (menu / not on ground).");
+}
+
+#[test]
 #[ignore = "finds InputKey by which chain frame receives W's FKey as a parameter"]
 fn find_inputkey_by_param() {
     let Some(api) = api_or_skip() else { return };

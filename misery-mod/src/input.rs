@@ -323,27 +323,34 @@ fn dry_run_inputkey(
     }))
 }
 
+/// Real UE 5.x `FInputKeyParams` layout, from
+/// `Engine/Source/Runtime/Engine/Classes/GameFramework/PlayerInput.h`
+/// (member order is the memory order for this non-reflected struct).
+/// The earlier version had Delta right after the key, which put Event
+/// at the wrong offset and made every call a no-op.
 #[repr(C)]
 struct FInputKeyParams {
-    // FKey: FName (8 bytes) + TSharedPtr<FKeyDetails> (16 bytes)
-    key_fname_ci: i32,
-    key_fname_num: u32,
-    key_details_ptr: usize,
-    key_details_ref: usize,
-    // FVector2D Delta (UE5.4 LWC: double)
-    delta_x: f64,
-    delta_y: f64,
-    // float DeltaTime
-    delta_time: f32,
+    // FKey Key: FName KeyName (8) + TSharedPtr<FKeyDetails> (16). A null
+    // KeyDetails is fine; UE resolves it lazily from KeyName.
+    key_fname_ci: i32,       // +0x00
+    key_fname_num: u32,      // +0x04
+    key_details_ptr: usize,  // +0x08
+    key_details_ref: usize,  // +0x10
+    // FInputDeviceId InputDevice (int32 wrapper)
+    input_device: i32,       // +0x18
+    // EInputEvent Event (0 = IE_Pressed, 1 = IE_Released)
+    event: i32,              // +0x1C
     // int32 NumSamples
-    num_samples: i32,
-    // EInputEvent
-    event: i32,
-    // FInputDeviceId
-    input_device: i32,
+    num_samples: i32,        // +0x20
+    // float DeltaTime
+    delta_time: f32,         // +0x24
+    // FVector Delta (3 doubles, 8-aligned at +0x28)
+    delta_x: f64,            // +0x28
+    delta_y: f64,            // +0x30
+    delta_z: f64,            // +0x38
     // bool bIsGamepadOverride
-    is_gamepad: u8,
-    _pad: [u8; 7],
+    is_gamepad: u8,          // +0x40
+    _pad: [u8; 7],           // to size 0x48
 }
 
 #[repr(C)]
@@ -374,8 +381,6 @@ fn try_inputkey(
     key_name: &str,
     pressed: bool,
 ) -> Result<serde_json::Value, String> {
-    use modforge::patterns::sleuth::scan_all_matches;
-
     let player = crate::speed::PLAYER
         .retained()
         .ok_or("no retained player")?;
@@ -384,18 +389,17 @@ fn try_inputkey(
     if controller_addr == 0 {
         return Err("player has no controller at +0x2C8".into());
     }
+    let controller = unsafe { &*(controller_addr as *const ueforge::ue::UObject) };
 
-    // Find InputKey by patternsleuth signature scan (unique prologue)
-    let sig = "40 55 57 41 57 48 8d 6c 24 b9 48 81 ec f0 00 00 00 f6 41 58 10";
-    let hits = scan_all_matches(sig)
-        .map_err(|e| format!("patternsleuth scan failed: {e}"))?;
-    if hits.is_empty() {
-        return Err("InputKey function not found by patternsleuth scan".into());
+    // InputKey is a virtual on the EnhancedPlayerInput vtable, called
+    // as InputKey(this = EnhancedPlayerInput, &FInputKeyParams). This
+    // is the bl-sdk approach (their index is ~85); MISERY's
+    // EnhancedInput plugin virtuals sit around slots 87-99.
+    let epi_addr: usize = unsafe { controller.read_field(0x408) };
+    if epi_addr == 0 {
+        return Err("controller has no PlayerInput at +0x408".into());
     }
-    if hits.len() > 1 {
-        return Err(format!("InputKey signature matched {} addresses (expected 1)", hits.len()));
-    }
-    let fn_ptr = hits[0] as *const c_void;
+    let epi = unsafe { &*(epi_addr as *const ueforge::ue::UObject) };
 
     let fname = ueforge::ue::fname::from_str(key_name, ueforge::ue::fname::FindName::Find)
         .ok_or_else(|| format!("FName not found for key '{key_name}'"))?;
@@ -406,30 +410,46 @@ fn try_inputkey(
         key_fname_num: fname.number,
         key_details_ptr: 0,
         key_details_ref: 0,
+        input_device: 0,
+        event,
+        num_samples: 1,
+        delta_time: 1.0 / 60.0,
         delta_x: 0.0,
         delta_y: 0.0,
-        delta_time: 0.0,
-        num_samples: 1,
-        event,
-        input_device: 0,
+        delta_z: 0.0,
         is_gamepad: 0,
         _pad: [0; 7],
     };
 
-    type InputKeyFn = unsafe extern "system" fn(*const c_void, *const c_void) -> bool;
+    // Back the params with a larger zeroed buffer so a wrong vtable
+    // slot that reads past FInputKeyParams (some do, e.g. one at
+    // rdx+0xA8) hits zeros instead of unmapped memory and does not
+    // crash the game during a slot search.
+    let mut buf = [0u8; 256];
+    // SAFETY: buf is 256 bytes, larger than FInputKeyParams (0x48).
+    unsafe {
+        std::ptr::copy_nonoverlapping(
+            &params as *const FInputKeyParams as *const u8,
+            buf.as_mut_ptr(),
+            std::mem::size_of::<FInputKeyParams>(),
+        );
+    }
 
+    let fn_ptr = unsafe { epi.vtable_fn(slot) };
+    type InputKeyFn = unsafe extern "system" fn(*const c_void, *const c_void) -> bool;
     let input_key: InputKeyFn = unsafe { std::mem::transmute(fn_ptr) };
     let result = unsafe {
-        input_key(
-            controller_addr as *const c_void,
-            &params as *const FInputKeyParams as *const c_void,
-        )
+        input_key(epi_addr as *const c_void, buf.as_ptr() as *const c_void)
     };
 
     Ok(serde_json::json!({
         "key": key_name,
         "pressed": pressed,
+        "slot": slot,
+        "this": "EnhancedPlayerInput",
+        "epi": format!("{epi_addr:#x}"),
         "fn_addr": format!("{:#x}", fn_ptr as usize),
         "returned": result,
+        "params_size": std::mem::size_of::<FInputKeyParams>(),
     }))
 }
