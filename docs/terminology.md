@@ -18,8 +18,8 @@
 | square | A map square in MISERY worldgen (worldgen.md). | tile, cell |
 | bot | The automation that reads the chosen path, observes the player, and sends virtual player input. | follower |
 | route | The ordered waypoints and actions for a trip, such as `spawn -> metal-door -> expedition-door`. A route selects the next waypoint but does not calculate the walkable path. | waypoint graph, A* graph |
-| waypoint | A meaningful place where the bot stops to arrive, observe, act, or choose the next goal. | A* node, path point, breadcrumb |
+| waypoint | A meaningful place where the bot stops to arrive, observe, act, or choose the next goal. | A* node, path point, debug position |
 | path | The detailed walkable path that A* calculates from the player's current position to the selected waypoint using the game's navigation data. | route, edge |
 | path point | One intermediate position on the path returned by A*. The bot passes through it without treating it as a stop. | waypoint |
-| breadcrumb | A recorded position used only for diagnostics and evidence. | waypoint, path point |
+| debug position | A recorded position showing where the bot actually walked. It is used only for debugging and never for navigation. | breadcrumb, waypoint, path point |
 | player input | Virtual keys and mouse movement injected into the game's normal input processing. The game performs movement, aiming, and interaction through its existing bindings. | direct movement call, direct look call, direct interaction call |

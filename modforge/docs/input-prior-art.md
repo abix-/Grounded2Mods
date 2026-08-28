@@ -68,7 +68,7 @@ input.cursor.get    input.foreground.hwnd    input.find_hwnd_by_pid    input.sel
 
 **Live action journal:** injected games are not deterministic simulations owned by Modforge. Their journal records semantic control-plane operations, then waits for observable conditions and asserts the resulting values. Raw timed input remains one operation type, not the authority for progress.
 
-**3D route replay:** store meaningful stops as world-space waypoints, not every sampled position and not one long timed keyboard and mouse stream. The route or current action selects the next waypoint. Unreal navigation's A* calculates the detailed walkable path from the player's current position to that waypoint. The bot reads those path points and sends player input through the registered `InputSurface`. Dense position samples are diagnostic breadcrumbs only.
+**3D route replay:** store meaningful stops as world-space waypoints, not every sampled position and not one long timed keyboard and mouse stream. The route or current action selects the next waypoint. Unreal navigation's A* calculates the detailed walkable path from the player's current position to that waypoint. The bot reads those path points and sends player input through the registered `InputSurface`. Dense position samples are debug positions only.
 
 **Live target discovery:** a discovered world target such as a loot box is itself a semantic waypoint. The game adapter finds live actors, projects their positions onto the navigation surface, and asks Unreal navigation for a path to each candidate. It rejects invalid or partial paths and may choose the reachable target with the lowest returned path cost. Straight-line proximity does not prove reachability. Unreal navigation's A* then determines the detailed path to the selected target, and completion requires an observed gameplay result after player-like interaction.
 
@@ -440,7 +440,7 @@ A long first-person route is not authoritative as raw timed input. One collision
 The route model uses two distinct location terms:
 
 - A **waypoint** is a meaningful place where the bot stops to observe arrival, perform an action, or start travelling to the next goal. It records a stable route-local ID, world position, arrival radius, and optional arrival condition or action.
-- A **breadcrumb** is a transient position sample retained for diagnostics, visualization, stuck evidence, or later route analysis. Breadcrumbs are never durable waypoints and never become A* nodes merely because the player passed through them.
+- A **debug position** records where the bot actually walked. It may be retained for debugging, visualization, stuck evidence, or later analysis. Debug positions are never used for navigation and never become waypoints or A* nodes.
 
 There is one pathfinding level. The route or current action selects the next meaningful waypoint. Unreal navigation's A* searches the navigation mesh from the player's current position to that waypoint and returns the detailed walkable path. A* does not move the player. The bot works through the returned path points using virtual keys and mouse movement. The bot does not choose or change the path. Games without a usable navigation surface must supply another A* implementation over their walkable geometry. Durable waypoints remain stops and goals. They are not the nodes searched by A*.
 
@@ -495,7 +495,7 @@ start bot travel: expedition -> spawn
 wait until spawn waypoint is reached
 ```
 
-The first measured proof reads the live MISERY player and placed expedition-door positions, projects both onto Unreal navigation, and makes the bot walk without teleporting. It reached the expedition entrance from a cold start in 53.72 seconds, retained 72 one-meter diagnostic breadcrumbs, detected the blocking metal door, and continued after three bounded interaction attempts. Those 72 samples are evidence, not durable waypoints. The permanent flow now saves the exact three-waypoint route above and retains dense samples separately as breadcrumbs. With the player already at the expedition-door stop from the earlier proof, it sent the same `E` keypress as the player and observed the transition into the expedition in 0.65 seconds. A cold combined run remains before I-8 is complete.
+The first measured proof reads the live MISERY player and placed expedition-door positions, projects both onto Unreal navigation, and makes the bot walk without teleporting. It reached the expedition entrance from a cold start in 53.72 seconds, retained 72 one-meter debug positions, detected the blocking metal door, and continued after three bounded interaction attempts. Those 72 samples are evidence, not durable waypoints. The permanent flow now saves the exact three-waypoint route above and retains dense samples separately as debug positions. With the player already at the expedition-door stop from the earlier proof, it sent the same `E` keypress as the player and observed the transition into the expedition in 0.65 seconds. A cold combined run remains before I-8 is complete.
 
 ---
 
