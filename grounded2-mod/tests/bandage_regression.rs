@@ -66,7 +66,8 @@ fn impact_resistance_does_not_block_healing() {
         "test setup failed: impact_resistance still disabled"
     );
     assert_ne!(
-        mid.live_hc().required_damage_type_flags, "0xFFFFFFFF",
+        mid.live_hc().required_damage_type_flags,
+        "0xFFFFFFFF",
         "FENCE VIOLATED: the binary mask is back. \
          impact_resistance is regressing to its broken shape."
     );
@@ -76,11 +77,17 @@ fn impact_resistance_does_not_block_healing() {
     // suppressed.
     let cd_pre = mid.live_hc().current_damage;
     if cd_pre < 1.0 {
-        eprintln!("skipping HP-delta check: player at full HP, no headroom for the heal to be observable");
+        eprintln!(
+            "skipping HP-delta check: player at full HP, no headroom for the heal to be observable"
+        );
         return;
     }
 
-    let parms = AddHealthParms { amount: 20.0, _pad: [0; 4], causer: 0 };
+    let parms = AddHealthParms {
+        amount: 20.0,
+        _pad: [0; 4],
+        causer: 0,
+    };
     let bytes = common::parms_as_bytes(&parms);
     let (_after, post) = api
         .call_ufunction("HealthComponent", "AddHealth", "live_player_hc", bytes)

@@ -22,7 +22,7 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 #[test]
 fn owned_horses_are_findable() {
@@ -83,8 +83,10 @@ fn owned_horses_are_findable() {
 
     if let Ok(expect_s) = std::env::var("HORSEY_EXPECT_OWNED") {
         let expect: usize = expect_s.parse().expect("HORSEY_EXPECT_OWNED not a number");
-        assert_eq!(count, expect,
-            "HORSEY_EXPECT_OWNED={expect}, but GS+0x438 chain reports {count}");
+        assert_eq!(
+            count, expect,
+            "HORSEY_EXPECT_OWNED={expect}, but GS+0x438 chain reports {count}"
+        );
     }
 
     game.pass(&format!("owned_horse_count={count}; chain validated"));

@@ -18,46 +18,72 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::time::Duration;
 
 #[test]
 fn transfer_end_to_end() {
-    let Some(game) = common::launch("hk1_transfer_end_to_end") else { return };
+    let Some(game) = common::launch("hk1_transfer_end_to_end") else {
+        return;
+    };
     let h = common::wait_for_target_horse(&game, Duration::from_secs(60));
     eprintln!("[target] {} at {}", h.name, h.ptr_s);
 
     // Use the read_cursor op to get whatever the cursor is now; treat
     // that as the "truck" calibration. Then nudge it +50 in X and save
     // as "pasture" so we have two distinct targets.
-    let now = game.op_json("hk1.read_cursor", &json!({})).unwrap_or(Value::Null);
+    let now = game
+        .op_json("hk1.read_cursor", &json!({}))
+        .unwrap_or(Value::Null);
     eprintln!("read_cursor -> {now}");
     let res = now.get("result").unwrap_or(&now);
     let cx = res.get("x").and_then(Value::as_f64).unwrap_or(0.0);
     let cy = res.get("y").and_then(Value::as_f64).unwrap_or(0.0);
-    eprintln!("synth calibration: truck=({cx},{cy})  pasture=({},{})", cx + 50.0, cy);
+    eprintln!(
+        "synth calibration: truck=({cx},{cy})  pasture=({},{})",
+        cx + 50.0,
+        cy
+    );
 
-    let set_t = game.op_json("hk1.set_target", &json!({
-        "which": "truck", "x": cx, "y": cy,
-    })).expect("set truck");
+    let set_t = game
+        .op_json(
+            "hk1.set_target",
+            &json!({
+                "which": "truck", "x": cx, "y": cy,
+            }),
+        )
+        .expect("set truck");
     eprintln!("set truck -> {set_t}");
-    let set_p = game.op_json("hk1.set_target", &json!({
-        "which": "pasture", "x": cx + 50.0, "y": cy,
-    })).expect("set pasture");
+    let set_p = game
+        .op_json(
+            "hk1.set_target",
+            &json!({
+                "which": "pasture", "x": cx + 50.0, "y": cy,
+            }),
+        )
+        .expect("set pasture");
     eprintln!("set pasture -> {set_p}");
 
     for dest in ["truck", "pasture"] {
         eprintln!("\n=== transfer dest={dest} ===");
         let before = read_horse_u32(&game, h.id, 0x1d0);
         eprintln!("before +0x1d0 = {before:?}");
-        let resp = game.op_json("hk1.transfer", &json!({
-            "horse_ptr": h.id, "dest": dest,
-        })).expect("transfer call");
+        let resp = game
+            .op_json(
+                "hk1.transfer",
+                &json!({
+                    "horse_ptr": h.id, "dest": dest,
+                }),
+            )
+            .expect("transfer call");
         eprintln!("response: {resp}");
         std::thread::sleep(Duration::from_millis(500));
         let after = read_horse_u32(&game, h.id, 0x1d0);
         eprintln!("after  +0x1d0 = {after:?}");
-        let result = resp.get("result").and_then(|r| r.get("result")).and_then(Value::as_u64);
+        let result = resp
+            .get("result")
+            .and_then(|r| r.get("result"))
+            .and_then(Value::as_u64);
         eprintln!("vtable call result = {result:?}  (non-zero = drop accepted)");
     }
 
@@ -67,8 +93,15 @@ fn transfer_end_to_end() {
 }
 
 fn read_horse_u32(game: &modforge::harness::RunningGame, horse_ptr: u64, off: u64) -> Option<u64> {
-    let r = game.op_json("mem.peek", &json!({
-        "addr": horse_ptr + off, "kind": "u32",
-    })).ok()?;
-    r.get("result").and_then(|x| x.get("value")).and_then(Value::as_u64)
+    let r = game
+        .op_json(
+            "mem.peek",
+            &json!({
+                "addr": horse_ptr + off, "kind": "u32",
+            }),
+        )
+        .ok()?;
+    r.get("result")
+        .and_then(|x| x.get("value"))
+        .and_then(Value::as_u64)
 }

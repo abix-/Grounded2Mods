@@ -53,36 +53,28 @@ const SAVE_TARGETS: &[SaveTarget] = &[
         // -1548 from stale. push rdi; push r14; sub rsp,0x140;
         // mov rbp,rcx; lea rdx, [rcx+...]. Large stack frame is
         // distinctive for the multi-local save driver.
-        sigs: &[
-            "57 41 56 48 81 ec 40 01 00 00 48 8b e9 48 8d 51",
-        ],
+        sigs: &["57 41 56 48 81 ec 40 01 00 00 48 8b e9 48 8d 51"],
     },
     SaveTarget {
         name: "LOAD_GAME",
         // -304 from stale. Shadow-save rbx + push 7 regs +
         // mov rbp,rsp + sub rsp,0x70. The 7-reg push chain is
         // less common than the 5-reg variant.
-        sigs: &[
-            "48 89 5c 24 08 55 56 57 41 54 41 55 41 56 41 57 48 8b ec 48 83 ec 70",
-        ],
+        sigs: &["48 89 5c 24 08 55 56 57 41 54 41 55 41 56 41 57 48 8b ec 48 83 ec 70"],
     },
     SaveTarget {
         name: "HORSE_SAVE_WRITER",
         // -277 from stale. push rdi; push r14; sub rsp,0x40;
         // mov rbp,rcx; call rel32. rcx is the horse pointer
         // (1st arg). Call displacement wildcarded.
-        sigs: &[
-            "57 41 56 48 83 ec 40 48 8b e9 e8 ?? ?? ?? ?? 48",
-        ],
+        sigs: &["57 41 56 48 83 ec 40 48 8b e9 e8 ?? ?? ?? ?? 48"],
     },
     SaveTarget {
         name: "HORSE_SAVE_LOADER",
         // -287 from stale. push rbx; push rdi; sub rsp,0x58;
         // mov rdi,rcx; add rcx,0x2b8. The 0x2b8 add is the
         // genome-offset reference; highly distinctive.
-        sigs: &[
-            "53 57 48 83 ec 58 48 8b f9 48 81 c1 b8 02 00 00",
-        ],
+        sigs: &["53 57 48 83 ec 58 48 8b f9 48 81 c1 b8 02 00 00"],
     },
 ];
 
@@ -129,8 +121,7 @@ fn catalog_resolves_all_save_targets_to_msvc_entries() {
         return;
     }
     let spec = common::spec();
-    let game = GameHarness::launch(&spec, "r2_save_signatures")
-        .expect("harness launch failed");
+    let game = GameHarness::launch(&spec, "r2_save_signatures").expect("harness launch failed");
 
     let results = resolve(&game, SAVE_TARGETS);
     game.log()
@@ -160,10 +151,7 @@ fn catalog_resolves_all_save_targets_to_msvc_entries() {
                 let bytes = parse_prologue_hex(&prologue_hex);
                 game.log().event(
                     "SAVE_SIGS",
-                    &format!(
-                        "{} resolved={a} prologue=[{prologue_hex}]",
-                        target.name
-                    ),
+                    &format!("{} resolved={a} prologue=[{prologue_hex}]", target.name),
                 );
                 if !looks_like_msvc_entry(&bytes) {
                     failures.push(format!(

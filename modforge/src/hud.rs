@@ -9,10 +9,14 @@ use crate::survival::{SurvivalError, SurvivalStats};
 /// What kind of thing can be interacted with.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum InteractKind {
-    Door { open: bool },
+    Door {
+        open: bool,
+    },
     /// A locked door into a gated room (Rust's card rooms); opens
     /// only at `level` of progression, which nothing grants yet.
-    Gate { level: u32 },
+    Gate {
+        level: u32,
+    },
     Pickup,
     Container,
     /// A note lying where someone left it: E reads it where it is.
@@ -30,9 +34,12 @@ pub struct Prompt {
 /// kind; modforge decides what the player reads.
 pub fn prompt_for(kind: InteractKind, item_name: Option<&str>, item_count: Option<u32>) -> Prompt {
     let text = match kind {
-        InteractKind::Door { open } => {
-            if open { "[E] close door" } else { "[E] open door" }.to_string()
+        InteractKind::Door { open } => if open {
+            "[E] close door"
+        } else {
+            "[E] open door"
         }
+        .to_string(),
         InteractKind::Gate { level } => format!("locked (level {level})"),
         InteractKind::Pickup => match (item_name, item_count) {
             (Some(name), Some(count)) if count > 1 => format!("[E] pick up {name} x{count}"),
@@ -260,7 +267,12 @@ pub fn end_drag(
 /// other side, container to inventory or inventory/hotbar to
 /// container, whatever fits; `half` is Shift+T. Without an open
 /// container nothing moves.
-pub fn transfer_slot(holders: &mut Holders<'_>, slot: SlotRef, half: bool, registry: &ItemRegistry) {
+pub fn transfer_slot(
+    holders: &mut Holders<'_>,
+    slot: SlotRef,
+    half: bool,
+    registry: &ItemRegistry,
+) {
     let other = match slot.holder {
         Holder::Container => Holder::Inventory,
         Holder::Inventory | Holder::Hotbar => Holder::Container,
@@ -510,7 +522,13 @@ mod tests {
     fn interact_door_returns_toggle() {
         let mut inv = Inventory::new(5);
         let mut state = HudState::new();
-        let r = interact(InteractKind::Door { open: false }, &mut inv, None, 10, &mut state);
+        let r = interact(
+            InteractKind::Door { open: false },
+            &mut inv,
+            None,
+            10,
+            &mut state,
+        );
         assert_eq!(r, InteractResult::ToggleDoor);
     }
 
@@ -552,12 +570,27 @@ mod tests {
             text: "do not go outside".to_string(),
             signed: "M.".to_string(),
         });
-        assert_eq!(prompt_for(InteractKind::Read, Some("note"), Some(1)).text, "[E] read");
-        let r = interact(InteractKind::Read, &mut inv, Some(note.clone()), 1, &mut state);
+        assert_eq!(
+            prompt_for(InteractKind::Read, Some("note"), Some(1)).text,
+            "[E] read"
+        );
+        let r = interact(
+            InteractKind::Read,
+            &mut inv,
+            Some(note.clone()),
+            1,
+            &mut state,
+        );
         assert_eq!(r, InteractResult::Read);
         assert_eq!(state.open_panel, OpenPanel::Note);
-        assert_eq!(state.reading.as_ref().map(|n| n.text.as_str()), Some("do not go outside"));
-        assert!(inv.slots.iter().all(|s| s.is_none()), "the note stays where it lies");
+        assert_eq!(
+            state.reading.as_ref().map(|n| n.text.as_str()),
+            Some("do not go outside")
+        );
+        assert!(
+            inv.slots.iter().all(|s| s.is_none()),
+            "the note stays where it lies"
+        );
         interact(InteractKind::Read, &mut inv, Some(note), 1, &mut state);
         assert_eq!(state.open_panel, OpenPanel::None);
         assert_eq!(state.reading, None);
@@ -577,7 +610,7 @@ mod tests {
                 storage: None,
                 armor: None,
                 good_for: Default::default(),
-            model: None,
+                model: None,
             })
             .unwrap();
         }
@@ -614,7 +647,11 @@ mod tests {
         start_drag(&mut state, &holders, inv_(2));
         assert_eq!(state.dragging, None, "empty slot starts no drag");
         end_drag(&mut state, &mut holders, inv_(0), &reg);
-        assert_eq!(holders.inventory.slots[0].as_ref().unwrap().item, "scrap", "no drag, no move");
+        assert_eq!(
+            holders.inventory.slots[0].as_ref().unwrap().item,
+            "scrap",
+            "no drag, no move"
+        );
 
         start_drag(&mut state, &holders, inv_(0));
         assert_eq!(state.dragging, Some(inv_(0)));
@@ -623,7 +660,11 @@ mod tests {
 
         start_drag(&mut state, &holders, inv_(0));
         end_drag(&mut state, &mut holders, inv_(1), &reg);
-        assert_eq!(holders.inventory.slots[0].as_ref().unwrap().item, "cloth", "swapped");
+        assert_eq!(
+            holders.inventory.slots[0].as_ref().unwrap().item,
+            "cloth",
+            "swapped"
+        );
         assert_eq!(holders.inventory.slots[1].as_ref().unwrap().item, "scrap");
 
         // Inventory to hotbar: the scrap merges up to the max stack
@@ -663,20 +704,44 @@ mod tests {
         // Inventory to container, half of 6 is 3: it tops up the 19
         // to 20, the other 2 take the slot the cloth left.
         transfer_slot(&mut holders, at(Holder::Inventory, 0), true, &reg);
-        assert_eq!(holders.container.as_ref().unwrap().slots[1].as_ref().unwrap().count, 20);
-        assert_eq!(holders.container.as_ref().unwrap().slots[0].as_ref().unwrap().count, 2);
+        assert_eq!(
+            holders.container.as_ref().unwrap().slots[1]
+                .as_ref()
+                .unwrap()
+                .count,
+            20
+        );
+        assert_eq!(
+            holders.container.as_ref().unwrap().slots[0]
+                .as_ref()
+                .unwrap()
+                .count,
+            2
+        );
         assert_eq!(holders.inventory.count_of("scrap"), 3);
 
         // Whole stack: the last 3 join the 2.
         transfer_slot(&mut holders, at(Holder::Inventory, 0), false, &reg);
-        assert_eq!(holders.container.as_ref().unwrap().slots[0].as_ref().unwrap().count, 5);
+        assert_eq!(
+            holders.container.as_ref().unwrap().slots[0]
+                .as_ref()
+                .unwrap()
+                .count,
+            5
+        );
         assert_eq!(holders.inventory.count_of("scrap"), 0);
 
         // Container to a full inventory: the stack comes back.
         holders.inventory.slots[0] = Some(stack("cloth", 20));
         holders.inventory.slots[1] = Some(stack("cloth", 20));
         transfer_slot(&mut holders, at(Holder::Container, 0), false, &reg);
-        assert_eq!(holders.container.as_ref().unwrap().slots[0].as_ref().unwrap().count, 5);
+        assert_eq!(
+            holders.container.as_ref().unwrap().slots[0]
+                .as_ref()
+                .unwrap()
+                .count,
+            5
+        );
 
         // Empty slot: nothing happens.
         transfer_slot(&mut holders, at(Holder::Hotbar, 0), false, &reg);

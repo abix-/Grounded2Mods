@@ -46,22 +46,19 @@ fn discover_rows_by_type() {
 
     // 1. Find Table_StatusEffects (path-disambiguate. There's
     // both a CDO and the live instance).
-    let Some((dt_sel, dt_addr)) = client::find_data_table_by_path(
-        api.inner(),
-        "Table_StatusEffects.Table_StatusEffects",
-    ) else {
+    let Some((dt_sel, dt_addr)) =
+        client::find_data_table_by_path(api.inner(), "Table_StatusEffects.Table_StatusEffects")
+    else {
         panic!("Table_StatusEffects not found");
     };
     eprintln!("Table_StatusEffects @ 0x{dt_addr:016x} (selector={dt_sel})");
 
     // 2. Read all rows in one batched walk.
-    let rows = client::read_data_table_rows(api.inner(), &dt_sel)
-        .expect("read_data_table_rows");
+    let rows = client::read_data_table_rows(api.inner(), &dt_sel).expect("read_data_table_rows");
     eprintln!("=== {} live rows ===", rows.len());
 
     // 3. For each row, read Type+Value, capture matches.
-    let target_set: std::collections::HashSet<u8> =
-        TARGET_TYPES.iter().map(|(t, _)| *t).collect();
+    let target_set: std::collections::HashSet<u8> = TARGET_TYPES.iter().map(|(t, _)| *t).collect();
     let mut found: BTreeMap<u8, RowFind> = BTreeMap::new();
     let mut rows_scanned = 0usize;
 
@@ -98,9 +95,9 @@ fn discover_rows_by_type() {
                 "  Type {ty:>3} ({name:<28}) value={:>8.3} fname=0x{:016x} addr=0x{:016x}",
                 f.value, f.fname_u64, f.addr
             ),
-            None => eprintln!(
-                "  Type {ty:>3} ({name:<28}) NOT FOUND in {rows_scanned} scanned rows"
-            ),
+            None => {
+                eprintln!("  Type {ty:>3} ({name:<28}) NOT FOUND in {rows_scanned} scanned rows")
+            }
         }
     }
 

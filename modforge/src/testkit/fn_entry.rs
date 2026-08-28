@@ -8,8 +8,8 @@
 
 use crate::harness::RunningGame;
 use crate::research;
-use anyhow::{anyhow, Context, Result};
-use serde_json::{json, Value};
+use anyhow::{Context, Result, anyhow};
+use serde_json::{Value, json};
 
 /// Loose recognizer for common MSVC x64 function prologues. Returns
 /// true when `b` starts with a byte sequence that is plausibly the
@@ -183,10 +183,8 @@ impl Config {
     pub fn from_env(prefix: &str) -> Result<Self> {
         let mut cfg = Self::defaults();
         let rva_key = format!("{prefix}_RVA");
-        let rva_s = std::env::var(&rva_key)
-            .map_err(|_| anyhow!("{rva_key} required"))?;
-        cfg.rva = parse_hex_or_dec(&rva_s)
-            .with_context(|| format!("{rva_key} parse"))?;
+        let rva_s = std::env::var(&rva_key).map_err(|_| anyhow!("{rva_key} required"))?;
+        cfg.rva = parse_hex_or_dec(&rva_s).with_context(|| format!("{rva_key} parse"))?;
         if let Ok(s) = std::env::var(format!("{prefix}_LOOKBEHIND")) {
             cfg.lookbehind = s.parse().context("LOOKBEHIND parse")?;
         }
@@ -212,9 +210,11 @@ pub struct Verified {
 /// Read bytes around a function RVA, dump to stderr, optionally assert
 /// the first bytes at the RVA are a recognized MSVC prologue.
 pub fn verify_fn_entry(game: &RunningGame, cfg: &Config) -> Result<Verified> {
-    let bi = game.op_json("game.build_info", &json!({}))
+    let bi = game
+        .op_json("game.build_info", &json!({}))
         .map_err(|e| anyhow!("game.build_info: {e}"))?;
-    let base_s = bi.get("result")
+    let base_s = bi
+        .get("result")
         .and_then(|r| r.get("image_base"))
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("image_base missing"))?;
@@ -229,8 +229,10 @@ pub fn verify_fn_entry(game: &RunningGame, cfg: &Config) -> Result<Verified> {
         return Err(anyhow!("short read: got {}, want {total}", bytes.len()));
     }
 
-    eprintln!("bytes around image_base+0x{:x} (-0x{:x}..+0x{:x}):",
-        cfg.rva, cfg.lookbehind, cfg.lookahead);
+    eprintln!(
+        "bytes around image_base+0x{:x} (-0x{:x}..+0x{:x}):",
+        cfg.rva, cfg.lookbehind, cfg.lookahead
+    );
     for (i, b) in bytes.iter().enumerate() {
         let off = i as isize - cfg.lookbehind as isize;
         if i % 16 == 0 {
@@ -245,7 +247,8 @@ pub fn verify_fn_entry(game: &RunningGame, cfg: &Config) -> Result<Verified> {
     if cfg.expect_prologue && !prologue_ok {
         return Err(anyhow!(
             "bytes at RVA 0x{:x} do not look like an MSVC prologue. first 16: {:02x?}",
-            cfg.rva, &entry[..entry.len().min(16)]
+            cfg.rva,
+            &entry[..entry.len().min(16)]
         ));
     }
 
@@ -290,8 +293,8 @@ mod tests {
         // bytes: ... cc cc cc | real code | cc cc cc ... | more real code | cc cc cc
         let mut buf = vec![0xcc; 5];
         buf.extend_from_slice(&[0x48, 0x89, 0x5c, 0x24, 0x08]); // function A entry (5..10)
-        buf.extend_from_slice(&[0xc3, 0xcc, 0xcc, 0xcc]);       // ret + padding (10..14)
-        buf.extend_from_slice(&[0x40, 0x53, 0x55, 0x56]);       // function B entry (14..18)
+        buf.extend_from_slice(&[0xc3, 0xcc, 0xcc, 0xcc]); // ret + padding (10..14)
+        buf.extend_from_slice(&[0x40, 0x53, 0x55, 0x56]); // function B entry (14..18)
 
         // anchor inside function A at offset 6 -> walk back finds padding-end at 5
         let end = walk_back_to_padding_end(&buf, 6);

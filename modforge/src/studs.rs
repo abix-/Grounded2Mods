@@ -192,8 +192,7 @@ pub fn studs_in(parts: &[PartDef], how: Derive) -> HashMap<String, Vec<Stud>> {
             }
 
             // The middle of the shared region, in A's frame.
-            let mid =
-                |alo: f64, ahi: f64, blo: f64, bhi: f64| (alo.max(blo) + ahi.min(bhi)) / 2.0;
+            let mid = |alo: f64, ahi: f64, blo: f64, bhi: f64| (alo.max(blo) + ahi.min(bhi)) / 2.0;
             let c = (
                 mid(amin.0, amax.0, lo.0, hi.0),
                 mid(amin.1, amax.1, lo.1, hi.1),
@@ -294,7 +293,10 @@ impl std::fmt::Display for Refusal {
         match self {
             Refusal::NoStud => write!(f, "no stud at that spot"),
             Refusal::NeverSeenHere { seen } => {
-                write!(f, "the game puts that part here {seen} time(s), fewer than required")
+                write!(
+                    f,
+                    "the game puts that part here {seen} time(s), fewer than required"
+                )
             }
             Refusal::NoMirror => write!(f, "the other part never carries the mirror stud"),
         }
@@ -348,9 +350,7 @@ mod tests {
     /// edge (the real SM_Wall numbers).
     fn place(asset: &str, x: f32, y: f32, z: f32, yaw: f32) -> PartDef {
         let (extent, pivot) = match asset {
-            a if a.starts_with("floor") => {
-                (Vec3::new(2.0, 0.11, 2.0), Vec3::new(2.0, -0.09, -2.0))
-            }
+            a if a.starts_with("floor") => (Vec3::new(2.0, 0.11, 2.0), Vec3::new(2.0, -0.09, -2.0)),
             a if a.starts_with("wall") => (Vec3::new(0.1, 2.0, 2.0), Vec3::new(0.0, 2.0, -2.0)),
             _ => (Vec3::new(0.5, 0.5, 0.5), Vec3::ZERO),
         };
@@ -503,7 +503,14 @@ mod tests {
             .find(|s| s.with.contains_key("wall_door"))
             .expect("the door wall was seen on the floor");
         assert_eq!(
-            may_join(&catalog, "floor", door_stud.at, door_stud.turn, "wall_door", 1),
+            may_join(
+                &catalog,
+                "floor",
+                door_stud.at,
+                door_stud.turn,
+                "wall_door",
+                1
+            ),
             Ok(())
         );
     }

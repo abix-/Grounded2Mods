@@ -18,6 +18,7 @@ pub mod input;
 pub mod main_thread_queue;
 pub mod mod_main;
 pub mod mono;
+pub mod navigation;
 pub mod ops;
 pub mod rpg;
 pub mod selector;

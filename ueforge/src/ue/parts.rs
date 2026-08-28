@@ -144,7 +144,9 @@ pub fn read_level(path_needle: &str, only: &[String]) -> Vec<PartDef> {
         });
     }
     if skipped > 0 {
-        crate::log!("read_level: skipped {skipped} actor(s) that could not be read in {path_needle}");
+        crate::log!(
+            "read_level: skipped {skipped} actor(s) that could not be read in {path_needle}"
+        );
     }
     if raw.is_empty() {
         return Vec::new();
@@ -390,8 +392,7 @@ fn merge_studs(
     path: &str,
     studs: &serde_json::Map<String, serde_json::Value>,
 ) -> Result<usize, String> {
-    let text =
-        std::fs::read_to_string(path).map_err(|e| format!("could not read {path}: {e}"))?;
+    let text = std::fs::read_to_string(path).map_err(|e| format!("could not read {path}: {e}"))?;
     let mut doc: serde_json::Value =
         serde_json::from_str(&text).map_err(|e| format!("{path} is not JSON: {e}"))?;
     let Some(parts) = doc.get_mut("parts").and_then(|p| p.as_array_mut()) else {

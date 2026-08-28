@@ -12,7 +12,9 @@ mod common;
 
 #[test]
 fn launch_and_stay() {
-    let Some(game) = common::launch("launch_and_stay") else { return };
+    let Some(game) = common::launch("launch_and_stay") else {
+        return;
+    };
     eprintln!("[GATE] waiting for any owned horse to appear (up to 180s) - load your save");
     let h = common::wait_for_target_horse(&game, std::time::Duration::from_secs(180));
     eprintln!("[READY] save loaded; horse '{}' at {}", h.name, h.ptr_s);

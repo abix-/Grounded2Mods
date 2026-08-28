@@ -12,10 +12,13 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn read_qwords(game: &modforge::harness::RunningGame, addr: u64, n: usize) -> Vec<u64> {
-    let v = match game.op_json("patterns.read_bytes", &json!({ "addr": format!("0x{addr:x}"), "n": n })) {
+    let v = match game.op_json(
+        "patterns.read_bytes",
+        &json!({ "addr": format!("0x{addr:x}"), "n": n }),
+    ) {
         Ok(v) => v,
         Err(_) => return vec![],
     };
@@ -40,7 +43,13 @@ fn heapish(p: u64) -> bool {
     p > 0x1_0000 && p < 0x7fff_ffff_ffff
 }
 
-fn scan_region(game: &modforge::harness::RunningGame, label: &str, base: u64, n: usize, target: u64) {
+fn scan_region(
+    game: &modforge::harness::RunningGame,
+    label: &str,
+    base: u64,
+    n: usize,
+    target: u64,
+) {
     let qs = read_qwords(game, base, n);
     if qs.is_empty() {
         eprintln!("  {label} @ 0x{base:x}: unreadable");
@@ -70,7 +79,9 @@ fn scan_region(game: &modforge::harness::RunningGame, label: &str, base: u64, n:
 
 #[test]
 fn find_alpha_ref() {
-    let Some(game) = common::launch("find_alpha_ref") else { return };
+    let Some(game) = common::launch("find_alpha_ref") else {
+        return;
+    };
 
     let alpha = std::env::var("HORSEY_ALPHA_PTR")
         .ok()
@@ -87,10 +98,14 @@ fn find_alpha_ref() {
             let nid = r.get("name_id").and_then(Value::as_u64);
             eprintln!("alpha sanity: name_id at that ptr = {nid:?} (expect 344)");
         }
-        Err(e) => eprintln!("alpha sanity read err: {e} (pointer may be stale; pass HORSEY_ALPHA_PTR)"),
+        Err(e) => {
+            eprintln!("alpha sanity read err: {e} (pointer may be stale; pass HORSEY_ALPHA_PTR)")
+        }
     }
 
-    let scan = game.op_json("gamestate.scan_438_slots", &json!({})).expect("scan op");
+    let scan = game
+        .op_json("gamestate.scan_438_slots", &json!({}))
+        .expect("scan op");
     let r = scan.get("result").unwrap_or(&scan).clone();
     let gs = r
         .get("gs_ptr")
@@ -156,11 +171,20 @@ fn find_alpha_ref() {
             if heapish(begin) && cap > begin && (cap - begin) <= 0x200 {
                 let arr = read_qwords(&game, begin, (cap - begin) as usize);
                 for (i, &hp) in arr.iter().enumerate() {
-                    let zone = if (i as u64) < live { "LIVE [begin,end)" } else { "DEAD [end,cap)" };
+                    let zone = if (i as u64) < live {
+                        "LIVE [begin,end)"
+                    } else {
+                        "DEAD [end,cap)"
+                    };
                     let nid = if heapish(hp) {
                         game.op_json("horse.read", &json!({ "addr": format!("0x{hp:x}") }))
                             .ok()
-                            .and_then(|v| v.get("result").unwrap_or(&v).get("name_id").and_then(Value::as_u64))
+                            .and_then(|v| {
+                                v.get("result")
+                                    .unwrap_or(&v)
+                                    .get("name_id")
+                                    .and_then(Value::as_u64)
+                            })
                     } else {
                         None
                     };

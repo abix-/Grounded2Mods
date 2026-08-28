@@ -29,7 +29,7 @@ use ueforge::ue::{GObjectsLayout, PlatformOffsets};
 // process_event_idx 0x4C: vtable slot for UObject::ProcessEvent,
 // stable across UE 5.x.
 const STEAM: PlatformOffsets = PlatformOffsets {
-    g_objects: 0x07A9_38D0,    // GUObjectArray
+    g_objects: 0x07A9_38D0,     // GUObjectArray
     append_string: 0x010D_F9D0, // FName::ToString
     g_names: 0x0,               // not logged by UE4SS scanner; fill in if needed
     process_event_idx: 0x4C,
@@ -38,9 +38,7 @@ const STEAM: PlatformOffsets = PlatformOffsets {
     g_objects_layout: GObjectsLayout::WrappedChunked,
 };
 
-const PLATFORMS: &[(&str, &PlatformOffsets)] = &[
-    ("OutworldStation-Win64-Shipping.exe", &STEAM),
-];
+const PLATFORMS: &[(&str, &PlatformOffsets)] = &[("OutworldStation-Win64-Shipping.exe", &STEAM)];
 
 // ---- Mod metadata + entry points ----
 
@@ -83,9 +81,7 @@ fn on_unreal_init() {
 
     let image_base = ueforge::ue::platform::host_image_base();
     let exe = ueforge::ue::platform::host_exe_name().unwrap_or_default();
-    ueforge::log::log(format_args!(
-        "image_base = 0x{image_base:x}, host = {exe}"
-    ));
+    ueforge::log::log(format_args!("image_base = 0x{image_base:x}, host = {exe}"));
 
     let offsets = ueforge::ue::platform::detect(PLATFORMS);
     if offsets.is_none() || offsets.is_some_and(|o| o.g_objects == 0) {

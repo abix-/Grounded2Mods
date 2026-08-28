@@ -12,10 +12,9 @@ use std::process::ExitCode;
 use ueforge::uasset::{find_int_property, parse_name_table};
 
 fn run(uasset_path: &str, uexp_path: &str, target: &str) -> Result<(), String> {
-    let uasset = fs::read(Path::new(uasset_path))
-        .map_err(|e| format!("read {uasset_path}: {e}"))?;
-    let uexp =
-        fs::read(Path::new(uexp_path)).map_err(|e| format!("read {uexp_path}: {e}"))?;
+    let uasset =
+        fs::read(Path::new(uasset_path)).map_err(|e| format!("read {uasset_path}: {e}"))?;
+    let uexp = fs::read(Path::new(uexp_path)).map_err(|e| format!("read {uexp_path}: {e}"))?;
 
     let names = parse_name_table(&uasset);
     println!("recovered {} FName entries from .uasset", names.len());

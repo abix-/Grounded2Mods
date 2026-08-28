@@ -56,9 +56,7 @@ pub fn run(thirst_multiplier: f32, hunger_multiplier: f32) -> SurvivalStats {
                 patched += n;
                 scanned_classes = scanned_classes.max(t.vanilla_count());
                 if n == 0 {
-                    ueforge::log!(
-                        "survival: '{id}' multiplier is 1.0 (or skipped), no patch"
-                    );
+                    ueforge::log!("survival: '{id}' multiplier is 1.0 (or skipped), no patch");
                 }
             }
             Err(e) => ueforge::log!("survival: '{id}' apply failed: {e}"),

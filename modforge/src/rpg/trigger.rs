@@ -86,5 +86,4 @@ impl Trigger for OnSlotChangeTrigger {
 
 static ON_SLOT_CHANGE_IMP: OnSlotChangeTrigger = OnSlotChangeTrigger;
 
-pub static ON_SLOT_CHANGE: TriggerDef =
-    TriggerDef::new("OnSlotChange", &ON_SLOT_CHANGE_IMP);
+pub static ON_SLOT_CHANGE: TriggerDef = TriggerDef::new("OnSlotChange", &ON_SLOT_CHANGE_IMP);

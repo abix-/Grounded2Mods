@@ -10,14 +10,12 @@
 //! (`{"ok":..., "op":..., "result":..., "state":...}`) is added
 //! by lib.rs's handler.
 
-use modforge::ops::{OpDef, OP_REGISTRY};
-use serde_json::{json, Value as Json};
+use modforge::ops::{OP_REGISTRY, OpDef};
+use serde_json::{Value as Json, json};
 
 use crate::fatigue;
 use crate::gamestate;
-use crate::genes::{
-    self, ExtGene, ExtHorseGenome, RenderMapping, RenderMode, EXT_GENE_COUNT,
-};
+use crate::genes::{self, EXT_GENE_COUNT, ExtGene, ExtHorseGenome, RenderMapping, RenderMode};
 use crate::genes_xml;
 use crate::horse;
 use crate::patches;

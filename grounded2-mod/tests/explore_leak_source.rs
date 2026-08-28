@@ -87,7 +87,12 @@ fn investigate_leak_source() {
     )
     .unwrap();
 
-    writeln!(out, "Sleeping {}s while you play in-game...", WINDOW.as_secs()).unwrap();
+    writeln!(
+        out,
+        "Sleeping {}s while you play in-game...",
+        WINDOW.as_secs()
+    )
+    .unwrap();
     std::thread::sleep(WINDOW);
 
     writeln!(out, "=== Snapshot T1 ===").unwrap();
@@ -104,12 +109,7 @@ fn investigate_leak_source() {
     )
     .unwrap();
 
-    writeln!(
-        out,
-        "\n=== Process delta over {}s ===",
-        WINDOW.as_secs()
-    )
-    .unwrap();
+    writeln!(out, "\n=== Process delta over {}s ===", WINDOW.as_secs()).unwrap();
     writeln!(
         out,
         "  working_set:  {:+.1} MB   ({:.1} -> {:.1} MB)",
@@ -118,12 +118,7 @@ fn investigate_leak_source() {
         t1_ws as f64 / (1024.0 * 1024.0)
     )
     .unwrap();
-    writeln!(
-        out,
-        "  page_faults:  {:+}",
-        t1_pf as i64 - t0_pf as i64
-    )
-    .unwrap();
+    writeln!(out, "  page_faults:  {:+}", t1_pf as i64 - t0_pf as i64).unwrap();
     writeln!(
         out,
         "  gobjects:     {:+}   ({} -> {})",
@@ -171,7 +166,11 @@ fn investigate_leak_source() {
     }
 
     writeln!(out, "\n=== Loaded LEVELS at T1 ===").unwrap();
-    if let Some(arr) = t1.game_population.get("loaded_levels").and_then(Value::as_array) {
+    if let Some(arr) = t1
+        .game_population
+        .get("loaded_levels")
+        .and_then(Value::as_array)
+    {
         writeln!(out, "count: {}", arr.len()).unwrap();
         for entry in arr.iter().take(50) {
             let class = entry.get("class").and_then(Value::as_str).unwrap_or("?");
@@ -180,7 +179,11 @@ fn investigate_leak_source() {
             writeln!(out, "  [{}] {} (pkg={})", class, name, pkg).unwrap();
         }
     } else {
-        writeln!(out, "(no loaded_levels field present -- mod may need rebuild)").unwrap();
+        writeln!(
+            out,
+            "(no loaded_levels field present -- mod may need rebuild)"
+        )
+        .unwrap();
     }
 
     let mut to_sample: Vec<String> = class_deltas
@@ -195,7 +198,11 @@ fn investigate_leak_source() {
         }
     }
 
-    writeln!(out, "\n=== Address-space breakdown delta (VirtualQuery) ===").unwrap();
+    writeln!(
+        out,
+        "\n=== Address-space breakdown delta (VirtualQuery) ==="
+    )
+    .unwrap();
     writeln!(
         out,
         "{:>30} {:>14} {:>14} {:>14}",
@@ -245,8 +252,10 @@ fn investigate_leak_source() {
     writeln!(
         out,
         "\n=== Private-region histogram delta ===  (where the {:.0} MB went)",
-        mb_i(u64_field(&t1.process_regions, "by_type_private_bytes") as i64
-            - u64_field(&t0.process_regions, "by_type_private_bytes") as i64)
+        mb_i(
+            u64_field(&t1.process_regions, "by_type_private_bytes") as i64
+                - u64_field(&t0.process_regions, "by_type_private_bytes") as i64
+        )
     )
     .unwrap();
     writeln!(
@@ -266,8 +275,16 @@ fn investigate_leak_source() {
         ("< 64 MB", "lt_64m_count", "lt_64m_bytes"),
         (">= 64 MB", "ge_64m_count", "ge_64m_bytes"),
     ];
-    let h0 = t0.process_regions.get("private_hist").cloned().unwrap_or_default();
-    let h1 = t1.process_regions.get("private_hist").cloned().unwrap_or_default();
+    let h0 = t0
+        .process_regions
+        .get("private_hist")
+        .cloned()
+        .unwrap_or_default();
+    let h1 = t1
+        .process_regions
+        .get("private_hist")
+        .cloned()
+        .unwrap_or_default();
     for (label, count_key, bytes_key) in buckets {
         let c0 = u64_field(&h0, count_key);
         let c1 = u64_field(&h1, count_key);
@@ -318,7 +335,10 @@ fn investigate_leak_source() {
             let size_mb = entry.get("size_mb").and_then(Value::as_f64).unwrap_or(0.0);
             let typ = entry.get("type").and_then(Value::as_str).unwrap_or("?");
             let base = entry.get("base").and_then(Value::as_str).unwrap_or("?");
-            let name = entry.get("mapped_name").and_then(Value::as_str).unwrap_or("");
+            let name = entry
+                .get("mapped_name")
+                .and_then(Value::as_str)
+                .unwrap_or("");
             writeln!(out, "{:>10.1} {:>9} {:>20} {}", size_mb, typ, base, name).unwrap();
         }
     }

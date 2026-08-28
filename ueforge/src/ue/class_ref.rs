@@ -52,9 +52,7 @@
 
 use std::sync::OnceLock;
 
-use crate::ue::{
-    GObjectsView, UClass, UFunction, UObject, find_class_fast, try_runtime,
-};
+use crate::ue::{GObjectsView, UClass, UFunction, UObject, find_class_fast, try_runtime};
 
 pub struct ClassRef {
     name: &'static str,
@@ -308,7 +306,10 @@ impl ClassRef {
 
     /// Walk every non-CDO instance and collect those for which
     /// `pred` returns true. Cold path; for one-shot lookups.
-    pub fn find_instance(&self, mut pred: impl FnMut(&UObject) -> bool) -> Option<&'static UObject> {
+    pub fn find_instance(
+        &self,
+        mut pred: impl FnMut(&UObject) -> bool,
+    ) -> Option<&'static UObject> {
         let rt = try_runtime()?;
         let cls = self.get()?;
         let view = unsafe { GObjectsView::from_image(rt.image_base, rt.platform_offsets) };

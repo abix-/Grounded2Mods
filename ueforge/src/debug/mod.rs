@@ -42,7 +42,6 @@ use crate::ring::EventRing;
 // DamageRing, enqueue_pe / register_pe_call) stay below.
 pub use modforge::debug::{CatalogEntry, PlayerStateView, catalog_view};
 
-
 /// Recent damage / multicast PE event captured by a damage hook.
 /// Universal shape: every UE5 RPG mod that observes damage wants
 /// the same fields. [`DamageRing::record_hook_event`] converts the
@@ -163,16 +162,13 @@ pub fn enqueue_pe<F>(
 where
     F: FnOnce() -> Result<Json, String> + Send + 'static,
 {
-    pe_queue
-        .queue()
-        .enqueue(closure, timeout)
-        .map_err(|e| {
-            if e.contains("timed out") {
-                format!("{e}. {hint}")
-            } else {
-                e
-            }
-        })
+    pe_queue.queue().enqueue(closure, timeout).map_err(|e| {
+        if e.contains("timed out") {
+            format!("{e}. {hint}")
+        } else {
+            e
+        }
+    })
 }
 
 /// Register the `call` op with the workspace [`crate::ops::OP_REGISTRY`].
@@ -184,16 +180,9 @@ where
 /// Game crates call this once at worker init alongside
 /// [`crate::ops::register_builtins`] and
 /// [`crate::ops::register_with_resolver`].
-pub fn register_pe_call<R>(
-    pe_queue: &'static GameThread,
-    hint: &'static str,
-    resolver: R,
-) where
-    R: Fn(&str) -> Result<&'static crate::ue::UObject, String>
-        + Copy
-        + Send
-        + Sync
-        + 'static,
+pub fn register_pe_call<R>(pe_queue: &'static GameThread, hint: &'static str, resolver: R)
+where
+    R: Fn(&str) -> Result<&'static crate::ue::UObject, String> + Copy + Send + Sync + 'static,
 {
     crate::ops::OP_REGISTRY.register(crate::ops::OpDef::new(
         "call",
@@ -210,16 +199,13 @@ fn dispatch_call<R>(
     resolver: R,
 ) -> Result<Json, String>
 where
-    R: Fn(&str) -> Result<&'static crate::ue::UObject, String>
-        + Copy
-        + Send
-        + 'static,
+    R: Fn(&str) -> Result<&'static crate::ue::UObject, String> + Copy + Send + 'static,
 {
     let class = args::arg_str(args_json, "class")?.to_string();
     let function = args::arg_str(args_json, "function")?.to_string();
     let selector = args::arg_str(args_json, "instance_selector")?.to_string();
-    let parms = hex::decode(args::arg_str(args_json, "parms_hex")?)
-        .map_err(|e| format!("bad hex: {e}"))?;
+    let parms =
+        hex::decode(args::arg_str(args_json, "parms_hex")?).map_err(|e| format!("bad hex: {e}"))?;
     enqueue_pe(pe_queue, Duration::from_secs(5), hint, move || {
         let instance = resolver(&selector)?;
         let mut out = crate::ops::exec_call(instance, &class, &function, parms)?;

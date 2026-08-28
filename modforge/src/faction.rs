@@ -76,7 +76,8 @@ impl FactionRegistry {
             } else {
                 Relation::Neutral
             };
-            self.relations.insert(Self::key(&def.name, &other.name), relation);
+            self.relations
+                .insert(Self::key(&def.name, &other.name), relation);
         }
         self.defs.push(def);
         Ok(())
@@ -158,9 +159,18 @@ mod tests {
         let reg = registry();
         assert!(reg.hostile(Some("raiders"), Some("player")));
         assert!(reg.hostile(Some("player"), Some("raiders")), "both ways");
-        assert!(reg.hostile(Some("raiders"), Some("warlords")), "hostiles fight each other");
-        assert_eq!(reg.relation(Some("settlers"), Some("player")), Relation::Neutral);
-        assert_eq!(reg.relation(Some("raiders"), Some("raiders")), Relation::Friendly);
+        assert!(
+            reg.hostile(Some("raiders"), Some("warlords")),
+            "hostiles fight each other"
+        );
+        assert_eq!(
+            reg.relation(Some("settlers"), Some("player")),
+            Relation::Neutral
+        );
+        assert_eq!(
+            reg.relation(Some("raiders"), Some("raiders")),
+            Relation::Friendly
+        );
     }
 
     #[test]
@@ -175,11 +185,19 @@ mod tests {
     #[test]
     fn relations_can_change_and_unknown_names_are_refused() {
         let mut reg = registry();
-        reg.set_relation("settlers", "player", Relation::Friendly).unwrap();
-        assert_eq!(reg.relation(Some("player"), Some("settlers")), Relation::Friendly);
-        reg.set_relation("settlers", "player", Relation::Hostile).unwrap();
+        reg.set_relation("settlers", "player", Relation::Friendly)
+            .unwrap();
+        assert_eq!(
+            reg.relation(Some("player"), Some("settlers")),
+            Relation::Friendly
+        );
+        reg.set_relation("settlers", "player", Relation::Hostile)
+            .unwrap();
         assert!(reg.hostile(Some("settlers"), Some("player")));
-        assert!(reg.set_relation("settlers", "nobody", Relation::Hostile).is_err());
+        assert!(
+            reg.set_relation("settlers", "nobody", Relation::Hostile)
+                .is_err()
+        );
         assert!(
             reg.register(FactionDef {
                 name: "raiders".to_string(),

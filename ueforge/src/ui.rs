@@ -43,14 +43,16 @@ unsafe extern "C" {
     fn ueforge_ui_small_button(s: *const c_char, n: usize) -> bool;
     fn ueforge_ui_checkbox(s: *const c_char, n: usize, v: *mut bool) -> bool;
     fn ueforge_ui_slider_float(s: *const c_char, n: usize, v: *mut f32, lo: f32, hi: f32) -> bool;
-    fn ueforge_ui_slider_int(s: *const c_char, n: usize, v: *mut c_int, lo: c_int, hi: c_int) -> bool;
-    fn ueforge_ui_input_int(s: *const c_char, n: usize, v: *mut c_int) -> bool;
-    fn ueforge_ui_input_text(
+    fn ueforge_ui_slider_int(
         s: *const c_char,
         n: usize,
-        buf: *mut c_char,
-        buf_size: usize,
+        v: *mut c_int,
+        lo: c_int,
+        hi: c_int,
     ) -> bool;
+    fn ueforge_ui_input_int(s: *const c_char, n: usize, v: *mut c_int) -> bool;
+    fn ueforge_ui_input_text(s: *const c_char, n: usize, buf: *mut c_char, buf_size: usize)
+    -> bool;
     fn ueforge_ui_collapsing_header(s: *const c_char, n: usize) -> bool;
 
     fn ueforge_ui_progress_bar(fraction: f32, overlay: *const c_char, overlay_n: usize);
@@ -171,50 +173,92 @@ pub fn progress_bar(fraction: f32, overlay: Option<&str>) {
     }
 }
 
-pub fn separator() { unsafe { ueforge_ui_separator() } }
-pub fn spacing()   { unsafe { ueforge_ui_spacing() } }
-pub fn new_line()  { unsafe { ueforge_ui_new_line() } }
-pub fn dummy(w: f32, h: f32) { unsafe { ueforge_ui_dummy(w, h) } }
-pub fn set_next_item_width(w: f32) { unsafe { ueforge_ui_set_next_item_width(w) } }
+pub fn separator() {
+    unsafe { ueforge_ui_separator() }
+}
+pub fn spacing() {
+    unsafe { ueforge_ui_spacing() }
+}
+pub fn new_line() {
+    unsafe { ueforge_ui_new_line() }
+}
+pub fn dummy(w: f32, h: f32) {
+    unsafe { ueforge_ui_dummy(w, h) }
+}
+pub fn set_next_item_width(w: f32) {
+    unsafe { ueforge_ui_set_next_item_width(w) }
+}
 
 /// Place the next widget on the same line as the previous one.
 /// `x = 0.0` uses ImGui's default spacing.
-pub fn same_line() { unsafe { ueforge_ui_same_line(0.0) } }
-pub fn same_line_at(x: f32) { unsafe { ueforge_ui_same_line(x) } }
+pub fn same_line() {
+    unsafe { ueforge_ui_same_line(0.0) }
+}
+pub fn same_line_at(x: f32) {
+    unsafe { ueforge_ui_same_line(x) }
+}
 
-pub fn indent()   { unsafe { ueforge_ui_indent(0.0) } }
-pub fn unindent() { unsafe { ueforge_ui_unindent(0.0) } }
-pub fn indent_by(w: f32)   { unsafe { ueforge_ui_indent(w) } }
-pub fn unindent_by(w: f32) { unsafe { ueforge_ui_unindent(w) } }
+pub fn indent() {
+    unsafe { ueforge_ui_indent(0.0) }
+}
+pub fn unindent() {
+    unsafe { ueforge_ui_unindent(0.0) }
+}
+pub fn indent_by(w: f32) {
+    unsafe { ueforge_ui_indent(w) }
+}
+pub fn unindent_by(w: f32) {
+    unsafe { ueforge_ui_unindent(w) }
+}
 
 // ---- groups ----
 
-pub fn begin_disabled(disabled: bool) { unsafe { ueforge_ui_begin_disabled(disabled) } }
-pub fn end_disabled()                 { unsafe { ueforge_ui_end_disabled() } }
+pub fn begin_disabled(disabled: bool) {
+    unsafe { ueforge_ui_begin_disabled(disabled) }
+}
+pub fn end_disabled() {
+    unsafe { ueforge_ui_end_disabled() }
+}
 
 /// RAII guard pattern for `begin_disabled` / `end_disabled`.
 /// Works around the easy bug of forgetting `end_disabled` on an
 /// early-return path.
 pub struct Disabled;
 impl Disabled {
-    pub fn new(disabled: bool) -> Self { begin_disabled(disabled); Self }
+    pub fn new(disabled: bool) -> Self {
+        begin_disabled(disabled);
+        Self
+    }
 }
 impl Drop for Disabled {
-    fn drop(&mut self) { end_disabled(); }
+    fn drop(&mut self) {
+        end_disabled();
+    }
 }
 
-pub fn begin_group() { unsafe { ueforge_ui_begin_group() } }
-pub fn end_group()   { unsafe { ueforge_ui_end_group() } }
+pub fn begin_group() {
+    unsafe { ueforge_ui_begin_group() }
+}
+pub fn end_group() {
+    unsafe { ueforge_ui_end_group() }
+}
 
 pub struct Group;
 impl Group {
-    pub fn new() -> Self { begin_group(); Self }
+    pub fn new() -> Self {
+        begin_group();
+        Self
+    }
 }
 impl Default for Group {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 impl Drop for Group {
-    fn drop(&mut self) { end_group(); }
+    fn drop(&mut self) {
+        end_group();
+    }
 }
 
 // ---- child regions (scrollable) ----
@@ -223,7 +267,9 @@ pub fn begin_child(id: &str, w: f32, h: f32) -> bool {
     let (p, n) = raw(id);
     unsafe { ueforge_ui_begin_child(p, n, w, h) }
 }
-pub fn end_child() { unsafe { ueforge_ui_end_child() } }
+pub fn end_child() {
+    unsafe { ueforge_ui_end_child() }
+}
 
 // ---- trees ----
 
@@ -233,4 +279,6 @@ pub fn tree_node(label: &str) -> bool {
     let (p, n) = raw(label);
     unsafe { ueforge_ui_tree_node(p, n) }
 }
-pub fn tree_pop() { unsafe { ueforge_ui_tree_pop() } }
+pub fn tree_pop() {
+    unsafe { ueforge_ui_tree_pop() }
+}

@@ -58,9 +58,17 @@ fn watch_cycle() {
 
     while start.elapsed().as_secs() < budget {
         let tb = client::read_bytes(&api, addr, TIME_UNTIL_EMMISION, 8);
-        let t = if tb.len() >= 8 { Some(client::from_le_f64(&tb, 0)) } else { None };
+        let t = if tb.len() >= 8 {
+            Some(client::from_le_f64(&tb, 0))
+        } else {
+            None
+        };
         let cb = client::read_bytes(&api, addr, EMISSIONS_COUNT, 4);
-        let c = if cb.len() >= 4 { Some(client::from_le_i32(&cb, 0)) } else { None };
+        let c = if cb.len() >= 4 {
+            Some(client::from_le_i32(&cb, 0))
+        } else {
+            None
+        };
         let fb = client::read_bytes(&api, addr, FREEZE_TIMER, 1);
         let f = fb.first().copied();
         let secs = start.elapsed().as_secs_f64();
@@ -76,7 +84,10 @@ fn watch_cycle() {
                 );
             }
             if prev_count.is_some_and(|pc| pc != c) {
-                println!("  *** EmissionsCount {:?} -> {c} at t={secs:.1}s", prev_count);
+                println!(
+                    "  *** EmissionsCount {:?} -> {c} at t={secs:.1}s",
+                    prev_count
+                );
             }
             if !siren_logged && t <= SIREN_MARK {
                 println!("  *** crossed {SIREN_MARK} (siren mark) at t={secs:.1}s");

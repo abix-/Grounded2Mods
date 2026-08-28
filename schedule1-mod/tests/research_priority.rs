@@ -17,7 +17,10 @@ fn factory_call(
     method: &str,
     args: serde_json::Value,
 ) -> Option<serde_json::Value> {
-    let r = api.op("invoke_static", json!({"class": FACTORY, "method": method, "args": args}));
+    let r = api.op(
+        "invoke_static",
+        json!({"class": FACTORY, "method": method, "args": args}),
+    );
     if !r.ok {
         println!("{method}: op failed: {:?}", r.error);
         return None;
@@ -112,7 +115,11 @@ fn combat_overrides_idle_then_resumes() {
         let pz = sv["pos_z"].as_f64().unwrap_or(0.0);
         println!(
             "tick {tick} ({}s): active={} enabled={} pos=({:.1}, {:.1})",
-            (tick + 1) * 3, active, enabled, px, pz
+            (tick + 1) * 3,
+            active,
+            enabled,
+            px,
+            pz
         );
 
         if active.contains("Combat") {

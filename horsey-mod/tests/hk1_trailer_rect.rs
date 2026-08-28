@@ -6,11 +6,14 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn read_bytes(game: &modforge::harness::RunningGame, abs: u64, n: usize) -> Vec<u8> {
     let v = game
-        .op_json("patterns.read_bytes", &json!({"addr": format!("0x{abs:x}"), "n": n}))
+        .op_json(
+            "patterns.read_bytes",
+            &json!({"addr": format!("0x{abs:x}"), "n": n}),
+        )
         .unwrap_or(Value::Null);
     let hex = v
         .get("result")
@@ -18,7 +21,9 @@ fn read_bytes(game: &modforge::harness::RunningGame, abs: u64, n: usize) -> Vec<
         .get("bytes")
         .and_then(Value::as_str)
         .unwrap_or("");
-    hex.split_whitespace().filter_map(|x| u8::from_str_radix(x, 16).ok()).collect()
+    hex.split_whitespace()
+        .filter_map(|x| u8::from_str_radix(x, 16).ok())
+        .collect()
 }
 
 fn dump(game: &modforge::harness::RunningGame, image_base: u64, label: &str, va: u64, n: usize) {
@@ -35,15 +40,28 @@ fn dump(game: &modforge::harness::RunningGame, image_base: u64, label: &str, va:
         } else {
             None
         };
-        eprintln!("    +0x{:02x} (rva 0x{:x}): f32={f:<16} f64={d:?}", off, rva + off as u64);
+        eprintln!(
+            "    +0x{:02x} (rva 0x{:x}): f32={f:<16} f64={d:?}",
+            off,
+            rva + off as u64
+        );
     }
 }
 
 #[test]
 fn dump_trailer_rect_consts() {
-    let Some(game) = common::launch("hk1_trailer_rect") else { return };
-    let info = game.op_json("game.build_info", &json!({})).expect("build_info");
-    let ib = info.get("result").unwrap_or(&info).get("image_base").and_then(Value::as_str).unwrap_or("0x0");
+    let Some(game) = common::launch("hk1_trailer_rect") else {
+        return;
+    };
+    let info = game
+        .op_json("game.build_info", &json!({}))
+        .expect("build_info");
+    let ib = info
+        .get("result")
+        .unwrap_or(&info)
+        .get("image_base")
+        .and_then(Value::as_str)
+        .unwrap_or("0x0");
     let image_base = u64::from_str_radix(ib.trim_start_matches("0x"), 16).unwrap_or(0);
     eprintln!("[DUMP] image_base={ib}");
 

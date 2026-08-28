@@ -66,9 +66,9 @@ pub unsafe fn iter_rows(table: &UObject) -> impl Iterator<Item = (u64, *const u8
         // Free slots filtered out via the null-value check.
         unsafe {
             let key: u64 = (element as *const u64).read_unaligned();
-            let value: *const u8 =
-                (element.add(crate::ue::offsets::tmap::PAIR_VALUE) as *const *const u8)
-                    .read_unaligned();
+            let value: *const u8 = (element.add(crate::ue::offsets::tmap::PAIR_VALUE)
+                as *const *const u8)
+                .read_unaligned();
             if value.is_null() {
                 None
             } else {
@@ -210,12 +210,7 @@ impl<T: Copy + PartialEq + Send + 'static> FieldTweak<T> {
     /// Apply to a specific DT instance. Used internally by
     /// `apply` and `apply_when_ready`; exposed for callers that
     /// already have the table reference.
-    pub fn apply_to<F, S>(
-        &self,
-        table: &UObject,
-        transform: F,
-        skip_if: S,
-    ) -> Result<usize, String>
+    pub fn apply_to<F, S>(&self, table: &UObject, transform: F, skip_if: S) -> Result<usize, String>
     where
         F: Fn(T) -> T,
         S: Fn(T) -> bool,

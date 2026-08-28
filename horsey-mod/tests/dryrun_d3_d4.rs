@@ -41,12 +41,7 @@ fn parse_prologue_hex(s: &str) -> Vec<u8> {
 /// like an MSVC function entry; Err(reason) otherwise. Caller
 /// collects errors and asserts at the end so one failure doesn't
 /// hide others in the same dryrun group.
-fn check_target(
-    game: &RunningGame,
-    group: &str,
-    name: &str,
-    target: &Value,
-) -> Result<(), String> {
+fn check_target(game: &RunningGame, group: &str, name: &str, target: &Value) -> Result<(), String> {
     let resolved = target
         .get("runtime_addr")
         .and_then(|v| v.as_str())
@@ -69,10 +64,7 @@ fn check_target(
         return Err(msg);
     }
     if bytes.len() < 8 {
-        let msg = format!(
-            "{group}/{name}: prologue too short ({} bytes)",
-            bytes.len()
-        );
+        let msg = format!("{group}/{name}: prologue too short ({} bytes)", bytes.len());
         log.event(group, &format!("{name} FAIL: {msg}"));
         return Err(msg);
     }

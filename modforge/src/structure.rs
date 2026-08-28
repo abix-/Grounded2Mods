@@ -269,12 +269,7 @@ impl PartDef {
 /// Each group comes back re-centred on its own middle, with its
 /// lowest point at y = 0, so it can be placed anywhere and turned
 /// about a sensible pivot.
-pub fn group_nearby(
-    parts: &[PartDef],
-    radius: f32,
-    min: usize,
-    max: usize,
-) -> Vec<Vec<PartDef>> {
+pub fn group_nearby(parts: &[PartDef], radius: f32, min: usize, max: usize) -> Vec<Vec<PartDef>> {
     let mut taken = vec![false; parts.len()];
     let mut out = Vec::new();
     for i in 0..parts.len() {
@@ -492,7 +487,11 @@ pub fn room_interior_aabb(room: &RoomDef) -> Aabb {
     Aabb {
         min: room.origin - Vec3::new(room.interior.x / 2.0, 0.0, room.interior.z / 2.0),
         max: room.origin
-            + Vec3::new(room.interior.x / 2.0, room.interior.y, room.interior.z / 2.0),
+            + Vec3::new(
+                room.interior.x / 2.0,
+                room.interior.y,
+                room.interior.z / 2.0,
+            ),
     }
 }
 
@@ -718,10 +717,18 @@ pub struct PartHit {
 pub fn side_frame(side: Side, interior: Vec3, t: f32) -> (Vec3, Vec3, f32) {
     let (w, l) = (interior.x, interior.z);
     match side {
-        Side::North => (Vec3::X, Vec3::new(0.0, 0.0, -(l / 2.0 + t / 2.0)), w + 2.0 * t),
+        Side::North => (
+            Vec3::X,
+            Vec3::new(0.0, 0.0, -(l / 2.0 + t / 2.0)),
+            w + 2.0 * t,
+        ),
         Side::South => (Vec3::X, Vec3::new(0.0, 0.0, l / 2.0 + t / 2.0), w + 2.0 * t),
         Side::East => (Vec3::Z, Vec3::new(w / 2.0 + t / 2.0, 0.0, 0.0), l + 2.0 * t),
-        Side::West => (Vec3::Z, Vec3::new(-(w / 2.0 + t / 2.0), 0.0, 0.0), l + 2.0 * t),
+        Side::West => (
+            Vec3::Z,
+            Vec3::new(-(w / 2.0 + t / 2.0), 0.0, 0.0),
+            l + 2.0 * t,
+        ),
     }
 }
 
@@ -1053,13 +1060,13 @@ pub fn shell_slots(room: &RoomDef, modules: &[f32]) -> Vec<ShellSlot> {
     // run's length. Walls run along +x before yaw is applied.
     let sides = [
         (Side::South, corner + Vec3::new(0.0, 0.0, l), 0.0f32, w),
-        (Side::North, corner + Vec3::new(w, 0.0, 0.0), std::f32::consts::PI, w),
         (
-            Side::West,
-            corner,
-            -std::f32::consts::FRAC_PI_2,
-            l,
+            Side::North,
+            corner + Vec3::new(w, 0.0, 0.0),
+            std::f32::consts::PI,
+            w,
         ),
+        (Side::West, corner, -std::f32::consts::FRAC_PI_2, l),
         (
             Side::East,
             corner + Vec3::new(w, 0.0, l),
@@ -1121,7 +1128,10 @@ mod shell_tests {
 
     #[test]
     fn fill_run_uses_largest_modules_first() {
-        assert_eq!(fill_run(8.0, &[4.0, 2.0, 1.0]), vec![(0.0, 4.0), (4.0, 4.0)]);
+        assert_eq!(
+            fill_run(8.0, &[4.0, 2.0, 1.0]),
+            vec![(0.0, 4.0), (4.0, 4.0)]
+        );
         assert_eq!(
             fill_run(7.0, &[4.0, 2.0, 1.0]),
             vec![(0.0, 4.0), (4.0, 2.0), (6.0, 1.0)]
@@ -1138,8 +1148,7 @@ mod shell_tests {
     fn a_plain_room_has_four_walls_of_segments() {
         let r = room(8.0, 3.0, 8.0, vec![]);
         let slots = shell_slots(&r, &[4.0, 2.0, 1.0]);
-        let walls: Vec<&ShellSlot> =
-            slots.iter().filter(|s| s.kind == SlotKind::Wall).collect();
+        let walls: Vec<&ShellSlot> = slots.iter().filter(|s| s.kind == SlotKind::Wall).collect();
         // 8 m per side at 4 m modules = 2 segments, four sides.
         assert_eq!(walls.len(), 8, "expected 8 wall segments");
         assert!(walls.iter().all(|s| (s.height - 3.0).abs() < 1e-4));
@@ -1436,7 +1445,10 @@ mod shape_tests {
     fn an_oversized_group_regroups_smaller() {
         let parts: Vec<PartDef> = (0..3).map(|i| at(i as f32 * 0.1, 0.0, 0.0)).collect();
         let groups = group_nearby(&parts, 1.0, 1, 2);
-        assert!(!groups.is_empty(), "a dense area should still yield something");
+        assert!(
+            !groups.is_empty(),
+            "a dense area should still yield something"
+        );
         assert!(
             groups.iter().all(|g| g.len() <= 2),
             "every group must respect the maximum"
@@ -1549,7 +1561,15 @@ mod shape_tests {
     #[test]
     fn capture_names_and_colours_every_group() {
         let parts: Vec<PartDef> = (0..4).map(|i| at(i as f32 * 0.5, 0.0, 0.0)).collect();
-        let got = capture("a_square", &parts, 3.0, 2, 100, CONCRETE_WALL, CONCRETE_FLOOR);
+        let got = capture(
+            "a_square",
+            &parts,
+            3.0,
+            2,
+            100,
+            CONCRETE_WALL,
+            CONCRETE_FLOOR,
+        );
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].name, "a_square");
         assert_eq!(got[0].wall_color, CONCRETE_WALL);
@@ -1673,7 +1693,10 @@ mod tests {
         assert_eq!(first.result.damage_dealt, 40.0);
         assert_eq!(parts.len(), 7);
         assert!(!damage(&mut parts, hit, &swing).unwrap().removed);
-        assert!(damage(&mut parts, hit, &swing).unwrap().removed, "120 of 100 health");
+        assert!(
+            damage(&mut parts, hit, &swing).unwrap().removed,
+            "120 of 100 health"
+        );
         assert_eq!(parts.len(), 6);
         assert!(part_at(&parts, Vec3::new(3.1, 1.0, 0.0)).is_none());
         assert!(damage(&mut parts, 99, &swing).is_none());
@@ -1687,16 +1710,29 @@ mod tests {
             name: "roadside stop".to_string(),
             kind: "roadside stop".to_string(),
             members: vec![
-                MonumentMember { structure: warehouse, offset: Vec3::ZERO },
-                MonumentMember { structure: shack, offset: Vec3::new(15.0, 0.0, 0.0) },
+                MonumentMember {
+                    structure: warehouse,
+                    offset: Vec3::ZERO,
+                },
+                MonumentMember {
+                    structure: shack,
+                    offset: Vec3::new(15.0, 0.0, 0.0),
+                },
             ],
             loot_spots: vec![
-                LootSpot { position: Vec3::new(0.0, 0.3, 0.0), danger: 1 },
-                LootSpot { position: Vec3::new(15.0, 0.3, 0.0), danger: 1 },
+                LootSpot {
+                    position: Vec3::new(0.0, 0.3, 0.0),
+                    danger: 1,
+                },
+                LootSpot {
+                    position: Vec3::new(15.0, 0.3, 0.0),
+                    danger: 1,
+                },
             ],
-            npc_spots: vec![
-                NpcSpot { position: Vec3::new(7.0, 0.0, 3.0), danger: 1 },
-            ],
+            npc_spots: vec![NpcSpot {
+                position: Vec3::new(7.0, 0.0, 3.0),
+                danger: 1,
+            }],
             gates: vec![],
             props: vec![],
             good_for: Default::default(),

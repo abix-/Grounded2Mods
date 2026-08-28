@@ -10,8 +10,7 @@ pub use modforge::scanner::*;
 /// can be dispatched). Subsequent calls are no-ops.
 pub fn install_ue_resolver() {
     modforge::scanner::set_selector_resolver(|selector, offset| {
-        let obj = crate::selector::resolve(selector)
-            .map_err(|e| format!("freeze: {e}"))?;
+        let obj = crate::selector::resolve(selector).map_err(|e| format!("freeze: {e}"))?;
         Ok((obj as *const crate::ue::UObject as usize).wrapping_add(offset))
     });
 }

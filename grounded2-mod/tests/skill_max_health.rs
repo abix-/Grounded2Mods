@@ -11,7 +11,9 @@ fn max_health(s: &common::Snapshot) -> Option<f32> {
 
 #[test]
 fn max_health_increases() {
-    let Some(api) = common::Api::try_connect() else { return };
+    let Some(api) = common::Api::try_connect() else {
+        return;
+    };
     scenario::for_skill(api.inner(), "max_health")
         .reads(max_health)
         .should_grow_when_spent();
@@ -19,7 +21,9 @@ fn max_health_increases() {
 
 #[test]
 fn max_health_reverts_on_refund() {
-    let Some(api) = common::Api::try_connect() else { return };
+    let Some(api) = common::Api::try_connect() else {
+        return;
+    };
     scenario::for_skill(api.inner(), "max_health")
         .reads(max_health)
         .should_revert_when_refunded();

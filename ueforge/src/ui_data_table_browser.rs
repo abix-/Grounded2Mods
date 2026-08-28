@@ -134,16 +134,16 @@ pub fn render() {
             }
         }
         ui::same_line();
-        ui::text(&format!("{table_name}  -- {row_struct}  ({field_count} fields)"));
+        ui::text(&format!(
+            "{table_name}  -- {row_struct}  ({field_count} fields)"
+        ));
 
         if selected {
             render_selected(&mut s);
         }
     }
     if !filter.is_empty() {
-        ui::text_disabled(&format!(
-            "filtered: {shown_count} matching '{filter}'"
-        ));
+        ui::text_disabled(&format!("filtered: {shown_count} matching '{filter}'"));
     }
 }
 
@@ -209,13 +209,8 @@ fn render_selected(s: &mut DtBrowserUi) {
         let rows = j.get("rows").and_then(|v| v.as_array()).unwrap_or(&empty);
         let mut matched = 0usize;
         for r in rows {
-            let row_name = r
-                .get("row_name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("?");
-            if !row_filter.is_empty()
-                && !row_name.to_ascii_lowercase().contains(row_filter)
-            {
+            let row_name = r.get("row_name").and_then(|v| v.as_str()).unwrap_or("?");
+            if !row_filter.is_empty() && !row_name.to_ascii_lowercase().contains(row_filter) {
                 continue;
             }
             matched += 1;
@@ -236,9 +231,7 @@ fn render_selected(s: &mut DtBrowserUi) {
             ui::text(&line);
         }
         if !row_filter.is_empty() {
-            ui::text_disabled(&format!(
-                "filtered: {matched} rows matching '{row_filter}'"
-            ));
+            ui::text_disabled(&format!("filtered: {matched} rows matching '{row_filter}'"));
         }
         ui::tree_pop();
     }

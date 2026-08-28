@@ -36,23 +36,37 @@ fn region_spawn_anchors() {
         return;
     };
     for i in 0..n {
-        let item = api.op("invoke_method", json!({"handle": rh, "method": "get_Item", "args": [i]}));
-        let Some(reg) = handle_of(&item.result) else { continue };
+        let item = api.op(
+            "invoke_method",
+            json!({"handle": rh, "method": "get_Item", "args": [i]}),
+        );
+        let Some(reg) = handle_of(&item.result) else {
+            continue;
+        };
         let name = api.op("read_field", json!({"handle": reg, "field": "Name"}));
         println!("== region {}: {}", i, name.result);
 
         // Delivery locations: positions inside the region?
-        let dl = api.op("read_field", json!({"handle": reg, "field": "RegionDeliveryLocations"}));
+        let dl = api.op(
+            "read_field",
+            json!({"handle": reg, "field": "RegionDeliveryLocations"}),
+        );
         if let Some(dlh) = handle_of(&dl.result) {
             let count = count_of(&api, dlh).unwrap_or(0);
             println!("   {count} delivery location(s)");
             for j in 0..count.min(3) {
-                let e = api.op("invoke_method", json!({"handle": dlh, "method": "get_Item", "args": [j]}));
+                let e = api.op(
+                    "invoke_method",
+                    json!({"handle": dlh, "method": "get_Item", "args": [j]}),
+                );
                 if let Some(eh) = handle_of(&e.result) {
                     println!("   [{}] type={}", j, e.result["il2cpp_type"]);
                     let t = api.op("read_field", json!({"handle": eh, "field": "transform"}));
                     if let Some(th) = handle_of(&t.result) {
-                        let p = api.op("invoke_method", json!({"handle": th, "method": "get_position", "args": []}));
+                        let p = api.op(
+                            "invoke_method",
+                            json!({"handle": th, "method": "get_position", "args": []}),
+                        );
                         println!("       pos={:?}", parse_vec3(&p.result));
                         api.op("release_handle", json!({"handle": th}));
                     }
@@ -63,7 +77,10 @@ fn region_spawn_anchors() {
         }
 
         // The bounds polygon: vertices reachable?
-        let rb = api.op("read_field", json!({"handle": reg, "field": "RegionBounds"}));
+        let rb = api.op(
+            "read_field",
+            json!({"handle": reg, "field": "RegionBounds"}),
+        );
         if let Some(rbh) = handle_of(&rb.result) {
             for field in ["Points", "points", "Vertices", "LocalPoints"] {
                 let p = api.op("read_field", json!({"handle": rbh, "field": field}));

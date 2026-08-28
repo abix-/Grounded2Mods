@@ -133,7 +133,11 @@ impl Effect<UnityEngine> for UnityFieldAdditiveEffect {
         let Some(obj) = ty.singleton_instance() else {
             return;
         };
-        let cur = match obj.read_field(self.field_name).ok().and_then(|v| v.as_f64()) {
+        let cur = match obj
+            .read_field(self.field_name)
+            .ok()
+            .and_then(|v| v.as_f64())
+        {
             Some(v) => v as f32,
             None => return,
         };
@@ -147,12 +151,7 @@ impl Effect<UnityEngine> for UnityFieldAdditiveEffect {
     }
 
     fn format(&self, level: u32, max_level: u32) -> String {
-        format::format_additive_f32_as_int(
-            self.max_bonus,
-            level,
-            max_level,
-            self.format_word,
-        )
+        format::format_additive_f32_as_int(self.max_bonus, level, max_level, self.format_word)
     }
 }
 
@@ -201,7 +200,11 @@ impl Effect<UnityEngine> for UnityFieldMultiplyEffect {
         let Some(obj) = ty.singleton_instance() else {
             return;
         };
-        let cur = match obj.read_field(self.field_name).ok().and_then(|v| v.as_f64()) {
+        let cur = match obj
+            .read_field(self.field_name)
+            .ok()
+            .and_then(|v| v.as_f64())
+        {
             Some(v) => v as f32,
             None => return,
         };
@@ -286,7 +289,13 @@ impl UnityStaticPropAdditiveEffect {
         format_word: &'static str,
         vanilla: &'static VanillaCache<&'static str, f32>,
     ) -> Self {
-        Self { class_name, prop_name, max_bonus, format_word, vanilla }
+        Self {
+            class_name,
+            prop_name,
+            max_bonus,
+            format_word,
+            vanilla,
+        }
     }
 }
 

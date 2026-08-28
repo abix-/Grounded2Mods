@@ -65,7 +65,11 @@ fn what_the_mod_costs() {
         "{:<34} {:>8} {:>11} {:>10} {:>11}",
         "name", "calls", "total ms", "avg us", "worst ms"
     );
-    for e in report.result["entries"].as_array().cloned().unwrap_or_default() {
+    for e in report.result["entries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+    {
         println!(
             "{:<34} {:>8} {:>11.2} {:>10.1} {:>11.2}",
             e["name"].as_str().unwrap_or("?"),
@@ -106,11 +110,21 @@ fn off_means_off() {
     std::thread::sleep(Duration::from_secs(6));
     let r = api.op("timing_report", json!({}));
     assert!(r.ok, "timing_report failed: {:?}", r.error);
-    println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&r.result).unwrap_or_default()
+    );
     assert_eq!(r.result["timing_on"], json!(false));
     let busy: Vec<&serde_json::Value> = r.result["entries"]
         .as_array()
-        .map(|a| a.iter().filter(|e| e["calls"].as_u64().unwrap_or(0) > 0).collect())
+        .map(|a| {
+            a.iter()
+                .filter(|e| e["calls"].as_u64().unwrap_or(0) > 0)
+                .collect()
+        })
         .unwrap_or_default();
-    assert!(busy.is_empty(), "timing is off but something recorded: {busy:?}");
+    assert!(
+        busy.is_empty(),
+        "timing is off but something recorded: {busy:?}"
+    );
 }

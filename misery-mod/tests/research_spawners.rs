@@ -41,22 +41,32 @@ fn object_name(api: &Api, obj_addr: u64) -> String {
     }
     let idx = client::from_le_u32(&bytes, 0);
     let num = client::from_le_u32(&bytes, 4);
-    client::fname_from_parts(api, idx, num)
-        .unwrap_or_else(|| format!("(?idx={idx:#x})"))
+    client::fname_from_parts(api, idx, num).unwrap_or_else(|| format!("(?idx={idx:#x})"))
 }
 
 fn read_u8(api: &Api, addr: u64, off: u64) -> u8 {
-    client::read_bytes(api, addr, off, 1).first().copied().unwrap_or(255)
+    client::read_bytes(api, addr, off, 1)
+        .first()
+        .copied()
+        .unwrap_or(255)
 }
 
 fn read_i32_at(api: &Api, addr: u64, off: u64) -> i32 {
     let b = client::read_bytes(api, addr, off, 4);
-    if b.len() == 4 { client::from_le_i32(&b, 0) } else { -1 }
+    if b.len() == 4 {
+        client::from_le_i32(&b, 0)
+    } else {
+        -1
+    }
 }
 
 fn read_f64_at(api: &Api, addr: u64, off: u64) -> f64 {
     let b = client::read_bytes(api, addr, off, 8);
-    if b.len() == 8 { client::from_le_f64(&b, 0) } else { -1.0 }
+    if b.len() == 8 {
+        client::from_le_f64(&b, 0)
+    } else {
+        -1.0
+    }
 }
 
 fn read_fname_at(api: &Api, addr: u64, off: u64) -> String {
@@ -160,14 +170,22 @@ fn dump_generator_grids() {
         let (y0, y1) = (client::from_le_i32(&b, 8), client::from_le_i32(&b, 12));
         let tile_size = {
             let t = client::read_bytes(&api, g.addr, 0x2C0, 8);
-            if t.len() == 8 { client::from_le_f64(&t, 0) } else { -1.0 }
+            if t.len() == 8 {
+                client::from_le_f64(&t, 0)
+            } else {
+                -1.0
+            }
         };
         let levels = client::read_tarray_header(&api, g.addr, 0x2C8)
             .map(|h| h.num)
             .unwrap_or(-1);
         println!("  tile_size={tile_size}");
         let emissions = client::read_bytes(&api, g.addr, 0x2F8, 4);
-        let em = if emissions.len() == 4 { client::from_le_i32(&emissions, 0) } else { -1 };
+        let em = if emissions.len() == 4 {
+            client::from_le_i32(&emissions, 0)
+        } else {
+            -1
+        };
         println!(
             "  {}: grid x {x0}..{x1}, y {y0}..{y1} = {} cells, levels={levels}, emissions_past={em}",
             g.name,
@@ -193,7 +211,10 @@ fn dump_level_pools() {
         let Some(hdr) = client::read_tarray_header(&api, g.addr, 0x2C8) else {
             continue;
         };
-        println!("=== {} pool: {} entries (max {}) ===", g.name, hdr.num, hdr.max);
+        println!(
+            "=== {} pool: {} entries (max {}) ===",
+            g.name, hdr.num, hdr.max
+        );
         if hdr.num <= 0 || hdr.num > 64 {
             continue;
         }
@@ -215,7 +236,6 @@ fn dump_level_pools() {
         }
     }
 }
-
 
 /// Raise the spawn point's NPC count from 1 to 5 and turn on
 /// respawn. The game's own Blueprint logic does the spawning;
@@ -240,9 +260,24 @@ fn set_spawn_point_more() {
         read_i32_at(&api, p.addr, CURRENT_SPAWNED_OFFSET),
     );
     let sel = &p.addr_selector;
-    assert!(modforge::client::write_bytes_at(&api, sel, SPAWN_AI_COUNT_OFFSET, &5i32.to_le_bytes()));
-    assert!(modforge::client::write_bytes_at(&api, sel, RESPAWN_OFFSET, &[1u8]));
-    assert!(modforge::client::write_bytes_at(&api, sel, RESPAWN_TIME_OFFSET, &5.0f64.to_le_bytes()));
+    assert!(modforge::client::write_bytes_at(
+        &api,
+        sel,
+        SPAWN_AI_COUNT_OFFSET,
+        &5i32.to_le_bytes()
+    ));
+    assert!(modforge::client::write_bytes_at(
+        &api,
+        sel,
+        RESPAWN_OFFSET,
+        &[1u8]
+    ));
+    assert!(modforge::client::write_bytes_at(
+        &api,
+        sel,
+        RESPAWN_TIME_OFFSET,
+        &5.0f64.to_le_bytes()
+    ));
     println!(
         "after: count={} respawn={} respawn_time={}",
         read_i32_at(&api, p.addr, SPAWN_AI_COUNT_OFFSET),
@@ -281,7 +316,12 @@ fn set_spawn_point_entity() {
         donor.name,
         object_name(&api, class_ptr),
     );
-    assert!(modforge::client::write_bytes_at(&api, &p.addr_selector, SPAWN_AI_CLASS_OFFSET, &class_ptr.to_le_bytes()));
+    assert!(modforge::client::write_bytes_at(
+        &api,
+        &p.addr_selector,
+        SPAWN_AI_CLASS_OFFSET,
+        &class_ptr.to_le_bytes()
+    ));
     let after = client::read_bytes(&api, p.addr, SPAWN_AI_CLASS_OFFSET, 8);
     println!(
         "spawn point now spawns {}",

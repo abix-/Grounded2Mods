@@ -234,9 +234,12 @@ impl<B: DamageBinder> DamageHook<B> {
             self.config.damage_fn,
             damage_fn
         );
-        ProcessEventHook::install(self.config.component_class, move |this, function, parms, original| {
-            on_event(self, this, function, parms, original);
-        })
+        ProcessEventHook::install(
+            self.config.component_class,
+            move |this, function, parms, original| {
+                on_event(self, this, function, parms, original);
+            },
+        )
     }
 }
 

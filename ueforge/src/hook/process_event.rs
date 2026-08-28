@@ -290,7 +290,11 @@ impl ProcessEventHook {
         handler: F,
     ) -> Result<Vec<Self>, &'static str>
     where
-        F: Fn(&UObject, &UFunction, *mut c_void, OriginalProcessEvent) + Send + Sync + Clone + 'static,
+        F: Fn(&UObject, &UFunction, *mut c_void, OriginalProcessEvent)
+            + Send
+            + Sync
+            + Clone
+            + 'static,
     {
         let mut hooks = Vec::with_capacity(class_names.len());
         for &class_name in class_names {
@@ -350,9 +354,7 @@ impl Drop for ProcessEventHook {
         //    blocked on something, we'd rather leak the entry
         //    than deadlock the unloader.
         let deadline = Instant::now() + Duration::from_millis(500);
-        while self.entry.active_calls.load(Ordering::Acquire) > 0
-            && Instant::now() < deadline
-        {
+        while self.entry.active_calls.load(Ordering::Acquire) > 0 && Instant::now() < deadline {
             std::thread::yield_now();
         }
         if self.entry.active_calls.load(Ordering::Acquire) > 0 {

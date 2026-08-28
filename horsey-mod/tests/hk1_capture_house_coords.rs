@@ -17,7 +17,7 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::PathBuf;
 
 const TARGETS_FILENAME: &str = "menu_targets.json";
@@ -26,7 +26,11 @@ const KEY: &str = "home_door_from_truck_spawn";
 fn dll_dir() -> PathBuf {
     // Same layout as the release/debug horsey.dll lives in.
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
+    let profile = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
     manifest
         .parent()
         .expect("workspace root")
@@ -37,7 +41,9 @@ fn dll_dir() -> PathBuf {
 
 #[test]
 fn capture_house_door_coords() {
-    let Some(game) = common::launch("hk1_capture_house_coords") else { return };
+    let Some(game) = common::launch("hk1_capture_house_coords") else {
+        return;
+    };
 
     let v = game
         .op_json("input.cursor.get", &json!({}))
@@ -68,5 +74,9 @@ fn capture_house_door_coords() {
 
     let pretty = serde_json::to_string_pretty(&doc).expect("serialize targets");
     std::fs::write(&path, pretty).expect("write targets");
-    eprintln!("[CAPTURE] wrote {} = {{x:{x}, y:{y}}} to {}", KEY, path.display());
+    eprintln!(
+        "[CAPTURE] wrote {} = {{x:{x}, y:{y}}} to {}",
+        KEY,
+        path.display()
+    );
 }

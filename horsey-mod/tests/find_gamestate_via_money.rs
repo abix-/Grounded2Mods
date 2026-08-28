@@ -32,8 +32,10 @@ fn find_gamestate_ptr_by_money_xref_count() {
         Err(_) => None,
     };
     let Some(expect_money) = expect_money else {
-        eprintln!("MODFORGE_EXPECT_MONEY unset; cannot locate gamestate \
-                   without a known-live value. Skipping.");
+        eprintln!(
+            "MODFORGE_EXPECT_MONEY unset; cannot locate gamestate \
+                   without a known-live value. Skipping."
+        );
         return;
     };
     let Some(game) = common::launch("find_gamestate_via_money") else {
@@ -122,10 +124,8 @@ fn find_gamestate_ptr_by_money_xref_count() {
         let re = peek_u64(&game, base + 0x288).unwrap_or(u64::MAX);
         let roster_ok = {
             let both_null = rb == 0 && re == 0;
-            let both_heap = rb >= 0x10000
-                && re >= rb
-                && (re - rb) % 0x24 == 0
-                && (re - rb) / 0x24 < 2560;
+            let both_heap =
+                rb >= 0x10000 && re >= rb && (re - rb) % 0x24 == 0 && (re - rb) / 0x24 < 2560;
             both_null || both_heap
         };
         let year_match = match std::env::var("MODFORGE_EXPECT_YEAR") {
@@ -157,8 +157,7 @@ fn find_gamestate_ptr_by_money_xref_count() {
             &format!(
                 "{tag} gamestate@0x{base:x} money@0x{:x}={} year={} sleeps={} \
                  roster_begin=0x{:x} roster_end=0x{:x}",
-                c.money_addr, c.money, c.year, c.sleeps,
-                c.roster_begin, c.roster_end,
+                c.money_addr, c.money, c.year, c.sleeps, c.roster_begin, c.roster_end,
             ),
         );
     }

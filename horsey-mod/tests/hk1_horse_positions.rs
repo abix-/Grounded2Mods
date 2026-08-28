@@ -8,13 +8,20 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn f32_at(game: &modforge::harness::RunningGame, addr: u64) -> Option<f32> {
     let v = game
-        .op_json("patterns.read_bytes", &json!({"addr": format!("0x{addr:x}"), "n": 4}))
+        .op_json(
+            "patterns.read_bytes",
+            &json!({"addr": format!("0x{addr:x}"), "n": 4}),
+        )
         .ok()?;
-    let hex = v.get("result").unwrap_or(&v).get("bytes").and_then(Value::as_str)?;
+    let hex = v
+        .get("result")
+        .unwrap_or(&v)
+        .get("bytes")
+        .and_then(Value::as_str)?;
     let bytes: Vec<u8> = hex
         .split_whitespace()
         .filter_map(|b| u8::from_str_radix(b, 16).ok())
@@ -27,15 +34,23 @@ fn f32_at(game: &modforge::harness::RunningGame, addr: u64) -> Option<f32> {
 
 #[test]
 fn read_horse_positions() {
-    let Some(game) = common::launch("hk1_horse_positions") else { return };
+    let Some(game) = common::launch("hk1_horse_positions") else {
+        return;
+    };
 
     // Wait out the load race.
     let dl = std::time::Instant::now() + std::time::Duration::from_secs(30);
     let mut horses: Vec<Value> = vec![];
     loop {
-        let v = game.op_json("gamestate.owned_horses", &json!({})).unwrap_or(Value::Null);
+        let v = game
+            .op_json("gamestate.owned_horses", &json!({}))
+            .unwrap_or(Value::Null);
         let r = v.get("result").unwrap_or(&v);
-        horses = r.get("horses").and_then(Value::as_array).cloned().unwrap_or_default();
+        horses = r
+            .get("horses")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
         if !horses.is_empty() || std::time::Instant::now() >= dl {
             break;
         }
@@ -46,7 +61,10 @@ fn read_horse_positions() {
     for h in &horses {
         let idx = h.get("idx").and_then(Value::as_u64).unwrap_or(0);
         let p = usize::from_str_radix(
-            h.get("ptr").and_then(Value::as_str).unwrap_or("0x0").trim_start_matches("0x"),
+            h.get("ptr")
+                .and_then(Value::as_str)
+                .unwrap_or("0x0")
+                .trim_start_matches("0x"),
             16,
         )
         .unwrap_or(0) as u64;

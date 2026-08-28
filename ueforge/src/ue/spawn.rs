@@ -103,13 +103,7 @@ pub unsafe fn spawn_ai_from_class(
 /// yaw-only rotation is `(0, 0, sin(yaw/2), cos(yaw/2))`.
 ///
 /// `yaw` is RADIANS here, unlike `FRotator`, which is degrees.
-pub fn write_transform(
-    buf: &mut [u8],
-    at: usize,
-    location: (f64, f64, f64),
-    yaw: f64,
-    scale: f64,
-) {
+pub fn write_transform(buf: &mut [u8], at: usize, location: (f64, f64, f64), yaw: f64, scale: f64) {
     let (s, c) = (yaw / 2.0).sin_cos();
     let put = |b: &mut [u8], off: usize, v: f64| {
         b[at + off..at + off + 8].copy_from_slice(&v.to_le_bytes());

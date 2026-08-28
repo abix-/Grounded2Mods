@@ -28,24 +28,36 @@ fn list_spawnable_prefabs() {
         println!("no NetworkManager: {}", nm.result);
         return;
     };
-    let sp = api.op("invoke_method", json!({"handle": nmh, "method": "get_SpawnablePrefabs", "args": []}));
+    let sp = api.op(
+        "invoke_method",
+        json!({"handle": nmh, "method": "get_SpawnablePrefabs", "args": []}),
+    );
     let Some(sph) = handle_of(&sp.result) else {
         println!("no SpawnablePrefabs: {}", sp.result);
         return;
     };
     let count = api
-        .op("invoke_method", json!({"handle": sph, "method": "GetObjectCount", "args": []}))
+        .op(
+            "invoke_method",
+            json!({"handle": sph, "method": "GetObjectCount", "args": []}),
+        )
         .result
         .as_i64()
         .unwrap_or(0);
     println!("{count} spawnable prefab(s):");
     for i in 0..count {
-        let o = api.op("invoke_method", json!({"handle": sph, "method": "GetObject", "args": [true, i]}));
+        let o = api.op(
+            "invoke_method",
+            json!({"handle": sph, "method": "GetObject", "args": [true, i]}),
+        );
         let Some(oh) = handle_of(&o.result) else {
             println!("  [{i}] <no handle>");
             continue;
         };
-        let name = api.op("invoke_method", json!({"handle": oh, "method": "get_name", "args": []}));
+        let name = api.op(
+            "invoke_method",
+            json!({"handle": oh, "method": "get_name", "args": []}),
+        );
         println!("  [{i}] {}", name.result);
         api.op("release_handle", json!({"handle": oh}));
     }

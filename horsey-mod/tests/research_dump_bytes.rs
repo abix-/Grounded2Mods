@@ -37,15 +37,26 @@ fn dump_bytes_at_address() {
         eprintln!("skipping: set MODFORGE_RVA or MODFORGE_ADDR to use");
         return;
     }
-    let n = need("MODFORGE_N").map(|s| parse_hex_or_dec(&s)).unwrap_or(32);
+    let n = need("MODFORGE_N")
+        .map(|s| parse_hex_or_dec(&s))
+        .unwrap_or(32);
 
-    let Some(game) = common::launch("research_dump_bytes") else { return; };
+    let Some(game) = common::launch("research_dump_bytes") else {
+        return;
+    };
     let target = if let Some(a) = addr {
         a
     } else {
-        let r = game.op_json("targets.resolve.gamestate_ptr", &json!({})).expect("ok");
-        let ib_str = r.get("result").unwrap()
-            .get("image_base").unwrap().as_str().unwrap();
+        let r = game
+            .op_json("targets.resolve.gamestate_ptr", &json!({}))
+            .expect("ok");
+        let ib_str = r
+            .get("result")
+            .unwrap()
+            .get("image_base")
+            .unwrap()
+            .as_str()
+            .unwrap();
         let ib = u64::from_str_radix(ib_str.trim_start_matches("0x"), 16).unwrap_or(0);
         ib + (rva.unwrap() - 0x140000000)
     };
@@ -55,7 +66,8 @@ fn dump_bytes_at_address() {
             &json!({"addr": format!("0x{target:x}"), "n": n}),
         )
         .expect("patterns.read_bytes must succeed");
-    let bytes = resp.get("result")
+    let bytes = resp
+        .get("result")
         .and_then(|r| r.get("bytes"))
         .and_then(|v| v.as_str())
         .unwrap_or("");
@@ -63,7 +75,8 @@ fn dump_bytes_at_address() {
         "DUMP",
         &format!(
             "rva={} addr=0x{target:x} n={n} bytes={bytes}",
-            rva.map(|r| format!("0x{r:x}")).unwrap_or_else(|| "?".to_string()),
+            rva.map(|r| format!("0x{r:x}"))
+                .unwrap_or_else(|| "?".to_string()),
         ),
     );
     game.pass(&format!("dumped {n} bytes at 0x{target:x}"));

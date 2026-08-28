@@ -49,7 +49,11 @@ fn read_all_speed_fields() {
         let mws = client::read_f64(&api, inst.addr, MAX_WALK_SPEED_CC);
         let sprint = client::read_u8(&api, inst.addr, SPRINTING);
         let stance = client::read_u8(&api, inst.addr, CHAR_STANCE);
-        println!("  {} (cdo={})", inst.full_name, !inst.full_name.contains("PersistentLevel"));
+        println!(
+            "  {} (cdo={})",
+            inst.full_name,
+            !inst.full_name.contains("PersistentLevel")
+        );
         println!("    MovementSpeed  +0x200 = {ms}");
         println!("    MaxWalkSpeed   +0x278 = {mws}");
         println!("    Sprinting      +0x19D = {sprint}");
@@ -60,26 +64,43 @@ fn read_all_speed_fields() {
     let instances2 = client::walk_class_instances_with_cdo(&api, PLAYER_INV, 100);
     println!("{} instance(s)", instances2.len());
     for inst in &instances2 {
-        if !inst.full_name.contains("PersistentLevel") { continue; }
+        if !inst.full_name.contains("PersistentLevel") {
+            continue;
+        }
         let use_hold = client::read_u8(&api, inst.addr, USE_HOLDABLE_SPEEDS);
         println!("  {}", inst.full_name);
         println!("    UseHoldableMovementSpeeds +0x358 = {use_hold}");
 
         let map_raw = client::read_bytes(&api, inst.addr, MOVEMENT_SPEEDS_MAP, 80);
         if !map_raw.is_empty() {
-            println!("    MovementSpeeds +0xFE8 raw ({} bytes): {}", map_raw.len(), hex::encode(&map_raw));
+            println!(
+                "    MovementSpeeds +0xFE8 raw ({} bytes): {}",
+                map_raw.len(),
+                hex::encode(&map_raw)
+            );
         }
     }
 
     println!("\n=== CharacterMovementComponent (player) ===");
     let r3 = api.op("walk_class", json!({"class": "CharacterMovementComponent"}));
-    let arr3 = r3.result["instances"].as_array().cloned().unwrap_or_default();
+    let arr3 = r3.result["instances"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     for inst in &arr3 {
         let name = inst["full_name"].as_str().unwrap_or("");
-        if !name.contains("PersistentLevel") || !name.contains("SGKMasterCharacter") { continue; }
-        if inst["is_cdo"].as_bool() == Some(true) { continue; }
-        let Some(addr_str) = inst["addr"].as_str() else { continue };
-        let Ok(addr) = u64::from_str_radix(addr_str.trim_start_matches("0x"), 16) else { continue };
+        if !name.contains("PersistentLevel") || !name.contains("SGKMasterCharacter") {
+            continue;
+        }
+        if inst["is_cdo"].as_bool() == Some(true) {
+            continue;
+        }
+        let Some(addr_str) = inst["addr"].as_str() else {
+            continue;
+        };
+        let Ok(addr) = u64::from_str_radix(addr_str.trim_start_matches("0x"), 16) else {
+            continue;
+        };
 
         let mws = client::read_f32(&api, addr, 0x248);
         let mwsc = client::read_f32(&api, addr, 0x24C);
@@ -97,7 +118,8 @@ fn read_all_speed_fields() {
 
     println!("\n=== BP_MasterHoldable_C (holdable speeds) ===");
     let holdables = client::walk_class_instances(&api, "BP_MasterHoldable_C", 100);
-    let live: Vec<_> = holdables.iter()
+    let live: Vec<_> = holdables
+        .iter()
         .filter(|i| i.full_name.contains("PersistentLevel"))
         .collect();
     println!("{} live instance(s)", live.len());

@@ -37,7 +37,10 @@ fn report_only() {
         return;
     }
     println!("tracing={}", report.result["tracing"]);
-    let events = report.result["events"].as_array().cloned().unwrap_or_default();
+    let events = report.result["events"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     println!("{} event(s):", events.len());
     for e in &events {
         println!(
@@ -90,7 +93,10 @@ fn trace_player_attack_signals() {
             println!("combat_trace_report FAILED: {:?}", report.error);
             break;
         }
-        let events = report.result["events"].as_array().cloned().unwrap_or_default();
+        let events = report.result["events"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
         for e in events.iter().skip(seen) {
             println!(
                 "  +{ms}ms {event} npc={npc} health={health}",
@@ -111,6 +117,8 @@ fn trace_player_attack_signals() {
     let stop = api.op("combat_trace_stop", json!({}));
     println!("combat_trace_stop: ok={} {}", stop.ok, stop.result);
     if seen == 0 {
-        println!("NO events recorded; either nothing was attacked or the hooks are on the wrong methods.");
+        println!(
+            "NO events recorded; either nothing was attacked or the hooks are on the wrong methods."
+        );
     }
 }

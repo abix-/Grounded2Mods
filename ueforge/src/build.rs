@@ -154,10 +154,7 @@ impl CppShim {
             "cargo:rerun-if-changed={}",
             ue4ss.join("UE4SS.lib").display()
         );
-        println!(
-            "cargo:rustc-cdylib-link-arg=/LIBPATH:{}",
-            ue4ss.display()
-        );
+        println!("cargo:rustc-cdylib-link-arg=/LIBPATH:{}", ue4ss.display());
         println!("cargo:rustc-cdylib-link-arg=UE4SS.lib");
     }
 }

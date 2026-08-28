@@ -68,7 +68,10 @@ fn game_instance_detail() {
         println!("SKIP: offsets not live");
         return;
     }
-    let r = api.op("discover_class_detail", json!({"name": "BP_SGKGameInstance_C"}));
+    let r = api.op(
+        "discover_class_detail",
+        json!({"name": "BP_SGKGameInstance_C"}),
+    );
     show("BP_SGKGameInstance_C", &r);
 }
 

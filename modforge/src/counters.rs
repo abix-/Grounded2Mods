@@ -205,12 +205,19 @@ pub fn timing_on() -> bool {
 #[inline]
 pub fn measure(name: &'static str) -> Measure {
     if !timing_on() {
-        return Measure { entry: None, start: None };
+        return Measure {
+            entry: None,
+            start: None,
+        };
     }
-    let entry = *named().lock().entry(name).or_insert_with(|| {
-        Box::leak(Box::new(Entry::default())) as &'static Entry
-    });
-    Measure { entry: Some(entry), start: Some(Instant::now()) }
+    let entry = *named()
+        .lock()
+        .entry(name)
+        .or_insert_with(|| Box::leak(Box::new(Entry::default())) as &'static Entry);
+    Measure {
+        entry: Some(entry),
+        start: Some(Instant::now()),
+    }
 }
 
 /// Count one run of a named piece of work without timing it.
@@ -223,9 +230,10 @@ pub fn tally(name: &'static str, n: u64) {
     if !timing_on() {
         return;
     }
-    let entry = *named().lock().entry(name).or_insert_with(|| {
-        Box::leak(Box::new(Entry::default())) as &'static Entry
-    });
+    let entry = *named()
+        .lock()
+        .entry(name)
+        .or_insert_with(|| Box::leak(Box::new(Entry::default())) as &'static Entry);
     entry.calls.fetch_add(n, Ordering::Relaxed);
 }
 
@@ -245,12 +253,10 @@ impl Drop for Measure {
         e.time_ns.fetch_add(ns, Ordering::Relaxed);
         let mut worst = e.max_ns.load(Ordering::Relaxed);
         while ns > worst {
-            match e.max_ns.compare_exchange_weak(
-                worst,
-                ns,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
+            match e
+                .max_ns
+                .compare_exchange_weak(worst, ns, Ordering::Relaxed, Ordering::Relaxed)
+            {
                 Ok(_) => break,
                 Err(w) => worst = w,
             }
@@ -282,7 +288,10 @@ pub fn report() -> serde_json::Value {
         })
         .collect();
     all.sort_by(|a, b| {
-        b["time_ns"].as_u64().unwrap_or(0).cmp(&a["time_ns"].as_u64().unwrap_or(0))
+        b["time_ns"]
+            .as_u64()
+            .unwrap_or(0)
+            .cmp(&a["time_ns"].as_u64().unwrap_or(0))
     });
     serde_json::json!({
         "timing_on": timing_on(),

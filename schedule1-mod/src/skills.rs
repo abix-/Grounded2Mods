@@ -24,10 +24,10 @@ use std::time::Duration;
 use serde_json::{Value as Json, json};
 
 use modforge::ops::{OP_REGISTRY, OpDef};
+use modforge::rpg::EffectDef;
 use modforge::rpg::poller::{PollerHandle, SlotPoller};
 use modforge::rpg::vanilla::VanillaCache;
 use modforge::rpg::xp::Curve;
-use modforge::rpg::EffectDef;
 
 use unityforge::main_thread_queue::MAIN_QUEUE;
 use unityforge::mono::MonoType;
@@ -62,12 +62,7 @@ static VITALITY_INNER: UnityStaticPropAdditiveEffect = UnityStaticPropAdditiveEf
 );
 #[allow(dead_code)]
 static VITALITY_EFFECT: UnityGuardedMainThreadEffect<UnityStaticPropAdditiveEffect> =
-    UnityGuardedMainThreadEffect::new(
-        "vitality",
-        EFFECT_TIMEOUT,
-        effects_enabled,
-        &VITALITY_INNER,
-    );
+    UnityGuardedMainThreadEffect::new("vitality", EFFECT_TIMEOUT, effects_enabled, &VITALITY_INNER);
 
 #[allow(dead_code)]
 static REGENERATION_VANILLA: VanillaCache<&'static str, f32> = VanillaCache::new();
@@ -89,14 +84,13 @@ static REGENERATION_EFFECT: UnityGuardedMainThreadEffect<UnityStaticPropAdditive
     );
 
 static HEAVY_HANDS_VANILLA: VanillaCache<&'static str, f32> = VanillaCache::new();
-static HEAVY_HANDS_INNER: UnityInstancePropMultiplyEffect =
-    UnityInstancePropMultiplyEffect::new(
-        "Il2CppScheduleOne.Combat.PunchController",
-        &["MinPunchDamage", "MaxPunchDamage"],
-        4.0,
-        "punch damage",
-        &HEAVY_HANDS_VANILLA,
-    );
+static HEAVY_HANDS_INNER: UnityInstancePropMultiplyEffect = UnityInstancePropMultiplyEffect::new(
+    "Il2CppScheduleOne.Combat.PunchController",
+    &["MinPunchDamage", "MaxPunchDamage"],
+    4.0,
+    "punch damage",
+    &HEAVY_HANDS_VANILLA,
+);
 static HEAVY_HANDS_EFFECT: UnityGuardedMainThreadEffect<UnityInstancePropMultiplyEffect> =
     UnityGuardedMainThreadEffect::new(
         "heavy_hands",

@@ -127,7 +127,10 @@ pub fn render() {
 fn render_field_list(st: &serde_json::Value) {
     ui::indent();
     let empty = Vec::new();
-    let fields = st.get("fields").and_then(|v| v.as_array()).unwrap_or(&empty);
+    let fields = st
+        .get("fields")
+        .and_then(|v| v.as_array())
+        .unwrap_or(&empty);
     for f in fields {
         let n = f.get("name").and_then(|v| v.as_str()).unwrap_or("?");
         let cls = f.get("class").and_then(|v| v.as_str()).unwrap_or("?");

@@ -13,9 +13,7 @@
 
 #![allow(dead_code)]
 
-use modforge::harness::{
-    BuildDef, GameHarness, GameDef, HttpProbe, InjectorDef, RunningGame,
-};
+use modforge::harness::{BuildDef, GameDef, GameHarness, HttpProbe, InjectorDef, RunningGame};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -99,21 +97,26 @@ pub fn launch(test_name: &str) -> Option<RunningGame> {
 // matching owned horse. With no env set, defaults to the first owned
 // horse so a bare `cargo test` still runs.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// One owned horse as returned by `gamestate.owned_horses`.
 #[derive(Debug, Clone)]
 pub struct TargetHorse {
-    pub name:  String,
+    pub name: String,
     pub ptr_s: String,
-    pub id:    u64,
+    pub id: u64,
 }
 
 /// Fetch the full owned-horse list from the running game.
 pub fn list_owned(game: &RunningGame) -> Vec<Value> {
-    let r = game.op_json("gamestate.owned_horses", &json!({})).unwrap_or(Value::Null);
-    r.get("result").and_then(|x| x.get("horses"))
-        .and_then(Value::as_array).cloned().unwrap_or_default()
+    let r = game
+        .op_json("gamestate.owned_horses", &json!({}))
+        .unwrap_or(Value::Null);
+    r.get("result")
+        .and_then(|x| x.get("horses"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
 }
 
 /// Find an owned horse by case-insensitive name.
@@ -121,7 +124,9 @@ pub fn find_owned(game: &RunningGame, name: &str) -> Option<TargetHorse> {
     let want = name.to_ascii_lowercase();
     list_owned(game).into_iter().find_map(|h| {
         let n = h.get("name").and_then(Value::as_str)?.to_string();
-        if n.to_ascii_lowercase() != want { return None; }
+        if n.to_ascii_lowercase() != want {
+            return None;
+        }
         let ptr_s = h.get("ptr").and_then(Value::as_str)?.to_string();
         let id = u64::from_str_radix(ptr_s.trim_start_matches("0x"), 16).ok()?;
         Some(TargetHorse { name: n, ptr_s, id })
@@ -138,10 +143,20 @@ pub fn target_horse(game: &RunningGame) -> TargetHorse {
         return find_owned(game, &name)
             .unwrap_or_else(|| panic!("HORSEY_HORSE='{name}' not in owned list"));
     }
-    let h = list_owned(game).into_iter().next()
+    let h = list_owned(game)
+        .into_iter()
+        .next()
         .expect("no owned horses; load a save first");
-    let name = h.get("name").and_then(Value::as_str).unwrap_or("?").to_string();
-    let ptr_s = h.get("ptr").and_then(Value::as_str).unwrap_or("0x0").to_string();
+    let name = h
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("?")
+        .to_string();
+    let ptr_s = h
+        .get("ptr")
+        .and_then(Value::as_str)
+        .unwrap_or("0x0")
+        .to_string();
     let id = u64::from_str_radix(ptr_s.trim_start_matches("0x"), 16).unwrap_or(0);
     TargetHorse { name, ptr_s, id }
 }
@@ -168,15 +183,18 @@ where
 /// variant) when building a watch test.
 pub fn resolve_base(game: &RunningGame, spec: &str) -> u64 {
     if let Some(hex) = spec.strip_prefix("0x").or_else(|| spec.strip_prefix("0X")) {
-        return u64::from_str_radix(hex, 16)
-            .unwrap_or_else(|e| panic!("base raw hex parse: {e}"));
+        return u64::from_str_radix(hex, 16).unwrap_or_else(|e| panic!("base raw hex parse: {e}"));
     }
     match spec {
         "horse_ptr" => target_horse(game).id,
         "gamestate" => {
-            let r = game.op_json("gamestate.diag", &json!({}))
+            let r = game
+                .op_json("gamestate.diag", &json!({}))
                 .unwrap_or_else(|e| panic!("gamestate.diag failed: {e}"));
-            let ptr_s = r.get("result").and_then(|x| x.get("ptr")).and_then(Value::as_str)
+            let ptr_s = r
+                .get("result")
+                .and_then(|x| x.get("ptr"))
+                .and_then(Value::as_str)
                 .unwrap_or_else(|| panic!("gamestate.diag returned no ptr: {r}"));
             let h = ptr_s.trim_start_matches("0x").trim_start_matches("0X");
             let p = u64::from_str_radix(h, 16)
@@ -192,7 +210,11 @@ pub fn resolve_base(game: &RunningGame, spec: &str) -> u64 {
 /// captures of screen coordinates that automated tests need at a
 /// fresh save-load (e.g. the house door on the world map).
 pub fn menu_targets_path() -> PathBuf {
-    let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
+    let profile = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
     workspace_root()
         .join("target")
         .join("x86_64-pc-windows-msvc")
@@ -215,7 +237,9 @@ fn read_menu_target(key: &str) -> Option<(i32, i32)> {
 pub fn active_scene_id(game: &RunningGame) -> Option<i32> {
     let v = game.op_json("hk1.probe.active_location", &json!({})).ok()?;
     let r = v.get("result").unwrap_or(&v);
-    r.get("active_scene_id").and_then(Value::as_i64).map(|n| n as i32)
+    r.get("active_scene_id")
+        .and_then(Value::as_i64)
+        .map(|n| n as i32)
 }
 
 /// HK1 prereq: block until the Home Location scene is active. On
@@ -236,15 +260,20 @@ pub fn ensure_home_scene_loaded(game: &RunningGame, timeout: std::time::Duration
     // 1. Wait for the save to finish loading via the proven horse-roster
     //    poll. If owned_horses populates, GS is alive.
     let h = wait_for_target_horse(game, std::time::Duration::from_secs(120));
-    eprintln!("[home-scene] save loaded; first owned horse = {} @ {}", h.name, h.ptr_s);
+    eprintln!(
+        "[home-scene] save loaded; first owned horse = {} @ {}",
+        h.name, h.ptr_s
+    );
 
     // 2. Read active_scene_id baseline. If it's None even after save
     //    load, dump diagnostic state and bail with actionable info.
     let baseline = match active_scene_id(game) {
         Some(id) => id,
         None => {
-            let diag = game.op_json("hk1.probe.active_location", &json!({}))
-                .map(|v| v.to_string()).unwrap_or_else(|e| format!("(probe err: {e})"));
+            let diag = game
+                .op_json("hk1.probe.active_location", &json!({}))
+                .map(|v| v.to_string())
+                .unwrap_or_else(|e| format!("(probe err: {e})"));
             panic!(
                 "ensure_home_scene_loaded: save loaded but active_scene_id is None. \
                  Either the value at GS+0x25C is outside [-1, 256) (need to widen the \
@@ -307,9 +336,10 @@ pub fn wait_for_target_horse(game: &RunningGame, timeout: std::time::Duration) -
             return target_horse(game);
         }
         if std::time::Instant::now() >= deadline {
-            let names: Vec<_> = horses.iter().filter_map(|h| {
-                h.get("name").and_then(Value::as_str).map(String::from)
-            }).collect();
+            let names: Vec<_> = horses
+                .iter()
+                .filter_map(|h| h.get("name").and_then(Value::as_str).map(String::from))
+                .collect();
             panic!("timed out waiting for target horse; want={want:?} owned={names:?}");
         }
         std::thread::sleep(std::time::Duration::from_secs(2));

@@ -44,7 +44,9 @@ pub fn find_instances<S: DeserializeOwned>(
         println!("find_instances({name}): {} instance(s)", instances.len());
         return Ok(instances);
     }
-    Err(format!("{class}: neither Il2Cpp{class} nor {class} resolved"))
+    Err(format!(
+        "{class}: neither Il2Cpp{class} nor {class} resolved"
+    ))
 }
 
 /// Find the first live instance handle of a class.
@@ -53,10 +55,7 @@ pub fn first_handle<S: DeserializeOwned>(api: &Api<S>, class: &str) -> Option<i6
 }
 
 /// Find the first live instance handle, scanning inactive objects too.
-pub fn first_handle_inactive<S: DeserializeOwned>(
-    api: &Api<S>,
-    class: &str,
-) -> Option<i64> {
+pub fn first_handle_inactive<S: DeserializeOwned>(api: &Api<S>, class: &str) -> Option<i64> {
     first_handle_opts(api, class, true)
 }
 
@@ -82,11 +81,7 @@ fn first_handle_opts<S: DeserializeOwned>(
 
 /// True when inspect_object on a live instance of `class` lists
 /// `field`. Prints the verdict either way.
-pub fn field_exists<S: DeserializeOwned>(
-    api: &Api<S>,
-    class: &str,
-    field: &str,
-) -> bool {
+pub fn field_exists<S: DeserializeOwned>(api: &Api<S>, class: &str, field: &str) -> bool {
     let Some(handle) = first_handle(api, class) else {
         println!("  {class}.{field}: NO LIVE INSTANCE (class may still exist)");
         return false;

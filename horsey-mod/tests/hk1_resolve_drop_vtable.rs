@@ -18,25 +18,34 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::time::Duration;
 
 #[test]
 fn resolve_drop_vtable() {
-    let Some(game) = common::launch("hk1_resolve_drop_vtable") else { return };
+    let Some(game) = common::launch("hk1_resolve_drop_vtable") else {
+        return;
+    };
     common::wait_for_target_horse(&game, Duration::from_secs(60));
 
     let diag = game.op_json("gamestate.diag", &json!({})).expect("diag");
     let result = diag.get("result").unwrap_or(&diag);
-    eprintln!("diag result keys: {:?}", result.as_object().map(|m| m.keys().collect::<Vec<_>>()));
+    eprintln!(
+        "diag result keys: {:?}",
+        result.as_object().map(|m| m.keys().collect::<Vec<_>>())
+    );
 
     // Get image_base via the active_location probe (it reports image_base).
-    let probe = game.op_json("hk1.probe.active_location", &json!({})).expect("probe");
+    let probe = game
+        .op_json("hk1.probe.active_location", &json!({}))
+        .expect("probe");
     let probe_result = probe.get("result").unwrap_or(&probe);
-    let image_base_s = probe_result.get("image_base").and_then(Value::as_str)
+    let image_base_s = probe_result
+        .get("image_base")
+        .and_then(Value::as_str)
         .expect("no image_base in probe");
-    let image_base = u64::from_str_radix(image_base_s.trim_start_matches("0x"), 16)
-        .expect("bad image_base");
+    let image_base =
+        u64::from_str_radix(image_base_s.trim_start_matches("0x"), 16).expect("bad image_base");
     eprintln!("image_base = {image_base:#x}");
 
     // Home Location vtable from S0 finding: RVA 0x30f3d0.
@@ -50,8 +59,13 @@ fn resolve_drop_vtable() {
     let mut entries = Vec::new();
     for off in interesting_slots {
         let slot_addr = vtable_addr + off;
-        let r = game.op_json("mem.peek", &json!({"addr": slot_addr, "kind": "u64"})).unwrap();
-        let val_s = r.get("result").and_then(|x| x.get("value")).and_then(Value::as_str)
+        let r = game
+            .op_json("mem.peek", &json!({"addr": slot_addr, "kind": "u64"}))
+            .unwrap();
+        let val_s = r
+            .get("result")
+            .and_then(|x| x.get("value"))
+            .and_then(Value::as_str)
             .unwrap_or("0x0");
         let fn_addr = u64::from_str_radix(val_s.trim_start_matches("0x"), 16).unwrap_or(0);
         let fn_rva = fn_addr.saturating_sub(image_base);
@@ -61,8 +75,12 @@ fn resolve_drop_vtable() {
     eprintln!("\nvtable slots on Home Location:");
     eprintln!("  slot   fn addr             fn RVA");
     for (off, addr, rva) in &entries {
-        let decomp_path = format!("research/decompiled/funcs/{:05x?}/{:09x}_FUN_{:x}.c",
-            (rva >> 16) & 0xff, rva, rva);
+        let decomp_path = format!(
+            "research/decompiled/funcs/{:05x?}/{:09x}_FUN_{:x}.c",
+            (rva >> 16) & 0xff,
+            rva,
+            rva
+        );
         eprintln!("  +0x{off:02x}   {addr:#018x}  {rva:#010x}    -> FUN_{rva:x}");
         eprintln!("            decomp: {decomp_path}");
     }

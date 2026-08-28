@@ -26,7 +26,7 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn opt_u64(v: &Value, key: &str) -> Option<u64> {
     v.get(key).and_then(|v| v.as_u64())
@@ -46,7 +46,10 @@ fn snapshot_does_not_leak_unloaded_garbage() {
     };
 
     let s = capture(&game);
-    let loaded = s.get("world_loaded").and_then(|v| v.as_bool()).unwrap_or(true);
+    let loaded = s
+        .get("world_loaded")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
 
     if !loaded {
         // Main-menu state: every read-from-GameState field must be

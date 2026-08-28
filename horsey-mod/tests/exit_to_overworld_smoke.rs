@@ -6,7 +6,7 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 
 fn op(game: &modforge::harness::RunningGame, name: &str, args: Value) -> Value {
@@ -25,12 +25,16 @@ fn op(game: &modforge::harness::RunningGame, name: &str, args: Value) -> Value {
 fn read_scene_id(game: &modforge::harness::RunningGame) -> Option<i32> {
     let v = game.op_json("hk1.probe.active_location", &json!({})).ok()?;
     let r = v.get("result").unwrap_or(&v);
-    r.get("active_scene_id").and_then(Value::as_i64).map(|n| n as i32)
+    r.get("active_scene_id")
+        .and_then(Value::as_i64)
+        .map(|n| n as i32)
 }
 
 #[test]
 fn exit_to_overworld_smoke() {
-    let Some(game) = common::launch("exit_to_overworld_smoke") else { return };
+    let Some(game) = common::launch("exit_to_overworld_smoke") else {
+        return;
+    };
 
     eprintln!("\n=== diag: pre-test state ===");
     op(&game, "ping", json!({}));
@@ -51,13 +55,21 @@ fn exit_to_overworld_smoke() {
     eprintln!("[plan] target click @ ({hx}, {hy}) backend=l1");
 
     // Move first so we can confirm where the OS thinks the cursor is.
-    op(&game, "input.mouse.move", json!({"x": hx, "y": hy, "backend": "l1"}));
+    op(
+        &game,
+        "input.mouse.move",
+        json!({"x": hx, "y": hy, "backend": "l1"}),
+    );
     op(&game, "input.cursor.get", json!({}));
     op(&game, "input.foreground.hwnd", json!({}));
 
-    let click = op(&game, "input.mouse.click", json!({
-        "button": "left", "x": hx, "y": hy, "backend": "l1"
-    }));
+    let click = op(
+        &game,
+        "input.mouse.click",
+        json!({
+            "button": "left", "x": hx, "y": hy, "backend": "l1"
+        }),
+    );
     eprintln!("[click] response={click}");
     op(&game, "input.cursor.get", json!({}));
 
@@ -79,7 +91,10 @@ fn exit_to_overworld_smoke() {
         }
         std::thread::sleep(Duration::from_millis(500));
     }
-    eprintln!("[poll done] final scene_id = {last_id:?} (elapsed {:?})", t0.elapsed());
+    eprintln!(
+        "[poll done] final scene_id = {last_id:?} (elapsed {:?})",
+        t0.elapsed()
+    );
 
     assert!(
         matches!(last_id, Some(id) if id != -1),
@@ -106,7 +121,10 @@ fn exit_to_overworld_smoke() {
         std::thread::sleep(Duration::from_millis(100));
         now_id = read_scene_id(&game);
     }
-    eprintln!("[poll] scene_id after exit = {now_id:?} (elapsed {:?})", t0.elapsed());
+    eprintln!(
+        "[poll] scene_id after exit = {now_id:?} (elapsed {:?})",
+        t0.elapsed()
+    );
     assert_eq!(
         now_id,
         Some(-1),

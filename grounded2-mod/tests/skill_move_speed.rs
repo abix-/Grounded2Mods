@@ -11,7 +11,9 @@ fn walk_speed(s: &common::Snapshot) -> Option<f32> {
 
 #[test]
 fn move_speed_grows() {
-    let Some(api) = common::Api::try_connect() else { return };
+    let Some(api) = common::Api::try_connect() else {
+        return;
+    };
     scenario::for_skill(api.inner(), "move_speed")
         .reads(walk_speed)
         .should_grow_when_spent();
@@ -19,7 +21,9 @@ fn move_speed_grows() {
 
 #[test]
 fn move_speed_toggle_reverts() {
-    let Some(api) = common::Api::try_connect() else { return };
+    let Some(api) = common::Api::try_connect() else {
+        return;
+    };
     scenario::for_skill(api.inner(), "move_speed")
         .reads(walk_speed)
         .should_revert_when_toggled_off();

@@ -14,8 +14,9 @@
 //! ```
 
 mod common;
-use common::{api, first_handle, handle_of, parse_vec3, ping_or_skip, walk,
-             print_declared_methods, count_of};
+use common::{
+    api, count_of, first_handle, handle_of, parse_vec3, ping_or_skip, print_declared_methods, walk,
+};
 use serde_json::json;
 
 #[test]
@@ -42,8 +43,10 @@ fn patrol_routes_in_scene() {
             println!("route[{i}] name={name}");
 
             let inspect = api.op("inspect_object", json!({"handle": rh}));
-            println!("  inspect: {}",
-                serde_json::to_string_pretty(&inspect.result).unwrap_or_default());
+            println!(
+                "  inspect: {}",
+                serde_json::to_string_pretty(&inspect.result).unwrap_or_default()
+            );
 
             // Read RouteName field
             let rn = api.op("read_field", json!({"handle": rh, "field": "RouteName"}));
@@ -52,7 +55,10 @@ fn patrol_routes_in_scene() {
             }
 
             // Read StartWaypointIndex
-            let swi = api.op("read_field", json!({"handle": rh, "field": "StartWaypointIndex"}));
+            let swi = api.op(
+                "read_field",
+                json!({"handle": rh, "field": "StartWaypointIndex"}),
+            );
             if swi.ok {
                 println!("  StartWaypointIndex = {}", swi.result);
             }
@@ -64,14 +70,21 @@ fn patrol_routes_in_scene() {
                     if let Some(n) = count_of(&api, wph) {
                         println!("  Waypoints: {n} waypoint(s)");
                         for j in 0..n {
-                            let item = api.op("invoke_method",
-                                json!({"handle": wph, "method": "get_Item", "args": [j]}));
+                            let item = api.op(
+                                "invoke_method",
+                                json!({"handle": wph, "method": "get_Item", "args": [j]}),
+                            );
                             if item.ok {
                                 if let Some(th) = handle_of(&item.result) {
-                                    let pos = api.op("invoke_method",
-                                        json!({"handle": th, "method": "get_position", "args": []}));
+                                    let pos = api.op(
+                                        "invoke_method",
+                                        json!({"handle": th, "method": "get_position", "args": []}),
+                                    );
                                     if let Some(v) = parse_vec3(&pos.result) {
-                                        println!("    wp[{j}] = ({:.1}, {:.1}, {:.1})", v.0, v.1, v.2);
+                                        println!(
+                                            "    wp[{j}] = ({:.1}, {:.1}, {:.1})",
+                                            v.0, v.1, v.2
+                                        );
                                     } else {
                                         println!("    wp[{j}] position = {}", pos.result);
                                     }
@@ -99,10 +112,15 @@ fn patrol_routes_in_scene() {
                 continue;
             };
             let inspect = api.op("inspect_object", json!({"handle": gh}));
-            println!("group[{i}]: {}",
-                serde_json::to_string_pretty(&inspect.result).unwrap_or_default());
+            println!(
+                "group[{i}]: {}",
+                serde_json::to_string_pretty(&inspect.result).unwrap_or_default()
+            );
 
-            let cw = api.op("read_field", json!({"handle": gh, "field": "CurrentWaypoint"}));
+            let cw = api.op(
+                "read_field",
+                json!({"handle": gh, "field": "CurrentWaypoint"}),
+            );
             if cw.ok {
                 println!("  CurrentWaypoint = {}", cw.result);
             }
@@ -127,31 +145,47 @@ fn patrol_routes_in_scene() {
 
     // Full method lists (including inherited)
     println!("\n=== LawManager: all methods ===");
-    let r = api.op("list_methods", json!({"class": "ScheduleOne.Law.LawManager"}));
+    let r = api.op(
+        "list_methods",
+        json!({"class": "ScheduleOne.Law.LawManager"}),
+    );
     if r.ok {
         let methods = r.result["methods"].as_array().cloned().unwrap_or_default();
         for m in &methods {
-            println!("  {}({}) -> {} [from: {}]{}",
+            println!(
+                "  {}({}) -> {} [from: {}]{}",
                 m["name"].as_str().unwrap_or("?"),
                 m["params"].as_i64().unwrap_or(-1),
                 m["return"].as_str().unwrap_or("?"),
                 m["declared_on"].as_str().unwrap_or("?"),
-                if m["static"].as_bool() == Some(true) { " [static]" } else { "" },
+                if m["static"].as_bool() == Some(true) {
+                    " [static]"
+                } else {
+                    ""
+                },
             );
         }
     }
 
     println!("\n=== PatrolGroup: all methods ===");
-    let r = api.op("list_methods", json!({"class": "ScheduleOne.NPCs.Behaviour.PatrolGroup"}));
+    let r = api.op(
+        "list_methods",
+        json!({"class": "ScheduleOne.NPCs.Behaviour.PatrolGroup"}),
+    );
     if r.ok {
         let methods = r.result["methods"].as_array().cloned().unwrap_or_default();
         for m in &methods {
-            println!("  {}({}) -> {} [from: {}]{}",
+            println!(
+                "  {}({}) -> {} [from: {}]{}",
                 m["name"].as_str().unwrap_or("?"),
                 m["params"].as_i64().unwrap_or(-1),
                 m["return"].as_str().unwrap_or("?"),
                 m["declared_on"].as_str().unwrap_or("?"),
-                if m["static"].as_bool() == Some(true) { " [static]" } else { "" },
+                if m["static"].as_bool() == Some(true) {
+                    " [static]"
+                } else {
+                    ""
+                },
             );
         }
     }
@@ -164,8 +198,10 @@ fn patrol_routes_in_scene() {
         if let Some(first) = fpbs.first() {
             if let Some(fh) = first["handle"].as_i64() {
                 let inspect = api.op("inspect_object", json!({"handle": fh}));
-                println!("  fpb[0] inspect:\n{}",
-                    serde_json::to_string_pretty(&inspect.result).unwrap_or_default());
+                println!(
+                    "  fpb[0] inspect:\n{}",
+                    serde_json::to_string_pretty(&inspect.result).unwrap_or_default()
+                );
                 api.op("release_handle", json!({"handle": fh}));
             }
         }
@@ -183,8 +219,10 @@ fn patrol_routes_in_scene() {
         if let Some(first) = sbs.first() {
             if let Some(sh) = first["handle"].as_i64() {
                 let inspect = api.op("inspect_object", json!({"handle": sh}));
-                println!("  sentry[0] inspect:\n{}",
-                    serde_json::to_string_pretty(&inspect.result).unwrap_or_default());
+                println!(
+                    "  sentry[0] inspect:\n{}",
+                    serde_json::to_string_pretty(&inspect.result).unwrap_or_default()
+                );
                 api.op("release_handle", json!({"handle": sh}));
             }
         }
@@ -205,8 +243,10 @@ fn patrol_routes_in_scene() {
         if let Some(last) = behaviours.last() {
             if let Some(bh) = last["handle"].as_i64() {
                 let inspect = api.op("inspect_object", json!({"handle": bh}));
-                println!("  behaviour[last] inspect:\n{}",
-                    serde_json::to_string_pretty(&inspect.result).unwrap_or_default());
+                println!(
+                    "  behaviour[last] inspect:\n{}",
+                    serde_json::to_string_pretty(&inspect.result).unwrap_or_default()
+                );
                 api.op("release_handle", json!({"handle": bh}));
             }
         }

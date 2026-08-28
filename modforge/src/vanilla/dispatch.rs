@@ -27,8 +27,8 @@
 //!
 //! - Integer/pointer return in RAX. Float return in XMM0.
 
-use crate::vanilla::sig::{ArgValue, RetValue, RetKind, Signature};
-use anyhow::{anyhow, Result};
+use crate::vanilla::sig::{ArgValue, RetKind, RetValue, Signature};
+use anyhow::{Result, anyhow};
 
 /// Maximum total args supported by the dispatcher (4 register +
 /// 12 stack). Bump if a real consumer needs more.
@@ -38,12 +38,12 @@ pub const MAX_ARGS: usize = 16;
 /// by byte offset in the asm; the order MUST match the asm code.
 #[repr(C)]
 struct Frame {
-    fn_addr: u64,         // + 0
-    n_stack: u64,         // + 8
-    stack_args_ptr: u64,  // +16
-    regs: [u64; 4],       // +24
-    rax_out: u64,         // +56
-    xmm0_out: u64,        // +64
+    fn_addr: u64,        // + 0
+    n_stack: u64,        // + 8
+    stack_args_ptr: u64, // +16
+    regs: [u64; 4],      // +24
+    rax_out: u64,        // +56
+    xmm0_out: u64,       // +64
 }
 
 // SAFETY: see `dispatch_raw` doc. The asm function takes one Win64
@@ -62,7 +62,8 @@ struct Frame {
 //   +48 regs[3]
 //   +56 rax_out
 //   +64 xmm0_out
-core::arch::global_asm!(r#"
+core::arch::global_asm!(
+    r#"
 .globl modforge_vanilla_dispatch_win64
 modforge_vanilla_dispatch_win64:
     push rbx
@@ -126,7 +127,8 @@ modforge_vanilla_dispatch_win64:
     pop rsi
     pop rbx
     ret
-"#);
+"#
+);
 
 unsafe extern "system" {
     fn modforge_vanilla_dispatch_win64(frame: *mut Frame);
@@ -144,26 +146,27 @@ unsafe extern "system" {
 /// On Win64 the dispatcher will fault if `fn_addr` is invalid;
 /// callers that want recoverable faults should wrap this in
 /// `modforge::seh::guard`.
-pub unsafe fn dispatch_raw(
-    fn_addr: u64,
-    sig: &Signature,
-    args: &[ArgValue],
-) -> Result<(u64, u64)> {
+pub unsafe fn dispatch_raw(fn_addr: u64, sig: &Signature, args: &[ArgValue]) -> Result<(u64, u64)> {
     if args.len() != sig.args.len() {
         return Err(anyhow!(
             "arg count {} mismatches signature ({})",
-            args.len(), sig.args.len()
+            args.len(),
+            sig.args.len()
         ));
     }
     if args.len() > MAX_ARGS {
         return Err(anyhow!(
-            "arg count {} exceeds MAX_ARGS ({})", args.len(), MAX_ARGS
+            "arg count {} exceeds MAX_ARGS ({})",
+            args.len(),
+            MAX_ARGS
         ));
     }
     for (i, (kind, val)) in sig.args.iter().zip(args.iter()).enumerate() {
         if *kind != val.kind() {
             return Err(anyhow!(
-                "arg[{i}] kind mismatch: sig says {:?}, got {:?}", kind, val.kind()
+                "arg[{i}] kind mismatch: sig says {:?}, got {:?}",
+                kind,
+                val.kind()
             ));
         }
     }
@@ -212,7 +215,9 @@ mod tests {
     // Test targets. `extern "system"` matches the Win64 calling
     // convention the dispatcher uses.
 
-    extern "system" fn add_i32(a: i32, b: i32) -> i32 { a + b }
+    extern "system" fn add_i32(a: i32, b: i32) -> i32 {
+        a + b
+    }
 
     extern "system" fn sum_six(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> i32 {
         a + b + c + d + e + f
@@ -222,7 +227,9 @@ mod tests {
         unsafe { *p }
     }
 
-    extern "system" fn add_f64(a: f64, b: f64) -> f64 { a + b }
+    extern "system" fn add_f64(a: f64, b: f64) -> f64 {
+        a + b
+    }
 
     extern "system" fn mixed(a: i32, b: f64, c: i32) -> f64 {
         a as f64 + b + c as f64
@@ -234,21 +241,22 @@ mod tests {
     fn dispatch_add_i32_two_args_in_regs() {
         const SIG: Signature = Signature::new(&[ArgKind::I32, ArgKind::I32], RetKind::I32);
         let fn_addr = add_i32 as *const () as u64;
-        let (rax, _) = unsafe {
-            dispatch_raw(fn_addr, &SIG, &[ArgValue::I32(40), ArgValue::I32(2)]).unwrap()
-        };
+        let (rax, _) =
+            unsafe { dispatch_raw(fn_addr, &SIG, &[ArgValue::I32(40), ArgValue::I32(2)]).unwrap() };
         assert_eq!(decode_return(RetKind::I32, rax, 0), RetValue::I32(42));
     }
 
     #[test]
     fn dispatch_sum_six_uses_stack_for_args_5_and_6() {
-        const SIG: Signature = Signature::new(
-            &[ArgKind::I32; 6], RetKind::I32,
-        );
+        const SIG: Signature = Signature::new(&[ArgKind::I32; 6], RetKind::I32);
         let fn_addr = sum_six as *const () as u64;
         let args = [
-            ArgValue::I32(1), ArgValue::I32(2), ArgValue::I32(3),
-            ArgValue::I32(4), ArgValue::I32(5), ArgValue::I32(6),
+            ArgValue::I32(1),
+            ArgValue::I32(2),
+            ArgValue::I32(3),
+            ArgValue::I32(4),
+            ArgValue::I32(5),
+            ArgValue::I32(6),
         ];
         let (rax, _) = unsafe { dispatch_raw(fn_addr, &SIG, &args).unwrap() };
         assert_eq!(decode_return(RetKind::I32, rax, 0), RetValue::I32(21));
@@ -261,7 +269,10 @@ mod tests {
         let p = &v as *const u32 as u64;
         let fn_addr = ptr_deref_u32 as *const () as u64;
         let (rax, _) = unsafe { dispatch_raw(fn_addr, &SIG, &[ArgValue::Ptr(p)]).unwrap() };
-        assert_eq!(decode_return(RetKind::U32, rax, 0), RetValue::U32(0xdeadbeef));
+        assert_eq!(
+            decode_return(RetKind::U32, rax, 0),
+            RetValue::U32(0xdeadbeef)
+        );
     }
 
     #[test]
@@ -276,9 +287,8 @@ mod tests {
 
     #[test]
     fn dispatch_mixed_int_float_int() {
-        const SIG: Signature = Signature::new(
-            &[ArgKind::I32, ArgKind::F64, ArgKind::I32], RetKind::F64,
-        );
+        const SIG: Signature =
+            Signature::new(&[ArgKind::I32, ArgKind::F64, ArgKind::I32], RetKind::F64);
         let fn_addr = mixed as *const () as u64;
         let args = [ArgValue::I32(10), ArgValue::F64(2.5), ArgValue::I32(7)];
         let (_, xmm) = unsafe { dispatch_raw(fn_addr, &SIG, &args).unwrap() };
@@ -289,9 +299,8 @@ mod tests {
     fn dispatch_void_return() {
         const SIG: Signature = Signature::new(&[ArgKind::U64], RetKind::Void);
         let fn_addr = void_takes_u64 as *const () as u64;
-        let (rax, _) = unsafe {
-            dispatch_raw(fn_addr, &SIG, &[ArgValue::U64(0xcafebabe)]).unwrap()
-        };
+        let (rax, _) =
+            unsafe { dispatch_raw(fn_addr, &SIG, &[ArgValue::U64(0xcafebabe)]).unwrap() };
         assert_eq!(decode_return(RetKind::Void, rax, 0), RetValue::Void);
     }
 
@@ -306,8 +315,11 @@ mod tests {
     fn dispatch_rejects_arg_kind_mismatch() {
         const SIG: Signature = Signature::new(&[ArgKind::I32, ArgKind::I32], RetKind::I32);
         let r = unsafe {
-            dispatch_raw(add_i32 as *const () as u64, &SIG,
-                &[ArgValue::I32(1), ArgValue::F32(1.0)])
+            dispatch_raw(
+                add_i32 as *const () as u64,
+                &SIG,
+                &[ArgValue::I32(1), ArgValue::F32(1.0)],
+            )
         };
         assert!(r.is_err());
     }

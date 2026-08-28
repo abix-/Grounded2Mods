@@ -65,7 +65,10 @@ fn spawn_one_npc() {
     let class_b = client::read_bytes(&api, donor.addr, 0x10, 8);
     assert_eq!(class_b.len(), 8, "could not read donor class ptr");
     let donor_class = client::from_le_u64(&class_b, 0);
-    println!("donor {} class {donor_class:#x}, census before: {count_before}", donor.name);
+    println!(
+        "donor {} class {donor_class:#x}, census before: {count_before}",
+        donor.name
+    );
 
     let players = client::walk_class_chain_instances(&api, PLAYER_CHAIN, 4);
     let Some(player) = players.first() else {

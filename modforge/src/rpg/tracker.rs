@@ -271,9 +271,7 @@ impl<E: Engine> Tracker<E> {
         if new_level == 0 {
             t.state.skill_levels.remove(skill_id);
         } else {
-            t.state
-                .skill_levels
-                .insert(skill_id.to_string(), new_level);
+            t.state.skill_levels.insert(skill_id.to_string(), new_level);
         }
         t.state.skill_points = t.state.skill_points.saturating_add(refund);
         if let Err(e) = self.store.save(&t.slot, &t.state) {
@@ -417,9 +415,7 @@ impl<E: Engine> Tracker<E> {
         t.state.skill_points = t.state.skill_points.saturating_add(n);
         if let Err(e) = self.store.save(&t.slot, &t.state) {
             t.state.skill_points = prev_skill_points;
-            crate::log!(
-                "rpg/tracker: debug_grant_skill_points save failed ({e}); rolled back"
-            );
+            crate::log!("rpg/tracker: debug_grant_skill_points save failed ({e}); rolled back");
             return false;
         }
         crate::log!(

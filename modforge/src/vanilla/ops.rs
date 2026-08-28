@@ -14,7 +14,7 @@ use crate::ops::{OpDef, OpRegistry};
 use crate::patterns::sleuth::{Resolver, TargetKind};
 use crate::vanilla::invoker::Invoker;
 use crate::vanilla::sig::{ArgKind, ArgValue, RetKind, RetValue, Signature};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Register `vanilla.invoke` and `vanilla.list` ops against
 /// `op_registry`, bound to `resolver`.
@@ -41,13 +41,20 @@ pub fn register(op_registry: &OpRegistry, resolver: &'static Resolver) {
 }
 
 fn invoke_handler(resolver: &Resolver, args: &Value) -> Result<Value, String> {
-    let target = args.get("target").and_then(Value::as_str)
+    let target = args
+        .get("target")
+        .and_then(Value::as_str)
         .ok_or_else(|| "missing or non-string 'target'".to_string())?;
-    let arg_json = args.get("args").and_then(Value::as_array).cloned()
+    let arg_json = args
+        .get("args")
+        .and_then(Value::as_array)
+        .cloned()
         .ok_or_else(|| "missing or non-array 'args'".to_string())?;
     let safe = args.get("safe").and_then(Value::as_bool).unwrap_or(true);
 
-    let parsed_args: Vec<ArgValue> = arg_json.iter().enumerate()
+    let parsed_args: Vec<ArgValue> = arg_json
+        .iter()
+        .enumerate()
         .map(|(i, a)| parse_arg(a).map_err(|e| format!("args[{i}]: {e}")))
         .collect::<Result<_, _>>()?;
 
@@ -77,9 +84,14 @@ fn invoke_handler(resolver: &Resolver, args: &Value) -> Result<Value, String> {
 
 fn list_handler(resolver: &Resolver) -> Result<Value, String> {
     let resolved = resolver.resolve_all();
-    let mut entries: Vec<Value> = resolver.registry().iter()
+    let mut entries: Vec<Value> = resolver
+        .registry()
+        .iter()
         .filter_map(|def| {
-            if let TargetKind::FunctionEntry { signature: Some(sig) } = def.kind {
+            if let TargetKind::FunctionEntry {
+                signature: Some(sig),
+            } = def.kind
+            {
                 let r = resolved.get(def.name);
                 Some(json!({
                     "name": def.name,
@@ -93,21 +105,28 @@ fn list_handler(resolver: &Resolver) -> Result<Value, String> {
         })
         .collect();
     entries.sort_by(|a, b| {
-        a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or(""))
+        a["name"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(b["name"].as_str().unwrap_or(""))
     });
     Ok(json!({ "targets": entries }))
 }
 
 fn parse_arg(v: &Value) -> Result<ArgValue, String> {
-    let kind_s = v.get("kind").and_then(Value::as_str)
+    let kind_s = v
+        .get("kind")
+        .and_then(Value::as_str)
         .ok_or_else(|| "missing 'kind'".to_string())?;
-    let val = v.get("value").ok_or_else(|| "missing 'value'".to_string())?;
+    let val = v
+        .get("value")
+        .ok_or_else(|| "missing 'value'".to_string())?;
     Ok(match kind_s {
-        "i8"  => ArgValue::I8(val.as_i64().ok_or("value not int")? as i8),
+        "i8" => ArgValue::I8(val.as_i64().ok_or("value not int")? as i8),
         "i16" => ArgValue::I16(val.as_i64().ok_or("value not int")? as i16),
         "i32" => ArgValue::I32(val.as_i64().ok_or("value not int")? as i32),
         "i64" => ArgValue::I64(val.as_i64().ok_or("value not int")?),
-        "u8"  => ArgValue::U8(val.as_u64().ok_or("value not uint")? as u8),
+        "u8" => ArgValue::U8(val.as_u64().ok_or("value not uint")? as u8),
         "u16" => ArgValue::U16(val.as_u64().ok_or("value not uint")? as u16),
         "u32" => ArgValue::U32(val.as_u64().ok_or("value not uint")? as u32),
         "u64" => parse_u64_arg(val).map(ArgValue::U64)?,
@@ -125,20 +144,19 @@ fn parse_u64_arg(v: &Value) -> Result<u64, String> {
     }
     if let Some(s) = v.as_str() {
         let h = s.trim_start_matches("0x").trim_start_matches("0X");
-        return u64::from_str_radix(h, 16)
-            .map_err(|e| format!("hex u64 parse '{s}': {e}"));
+        return u64::from_str_radix(h, 16).map_err(|e| format!("hex u64 parse '{s}': {e}"));
     }
     Err("u64 value must be number or hex string".into())
 }
 
 fn ret_to_json(rv: &RetValue) -> Value {
     match *rv {
-        RetValue::Void   => json!({ "kind": "void" }),
-        RetValue::I8(v)  => json!({ "kind": "i8",  "value": v }),
+        RetValue::Void => json!({ "kind": "void" }),
+        RetValue::I8(v) => json!({ "kind": "i8",  "value": v }),
         RetValue::I16(v) => json!({ "kind": "i16", "value": v }),
         RetValue::I32(v) => json!({ "kind": "i32", "value": v }),
         RetValue::I64(v) => json!({ "kind": "i64", "value": v }),
-        RetValue::U8(v)  => json!({ "kind": "u8",  "value": v }),
+        RetValue::U8(v) => json!({ "kind": "u8",  "value": v }),
         RetValue::U16(v) => json!({ "kind": "u16", "value": v }),
         RetValue::U32(v) => json!({ "kind": "u32", "value": v }),
         RetValue::U64(v) => json!({ "kind": "u64", "value": format!("0x{v:x}") }),
@@ -158,20 +176,36 @@ fn signature_to_json(sig: &Signature) -> Value {
 
 fn arg_kind_name(k: ArgKind) -> &'static str {
     match k {
-        ArgKind::I8 => "i8", ArgKind::I16 => "i16", ArgKind::I32 => "i32", ArgKind::I64 => "i64",
-        ArgKind::U8 => "u8", ArgKind::U16 => "u16", ArgKind::U32 => "u32", ArgKind::U64 => "u64",
-        ArgKind::Ptr => "ptr", ArgKind::Bool => "bool",
-        ArgKind::F32 => "f32", ArgKind::F64 => "f64",
+        ArgKind::I8 => "i8",
+        ArgKind::I16 => "i16",
+        ArgKind::I32 => "i32",
+        ArgKind::I64 => "i64",
+        ArgKind::U8 => "u8",
+        ArgKind::U16 => "u16",
+        ArgKind::U32 => "u32",
+        ArgKind::U64 => "u64",
+        ArgKind::Ptr => "ptr",
+        ArgKind::Bool => "bool",
+        ArgKind::F32 => "f32",
+        ArgKind::F64 => "f64",
     }
 }
 
 fn ret_kind_name(k: RetKind) -> &'static str {
     match k {
         RetKind::Void => "void",
-        RetKind::I8 => "i8", RetKind::I16 => "i16", RetKind::I32 => "i32", RetKind::I64 => "i64",
-        RetKind::U8 => "u8", RetKind::U16 => "u16", RetKind::U32 => "u32", RetKind::U64 => "u64",
-        RetKind::Ptr => "ptr", RetKind::Bool => "bool",
-        RetKind::F32 => "f32", RetKind::F64 => "f64",
+        RetKind::I8 => "i8",
+        RetKind::I16 => "i16",
+        RetKind::I32 => "i32",
+        RetKind::I64 => "i64",
+        RetKind::U8 => "u8",
+        RetKind::U16 => "u16",
+        RetKind::U32 => "u32",
+        RetKind::U64 => "u64",
+        RetKind::Ptr => "ptr",
+        RetKind::Bool => "bool",
+        RetKind::F32 => "f32",
+        RetKind::F64 => "f64",
     }
 }
 
@@ -181,14 +215,22 @@ mod tests {
 
     #[test]
     fn parse_arg_handles_each_kind() {
-        assert!(matches!(parse_arg(&json!({"kind":"i32","value":42})).unwrap(),
-                         ArgValue::I32(42)));
-        assert!(matches!(parse_arg(&json!({"kind":"u32","value":42})).unwrap(),
-                         ArgValue::U32(42)));
-        assert!(matches!(parse_arg(&json!({"kind":"bool","value":true})).unwrap(),
-                         ArgValue::Bool(true)));
-        assert!(matches!(parse_arg(&json!({"kind":"f64","value":3.14})).unwrap(),
-                         ArgValue::F64(_)));
+        assert!(matches!(
+            parse_arg(&json!({"kind":"i32","value":42})).unwrap(),
+            ArgValue::I32(42)
+        ));
+        assert!(matches!(
+            parse_arg(&json!({"kind":"u32","value":42})).unwrap(),
+            ArgValue::U32(42)
+        ));
+        assert!(matches!(
+            parse_arg(&json!({"kind":"bool","value":true})).unwrap(),
+            ArgValue::Bool(true)
+        ));
+        assert!(matches!(
+            parse_arg(&json!({"kind":"f64","value":3.14})).unwrap(),
+            ArgValue::F64(_)
+        ));
     }
 
     #[test]
@@ -219,10 +261,8 @@ mod tests {
 
     #[test]
     fn signature_to_json_round_trips_kinds() {
-        const SIG: Signature = Signature::new(
-            &[ArgKind::Ptr, ArgKind::I32, ArgKind::F64],
-            RetKind::U32,
-        );
+        const SIG: Signature =
+            Signature::new(&[ArgKind::Ptr, ArgKind::I32, ArgKind::F64], RetKind::U32);
         let v = signature_to_json(&SIG);
         assert_eq!(v["args"][0], "ptr");
         assert_eq!(v["args"][1], "i32");

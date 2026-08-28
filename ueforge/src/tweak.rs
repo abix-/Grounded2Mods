@@ -67,8 +67,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::data_table::{
-    dynamic_apply_f32, dynamic_apply_i32, dynamic_apply_u32, dynamic_revert_one,
-    resolve_field,
+    dynamic_apply_f32, dynamic_apply_i32, dynamic_apply_u32, dynamic_revert_one, resolve_field,
 };
 
 /// What the tweak writes to. Mirrors the two universal UE write
@@ -342,9 +341,12 @@ impl TweakDef {
     }
 
     fn apply_class(&self, class: &str, field: &str) -> Result<usize, String> {
-        let (offset, _size) = crate::data_table::resolve_class_field(class, field)
-            .ok_or_else(|| {
-                format!("TweakDef '{}': class field '{class}.{field}' not in discovery cache", self.id)
+        let (offset, _size) =
+            crate::data_table::resolve_class_field(class, field).ok_or_else(|| {
+                format!(
+                    "TweakDef '{}': class field '{class}.{field}' not in discovery cache",
+                    self.id
+                )
             })?;
         match self.kind {
             TweakKind::I32 => {
@@ -407,9 +409,7 @@ impl TweakDef {
     /// captured instance.
     pub fn revert(&self) -> Result<usize, String> {
         match self.target {
-            TweakTarget::DataTable { table, field } => {
-                Ok(dynamic_revert_one(table, field))
-            }
+            TweakTarget::DataTable { table, field } => Ok(dynamic_revert_one(table, field)),
             TweakTarget::Class { class, field } => {
                 let (offset, _size) = crate::data_table::resolve_class_field(class, field)
                     .ok_or_else(|| {
@@ -629,24 +629,12 @@ mod tests {
     #[test]
     fn const_constructible() {
         // Verifies all six constructors can be used in const context.
-        const A: TweakDef = TweakDef::data_table_i32(
-            "a", "T", "F", TweakOp::Multiply, 4,
-        );
-        const B: TweakDef = TweakDef::data_table_f32(
-            "b", "T", "F", TweakOp::Set, 1.5,
-        );
-        const C: TweakDef = TweakDef::data_table_u32(
-            "c", "T", "F", TweakOp::Add, 7,
-        );
-        const D: TweakDef = TweakDef::class_i32(
-            "d", "C", "F", TweakOp::Set, 40,
-        );
-        const E: TweakDef = TweakDef::class_f32(
-            "e", "C", "F", TweakOp::Multiply, 0.5,
-        );
-        const F: TweakDef = TweakDef::class_u32(
-            "f", "C", "F", TweakOp::Set, 0xFFFFFFFF,
-        );
+        const A: TweakDef = TweakDef::data_table_i32("a", "T", "F", TweakOp::Multiply, 4);
+        const B: TweakDef = TweakDef::data_table_f32("b", "T", "F", TweakOp::Set, 1.5);
+        const C: TweakDef = TweakDef::data_table_u32("c", "T", "F", TweakOp::Add, 7);
+        const D: TweakDef = TweakDef::class_i32("d", "C", "F", TweakOp::Set, 40);
+        const E: TweakDef = TweakDef::class_f32("e", "C", "F", TweakOp::Multiply, 0.5);
+        const F: TweakDef = TweakDef::class_u32("f", "C", "F", TweakOp::Set, 0xFFFFFFFF);
         assert_eq!(A.kind, TweakKind::I32);
         assert_eq!(B.kind, TweakKind::F32);
         assert_eq!(C.kind, TweakKind::U32);
@@ -657,9 +645,7 @@ mod tests {
 
     #[test]
     fn load_store_round_trip() {
-        static T: TweakDef = TweakDef::data_table_f32(
-            "x", "T", "F", TweakOp::Multiply, 2.5,
-        );
+        static T: TweakDef = TweakDef::data_table_f32("x", "T", "F", TweakOp::Multiply, 2.5);
         assert_eq!(T.load_f32(), 2.5);
         T.store_f32(3.75);
         assert_eq!(T.load_f32(), 3.75);
@@ -679,12 +665,8 @@ mod tests {
 
     #[test]
     fn registry_lookup() {
-        static T1: TweakDef = TweakDef::data_table_i32(
-            "t1", "T", "F", TweakOp::Set, 1,
-        );
-        static T2: TweakDef = TweakDef::class_f32(
-            "t2", "C", "F", TweakOp::Multiply, 2.0,
-        );
+        static T1: TweakDef = TweakDef::data_table_i32("t1", "T", "F", TweakOp::Set, 1);
+        static T2: TweakDef = TweakDef::class_f32("t2", "C", "F", TweakOp::Multiply, 2.0);
         static REG: TweakRegistry = TweakRegistry::new(&[&T1, &T2]);
         assert_eq!(REG.len(), 2);
         assert!(REG.def("t1").is_some());

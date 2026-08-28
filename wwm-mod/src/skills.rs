@@ -21,8 +21,8 @@ use modforge::rpg::xp::Curve;
 
 use unityforge::hook::{HOOK_REGISTRY, patch_postfix};
 use unityforge::rpg::{
-    SkillDef, SkillRegistry, Tracker, UnityFieldAdditiveEffect,
-    UnityFieldMultiplyEffect, UnitySlotKey,
+    SkillDef, SkillRegistry, Tracker, UnityFieldAdditiveEffect, UnityFieldMultiplyEffect,
+    UnitySlotKey,
 };
 
 // ---- Effects --------------------------------------------------------
@@ -83,8 +83,8 @@ static RESILIENT_EFFECT: UnityFieldMultiplyEffect = UnityFieldMultiplyEffect::ne
 // skill level on every fire. The Effect impl is a no-op apply
 // + a formatter that renders "+X% lucky drops" in the ImGui
 // tab.
-use modforge::rpg::std_effect::RuntimeEffect;
 use modforge::rpg::format::PercentFormat;
+use modforge::rpg::std_effect::RuntimeEffect;
 static LUCKY_EFFECT: RuntimeEffect = RuntimeEffect {
     max_bonus: 0.5,
     format: PercentFormat::PlusPercent {
@@ -99,50 +99,35 @@ pub static CATALOG: SkillRegistry = SkillRegistry::new(&[
         id: "strong_back",
         display_name: "Strong Back",
         max_level: 10,
-        effect: modforge::rpg::EffectDef::new(
-            "UnityFieldAdditive",
-            &STRONG_BACK_EFFECT,
-        ),
+        effect: modforge::rpg::EffectDef::new("UnityFieldAdditive", &STRONG_BACK_EFFECT),
         trigger: &modforge::rpg::ON_SLOT_CHANGE,
     },
     SkillDef {
         id: "greedy_miner",
         display_name: "Greedy Miner",
         max_level: 10,
-        effect: modforge::rpg::EffectDef::new(
-            "UnityFieldMultiply",
-            &GREEDY_MINER_EFFECT,
-        ),
+        effect: modforge::rpg::EffectDef::new("UnityFieldMultiply", &GREEDY_MINER_EFFECT),
         trigger: &modforge::rpg::ON_SLOT_CHANGE,
     },
     SkillDef {
         id: "quick_pickaxe",
         display_name: "Quick Pickaxe",
         max_level: 10,
-        effect: modforge::rpg::EffectDef::new(
-            "UnityFieldMultiply",
-            &QUICK_PICKAXE_EFFECT,
-        ),
+        effect: modforge::rpg::EffectDef::new("UnityFieldMultiply", &QUICK_PICKAXE_EFFECT),
         trigger: &modforge::rpg::ON_SLOT_CHANGE,
     },
     SkillDef {
         id: "charisma",
         display_name: "Charisma",
         max_level: 10,
-        effect: modforge::rpg::EffectDef::new(
-            "UnityFieldMultiply",
-            &CHARISMA_EFFECT,
-        ),
+        effect: modforge::rpg::EffectDef::new("UnityFieldMultiply", &CHARISMA_EFFECT),
         trigger: &modforge::rpg::ON_SLOT_CHANGE,
     },
     SkillDef {
         id: "resilient",
         display_name: "Resilient",
         max_level: 10,
-        effect: modforge::rpg::EffectDef::new(
-            "UnityFieldMultiply",
-            &RESILIENT_EFFECT,
-        ),
+        effect: modforge::rpg::EffectDef::new("UnityFieldMultiply", &RESILIENT_EFFECT),
         trigger: &modforge::rpg::ON_SLOT_CHANGE,
     },
     SkillDef {
@@ -156,11 +141,7 @@ pub static CATALOG: SkillRegistry = SkillRegistry::new(&[
 
 // ---- Tracker --------------------------------------------------------
 
-pub static TRACKER: Tracker = Tracker::new(
-    &CATALOG,
-    Curve::new(100.0, 1.8, 50),
-    "wwm-mod",
-);
+pub static TRACKER: Tracker = Tracker::new(&CATALOG, Curve::new(100.0, 1.8, 50), "wwm-mod");
 
 // ---- Slot poller ----------------------------------------------------
 
@@ -223,9 +204,7 @@ fn install_hooks() {
     }
     // Harmony postfix on PlayerManager.AddPlayerCurrency. Each
     // currency event awards 10 XP.
-    if let Ok(hook) =
-        patch_postfix("PlayerManager", "AddPlayerCurrency", on_currency_postfix)
-    {
+    if let Ok(hook) = patch_postfix("PlayerManager", "AddPlayerCurrency", on_currency_postfix) {
         HOOK_REGISTRY.register(hook);
     }
 }

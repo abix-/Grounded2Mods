@@ -22,9 +22,9 @@
 //! the queue is empty. `drain()` returns `DrainStats` so the game
 //! can feed its own metrics.
 
+use crossbeam_channel::{Sender, bounded};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use crossbeam_channel::{Sender, bounded};
 use std::time::Duration;
 
 use parking_lot::Mutex;
@@ -290,12 +290,10 @@ impl GameThread {
     }
 
     pub fn drain_calls(&self) -> u64 {
-        self.drain_calls
-            .load(std::sync::atomic::Ordering::Relaxed)
+        self.drain_calls.load(std::sync::atomic::Ordering::Relaxed)
     }
     pub fn drained_cmds(&self) -> u64 {
-        self.drained_cmds
-            .load(std::sync::atomic::Ordering::Relaxed)
+        self.drained_cmds.load(std::sync::atomic::Ordering::Relaxed)
     }
     pub fn peak(&self) -> usize {
         self.peak.load(std::sync::atomic::Ordering::Relaxed)
@@ -392,8 +390,7 @@ mod tests {
             // That's fine: the cancellation path eats it.
             let q_for_sibling = q_inside.clone();
             let _sibling_join = thread::spawn(move || {
-                let _ = q_for_sibling
-                    .enqueue(|| Ok(json!("sibling")), Duration::from_millis(50));
+                let _ = q_for_sibling.enqueue(|| Ok(json!("sibling")), Duration::from_millis(50));
             });
             // Wait briefly for the sibling enqueue to land.
             for _ in 0..40 {
@@ -412,9 +409,7 @@ mod tests {
         };
 
         let q_outer = q.clone();
-        let enqueue_join = thread::spawn(move || {
-            q_outer.enqueue(job, Duration::from_secs(2))
-        });
+        let enqueue_join = thread::spawn(move || q_outer.enqueue(job, Duration::from_secs(2)));
         // Wait for the outer job to land.
         for _ in 0..40 {
             if !q.is_empty() {

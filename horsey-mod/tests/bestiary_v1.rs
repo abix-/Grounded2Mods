@@ -19,8 +19,7 @@
 use horsey::genes::{self, RenderMode};
 use horsey::genes_xml;
 
-const BESTIARY_XML: &str =
-    include_str!("../bestiary/genes-extended.xml");
+const BESTIARY_XML: &str = include_str!("../bestiary/genes-extended.xml");
 
 #[test]
 fn bestiary_v1_contract() {
@@ -38,8 +37,7 @@ fn bestiary_v1_contract() {
         "every parsed gene must place: {stats:?}"
     );
 
-    let g = genes::get_ext_gene(0)
-        .expect("BX_GIANT_BABY must occupy ext idx 0");
+    let g = genes::get_ext_gene(0).expect("BX_GIANT_BABY must occupy ext idx 0");
     assert_eq!(g.name, "BX_GIANT_BABY");
     assert_eq!(
         g.alleles,

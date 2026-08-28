@@ -2,7 +2,7 @@
 
 ## Current focus
 
-Make MISERY enter an expedition, discover the nearest placed loot box, use the box itself as the only new semantic waypoint, navigate to it through A*, and loot it through the same movement, look, and action input pipeline used by a player.
+Connect Ueforge's shared player commands to Unreal's normal key and mouse input, then make MISERY travel from spawn through both doors and loot one expedition crate without any direct gameplay call.
 
 ## Design goals
 
@@ -11,7 +11,7 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 - Injected games use the same producer and consumer separation, but replay operation actions through the existing control plane and advance only after observable condition gates.
 - MISERY is the first proof: record a movement-speed write, wait for the live read, assert it, restore the original value, and replay the saved journal.
 - A waypoint is a meaningful stop for arrival, observation, action, or branch selection. Dense position samples are debug positions only and are never used for navigation.
-- The first MISERY graph is exactly `spawn -> metal-door -> expedition-door`. The metal-door waypoint opens the bunker door only when closed; the expedition-door waypoint interacts and waits until expedition entry is observed.
+- The first MISERY route is exactly `spawn -> metal-door -> expedition-door`. The metal-door waypoint opens the bunker door only when closed; the expedition-door waypoint interacts and waits until expedition entry is observed.
 - There is one pathfinding level. The route or current action selects the next meaningful waypoint. Unreal navigation's A* searches the navigation mesh from the player's current position to that waypoint and returns the detailed path points. Durable waypoints are stops and goals, not A* search nodes.
 - A waypoint is usable only when Unreal navigation returns a valid, complete path to it. An unobserved straight line through the 3D world is never assumed walkable.
 - MISERY target discovery runs once through Unreal's world actor enumeration and retains actor, inventory, class, function, and widget pointers for the current world. Navigation, interaction, and observation loops never walk the global UObject list or rediscover function layouts.
@@ -60,6 +60,14 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 
 ## Last session summary
 
+- Replaced the waypoint graph and its second A* with one ordered route. `RouteGraph`, `RouteEdge`, and waypoint-graph path search no longer exist.
+- Added shared path, path-point, and player-observation types. The observation carries position, yaw, and pitch, and path points are no longer represented as waypoints.
+- Replaced bot movement axes and the old path execution code with one shared bot that returns only W/A/S/D key state and relative mouse movement. It releases all movement keys on arrival, stuck detection, and cancellation.
+- Migrated the permanent MISERY navigation test to give Unreal path points and player observations to the shared bot, then send the resulting command batch through the registered input surface.
+- Removed Ueforge's direct movement and look calls and MISERY's direct interaction handler. The permanent production-source test rejects those bypasses.
+- Ueforge now observes the player through reflected position and control rotation and forwards the shared command batch unchanged. MISERY's actual Unreal key and mouse injection is deliberately still disconnected and returns an explicit error until the normal player-input path is implemented.
+- Added Unityforge main-thread connections for the same shared path, player-observation, and player-command formats. Tests prove path and observation return plus unchanged ordered command delivery. Actual Unity navigation and input bridge calls remain open.
+- Applied the workspace Rust formatter consistently at the operator's direction.
 - Added permanent red proofs for the shared bot-navigation rewrite. They require one ordered route without waypoint-graph A*, separate path points, player position plus yaw and pitch, bot output containing only virtual keys and mouse movement, identical Unreal and Unity command sequences, release of W/A/S/D on every stop, and source checks against the actual Ueforge and MISERY production files. The focused test build fails on the missing shared types and old axis command API as intended.
 - Extended the dedicated bot-navigation design from an Unreal-only MISERY design to one Modforge system for both Unreal and Unity. The shared system owns all bot decisions; Ueforge and Unityforge only connect engine navigation, player observation, and normal player input. Added separate concrete Unity path, input, and live-proof rows to the todo.
 - Moved the bot-navigation design out of the synthetic-input prior-art document into dedicated `docs/bot-navigation.md`. The prior-art document now links to it and retains only input research and implementation history.
@@ -302,14 +310,12 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 
 ## Next steps
 
-- Define the one shared path and player-observation format used by both Ueforge and Unityforge bot navigation.
-- Make Unityforge return Unity navigation paths and player observations in that shared format.
+- Move the current Unreal navigation call and path decoding into Ueforge so MISERY receives the shared path format directly.
 - Make Unityforge inject the same virtual W/A/S/D, mouse, and interaction commands through Unity's normal player input.
 - Prove one live Unity waypoint trip through the same Modforge bot-navigation code used by MISERY.
-- Replace Ueforge's direct movement calls with virtual W/A/S/D injected through Unreal's normal player input processing.
-- Replace Ueforge's direct look calls with virtual relative mouse movement injected through Unreal's normal player input processing.
-- Replace MISERY's direct interaction-handler call with virtual `E` press/release injected through Unreal's normal player input processing.
-- Constrain the bot to virtual key state and relative mouse output, with no direct movement, look, interaction, or navigation-movement path.
+- Connect Ueforge virtual W/A/S/D key state to Unreal's normal player input processing.
+- Connect Ueforge relative mouse movement to Unreal's normal player input processing.
+- Connect virtual `E` press and release through the same Unreal player-input path.
 - Live-verify Unreal A* pathing from the player's current position to each selected waypoint, driven through virtual player input, from spawn through both doors on a restarted local game.
 - Aim at the door's colliding-bounds center from the active camera and gate `E` on interaction range.
 - Complete ranked crate fallback, retained-state opening, UI transfer, and inventory-count evidence.
@@ -321,4 +327,4 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 
 ## Open questions
 
-- None. The Survivalist source extraction audit is complete.
+- None.

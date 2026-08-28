@@ -30,7 +30,10 @@ fn registry_sees_more_than_memory() {
     let loaded_n = loaded.result["count"].as_u64().unwrap_or(0);
     println!("{loaded_n} of them are loaded right now");
 
-    assert!(total > 0, "registry returned nothing; is it populated in shipping?");
+    assert!(
+        total > 0,
+        "registry returned nothing; is it populated in shipping?"
+    );
 }
 
 /// Every wall the game ships, whether or not this area uses one.
@@ -48,10 +51,7 @@ fn every_wall_in_the_game() {
     assert!(r.ok, "asset_inventory failed: {:?}", r.error);
     let assets = r.result["assets"].as_array().cloned().unwrap_or_default();
     println!("{} wall part(s) in the game:", assets.len());
-    let mut names: Vec<&str> = assets
-        .iter()
-        .filter_map(|a| a["name"].as_str())
-        .collect();
+    let mut names: Vec<&str> = assets.iter().filter_map(|a| a["name"].as_str()).collect();
     names.sort_unstable();
     for n in &names {
         println!("  {n}");
@@ -135,15 +135,21 @@ fn load_an_unloaded_part() {
 #[test]
 fn what_the_registry_carries_per_asset() {
     let Some(api) = api_or_skip() else { return };
-    let r = api.op("asset_data_bytes", serde_json::json!({ "class": "StaticMesh", "count": 4 }));
+    let r = api.op(
+        "asset_data_bytes",
+        serde_json::json!({ "class": "StaticMesh", "count": 4 }),
+    );
     if !r.ok {
         println!("asset_data_bytes failed: {:?}", r.error);
         return;
     }
     println!("FAssetData stride {}", r.result["stride"]);
     for a in r.result["assets"].as_array().cloned().unwrap_or_default() {
-        println!("
-{}", a["name"].as_str().unwrap_or("?"));
+        println!(
+            "
+{}",
+            a["name"].as_str().unwrap_or("?")
+        );
         let hex = a["bytes"].as_str().unwrap_or("");
         // Sixteen bytes a line, with the offset, so fields line up
         // against the known layout.
@@ -168,17 +174,33 @@ fn does_the_registry_expose_a_tag_getter() {
     for class in ["AssetRegistryHelpers", "AssetRegistry"] {
         // By NAME: these are static Blueprint libraries with no
         // live instance, so `class_functions` cannot see them.
-        let r = api.op("class_functions_by_name", serde_json::json!({ "class": class }));
-        println!("
-=== {class}");
+        let r = api.op(
+            "class_functions_by_name",
+            serde_json::json!({ "class": class }),
+        );
+        println!(
+            "
+=== {class}"
+        );
         if !r.ok {
             println!("  failed: {:?}", r.error);
             continue;
         }
-        for f in r.result["functions"].as_array().cloned().unwrap_or_default() {
+        for f in r.result["functions"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+        {
             let name = f["name"].as_str().unwrap_or("?");
-            let mark = if name.to_lowercase().contains("tag") { ">>" } else { "  " };
-            println!("{mark} {name:<52} parms={} bytes={}", f["num_parms"], f["parms_size"]);
+            let mark = if name.to_lowercase().contains("tag") {
+                ">>"
+            } else {
+                "  "
+            };
+            println!(
+                "{mark} {name:<52} parms={} bytes={}",
+                f["num_parms"], f["parms_size"]
+            );
         }
     }
 }
@@ -207,7 +229,10 @@ fn do_the_cooked_tags_carry_size() {
         println!("asset_tags failed: {:?}", r.error);
         return;
     }
-    println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&r.result).unwrap_or_default()
+    );
 
     let assets = r.result["assets"].as_array().cloned().unwrap_or_default();
     assert!(!assets.is_empty(), "no assets came back");
@@ -215,8 +240,11 @@ fn do_the_cooked_tags_carry_size() {
         .iter()
         .filter(|a| !a["tags"]["ApproxSize"].is_null() || !a["tags"]["Bounds"].is_null())
         .count();
-    println!("
-{with_size} of {} assets carry a size tag", assets.len());
+    println!(
+        "
+{with_size} of {} assets carry a size tag",
+        assets.len()
+    );
 }
 
 /// THE PARTS LIST. Every mesh the game ships, with a size, a
@@ -237,7 +265,10 @@ fn write_the_parts_list() {
         serde_json::json!({ "class": "StaticMesh", "path": path }),
     );
     assert!(r.ok, "parts_list failed: {:?}", r.error);
-    println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&r.result).unwrap_or_default()
+    );
     let count = r.result["count"].as_u64().unwrap_or(0);
     assert!(count > 2000, "expected every shipped mesh, got {count}");
     // A part with no pivot cannot be placed against another one,
@@ -294,14 +325,23 @@ fn every_level_asset_in_the_game() {
 #[test]
 fn what_reports_a_placed_parts_world_box() {
     let Some(api) = api_or_skip() else { return };
-    for class in ["KismetSystemLibrary", "SceneComponent", "PrimitiveComponent", "StaticMeshComponent"] {
+    for class in [
+        "KismetSystemLibrary",
+        "SceneComponent",
+        "PrimitiveComponent",
+        "StaticMeshComponent",
+    ] {
         let r = api.op("class_functions_by_name", json!({ "class": class }));
         println!("\n=== {class}");
         if !r.ok {
             println!("  failed: {:?}", r.error);
             continue;
         }
-        for f in r.result["functions"].as_array().cloned().unwrap_or_default() {
+        for f in r.result["functions"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+        {
             let name = f["name"].as_str().unwrap_or("?");
             if name.to_lowercase().contains("bound") {
                 println!(
@@ -338,7 +378,11 @@ fn do_vanilla_neighbours_share_borders() {
         "load_asset",
         json!({ "package_fname": a["package_fname"], "asset_fname": a["asset_fname"] }),
     );
-    assert!(r.ok && r.result["loaded"] == json!(true), "load failed: {:?}", r.error);
+    assert!(
+        r.ok && r.result["loaded"] == json!(true),
+        "load failed: {:?}",
+        r.error
+    );
     let r = api.op("level_boxes", json!({ "level": level, "contains": "SM_" }));
     assert!(r.ok, "level_boxes failed: {:?}", r.error);
     let parts = r.result["parts"].as_array().cloned().unwrap_or_default();
@@ -359,8 +403,14 @@ fn do_vanilla_neighbours_share_borders() {
         })
         .collect();
 
-    let floors = boxes.iter().filter(|(n, _, _)| n.starts_with("SM_Floor")).count();
-    let walls = boxes.iter().filter(|(n, _, _)| n.starts_with("SM_Wall")).count();
+    let floors = boxes
+        .iter()
+        .filter(|(n, _, _)| n.starts_with("SM_Floor"))
+        .count();
+    let walls = boxes
+        .iter()
+        .filter(|(n, _, _)| n.starts_with("SM_Wall"))
+        .count();
     println!("{floors} SM_Floor part(s), {walls} SM_Wall part(s)");
     for (n, min, max) in boxes
         .iter()
@@ -389,15 +439,19 @@ fn do_vanilla_neighbours_share_borders() {
                 continue;
             }
             println!(
-                "  {wname:<28} bottom z {:>9.2} on {fname:<20} top z {:>9.2}  gap {gap:>7.2} cm"
-            , wmin[2], fmax[2]);
+                "  {wname:<28} bottom z {:>9.2} on {fname:<20} top z {:>9.2}  gap {gap:>7.2} cm",
+                wmin[2], fmax[2]
+            );
             printed += 1;
             if printed >= 25 {
                 return;
             }
         }
     }
-    assert!(printed > 0, "no wall stands within 50 cm of any floor tile's top");
+    assert!(
+        printed > 0,
+        "no wall stands within 50 cm of any floor tile's top"
+    );
 }
 
 /// Is the registry still LOADING when we ask it?
@@ -416,7 +470,11 @@ fn does_the_registry_fill_in_over_time() {
     for class in ["AssetRegistry", "AssetRegistryHelpers"] {
         let r = api.op("class_functions_by_name", json!({ "class": class }));
         println!("=== {class}");
-        for f in r.result["functions"].as_array().cloned().unwrap_or_default() {
+        for f in r.result["functions"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+        {
             let name = f["name"].as_str().unwrap_or("?");
             let lower = name.to_lowercase();
             if lower.contains("load") || lower.contains("wait") || lower.contains("scan") {
@@ -433,11 +491,7 @@ fn does_the_registry_fill_in_over_time() {
     println!("\nlevel assets over time:");
     for i in 0..7 {
         let r = api.op("asset_inventory", json!({ "class": "World" }));
-        println!(
-            "  t+{:>3}s  {} level asset(s)",
-            i * 10,
-            r.result["total"]
-        );
+        println!("  t+{:>3}s  {} level asset(s)", i * 10, r.result["total"]);
         if i < 6 {
             std::thread::sleep(std::time::Duration::from_secs(10));
         }
@@ -463,7 +517,9 @@ fn the_rule_reads_from_the_real_catalog() {
     let mut catalog: std::collections::HashMap<String, Vec<modforge::studs::Stud>> =
         std::collections::HashMap::new();
     for p in doc["parts"].as_array().cloned().unwrap_or_default() {
-        let Some(name) = p["name"].as_str() else { continue };
+        let Some(name) = p["name"].as_str() else {
+            continue;
+        };
         let studs: Vec<modforge::studs::Stud> = p["studs"]
             .as_array()
             .cloned()
@@ -532,7 +588,10 @@ fn catalog_all_the_vanilla_buildings() {
 
     let r = api.op("catalog_studs", json!({ "path": path, "min_seen": 4 }));
     assert!(r.ok, "catalog_studs failed: {:?}", r.error);
-    println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&r.result).unwrap_or_default()
+    );
     assert!(r.result["parts_updated"].as_u64().unwrap_or(0) > 0);
 
     // Read the proof back OUT of the file: the wall-on-floor
@@ -562,7 +621,10 @@ fn catalog_all_the_vanilla_buildings() {
     }
     println!("SM_Floor_400x400 studs after the cull: {floors}");
     println!("wall studs partnered with a floor: {wall_floor}");
-    assert!(wall_floor > 0, "no confirmed wall-on-floor stud in the catalog");
+    assert!(
+        wall_floor > 0,
+        "no confirmed wall-on-floor stud in the catalog"
+    );
 }
 
 /// THE STUDS, read from a vanilla square into `parts.json`.
@@ -588,7 +650,11 @@ fn studs_of_a_vanilla_square_land_in_parts_json() {
         "load_asset",
         json!({ "package_fname": a["package_fname"], "asset_fname": a["asset_fname"] }),
     );
-    assert!(r.ok && r.result["loaded"] == json!(true), "load failed: {:?}", r.error);
+    assert!(
+        r.ok && r.result["loaded"] == json!(true),
+        "load failed: {:?}",
+        r.error
+    );
 
     let path = "C:/Games/Steam/steamapps/common/MISERY/MISERY/Binaries/Win64/ue4ss/Mods/MiseryMod/dlls/parts.json";
     // Fresh file first, so studs from earlier unfiltered runs do
@@ -601,7 +667,10 @@ fn studs_of_a_vanilla_square_land_in_parts_json() {
         json!({ "level": "L_Anomaly_House", "path": path }),
     );
     assert!(r.ok, "level_studs failed: {:?}", r.error);
-    println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&r.result).unwrap_or_default()
+    );
     let updated = r.result["parts_updated"].as_u64().unwrap_or(0);
     assert!(updated > 0, "no part in parts.json gained a stud");
 
@@ -615,8 +684,7 @@ fn studs_of_a_vanilla_square_land_in_parts_json() {
         parts
             .iter()
             .filter(|p| {
-                p["name"].as_str().unwrap_or("").starts_with(name_starts)
-                    && p["studs"].is_array()
+                p["name"].as_str().unwrap_or("").starts_with(name_starts) && p["studs"].is_array()
             })
             .flat_map(|p| p["studs"].as_array().cloned().unwrap_or_default())
             .collect()
@@ -639,8 +707,14 @@ fn studs_of_a_vanilla_square_land_in_parts_json() {
         .count();
     println!("wall studs partnered with a floor: {wall_floor}");
     println!("floor studs partnered with a wall: {floor_wall}");
-    assert!(wall_floor > 0, "no wall in parts.json carries a stud with a floor");
-    assert!(floor_wall > 0, "no floor in parts.json carries the mirror stud");
+    assert!(
+        wall_floor > 0,
+        "no wall in parts.json carries a stud with a floor"
+    );
+    assert!(
+        floor_wall > 0,
+        "no floor in parts.json carries the mirror stud"
+    );
 
     let floor_studs = parts
         .iter()
@@ -706,7 +780,11 @@ fn read_a_level_asset_without_streaming() {
     // should be among them, and their full names say where each
     // came from.
     let w = api.op("walk_class", json!({ "class": "World" }));
-    for inst in w.result["instances"].as_array().cloned().unwrap_or_default() {
+    for inst in w.result["instances"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+    {
         println!(
             "  {}  {}",
             inst["addr"].as_str().unwrap_or("?"),
@@ -735,7 +813,9 @@ fn read_a_level_asset_without_streaming() {
     {
         println!(
             "  {:<40} at {:?}",
-            p["asset"].as_str().unwrap_or(p["class"].as_str().unwrap_or("?")),
+            p["asset"]
+                .as_str()
+                .unwrap_or(p["class"].as_str().unwrap_or("?")),
             p["offset"]
         );
     }

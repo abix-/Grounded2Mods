@@ -93,7 +93,10 @@ pub fn from_str(text: &str, mode: FindName) -> Option<FName> {
     // A null-terminated UTF-16 string, which is what wchar_t is
     // on Windows. It must outlive the call.
     let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-    let mut out = FName { comparison_index: 0, number: 0 };
+    let mut out = FName {
+        comparison_index: 0,
+        number: 0,
+    };
     // SAFETY: `addr` came from patternsleuth's own resolver for
     // this exact signature; `wide` is null-terminated and lives
     // across the call; `out` is a valid FName to write into.

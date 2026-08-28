@@ -9,8 +9,8 @@
 
 use crate::harness::RunningGame;
 use crate::research;
-use anyhow::{anyhow, Context, Result};
-use serde_json::{json, Value};
+use anyhow::{Context, Result, anyhow};
+use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 
@@ -70,10 +70,9 @@ impl EnvRegionConfig {
     /// - `HORSEY_WATCH_TRIGGER_ARGS` (JSON object; default `{}`)
     /// - `HORSEY_WATCH_EXPECT` (`<offset>:<before>-><after>` hex)
     pub fn from_env(prefix: &str) -> Result<Self> {
-        let base_spec = std::env::var(format!("{prefix}_BASE"))
-            .unwrap_or_else(|_| "horse_ptr".into());
-        let offset_s = std::env::var(format!("{prefix}_OFFSET"))
-            .unwrap_or_else(|_| "0x1f0".into());
+        let base_spec =
+            std::env::var(format!("{prefix}_BASE")).unwrap_or_else(|_| "horse_ptr".into());
+        let offset_s = std::env::var(format!("{prefix}_OFFSET")).unwrap_or_else(|_| "0x1f0".into());
         let offset = parse_hex_or_dec(&offset_s).context("OFFSET parse")?;
         let len: usize = parse_env(prefix, "LEN", 64)?;
         if !(1..=4096).contains(&len) {
@@ -98,12 +97,19 @@ impl EnvRegionConfig {
         };
 
         let expect = match std::env::var(format!("{prefix}_EXPECT")) {
-            Ok(s) => Some(parse_expect(&s)
-                .with_context(|| format!("{prefix}_EXPECT parse"))?),
+            Ok(s) => Some(parse_expect(&s).with_context(|| format!("{prefix}_EXPECT parse"))?),
             Err(_) => None,
         };
 
-        Ok(Self { base_spec, offset, len, hz, timeout_ms, trigger, expect })
+        Ok(Self {
+            base_spec,
+            offset,
+            len,
+            hz,
+            timeout_ms,
+            trigger,
+            expect,
+        })
     }
 
     /// Bind a resolved base address.
@@ -142,22 +148,31 @@ pub fn run_region(game: &RunningGame, cfg: &RegionConfig) -> Result<RegionResult
     eprintln!(
         "watch::run_region mode={mode} base=0x{:x} offset=0x{:x} \
          window=0x{:x}..0x{:x} len={} hz={} timeout_ms={}",
-        cfg.base, cfg.offset, start_addr, start_addr + cfg.len as u64,
-        cfg.len, cfg.hz, cfg.timeout_ms
+        cfg.base,
+        cfg.offset,
+        start_addr,
+        start_addr + cfg.len as u64,
+        cfg.len,
+        cfg.hz,
+        cfg.timeout_ms
     );
     if let Some(e) = cfg.expect {
-        eprintln!("expect: +0x{:x}: {:02x} -> {:02x}", e.offset, e.before, e.after);
+        eprintln!(
+            "expect: +0x{:x}: {:02x} -> {:02x}",
+            e.offset, e.before, e.after
+        );
     }
 
-    let baseline = research::read_bytes(game, start_addr, cfg.len as u32)
-        .context("baseline read")?;
+    let baseline =
+        research::read_bytes(game, start_addr, cfg.len as u32).context("baseline read")?;
     eprintln!("\nbaseline:");
     print_hex_block(cfg.offset, &baseline);
 
     let t0 = Instant::now();
     if let Some(t) = &cfg.trigger {
         eprintln!("\ntrigger: {} args={}", t.op, t.args);
-        let r = game.op_json(&t.op, &t.args)
+        let r = game
+            .op_json(&t.op, &t.args)
             .map_err(|e| anyhow!("trigger {}: {e}", t.op))?;
         eprintln!("trigger response: {r}");
     }
@@ -171,8 +186,7 @@ pub fn run_region(game: &RunningGame, cfg: &RegionConfig) -> Result<RegionResult
     eprintln!("\npoll log:");
     while Instant::now() < deadline {
         std::thread::sleep(poll_interval);
-        let now = research::read_bytes(game, start_addr, cfg.len as u32)
-            .context("poll read")?;
+        let now = research::read_bytes(game, start_addr, cfg.len as u32).context("poll read")?;
         let elapsed = t0.elapsed().as_millis() as u64;
         for (i, (&p, &n)) in prev.iter().zip(now.iter()).enumerate() {
             if p != n {
@@ -194,7 +208,8 @@ pub fn run_region(game: &RunningGame, cfg: &RegionConfig) -> Result<RegionResult
     let unique: BTreeSet<usize> = transitions.iter().map(|t| t.1).collect();
     eprintln!(
         "\nsummary: {} transition event(s) across {} unique byte offset(s)",
-        transitions.len(), unique.len()
+        transitions.len(),
+        unique.len()
     );
 
     Ok(RegionResult {
@@ -214,8 +229,14 @@ impl RegionResult {
                 return Err(anyhow!(
                     "expected byte +0x{:x}: {:02x} -> {:02x} not observed within {timeout_ms}ms. \
                      Transitions seen: {} unique offsets ({:?})",
-                    e.offset, e.before, e.after, unique.len(),
-                    unique.iter().map(|o| format!("+0x{o:x}")).collect::<Vec<_>>()
+                    e.offset,
+                    e.before,
+                    e.after,
+                    unique.len(),
+                    unique
+                        .iter()
+                        .map(|o| format!("+0x{o:x}"))
+                        .collect::<Vec<_>>()
                 ));
             }
             eprintln!(
@@ -282,13 +303,16 @@ pub struct EnvSingleConfig {
 
 impl EnvSingleConfig {
     pub fn from_env(prefix: &str) -> Result<Self> {
-        let base_spec = std::env::var(format!("{prefix}_BASE"))
-            .unwrap_or_else(|_| "horse_ptr".into());
-        let offset = parse_hex_or_dec(&std::env::var(format!("{prefix}_OFFSET"))
-            .map_err(|_| anyhow!("{prefix}_OFFSET required"))?)
-            .context("OFFSET parse")?;
-        let width = Width::parse(&std::env::var(format!("{prefix}_WIDTH"))
-            .unwrap_or_else(|_| "u8".into()))?;
+        let base_spec =
+            std::env::var(format!("{prefix}_BASE")).unwrap_or_else(|_| "horse_ptr".into());
+        let offset = parse_hex_or_dec(
+            &std::env::var(format!("{prefix}_OFFSET"))
+                .map_err(|_| anyhow!("{prefix}_OFFSET required"))?,
+        )
+        .context("OFFSET parse")?;
+        let width = Width::parse(
+            &std::env::var(format!("{prefix}_WIDTH")).unwrap_or_else(|_| "u8".into()),
+        )?;
         let hz: u64 = parse_env(prefix, "HZ", 20)?;
         if !(1..=100).contains(&hz) {
             return Err(anyhow!("HZ out of range: {hz}"));
@@ -313,11 +337,24 @@ impl EnvSingleConfig {
             u64::from_str_radix(t, 16).expect("EXPECT parse")
         });
 
-        Ok(Self { base_spec, offset, width, hz, timeout_ms, max_latency_ms, trigger, expect })
+        Ok(Self {
+            base_spec,
+            offset,
+            width,
+            hz,
+            timeout_ms,
+            max_latency_ms,
+            trigger,
+            expect,
+        })
     }
 
     pub fn resolve(self, base: u64) -> SingleConfig {
-        let budget_ms = if self.trigger.is_some() { self.max_latency_ms } else { self.timeout_ms };
+        let budget_ms = if self.trigger.is_some() {
+            self.max_latency_ms
+        } else {
+            self.timeout_ms
+        };
         SingleConfig {
             base,
             offset: self.offset,
@@ -348,11 +385,20 @@ pub fn run_single(game: &RunningGame, cfg: &SingleConfig) -> Result<SingleResult
     eprintln!(
         "watch::run_single mode={mode} base=0x{:x} offset=0x{:x} \
          addr=0x{:x} width={} hz={}",
-        cfg.base, cfg.offset, target_addr, cfg.width.name(), cfg.hz
+        cfg.base,
+        cfg.offset,
+        target_addr,
+        cfg.width.name(),
+        cfg.hz
     );
 
     let baseline = read_value(game, target_addr, cfg.width)?;
-    eprintln!("baseline: {} @ 0x{:x} = 0x{:x}", cfg.width.name(), target_addr, baseline);
+    eprintln!(
+        "baseline: {} @ 0x{:x} = 0x{:x}",
+        cfg.width.name(),
+        target_addr,
+        baseline
+    );
     if let Some(e) = cfg.expect {
         eprintln!("expect:   value -> 0x{e:x}");
     }
@@ -360,7 +406,8 @@ pub fn run_single(game: &RunningGame, cfg: &SingleConfig) -> Result<SingleResult
     let t0 = Instant::now();
     if let Some(t) = &cfg.trigger {
         eprintln!("trigger: {} args={}", t.op, t.args);
-        let r = game.op_json(&t.op, &t.args)
+        let r = game
+            .op_json(&t.op, &t.args)
             .map_err(|e| anyhow!("trigger {}: {e}", t.op))?;
         eprintln!("trigger response: {r}");
     }
@@ -390,10 +437,17 @@ pub fn run_single(game: &RunningGame, cfg: &SingleConfig) -> Result<SingleResult
 
     eprintln!(
         "\nsummary: {} transition(s) over {}ms, final value 0x{:x}",
-        transitions.len(), cfg.budget_ms, prev
+        transitions.len(),
+        cfg.budget_ms,
+        prev
     );
 
-    Ok(SingleResult { baseline, transitions, final_value: prev, matched_at })
+    Ok(SingleResult {
+        baseline,
+        transitions,
+        final_value: prev,
+        matched_at,
+    })
 }
 
 impl SingleResult {
@@ -407,7 +461,8 @@ impl SingleResult {
                 None => Err(anyhow!(
                     "value 0x{e:x} not observed within {budget_ms}ms. \
                      Final value: 0x{:x}. Transitions: {:?}",
-                    self.final_value, self.transitions
+                    self.final_value,
+                    self.transitions
                 )),
             }
         } else {
@@ -421,11 +476,18 @@ impl SingleResult {
 // ============================================================================
 
 fn read_value(game: &RunningGame, addr: u64, width: Width) -> Result<u64> {
-    let resp = game.op_json("mem.peek", &json!({
-        "addr": addr,
-        "kind": width.name(),
-    })).map_err(|e| anyhow!("mem.peek: {e}"))?;
-    let v = resp.get("result").and_then(|x| x.get("value"))
+    let resp = game
+        .op_json(
+            "mem.peek",
+            &json!({
+                "addr": addr,
+                "kind": width.name(),
+            }),
+        )
+        .map_err(|e| anyhow!("mem.peek: {e}"))?;
+    let v = resp
+        .get("result")
+        .and_then(|x| x.get("value"))
         .ok_or_else(|| anyhow!("mem.peek no value: {resp}"))?;
     match width {
         Width::U8 | Width::U32 => v.as_u64().ok_or_else(|| anyhow!("not numeric: {v}")),
@@ -460,20 +522,28 @@ where
     <T as std::str::FromStr>::Err: std::fmt::Display,
 {
     match std::env::var(format!("{prefix}_{suffix}")) {
-        Ok(s) => s.parse().map_err(|e| anyhow!("{prefix}_{suffix} parse: {e}")),
+        Ok(s) => s
+            .parse()
+            .map_err(|e| anyhow!("{prefix}_{suffix} parse: {e}")),
         Err(_) => Ok(default),
     }
 }
 
 fn parse_expect(s: &str) -> Result<RegionExpect> {
-    let (off_part, rest) = s.split_once(':')
+    let (off_part, rest) = s
+        .split_once(':')
         .ok_or_else(|| anyhow!("missing ':' in EXPECT '{s}'"))?;
-    let (before_part, after_part) = rest.split_once("->")
+    let (before_part, after_part) = rest
+        .split_once("->")
         .ok_or_else(|| anyhow!("missing '->' in EXPECT '{s}'"))?;
     let offset = parse_hex_or_dec(off_part)?;
     let before = parse_u8_hex(before_part)?;
     let after = parse_u8_hex(after_part)?;
-    Ok(RegionExpect { offset, before, after })
+    Ok(RegionExpect {
+        offset,
+        before,
+        after,
+    })
 }
 
 fn parse_u8_hex(s: &str) -> Result<u8> {

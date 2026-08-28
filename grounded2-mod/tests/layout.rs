@@ -8,8 +8,8 @@
 // consumes them via the workspace dependency.
 
 use std::mem::size_of;
-use ueforge::ue::{FName, FString};
 use ueforge::ue::tarray::TArray;
+use ueforge::ue::{FName, FString};
 
 #[test]
 fn fname_is_8_bytes() {

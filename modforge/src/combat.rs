@@ -522,7 +522,10 @@ mod tests {
         assert_eq!(base.for_area(BodyArea::Head, &worn, armor_of).armor, 0.0);
         // The vest stuffed in the head slot guards nothing.
         let mut wrong = crate::item::Equipment::default();
-        wrong.set(crate::item::EquipSlot::Head, worn.get(crate::item::EquipSlot::Chest).cloned());
+        wrong.set(
+            crate::item::EquipSlot::Head,
+            worn.get(crate::item::EquipSlot::Chest).cloned(),
+        );
         assert_eq!(base.for_area(BodyArea::Head, &wrong, armor_of).armor, 0.0);
     }
 
@@ -540,7 +543,10 @@ mod tests {
             assert!(angle <= 5.0 + 1e-3, "{angle}");
             assert!((d.length() - 1.0).abs() < 1e-5);
         }
-        assert!(a.iter().any(|d| d.angle_between(aim) > 0.0), "not all dead centre");
+        assert!(
+            a.iter().any(|d| d.angle_between(aim) > 0.0),
+            "not all dead centre"
+        );
     }
 
     fn pistol() -> DamageDef {
@@ -648,7 +654,10 @@ mod tests {
         };
         let r = resolve_hit(&own, &mut Protection::default(), &mut hp);
         assert_eq!(r.damage_dealt, 10.0);
-        assert!((r.knockback - 20.0 / KNOCKBACK_MASS).abs() < 1e-6, "full knockback");
+        assert!(
+            (r.knockback - 20.0 / KNOCKBACK_MASS).abs() < 1e-6,
+            "full knockback"
+        );
     }
 
     #[test]
@@ -698,20 +707,40 @@ mod tests {
         assert_eq!(timer.pull_melee(0.6, Swing::Left, true), Trigger::Fire);
         assert_eq!(timer.swing, Swing::Left);
         timer.tick(0.45);
-        assert_eq!(timer.pull_melee(0.6, Swing::Right, true), Trigger::Waiting, "held, not pressed");
+        assert_eq!(
+            timer.pull_melee(0.6, Swing::Right, true),
+            Trigger::Waiting,
+            "held, not pressed"
+        );
         timer.release();
-        assert_eq!(timer.pull_melee(0.6, Swing::Right, true), Trigger::Fire, "on the beat");
+        assert_eq!(
+            timer.pull_melee(0.6, Swing::Right, true),
+            Trigger::Fire,
+            "on the beat"
+        );
         assert_eq!(timer.ready_in, 0.6);
         assert_eq!(timer.swing, Swing::Right);
 
         // Too early is a stall; a clumsy person never chains.
         timer.tick(0.1);
         timer.release();
-        assert_eq!(timer.pull_melee(0.6, Swing::Left, true), Trigger::Waiting, "early");
+        assert_eq!(
+            timer.pull_melee(0.6, Swing::Left, true),
+            Trigger::Waiting,
+            "early"
+        );
         timer.tick(0.4);
-        assert_eq!(timer.pull_melee(0.6, Swing::Left, false), Trigger::Waiting, "clumsy");
+        assert_eq!(
+            timer.pull_melee(0.6, Swing::Left, false),
+            Trigger::Waiting,
+            "clumsy"
+        );
         timer.tick(0.1);
-        assert_eq!(timer.pull_melee(0.6, Swing::Left, false), Trigger::Fire, "ready at last");
+        assert_eq!(
+            timer.pull_melee(0.6, Swing::Left, false),
+            Trigger::Fire,
+            "ready at last"
+        );
 
         // Back is a block: no hit, the delay spent.
         timer.tick(1.0);

@@ -66,11 +66,20 @@ pub fn read_bytes(game: &RunningGame, addr: u64, n: u32) -> Result<Vec<u8>> {
     while remaining > 0 {
         let take = remaining.min(CHUNK);
         let resp = game
-            .op_json("patterns.read_bytes", &json!({"addr": format!("0x{cursor:x}"), "n": take}))
+            .op_json(
+                "patterns.read_bytes",
+                &json!({"addr": format!("0x{cursor:x}"), "n": take}),
+            )
             .context("patterns.read_bytes failed")?;
-        let s = resp.get("result").and_then(|r| r.get("bytes")).and_then(|v| v.as_str()).unwrap_or("");
+        let s = resp
+            .get("result")
+            .and_then(|r| r.get("bytes"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         let chunk = parse_hex_bytes(s);
-        if chunk.is_empty() { break; }
+        if chunk.is_empty() {
+            break;
+        }
         out.extend_from_slice(&chunk);
         cursor = cursor.wrapping_add(chunk.len() as u64);
         remaining = remaining.saturating_sub(chunk.len() as u32);
@@ -122,11 +131,21 @@ pub fn scan_all(
             }),
         )
         .context("patterns.sleuth.scan_all failed")?;
-    let arr = resp.get("result").and_then(|r| r.get("hits")).and_then(Value::as_array).cloned().unwrap_or_default();
-    Ok(arr.into_iter().map(|h| {
-        ScanHit {
+    let arr = resp
+        .get("result")
+        .and_then(|r| r.get("hits"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    Ok(arr
+        .into_iter()
+        .map(|h| ScanHit {
             instr_addr: u64_from_hex(h.get("instr_addr").and_then(Value::as_str).unwrap_or("0x0")),
-            decoded_target: u64_from_hex(h.get("decoded_target").and_then(Value::as_str).unwrap_or("0x0")),
+            decoded_target: u64_from_hex(
+                h.get("decoded_target")
+                    .and_then(Value::as_str)
+                    .unwrap_or("0x0"),
+            ),
             disp32: {
                 let s = h.get("disp32").and_then(Value::as_str).unwrap_or("0x0");
                 let neg = s.starts_with('-');
@@ -135,8 +154,8 @@ pub fn scan_all(
                 if neg { -m } else { m }
             },
             context: parse_hex_bytes(h.get("context_hex").and_then(Value::as_str).unwrap_or("")),
-        }
-    }).collect())
+        })
+        .collect())
 }
 
 /// [`scan_all`] result filtered to hits with `instr_addr` in
@@ -151,7 +170,10 @@ pub fn scan_in_window(
     max_hits: u32,
 ) -> Result<Vec<ScanHit>> {
     let all = scan_all(game, sig, disp32_offset, instr_len, 16, max_hits)?;
-    Ok(all.into_iter().filter(|h| h.instr_addr >= start && h.instr_addr < start + len).collect())
+    Ok(all
+        .into_iter()
+        .filter(|h| h.instr_addr >= start && h.instr_addr < start + len)
+        .collect())
 }
 
 /// `mem.scan_rdata` wrapper: search `.rdata` for raw bytes.
@@ -159,8 +181,14 @@ pub fn scan_rdata(game: &RunningGame, sig: &str) -> Result<Vec<u64>> {
     let resp = game
         .op_json("mem.scan_rdata", &json!({"sig": sig}))
         .context("mem.scan_rdata failed")?;
-    let arr = resp.get("result").and_then(|r| r.get("hits")).and_then(Value::as_array).cloned().unwrap_or_default();
-    Ok(arr.into_iter()
+    let arr = resp
+        .get("result")
+        .and_then(|r| r.get("hits"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    Ok(arr
+        .into_iter()
         .filter_map(|h| h.get("addr").and_then(Value::as_str).map(u64_from_hex))
         .collect())
 }
@@ -171,14 +199,24 @@ pub fn find_xrefs(game: &RunningGame, target_addr: u64) -> Result<Vec<XrefHit>> 
     let resp = game
         .op_json("mem.find_xrefs", &json!({"target_addr": target_addr}))
         .context("mem.find_xrefs failed")?;
-    let arr = resp.get("result").and_then(|r| r.get("hits")).and_then(Value::as_array).cloned().unwrap_or_default();
-    Ok(arr.into_iter().map(|h| {
-        XrefHit {
+    let arr = resp
+        .get("result")
+        .and_then(|r| r.get("hits"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    Ok(arr
+        .into_iter()
+        .map(|h| XrefHit {
             instr_addr: u64_from_hex(h.get("instr_addr").and_then(Value::as_str).unwrap_or("0x0")),
-            opcode_class: h.get("opcode_class").and_then(Value::as_str).unwrap_or("").to_string(),
+            opcode_class: h
+                .get("opcode_class")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
             context: parse_hex_bytes(h.get("context_hex").and_then(Value::as_str).unwrap_or("")),
-        }
-    }).collect())
+        })
+        .collect())
 }
 
 /// R4 end-to-end: find a struct-field offset by anchoring on a
@@ -209,7 +247,10 @@ pub fn decode_field_offset_via_string(
 ) -> Result<BTreeMap<i64, usize>> {
     anyhow::ensure!(matches!(disp_size, 1 | 4), "disp_size must be 1 or 4");
     let rdata_hits = scan_rdata(game, string_hex)?;
-    anyhow::ensure!(!rdata_hits.is_empty(), "string {string_hex:?} not in .rdata");
+    anyhow::ensure!(
+        !rdata_hits.is_empty(),
+        "string {string_hex:?} not in .rdata"
+    );
     let str_addr = rdata_hits[0];
     let lea_target = str_addr.wrapping_add_signed(lea_offset);
     let xrefs = find_xrefs(game, lea_target)?;
@@ -221,15 +262,22 @@ pub fn decode_field_offset_via_string(
         let lo = x.instr_addr.saturating_sub(window);
         let total = (window * 2) as u32;
         let bytes = read_bytes(game, lo, total)?;
-        if bytes.len() < opcode_bytes.len() + disp_off + disp_size { continue; }
-        for off in 0..=bytes.len().saturating_sub(opcode_bytes.len() + disp_off + disp_size) {
+        if bytes.len() < opcode_bytes.len() + disp_off + disp_size {
+            continue;
+        }
+        for off in 0..=bytes
+            .len()
+            .saturating_sub(opcode_bytes.len() + disp_off + disp_size)
+        {
             if bytes[off..off + opcode_bytes.len()] == opcode_bytes[..] {
                 let d = off + disp_off;
-                if d + disp_size > bytes.len() { break; }
+                if d + disp_size > bytes.len() {
+                    break;
+                }
                 let disp: i64 = if disp_size == 1 {
                     bytes[d] as i8 as i64
                 } else {
-                    i32::from_le_bytes([bytes[d], bytes[d+1], bytes[d+2], bytes[d+3]]) as i64
+                    i32::from_le_bytes([bytes[d], bytes[d + 1], bytes[d + 2], bytes[d + 3]]) as i64
                 };
                 *hist.entry(disp).or_insert(0) += 1;
             }
@@ -263,7 +311,10 @@ pub fn in_process_decode_field_offset_via_string(
 ) -> Result<BTreeMap<i64, usize>> {
     anyhow::ensure!(matches!(disp_size, 1 | 4), "disp_size must be 1 or 4");
     let rdata_hits = sleuth::scan_rdata_matches(string_hex)?;
-    anyhow::ensure!(!rdata_hits.is_empty(), "string {string_hex:?} not in .rdata");
+    anyhow::ensure!(
+        !rdata_hits.is_empty(),
+        "string {string_hex:?} not in .rdata"
+    );
     let str_addr = rdata_hits[0] as u64;
     let lea_target = str_addr.wrapping_add_signed(lea_offset);
     // Find xrefs via the same opcode-prefix sweep as `mem.find_xrefs`.
@@ -275,10 +326,15 @@ pub fn in_process_decode_field_offset_via_string(
     for prefix in lea_sigs {
         let sig = format!("{prefix} X0x{lea_target:x}");
         if let Ok(addrs) = sleuth::scan_all_matches(&sig) {
-            for a in addrs { xref_sites.push(a as u64); }
+            for a in addrs {
+                xref_sites.push(a as u64);
+            }
         }
     }
-    anyhow::ensure!(!xref_sites.is_empty(), "no .text lea xrefs to 0x{lea_target:x}");
+    anyhow::ensure!(
+        !xref_sites.is_empty(),
+        "no .text lea xrefs to 0x{lea_target:x}"
+    );
 
     let opcode_bytes = parse_hex_bytes(disp_opcode);
     let mut hist: BTreeMap<i64, usize> = BTreeMap::new();
@@ -286,18 +342,23 @@ pub fn in_process_decode_field_offset_via_string(
         let lo = instr_addr.saturating_sub(window);
         let total = window * 2;
         // SAFETY: lo+total is inside .text; reads are safe.
-        let bytes: &[u8] = unsafe {
-            std::slice::from_raw_parts(lo as *const u8, total as usize)
-        };
-        if bytes.len() < opcode_bytes.len() + disp_off + disp_size { continue; }
-        for off in 0..=bytes.len().saturating_sub(opcode_bytes.len() + disp_off + disp_size) {
+        let bytes: &[u8] = unsafe { std::slice::from_raw_parts(lo as *const u8, total as usize) };
+        if bytes.len() < opcode_bytes.len() + disp_off + disp_size {
+            continue;
+        }
+        for off in 0..=bytes
+            .len()
+            .saturating_sub(opcode_bytes.len() + disp_off + disp_size)
+        {
             if bytes[off..off + opcode_bytes.len()] == opcode_bytes[..] {
                 let d = off + disp_off;
-                if d + disp_size > bytes.len() { break; }
+                if d + disp_size > bytes.len() {
+                    break;
+                }
                 let disp: i64 = if disp_size == 1 {
                     bytes[d] as i8 as i64
                 } else {
-                    i32::from_le_bytes([bytes[d], bytes[d+1], bytes[d+2], bytes[d+3]]) as i64
+                    i32::from_le_bytes([bytes[d], bytes[d + 1], bytes[d + 2], bytes[d + 3]]) as i64
                 };
                 *hist.entry(disp).or_insert(0) += 1;
             }
@@ -309,7 +370,9 @@ pub fn in_process_decode_field_offset_via_string(
 /// Pick the most-frequent value from a histogram. Returns None
 /// for an empty histogram. Ties broken by lowest value.
 pub fn histogram_top(hist: &BTreeMap<i64, usize>) -> Option<i64> {
-    hist.iter().max_by_key(|&(_, count)| *count).map(|(&val, _)| val)
+    hist.iter()
+        .max_by_key(|&(_, count)| *count)
+        .map(|(&val, _)| val)
 }
 
 /// In-process: scan `.text` for a sig containing TWO disp32
@@ -364,7 +427,8 @@ pub fn in_process_scan_in_window(
     window_len: u64,
 ) -> Result<Vec<u64>> {
     let all = sleuth::scan_all_matches(sig)?;
-    Ok(all.into_iter()
+    Ok(all
+        .into_iter()
         .map(|a| a as u64)
         .filter(|&a| a >= window_start && a < window_start + window_len)
         .collect())
@@ -440,7 +504,9 @@ pub fn decode_imm_at_call_site(
     for c in calls {
         let lo = c.instr_addr.saturating_sub(lookback as u64);
         let bytes = read_bytes(game, lo, lookback)?;
-        if bytes.len() < opcode_bytes.len() + imm_off + imm_size { continue; }
+        if bytes.len() < opcode_bytes.len() + imm_off + imm_size {
+            continue;
+        }
         let max_off = bytes.len() - (opcode_bytes.len() + imm_off + imm_size);
         for off in (0..=max_off).rev() {
             if bytes[off..off + opcode_bytes.len()] == opcode_bytes[..] {
@@ -448,7 +514,7 @@ pub fn decode_imm_at_call_site(
                 let val: i64 = if imm_size == 1 {
                     bytes[d] as i8 as i64
                 } else {
-                    i32::from_le_bytes([bytes[d], bytes[d+1], bytes[d+2], bytes[d+3]]) as i64
+                    i32::from_le_bytes([bytes[d], bytes[d + 1], bytes[d + 2], bytes[d + 3]]) as i64
                 };
                 *hist.entry(val).or_insert(0) += 1;
                 break;

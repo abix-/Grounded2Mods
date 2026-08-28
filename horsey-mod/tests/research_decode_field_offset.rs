@@ -13,11 +13,15 @@
 
 mod common;
 
-fn need(name: &str) -> Option<String> { std::env::var(name).ok().filter(|s| !s.is_empty()) }
+fn need(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|s| !s.is_empty())
+}
 fn parse_uint(s: &str) -> u64 {
     if let Some(stripped) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
         u64::from_str_radix(stripped, 16).unwrap_or(0)
-    } else { s.parse().unwrap_or(0) }
+    } else {
+        s.parse().unwrap_or(0)
+    }
 }
 fn parse_signed(s: &str) -> i64 {
     let neg = s.starts_with('-');
@@ -32,16 +36,33 @@ fn decode_field_offset_via_string_anchor() {
         eprintln!("skipping: set MODFORGE_STRING_HEX + MODFORGE_DISP_OPCODE + MODFORGE_DISP_OFF");
         return;
     };
-    let lea_offset = need("MODFORGE_LEA_OFFSET").map(|s| parse_signed(&s)).unwrap_or(0);
+    let lea_offset = need("MODFORGE_LEA_OFFSET")
+        .map(|s| parse_signed(&s))
+        .unwrap_or(0);
     let disp_opcode = need("MODFORGE_DISP_OPCODE").expect("MODFORGE_DISP_OPCODE required");
-    let disp_off = need("MODFORGE_DISP_OFF").map(|s| parse_uint(&s) as usize).expect("MODFORGE_DISP_OFF required");
-    let disp_size = need("MODFORGE_DISP_SIZE").map(|s| parse_uint(&s) as usize).unwrap_or(4);
-    let window: u64 = need("MODFORGE_WINDOW").map(|s| parse_uint(&s)).unwrap_or(64);
+    let disp_off = need("MODFORGE_DISP_OFF")
+        .map(|s| parse_uint(&s) as usize)
+        .expect("MODFORGE_DISP_OFF required");
+    let disp_size = need("MODFORGE_DISP_SIZE")
+        .map(|s| parse_uint(&s) as usize)
+        .unwrap_or(4);
+    let window: u64 = need("MODFORGE_WINDOW")
+        .map(|s| parse_uint(&s))
+        .unwrap_or(64);
 
-    let Some(game) = common::launch("research_decode_field_offset") else { return; };
+    let Some(game) = common::launch("research_decode_field_offset") else {
+        return;
+    };
     let hist = modforge::research::decode_field_offset_via_string(
-        &game, &string_hex, lea_offset, &disp_opcode, disp_off, disp_size, window,
-    ).expect("decode_field_offset_via_string");
+        &game,
+        &string_hex,
+        lea_offset,
+        &disp_opcode,
+        disp_off,
+        disp_size,
+        window,
+    )
+    .expect("decode_field_offset_via_string");
 
     let mut top: Vec<(i64, usize)> = hist.into_iter().collect();
     top.sort_by(|a, b| b.1.cmp(&a.1));
@@ -52,7 +73,9 @@ fn decode_field_offset_via_string_anchor() {
         );
     }
     if let Some((disp, count)) = top.first() {
-        game.pass(&format!("top field offset: {disp:#x} ({disp}) with {count} matches"));
+        game.pass(&format!(
+            "top field offset: {disp:#x} ({disp}) with {count} matches"
+        ));
     } else {
         panic!("no disp matches found in any xref window");
     }

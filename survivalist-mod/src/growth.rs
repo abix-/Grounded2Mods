@@ -334,7 +334,11 @@ fn recruit_scan() -> Result<(), String> {
             gpos,
             RECRUIT_RANGE,
             doors.iter().enumerate().map(|(index, door)| {
-                (index, door.headroom.max(0) as usize, door.anchors.as_slice())
+                (
+                    index,
+                    door.headroom.max(0) as usize,
+                    door.anchors.as_slice(),
+                )
             }),
         ) else {
             continue;

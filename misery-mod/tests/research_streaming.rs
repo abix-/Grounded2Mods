@@ -120,7 +120,11 @@ fn the_fields_that_lead_to_a_squares_actors() {
         .filter(|w| w.full_name.starts_with("Level "))
         .map(|w| (w.addr as u64, w.full_name.clone()))
         .collect();
-    println!("{} matched \"Level\", {} are levels", all.len(), levels.len());
+    println!(
+        "{} matched \"Level\", {} are levels",
+        all.len(),
+        levels.len()
+    );
     for (a, n) in levels.iter().take(6) {
         println!("   {a:#x}  {n}");
     }
@@ -211,7 +215,11 @@ fn the_size_of_the_thing_we_are_avoiding() {
 
     let mut read = 0u64;
     let mut ms = 0.0;
-    for e in report.result["entries"].as_array().cloned().unwrap_or_default() {
+    for e in report.result["entries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+    {
         match e["name"].as_str().unwrap_or("") {
             "ue:objects_read" => read = e["calls"].as_u64().unwrap_or(0),
             "ue:find_objects_by_chain" => ms = e["total_ms"].as_f64().unwrap_or(0.0),
@@ -236,7 +244,10 @@ fn generators(api: &common::Api) -> Vec<Live> {
     c::walk_class_chain_instances(api, GENERATOR, 16)
         .into_iter()
         .filter(|w| w.full_name.contains("PersistentLevel"))
-        .map(|w| Live { addr: w.addr as u64, name: w.full_name })
+        .map(|w| Live {
+            addr: w.addr as u64,
+            name: w.full_name,
+        })
         .collect()
 }
 

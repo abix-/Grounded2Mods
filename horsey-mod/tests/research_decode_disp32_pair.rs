@@ -35,7 +35,9 @@ mod common;
 
 use serde_json::json;
 
-fn need(name: &str) -> Option<String> { std::env::var(name).ok().filter(|s| !s.is_empty()) }
+fn need(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|s| !s.is_empty())
+}
 fn parse_uint(s: &str) -> u64 {
     if let Some(stripped) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
         u64::from_str_radix(stripped, 16).unwrap_or(0)
@@ -56,14 +58,26 @@ fn scan_and_decode_disp32_pair() {
         eprintln!("skipping: set MODFORGE_SIG and the 4 offset env vars to use");
         return;
     };
-    let d1_off = need("MODFORGE_DISP1_OFF").map(|s| parse_uint(&s) as u32).expect("MODFORGE_DISP1_OFF required");
-    let d1_nip = need("MODFORGE_DISP1_NEXT_IP").map(|s| parse_uint(&s) as u32).expect("MODFORGE_DISP1_NEXT_IP required");
-    let d2_off = need("MODFORGE_DISP2_OFF").map(|s| parse_uint(&s) as usize).expect("MODFORGE_DISP2_OFF required");
-    let d2_nip = need("MODFORGE_DISP2_NEXT_IP").map(|s| parse_uint(&s) as usize).expect("MODFORGE_DISP2_NEXT_IP required");
+    let d1_off = need("MODFORGE_DISP1_OFF")
+        .map(|s| parse_uint(&s) as u32)
+        .expect("MODFORGE_DISP1_OFF required");
+    let d1_nip = need("MODFORGE_DISP1_NEXT_IP")
+        .map(|s| parse_uint(&s) as u32)
+        .expect("MODFORGE_DISP1_NEXT_IP required");
+    let d2_off = need("MODFORGE_DISP2_OFF")
+        .map(|s| parse_uint(&s) as usize)
+        .expect("MODFORGE_DISP2_OFF required");
+    let d2_nip = need("MODFORGE_DISP2_NEXT_IP")
+        .map(|s| parse_uint(&s) as usize)
+        .expect("MODFORGE_DISP2_NEXT_IP required");
     let pair_delta = need("MODFORGE_PAIR_DELTA").map(|s| parse_signed(&s));
-    let max_hits = need("MODFORGE_MAX_HITS").map(|s| parse_uint(&s) as u32).unwrap_or(256);
+    let max_hits = need("MODFORGE_MAX_HITS")
+        .map(|s| parse_uint(&s) as u32)
+        .unwrap_or(256);
 
-    let Some(game) = common::launch("research_decode_disp32_pair") else { return; };
+    let Some(game) = common::launch("research_decode_disp32_pair") else {
+        return;
+    };
 
     // First pass: scan_all on the sig, anchored on disp1.
     let resp = game
@@ -79,17 +93,24 @@ fn scan_and_decode_disp32_pair() {
         )
         .expect("patterns.sleuth.scan_all must succeed");
     let result = resp.get("result").expect("result");
-    let hits = result.get("hits").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let hits = result
+        .get("hits")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
 
     let mut accepted = 0usize;
     for h in &hits {
         let instr_str = h.get("instr_addr").and_then(|v| v.as_str()).unwrap_or("?");
         let instr = u64::from_str_radix(instr_str.trim_start_matches("0x"), 16).unwrap_or(0);
         let target1 = u64::from_str_radix(
-            h.get("decoded_target").and_then(|v| v.as_str()).unwrap_or("0x0")
+            h.get("decoded_target")
+                .and_then(|v| v.as_str())
+                .unwrap_or("0x0")
                 .trim_start_matches("0x"),
             16,
-        ).unwrap_or(0);
+        )
+        .unwrap_or(0);
         // Read enough bytes to cover disp2.
         let read_len = (d2_nip as u32).max(16);
         let bytes_resp = game
@@ -99,30 +120,46 @@ fn scan_and_decode_disp32_pair() {
             )
             .ok();
         let target2 = bytes_resp.and_then(|r| {
-            let s = r.get("result").and_then(|x| x.get("bytes")).and_then(|v| v.as_str())?.to_string();
-            let b: Vec<u8> = s.split_whitespace().filter_map(|t| u8::from_str_radix(t, 16).ok()).collect();
-            if b.len() < d2_off + 4 { return None; }
+            let s = r
+                .get("result")
+                .and_then(|x| x.get("bytes"))
+                .and_then(|v| v.as_str())?
+                .to_string();
+            let b: Vec<u8> = s
+                .split_whitespace()
+                .filter_map(|t| u8::from_str_radix(t, 16).ok())
+                .collect();
+            if b.len() < d2_off + 4 {
+                return None;
+            }
             let d2 = i32::from_le_bytes([b[d2_off], b[d2_off + 1], b[d2_off + 2], b[d2_off + 3]]);
             Some((instr.wrapping_add(d2_nip as u64) as i64).wrapping_add(d2 as i64) as u64)
         });
-        let Some(t2) = target2 else { continue; };
+        let Some(t2) = target2 else {
+            continue;
+        };
         let delta = (t2 as i64).wrapping_sub(target1 as i64);
         let keep = pair_delta.map(|d| delta == d).unwrap_or(true);
-        let marker = if pair_delta.map(|d| d == delta).unwrap_or(false) { "  <-- MATCH" } else { "" };
+        let marker = if pair_delta.map(|d| d == delta).unwrap_or(false) {
+            "  <-- MATCH"
+        } else {
+            ""
+        };
         if keep || pair_delta.is_none() {
             game.log().event(
                 "DECODED",
-                &format!(
-                    "instr=0x{instr:x} t1=0x{target1:x} t2=0x{t2:x} delta={delta:#x}{marker}"
-                ),
+                &format!("instr=0x{instr:x} t1=0x{target1:x} t2=0x{t2:x} delta={delta:#x}{marker}"),
             );
-            if keep && pair_delta.is_some() { accepted += 1; }
+            if keep && pair_delta.is_some() {
+                accepted += 1;
+            }
         }
     }
     if let Some(d) = pair_delta {
         game.pass(&format!(
             "{} hits matched delta {d:#x} out of {} total",
-            accepted, hits.len()
+            accepted,
+            hits.len()
         ));
     } else {
         game.pass(&format!("decoded {} hits (no delta filter)", hits.len()));

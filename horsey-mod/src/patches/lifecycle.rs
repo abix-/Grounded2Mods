@@ -34,17 +34,14 @@ type HorseCtorFn = unsafe extern "system" fn(*mut c_void) -> *mut c_void;
 /// `FUN_1400bf1f0`: horse destructor.
 /// Decomp: `undefined8 * FUN_1400bf1f0(undefined8 *param_1, ulonglong param_2)`.
 /// param_2 & 1 controls whether to free the buffer (C++ delete-flag).
-type HorseDtorFn =
-    unsafe extern "system" fn(*mut c_void, usize) -> *mut c_void;
+type HorseDtorFn = unsafe extern "system" fn(*mut c_void, usize) -> *mut c_void;
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
-static CTOR_DETOUR: AtomicPtr<GenericDetour<HorseCtorFn>> =
-    AtomicPtr::new(std::ptr::null_mut());
-static DTOR_DETOUR: AtomicPtr<GenericDetour<HorseDtorFn>> =
-    AtomicPtr::new(std::ptr::null_mut());
+static CTOR_DETOUR: AtomicPtr<GenericDetour<HorseCtorFn>> = AtomicPtr::new(std::ptr::null_mut());
+static DTOR_DETOUR: AtomicPtr<GenericDetour<HorseDtorFn>> = AtomicPtr::new(std::ptr::null_mut());
 
 static CTOR_CALLS: AtomicU64 = AtomicU64::new(0);
 static DTOR_CALLS: AtomicU64 = AtomicU64::new(0);
@@ -109,10 +106,7 @@ fn ctor_slowpath(horse_id: u64) {
     }
 }
 
-unsafe extern "system" fn dtor_handler(
-    buf: *mut c_void,
-    flags: usize,
-) -> *mut c_void {
+unsafe extern "system" fn dtor_handler(buf: *mut c_void, flags: usize) -> *mut c_void {
     DTOR_CALLS.fetch_add(1, Ordering::Relaxed);
     if !buf.is_null() {
         dtor_slowpath(buf as usize as u64);
@@ -156,8 +150,7 @@ fn dryrun_at(name: &'static str, rva: usize) -> TargetReport {
     let runtime_addr = targets::rebase(rva);
     let mut prologue = [0u8; 16];
     // SAFETY: function entry inside our running image; read-only.
-    let view =
-        unsafe { std::slice::from_raw_parts(runtime_addr as *const u8, 16) };
+    let view = unsafe { std::slice::from_raw_parts(runtime_addr as *const u8, 16) };
     prologue.copy_from_slice(view);
     TargetReport {
         name,
@@ -201,9 +194,7 @@ fn arm_ctor() -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("lifecycle ctor: enable failed: {e}"))?;
     let leaked: *mut GenericDetour<HorseCtorFn> = Box::into_raw(Box::new(detour));
     CTOR_DETOUR.store(leaked, Ordering::Release);
-    modforge::log!(
-        "lifecycle: armed HORSE_CONSTRUCTOR at 0x{runtime_addr:x}"
-    );
+    modforge::log!("lifecycle: armed HORSE_CONSTRUCTOR at 0x{runtime_addr:x}");
     Ok(())
 }
 
@@ -225,16 +216,13 @@ fn arm_dtor() -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("lifecycle dtor: enable failed: {e}"))?;
     let leaked: *mut GenericDetour<HorseDtorFn> = Box::into_raw(Box::new(detour));
     DTOR_DETOUR.store(leaked, Ordering::Release);
-    modforge::log!(
-        "lifecycle: armed HORSE_DESTRUCTOR at 0x{runtime_addr:x}"
-    );
+    modforge::log!("lifecycle: armed HORSE_DESTRUCTOR at 0x{runtime_addr:x}");
     Ok(())
 }
 
 fn log_prologue(name: &str, addr: usize) {
     // SAFETY: target inside our loaded image; 8 bytes readable.
-    let prologue =
-        unsafe { std::slice::from_raw_parts(addr as *const u8, 8) };
+    let prologue = unsafe { std::slice::from_raw_parts(addr as *const u8, 8) };
     let prologue_hex: String = prologue
         .iter()
         .map(|b| format!("{b:02x}"))

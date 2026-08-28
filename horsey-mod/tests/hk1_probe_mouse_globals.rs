@@ -22,7 +22,9 @@ use serde_json::json;
 
 #[test]
 fn probe_mouse_globals() {
-    let Some(game) = common::launch("hk1_probe_mouse_globals") else { return; };
+    let Some(game) = common::launch("hk1_probe_mouse_globals") else {
+        return;
+    };
     eprintln!("[GATE] waiting for a save to load (up to 120s) ...");
     common::wait_for_target_horse(&game, std::time::Duration::from_secs(120));
     let resp = game
@@ -48,17 +50,19 @@ fn probe_mouse_globals() {
 
     for (name, val) in [("HORSEY_EXPECT_X_RANGE", x), ("HORSEY_EXPECT_Y_RANGE", y)] {
         if let Ok(s) = std::env::var(name) {
-            let (lo, hi) = s.split_once("..").unwrap_or_else(|| panic!("{name}='{s}' must be lo..hi"));
+            let (lo, hi) = s
+                .split_once("..")
+                .unwrap_or_else(|| panic!("{name}='{s}' must be lo..hi"));
             let lo: f64 = lo.parse().unwrap_or_else(|e| panic!("{name} lo: {e}"));
             let hi: f64 = hi.parse().unwrap_or_else(|e| panic!("{name} hi: {e}"));
             let v = val.unwrap_or_else(|| panic!("{name} set but value missing from probe"));
-            assert!(v >= lo && v <= hi,
-                "{name}={s}: observed {v} outside range");
+            assert!(v >= lo && v <= hi, "{name}={s}: observed {v} outside range");
         }
     }
 
     game.pass(&format!(
         "mouse_x={:?} mouse_y={:?}",
-        x.unwrap_or(f64::NAN), y.unwrap_or(f64::NAN)
+        x.unwrap_or(f64::NAN),
+        y.unwrap_or(f64::NAN)
     ));
 }

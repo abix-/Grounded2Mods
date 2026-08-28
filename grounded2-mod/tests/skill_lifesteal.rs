@@ -11,7 +11,9 @@ mod common;
 
 #[test]
 fn lifesteal_level_increments_on_spend() {
-    let Some(api) = common::Api::try_connect() else { return };
+    let Some(api) = common::Api::try_connect() else {
+        return;
+    };
     let api = api.inner();
     if api.skill_points() < 1 {
         eprintln!("skipping: need a skill point");

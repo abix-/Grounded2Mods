@@ -38,17 +38,14 @@ fn gamestate_ptr_resolves_via_constructor_anchor() {
     let resp = game
         .op_json("targets.resolve.gamestate_ptr", &json!({}))
         .expect("targets.resolve.gamestate_ptr must succeed");
-    let result = resp
-        .get("result")
-        .expect("op response must include result");
+    let result = resp.get("result").expect("op response must include result");
     game.log()
         .event("R3", &format!("resolve result = {result:#}"));
 
     let slot = u64_of(result, "slot").expect("result.slot (hex string) missing");
-    let hardcoded = u64_of(result, "hardcoded_slot")
-        .expect("result.hardcoded_slot (hex string) missing");
-    let image_base = u64_of(result, "image_base")
-        .expect("result.image_base (hex string) missing");
+    let hardcoded =
+        u64_of(result, "hardcoded_slot").expect("result.hardcoded_slot (hex string) missing");
+    let image_base = u64_of(result, "image_base").expect("result.image_base (hex string) missing");
 
     assert!(
         slot != 0,
@@ -89,9 +86,7 @@ fn gamestate_ptr_resolves_via_constructor_anchor() {
         let money = result
             .get("money_at_deref_plus_0x308")
             .and_then(|v| v.as_u64())
-            .expect(
-                "money_at_deref_plus_0x308 must be present when deref is plausible",
-            );
+            .expect("money_at_deref_plus_0x308 must be present when deref is plausible");
         assert!(
             money <= 100_000_000,
             "money at deref+0x308 = {money} exceeds 100M; the dereffed pointer \

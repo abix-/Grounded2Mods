@@ -17,8 +17,7 @@
 //! `tests/registry_parity.rs` guards against drift.
 
 use modforge::patterns::sleuth::{
-    self, Candidate, InImage, Recipe, Resolver, TargetDef, TargetKind,
-    TargetRegistry, Validator,
+    self, Candidate, InImage, Recipe, Resolver, TargetDef, TargetKind, TargetRegistry, Validator,
 };
 use modforge::vanilla::sig::{ArgKind, RetKind, Signature};
 
@@ -43,7 +42,10 @@ fn resolve_name_table_custom(_image_base: u64) -> Result<u64, String> {
     let sig = "48 69 c0 88 00 00 00 48 03 05 ?? ?? ?? ??";
     let hits = sleuth::scan_all_matches(sig).map_err(|e| e.to_string())?;
     if hits.len() != 1 {
-        return Err(format!("name-table anchor matched {} site(s); want 1", hits.len()));
+        return Err(format!(
+            "name-table anchor matched {} site(s); want 1",
+            hits.len()
+        ));
     }
     let site = hits[0];
     if !modforge::winproc::is_addr_readable(site + 14) {
@@ -71,12 +73,15 @@ fn resolve_name_table_custom(_image_base: u64) -> Result<u64, String> {
 fn resolve_chromosome_table_custom(_image_base: u64) -> Result<u64, String> {
     let prologue_sig = "48 89 54 24 10 55 48 83 ec 50 48 63 81 \
                         34 02 00 00 48 8b e9 83 f8 13 0f 87";
-    let mut hits = sleuth::scan_all_matches(prologue_sig)
-        .map_err(|e| format!("prologue sig scan: {e}"))?;
+    let mut hits =
+        sleuth::scan_all_matches(prologue_sig).map_err(|e| format!("prologue sig scan: {e}"))?;
     hits.sort();
     hits.dedup();
     if hits.len() != 1 {
-        return Err(format!("prologue matched {} sites; want exactly 1", hits.len()));
+        return Err(format!(
+            "prologue matched {} sites; want exactly 1",
+            hits.len()
+        ));
     }
     let fn_start = hits[0];
 
@@ -86,10 +91,16 @@ fn resolve_chromosome_table_custom(_image_base: u64) -> Result<u64, String> {
         for reg in 0..8u8 {
             let modrm = (reg << 3) | 0x05;
             let sig = format!("{prefix:02x} 8d {modrm:02x} ?? ?? ?? ??");
-            let Ok(matches) = sleuth::scan_all_matches(&sig) else { continue };
+            let Ok(matches) = sleuth::scan_all_matches(&sig) else {
+                continue;
+            };
             for site in matches {
-                if site < fn_start || site >= fn_start + BODY_WINDOW { continue; }
-                if !modforge::winproc::is_addr_readable(site + 7) { continue; }
+                if site < fn_start || site >= fn_start + BODY_WINDOW {
+                    continue;
+                }
+                if !modforge::winproc::is_addr_readable(site + 7) {
+                    continue;
+                }
                 // SAFETY: site+7 readability checked.
                 let bytes = unsafe { std::slice::from_raw_parts(site as *const u8, 7) };
                 let disp = i32::from_le_bytes([bytes[3], bytes[4], bytes[5], bytes[6]]) as isize;
@@ -112,7 +123,9 @@ fn validate_chromosome_table_shape(addr: usize) -> bool {
     const SLOTS: usize = 17;
     const MAX_CHROMOS: usize = 20;
     const TABLE_BYTES: usize = STRIDE * MAX_CHROMOS;
-    if (addr & 3) != 0 { return false; }
+    if (addr & 3) != 0 {
+        return false;
+    }
     if !modforge::winproc::is_addr_readable(addr + TABLE_BYTES) {
         return false;
     }
@@ -123,9 +136,15 @@ fn validate_chromosome_table_shape(addr: usize) -> bool {
             let off = chromo_id * STRIDE + slot * 4;
             // SAFETY: range readability checked above.
             let v = unsafe { *((addr + off) as *const i32) };
-            if v == -1 { break; }
-            if !(0..240).contains(&v) { return false; }
-            if seen[v as usize] { return false; }
+            if v == -1 {
+                break;
+            }
+            if !(0..240).contains(&v) {
+                return false;
+            }
+            if seen[v as usize] {
+                return false;
+            }
             seen[v as usize] = true;
             valid_count += 1;
         }
@@ -149,7 +168,10 @@ static GAMESTATE_PTR: TargetDef = TargetDef {
     kind: TargetKind::DataGlobal,
     candidates: &[Candidate {
         sig: "48 89 1D ?? ?? ?? ?? 48 89 BB 70 02 00 00",
-        recipe: Recipe::DecodeRipDisp { disp_off: 3, instr_len: 7 },
+        recipe: Recipe::DecodeRipDisp {
+            disp_off: 3,
+            instr_len: 7,
+        },
     }],
     // Slot drifted to RVA 0x3fc1e8 in the 2026-05-17 build (was
     // 0x3fb0d8). HLT pattern still anchors correctly; the only
@@ -200,8 +222,10 @@ static DEBUG_MODE_ACTIVE: TargetDef = TargetDef {
     candidates: &[Candidate {
         sig: "c6 05 ?? ?? ?? ?? 01 c6 05 ?? ?? ?? ?? 00",
         recipe: Recipe::PairedRipDispWithDelta {
-            disp1_off: 2, disp1_next_ip: 7,
-            disp2_off: 9, disp2_next_ip: 14,
+            disp1_off: 2,
+            disp1_next_ip: 7,
+            disp2_off: 9,
+            disp2_next_ip: 14,
             delta: -0x79,
         },
     }],
@@ -222,7 +246,9 @@ static DEBUG_LOG_GATE: TargetDef = TargetDef {
     candidates: &[Candidate {
         sig: "c7 05 ?? ?? ?? ?? 00 01 00 00 c7 05 ?? ?? ?? ?? ff ff ff ff",
         recipe: Recipe::RipDispWithRelOffset {
-            disp_off: 2, instr_len: 10, rel_offset: -0x72,
+            disp_off: 2,
+            instr_len: 10,
+            rel_offset: -0x72,
         },
     }],
     hint_rva: Some(0x1403d9506),
@@ -276,41 +302,31 @@ static CHROMOSOME_TABLE: TargetDef = TargetDef {
 /// Standard MSVC Win64 prologue sig that fits most horsey-mod
 /// targets: `mov [rsp+disp8], rbx; mov [rsp+disp8], rbp; mov [rsp+disp8], rsi`.
 /// Specific-enough for hint-tolerance guarding to disambiguate.
-const PROLOGUE_SHADOW_SAVE_3: &str =
-    "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24";
+const PROLOGUE_SHADOW_SAVE_3: &str = "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24";
 
 // Signatures for invocable functions. These let the function be
 // called via `modforge::vanilla::Invoker`.
-pub static APPLY_GENE_SIG: Signature = Signature::new(
-    &[ArgKind::Ptr, ArgKind::Ptr],
-    RetKind::Void,
-);
+pub static APPLY_GENE_SIG: Signature = Signature::new(&[ArgKind::Ptr, ArgKind::Ptr], RetKind::Void);
 
 /// `HORSE_REBUILD` / `FUN_1400b3070` per HLT
 /// `kRvaHorseRebuildEquipmentAndPhysics`. Takes the horse ptr and
 /// rebuilds derived state from the working genome.
-pub static HORSE_REBUILD_SIG: Signature = Signature::new(
-    &[ArgKind::Ptr],
-    RetKind::Void,
-);
+pub static HORSE_REBUILD_SIG: Signature = Signature::new(&[ArgKind::Ptr], RetKind::Void);
 
 /// `FUN_1400c6580` per HLT `kRvaRngNextModulo`. Generic
 /// `rng_next() % modulus`.
-pub static RNG_NEXT_MODULO_SIG: Signature = Signature::new(
-    &[ArgKind::U32],
-    RetKind::U32,
-);
+pub static RNG_NEXT_MODULO_SIG: Signature = Signature::new(&[ArgKind::U32], RetKind::U32);
 
 /// `FUN_1400b35f0` per HLT `kRvaHorseCopyGeneLanePairs`. Sets a
 /// horse's genome from a 480-byte buffer.
-pub static HORSE_COPY_GENE_LANE_PAIRS_SIG: Signature = Signature::new(
-    &[ArgKind::Ptr, ArgKind::Ptr],
-    RetKind::Void,
-);
+pub static HORSE_COPY_GENE_LANE_PAIRS_SIG: Signature =
+    Signature::new(&[ArgKind::Ptr, ArgKind::Ptr], RetKind::Void);
 
 static APPLY_GENE_TO_HORSE: TargetDef = TargetDef {
     name: "APPLY_GENE_TO_HORSE",
-    kind: TargetKind::FunctionEntry { signature: Some(&APPLY_GENE_SIG) },
+    kind: TargetKind::FunctionEntry {
+        signature: Some(&APPLY_GENE_SIG),
+    },
     candidates: &[Candidate {
         sig: PROLOGUE_SHADOW_SAVE_3,
         recipe: Recipe::MatchIsAddress,
@@ -323,7 +339,9 @@ static APPLY_GENE_TO_HORSE: TargetDef = TargetDef {
 /// New entries from HLT cross-reference: invocable vanilla functions.
 static HORSE_REBUILD: TargetDef = TargetDef {
     name: "HORSE_REBUILD",
-    kind: TargetKind::FunctionEntry { signature: Some(&HORSE_REBUILD_SIG) },
+    kind: TargetKind::FunctionEntry {
+        signature: Some(&HORSE_REBUILD_SIG),
+    },
     candidates: &[],
     hint_rva: Some(0x1400b3070),
     hint_tolerance: 0x4000,
@@ -332,7 +350,9 @@ static HORSE_REBUILD: TargetDef = TargetDef {
 
 static RNG_NEXT_MODULO: TargetDef = TargetDef {
     name: "RNG_NEXT_MODULO",
-    kind: TargetKind::FunctionEntry { signature: Some(&RNG_NEXT_MODULO_SIG) },
+    kind: TargetKind::FunctionEntry {
+        signature: Some(&RNG_NEXT_MODULO_SIG),
+    },
     candidates: &[],
     hint_rva: Some(0x1400c6580),
     hint_tolerance: 0x4000,
@@ -355,10 +375,7 @@ static HORSE_COPY_GENE_LANE_PAIRS: TargetDef = TargetDef {
 /// triggers auto-save, plays the "World" sound, calls scene tear-down,
 /// resumes truck driving. Single argument: `GameState*`.
 /// Cite: `all_functions.c:154755`.
-pub static EXIT_TO_OVERWORLD_SIG: Signature = Signature::new(
-    &[ArgKind::Ptr],
-    RetKind::Void,
-);
+pub static EXIT_TO_OVERWORLD_SIG: Signature = Signature::new(&[ArgKind::Ptr], RetKind::Void);
 static EXIT_TO_OVERWORLD: TargetDef = TargetDef {
     name: "EXIT_TO_OVERWORLD",
     kind: TargetKind::FunctionEntry {
@@ -409,64 +426,148 @@ macro_rules! hint_only_fn {
     };
 }
 
-prologue_fn!(EVAL_DIPLOID_BLEND_A, 0x1400a5d10,
-    "48 89 5c 24 08 48 89 6c 24 10 48 89 74 24 18 57 48 83 ec 20 48 63 da 48 8d 2d 72 87 34 00 48 8b");
-prologue_fn!(EVAL_DIPLOID_BLEND_B, 0x1400a5df0,
-    "48 89 5c 24 08 48 89 6c 24 10 48 89 74 24 18 57 48 83 ec 20 48 63 da 48 8d 2d 92 86 34 00 48 8b");
-prologue_fn!(GENE_DEATH_DRIFT, 0x1400c0650,
-    "48 8b c4 55 53 56 57 41 54 41 55 41 56 41 57 48 8d a8 b8 fa ff ff 48 81 ec 08 06 00 00 0f 29 70");
-prologue_fn!(GENE_ALLELE_SWAP, 0x1400c0390,
-    "48 89 5c 24 08 48 89 74 24 10 48 89 7c 24 18 48 63 fa 48 be c1 d4 1c 42 29 8f a0 3f 4d 63 d9 45");
-prologue_fn!(GENE_TABLE_XML_WRITER, 0x1400a4880,
-    "41 54 41 55 41 56 41 57 48 8d 6c 24 90 48 81 ec 70 01 00 00 0f 29 70 c8 0f 29 78 b8 44 0f 29 40");
-prologue_fn!(GENE_TABLE_LOADER, 0x1400a3eb0,
-    "41 57 48 8d a8 28 ff ff ff 48 81 ec a0 01 00 00 0f 29 70 b8 0f 29 78 a8 44 0f 29 40 98 44 0f 29");
-prologue_fn!(POP_XML_LOADER, 0x1400a4fe0,
-    "48 8d ac 24 c0 cf ff ff b8 40 31 00 00 e8 ?? ?? ?? ?? 48 2b e0 48 8d 4c 24 50 e8 ?? ?? ?? ?? 90");
-prologue_fn!(GENE_ENGINE_CONSUMER, 0x1400ab3c0,
-    "48 8b c4 55 53 56 57 41 54 41 55 41 56 41 57 48 8d a8 88 fd ff ff 48 81 ec 38 03 00 00 0f 29 70");
-prologue_fn!(CHECK_HORSE_ELIGIBILITY, 0x1400de230,
-    "48 89 5c 24 10 48 89 74 24 18 55 57 41 54 41 56 41 57 48 8b ec 48 81 ec 80 00 00 00 0f 29 74 24");
-hint_only_fn!(RETIRE_HORSE_HANDLER, 0x1400df675);  // 32-byte sig not captured; uses re-derived RVA
-prologue_fn!(COMPUTE_HORSE_PRICE, 0x1400dc785,
-    "48 89 7c 24 10 55 48 8b ec 48 83 ec 60 0f 29 74 24 50 48 8b f9 4c 63 c2 48 8b 91 30 01 00 00 48");
-prologue_fn!(CRISPR_LAB, 0x1400894bc,
-    "57 41 54 41 56 41 57 48 8d a8 58 fe ff ff 48 81 ec 80 02 00 00 0f 29 70 c8 0f 29 78 b8 44 0f 29");
-prologue_fn!(BREEDING, 0x1400e0817,
-    "57 41 54 41 55 41 56 41 57 48 8b ec 48 83 ec 68 44 8b f2 4c 8b f9 4c 8b 81 30 01 00 00 48 8b 81");
-prologue_fn!(SAVE_WRITER, 0x14006d674,
-    "57 41 56 48 81 ec 40 01 00 00 48 8b e9 48 8d 51 18 48 8d 4c 24 30 e8 ?? ?? ?? ?? 48 8b 54 24 48");
-prologue_fn!(LOAD_GAME, 0x14006e350,
-    "48 89 5c 24 08 55 56 57 41 54 41 55 41 56 41 57 48 8b ec 48 83 ec 70 48 8b f1 44 8b c2 48 8d 15");
-prologue_fn!(DRAW_PAUSE_STATUS, 0x1400660cc,
-    "57 41 54 41 56 41 57 48 8d 68 a1 48 81 ec c0 00 00 00 0f 29 70 c8 0f 29 78 b8 44 0f 29 40 a8 44");
-prologue_fn!(TMX_MAP_PARSER, 0x1400fe2e0,
-    "48 89 5c 24 08 48 89 7c 24 10 55 48 8b ec 48 83 ec 20 8b fa 33 db 83 fa 0c 7f 25 b9 78 04 00 00");
-prologue_fn!(POP_GENOME_BUILDER, 0x1400927e7,
-    "57 41 54 41 55 41 56 41 57 48 8d 6c 24 d9 48 81 ec e0 00 00 00 0f 29 b4 24 d0 00 00 00 48 8b f9");
-prologue_fn!(DAILY_HORSE_EVENT, 0x14002fe00,
-    "48 89 5c 24 10 48 89 74 24 18 48 89 7c 24 20 55 41 54 41 55 41 56 41 57 48 8d 6c 24 c9 48 81 ec");
-prologue_fn!(TRACK_STATE_MACHINE, 0x14002d7c0,
-    "48 8b c4 48 89 58 10 48 89 70 18 48 89 78 20 55 41 54 41 55 41 56 41 57 48 8d 68 a1 48 81 ec e0");
-prologue_fn!(CIRCUS_HANDLER, 0x140039190,
-    "48 8b c4 48 89 48 08 55 53 56 57 41 54 41 55 41 56 41 57 48 8d 6c 24 b8 48 81 ec 48 01 00 00 0f");
-prologue_fn!(SUMO_HANDLER, 0x14007b28c,
-    "57 41 56 48 8d 68 a1 48 81 ec c0 00 00 00 0f 29 70 d8 0f 29 78 c8 44 0f 29 40 b8 44 0f 29 48 a8");
-prologue_fn!(POWER_PLANT, 0x140069270,
-    "48 89 5c 24 08 55 48 8b ec 48 83 ec 60 0f 29 74 24 50 48 8b d9 ff 81 50 02 00 00 e8 ?? ?? ?? ??");
-prologue_fn!(WORLD_ACTION, 0x1401075a2,
-    "57 41 54 41 55 41 56 41 57 48 83 ec 70 0f 29 70 c8 0f 29 78 b8 44 8b ca 4c 8b f9 0f 57 c0 f3 0f");
-hint_only_fn!(BALLOON_CONTROLLER, 0x14010a9e0);  // sig not captured live
-prologue_fn!(HORSE_CONSTRUCTOR, 0x1400aac50,
-    "48 89 5c 24 10 48 89 4c 24 08 57 48 83 ec 20 48 8b d9 48 8d 05 ?? ?? ?? ?? 48 89 01 33 ff 48 89");
-prologue_fn!(HORSE_DESTRUCTOR, 0x1400bf1e0,
-    "48 89 5c 24 08 48 89 74 24 10 57 48 83 ec 20 48 8d 05 ?? ?? ?? ?? 8b f2 48 89 01 48 8b d9 ff 0d");
-prologue_fn!(GENE_COMBINATOR, 0x1400a2d70,
-    "48 89 5c 24 08 48 89 6c 24 10 48 89 74 24 18 57 41 54 41 55 41 56 41 57 48 83 ec 20 4c 8b f9 45");
-prologue_fn!(HORSE_SAVE_WRITER, 0x14006ecfb,
-    "57 41 56 48 83 ec 40 48 8b e9 e8 ?? ?? ?? ?? 48 8d 8d b8 02 00 00 44 8b f0 e8 ?? ?? ?? ?? 48 8b");
-prologue_fn!(HORSE_SAVE_LOADER, 0x14006f031,
-    "53 57 48 83 ec 58 48 8b f9 48 81 c1 b8 02 00 00 e8 ?? ?? ?? ?? 48 8d 8f a8 02 00 00 e8 ?? ?? ??");
+prologue_fn!(
+    EVAL_DIPLOID_BLEND_A,
+    0x1400a5d10,
+    "48 89 5c 24 08 48 89 6c 24 10 48 89 74 24 18 57 48 83 ec 20 48 63 da 48 8d 2d 72 87 34 00 48 8b"
+);
+prologue_fn!(
+    EVAL_DIPLOID_BLEND_B,
+    0x1400a5df0,
+    "48 89 5c 24 08 48 89 6c 24 10 48 89 74 24 18 57 48 83 ec 20 48 63 da 48 8d 2d 92 86 34 00 48 8b"
+);
+prologue_fn!(
+    GENE_DEATH_DRIFT,
+    0x1400c0650,
+    "48 8b c4 55 53 56 57 41 54 41 55 41 56 41 57 48 8d a8 b8 fa ff ff 48 81 ec 08 06 00 00 0f 29 70"
+);
+prologue_fn!(
+    GENE_ALLELE_SWAP,
+    0x1400c0390,
+    "48 89 5c 24 08 48 89 74 24 10 48 89 7c 24 18 48 63 fa 48 be c1 d4 1c 42 29 8f a0 3f 4d 63 d9 45"
+);
+prologue_fn!(
+    GENE_TABLE_XML_WRITER,
+    0x1400a4880,
+    "41 54 41 55 41 56 41 57 48 8d 6c 24 90 48 81 ec 70 01 00 00 0f 29 70 c8 0f 29 78 b8 44 0f 29 40"
+);
+prologue_fn!(
+    GENE_TABLE_LOADER,
+    0x1400a3eb0,
+    "41 57 48 8d a8 28 ff ff ff 48 81 ec a0 01 00 00 0f 29 70 b8 0f 29 78 a8 44 0f 29 40 98 44 0f 29"
+);
+prologue_fn!(
+    POP_XML_LOADER,
+    0x1400a4fe0,
+    "48 8d ac 24 c0 cf ff ff b8 40 31 00 00 e8 ?? ?? ?? ?? 48 2b e0 48 8d 4c 24 50 e8 ?? ?? ?? ?? 90"
+);
+prologue_fn!(
+    GENE_ENGINE_CONSUMER,
+    0x1400ab3c0,
+    "48 8b c4 55 53 56 57 41 54 41 55 41 56 41 57 48 8d a8 88 fd ff ff 48 81 ec 38 03 00 00 0f 29 70"
+);
+prologue_fn!(
+    CHECK_HORSE_ELIGIBILITY,
+    0x1400de230,
+    "48 89 5c 24 10 48 89 74 24 18 55 57 41 54 41 56 41 57 48 8b ec 48 81 ec 80 00 00 00 0f 29 74 24"
+);
+hint_only_fn!(RETIRE_HORSE_HANDLER, 0x1400df675); // 32-byte sig not captured; uses re-derived RVA
+prologue_fn!(
+    COMPUTE_HORSE_PRICE,
+    0x1400dc785,
+    "48 89 7c 24 10 55 48 8b ec 48 83 ec 60 0f 29 74 24 50 48 8b f9 4c 63 c2 48 8b 91 30 01 00 00 48"
+);
+prologue_fn!(
+    CRISPR_LAB,
+    0x1400894bc,
+    "57 41 54 41 56 41 57 48 8d a8 58 fe ff ff 48 81 ec 80 02 00 00 0f 29 70 c8 0f 29 78 b8 44 0f 29"
+);
+prologue_fn!(
+    BREEDING,
+    0x1400e0817,
+    "57 41 54 41 55 41 56 41 57 48 8b ec 48 83 ec 68 44 8b f2 4c 8b f9 4c 8b 81 30 01 00 00 48 8b 81"
+);
+prologue_fn!(
+    SAVE_WRITER,
+    0x14006d674,
+    "57 41 56 48 81 ec 40 01 00 00 48 8b e9 48 8d 51 18 48 8d 4c 24 30 e8 ?? ?? ?? ?? 48 8b 54 24 48"
+);
+prologue_fn!(
+    LOAD_GAME,
+    0x14006e350,
+    "48 89 5c 24 08 55 56 57 41 54 41 55 41 56 41 57 48 8b ec 48 83 ec 70 48 8b f1 44 8b c2 48 8d 15"
+);
+prologue_fn!(
+    DRAW_PAUSE_STATUS,
+    0x1400660cc,
+    "57 41 54 41 56 41 57 48 8d 68 a1 48 81 ec c0 00 00 00 0f 29 70 c8 0f 29 78 b8 44 0f 29 40 a8 44"
+);
+prologue_fn!(
+    TMX_MAP_PARSER,
+    0x1400fe2e0,
+    "48 89 5c 24 08 48 89 7c 24 10 55 48 8b ec 48 83 ec 20 8b fa 33 db 83 fa 0c 7f 25 b9 78 04 00 00"
+);
+prologue_fn!(
+    POP_GENOME_BUILDER,
+    0x1400927e7,
+    "57 41 54 41 55 41 56 41 57 48 8d 6c 24 d9 48 81 ec e0 00 00 00 0f 29 b4 24 d0 00 00 00 48 8b f9"
+);
+prologue_fn!(
+    DAILY_HORSE_EVENT,
+    0x14002fe00,
+    "48 89 5c 24 10 48 89 74 24 18 48 89 7c 24 20 55 41 54 41 55 41 56 41 57 48 8d 6c 24 c9 48 81 ec"
+);
+prologue_fn!(
+    TRACK_STATE_MACHINE,
+    0x14002d7c0,
+    "48 8b c4 48 89 58 10 48 89 70 18 48 89 78 20 55 41 54 41 55 41 56 41 57 48 8d 68 a1 48 81 ec e0"
+);
+prologue_fn!(
+    CIRCUS_HANDLER,
+    0x140039190,
+    "48 8b c4 48 89 48 08 55 53 56 57 41 54 41 55 41 56 41 57 48 8d 6c 24 b8 48 81 ec 48 01 00 00 0f"
+);
+prologue_fn!(
+    SUMO_HANDLER,
+    0x14007b28c,
+    "57 41 56 48 8d 68 a1 48 81 ec c0 00 00 00 0f 29 70 d8 0f 29 78 c8 44 0f 29 40 b8 44 0f 29 48 a8"
+);
+prologue_fn!(
+    POWER_PLANT,
+    0x140069270,
+    "48 89 5c 24 08 55 48 8b ec 48 83 ec 60 0f 29 74 24 50 48 8b d9 ff 81 50 02 00 00 e8 ?? ?? ?? ??"
+);
+prologue_fn!(
+    WORLD_ACTION,
+    0x1401075a2,
+    "57 41 54 41 55 41 56 41 57 48 83 ec 70 0f 29 70 c8 0f 29 78 b8 44 8b ca 4c 8b f9 0f 57 c0 f3 0f"
+);
+hint_only_fn!(BALLOON_CONTROLLER, 0x14010a9e0); // sig not captured live
+prologue_fn!(
+    HORSE_CONSTRUCTOR,
+    0x1400aac50,
+    "48 89 5c 24 10 48 89 4c 24 08 57 48 83 ec 20 48 8b d9 48 8d 05 ?? ?? ?? ?? 48 89 01 33 ff 48 89"
+);
+prologue_fn!(
+    HORSE_DESTRUCTOR,
+    0x1400bf1e0,
+    "48 89 5c 24 08 48 89 74 24 10 57 48 83 ec 20 48 8d 05 ?? ?? ?? ?? 8b f2 48 89 01 48 8b d9 ff 0d"
+);
+prologue_fn!(
+    GENE_COMBINATOR,
+    0x1400a2d70,
+    "48 89 5c 24 08 48 89 6c 24 10 48 89 74 24 18 57 41 54 41 55 41 56 41 57 48 83 ec 20 4c 8b f9 45"
+);
+prologue_fn!(
+    HORSE_SAVE_WRITER,
+    0x14006ecfb,
+    "57 41 56 48 83 ec 40 48 8b e9 e8 ?? ?? ?? ?? 48 8d 8d b8 02 00 00 44 8b f0 e8 ?? ?? ?? ?? 48 8b"
+);
+prologue_fn!(
+    HORSE_SAVE_LOADER,
+    0x14006f031,
+    "53 57 48 83 ec 58 48 8b f9 48 81 c1 b8 02 00 00 e8 ?? ?? ?? ?? 48 8d 8f a8 02 00 00 e8 ?? ?? ??"
+);
 
 // Silence unused warning for V_NONE (kept for future field-offset
 // entries that don't need validators).
@@ -489,14 +590,12 @@ pub static HORSEY_TARGETS: TargetRegistry = TargetRegistry::new(
         &DEBUG_LOG_GATE,
         &NAME_TABLE,
         &CHROMOSOME_TABLE,
-
         // Invocable functions (with Signature)
         &APPLY_GENE_TO_HORSE,
         &HORSE_REBUILD,
         &RNG_NEXT_MODULO,
         &HORSE_COPY_GENE_LANE_PAIRS,
         &EXIT_TO_OVERWORLD,
-
         // Function entries (hint-only; sigs land per-target during B4)
         &EVAL_DIPLOID_BLEND_A,
         &EVAL_DIPLOID_BLEND_B,
@@ -549,12 +648,24 @@ pub mod resolve {
     }
 
     // Data globals
-    pub fn gamestate_ptr() -> Option<usize> { r("GAMESTATE_PTR") }
-    pub fn save_version_global() -> Option<usize> { r("SAVE_VERSION_GLOBAL") }
-    pub fn races_counter() -> Option<usize> { r("RACES_COUNTER") }
-    pub fn no_tire_toggle() -> Option<usize> { r("NO_TIRE_TOGGLE") }
-    pub fn debug_mode_active() -> Option<usize> { r("DEBUG_MODE_ACTIVE") }
-    pub fn debug_log_gate() -> Option<usize> { r("DEBUG_LOG_GATE") }
+    pub fn gamestate_ptr() -> Option<usize> {
+        r("GAMESTATE_PTR")
+    }
+    pub fn save_version_global() -> Option<usize> {
+        r("SAVE_VERSION_GLOBAL")
+    }
+    pub fn races_counter() -> Option<usize> {
+        r("RACES_COUNTER")
+    }
+    pub fn no_tire_toggle() -> Option<usize> {
+        r("NO_TIRE_TOGGLE")
+    }
+    pub fn debug_mode_active() -> Option<usize> {
+        r("DEBUG_MODE_ACTIVE")
+    }
+    pub fn debug_log_gate() -> Option<usize> {
+        r("DEBUG_LOG_GATE")
+    }
     pub fn name_table() -> Option<usize> {
         // NAME_TABLE must NOT go through the registry's resolve cache. The
         // registry caches the first result permanently, so a single miss
@@ -577,43 +688,107 @@ pub mod resolve {
             _ => None,
         }
     }
-    pub fn chromosome_table() -> Option<usize> { r("CHROMOSOME_TABLE") }
+    pub fn chromosome_table() -> Option<usize> {
+        r("CHROMOSOME_TABLE")
+    }
 
     // Function entries
-    pub fn apply_gene_to_horse() -> Option<usize> { r("APPLY_GENE_TO_HORSE") }
-    pub fn horse_constructor() -> Option<usize> { r("HORSE_CONSTRUCTOR") }
-    pub fn horse_destructor() -> Option<usize> { r("HORSE_DESTRUCTOR") }
-    pub fn gene_combinator() -> Option<usize> { r("GENE_COMBINATOR") }
-    pub fn save_writer() -> Option<usize> { r("SAVE_WRITER") }
-    pub fn load_game() -> Option<usize> { r("LOAD_GAME") }
-    pub fn horse_save_writer() -> Option<usize> { r("HORSE_SAVE_WRITER") }
-    pub fn horse_save_loader() -> Option<usize> { r("HORSE_SAVE_LOADER") }
-    pub fn eval_diploid_blend_a() -> Option<usize> { r("EVAL_DIPLOID_BLEND_A") }
-    pub fn eval_diploid_blend_b() -> Option<usize> { r("EVAL_DIPLOID_BLEND_B") }
-    pub fn gene_allele_swap() -> Option<usize> { r("GENE_ALLELE_SWAP") }
+    pub fn apply_gene_to_horse() -> Option<usize> {
+        r("APPLY_GENE_TO_HORSE")
+    }
+    pub fn horse_constructor() -> Option<usize> {
+        r("HORSE_CONSTRUCTOR")
+    }
+    pub fn horse_destructor() -> Option<usize> {
+        r("HORSE_DESTRUCTOR")
+    }
+    pub fn gene_combinator() -> Option<usize> {
+        r("GENE_COMBINATOR")
+    }
+    pub fn save_writer() -> Option<usize> {
+        r("SAVE_WRITER")
+    }
+    pub fn load_game() -> Option<usize> {
+        r("LOAD_GAME")
+    }
+    pub fn horse_save_writer() -> Option<usize> {
+        r("HORSE_SAVE_WRITER")
+    }
+    pub fn horse_save_loader() -> Option<usize> {
+        r("HORSE_SAVE_LOADER")
+    }
+    pub fn eval_diploid_blend_a() -> Option<usize> {
+        r("EVAL_DIPLOID_BLEND_A")
+    }
+    pub fn eval_diploid_blend_b() -> Option<usize> {
+        r("EVAL_DIPLOID_BLEND_B")
+    }
+    pub fn gene_allele_swap() -> Option<usize> {
+        r("GENE_ALLELE_SWAP")
+    }
 
     // Function entries referenced by targets.rs internal resolvers
     // (gs_offset::*, horse_offset::* still in legacy targets.rs).
-    pub fn draw_pause_status() -> Option<usize> { r("DRAW_PAUSE_STATUS") }
-    pub fn breeding() -> Option<usize> { r("BREEDING") }
-    pub fn compute_horse_price() -> Option<usize> { r("COMPUTE_HORSE_PRICE") }
-    pub fn pop_genome_builder() -> Option<usize> { r("POP_GENOME_BUILDER") }
-    pub fn sumo_handler() -> Option<usize> { r("SUMO_HANDLER") }
-    pub fn check_horse_eligibility() -> Option<usize> { r("CHECK_HORSE_ELIGIBILITY") }
-    pub fn retire_horse_handler() -> Option<usize> { r("RETIRE_HORSE_HANDLER") }
-    pub fn crispr_lab() -> Option<usize> { r("CRISPR_LAB") }
-    pub fn gene_table_xml_writer() -> Option<usize> { r("GENE_TABLE_XML_WRITER") }
-    pub fn gene_table_loader() -> Option<usize> { r("GENE_TABLE_LOADER") }
-    pub fn pop_xml_loader() -> Option<usize> { r("POP_XML_LOADER") }
-    pub fn gene_engine_consumer() -> Option<usize> { r("GENE_ENGINE_CONSUMER") }
-    pub fn tmx_map_parser() -> Option<usize> { r("TMX_MAP_PARSER") }
-    pub fn daily_horse_event() -> Option<usize> { r("DAILY_HORSE_EVENT") }
-    pub fn track_state_machine() -> Option<usize> { r("TRACK_STATE_MACHINE") }
-    pub fn circus_handler() -> Option<usize> { r("CIRCUS_HANDLER") }
-    pub fn power_plant() -> Option<usize> { r("POWER_PLANT") }
-    pub fn world_action() -> Option<usize> { r("WORLD_ACTION") }
-    pub fn balloon_controller() -> Option<usize> { r("BALLOON_CONTROLLER") }
-    pub fn gene_death_drift() -> Option<usize> { r("GENE_DEATH_DRIFT") }
+    pub fn draw_pause_status() -> Option<usize> {
+        r("DRAW_PAUSE_STATUS")
+    }
+    pub fn breeding() -> Option<usize> {
+        r("BREEDING")
+    }
+    pub fn compute_horse_price() -> Option<usize> {
+        r("COMPUTE_HORSE_PRICE")
+    }
+    pub fn pop_genome_builder() -> Option<usize> {
+        r("POP_GENOME_BUILDER")
+    }
+    pub fn sumo_handler() -> Option<usize> {
+        r("SUMO_HANDLER")
+    }
+    pub fn check_horse_eligibility() -> Option<usize> {
+        r("CHECK_HORSE_ELIGIBILITY")
+    }
+    pub fn retire_horse_handler() -> Option<usize> {
+        r("RETIRE_HORSE_HANDLER")
+    }
+    pub fn crispr_lab() -> Option<usize> {
+        r("CRISPR_LAB")
+    }
+    pub fn gene_table_xml_writer() -> Option<usize> {
+        r("GENE_TABLE_XML_WRITER")
+    }
+    pub fn gene_table_loader() -> Option<usize> {
+        r("GENE_TABLE_LOADER")
+    }
+    pub fn pop_xml_loader() -> Option<usize> {
+        r("POP_XML_LOADER")
+    }
+    pub fn gene_engine_consumer() -> Option<usize> {
+        r("GENE_ENGINE_CONSUMER")
+    }
+    pub fn tmx_map_parser() -> Option<usize> {
+        r("TMX_MAP_PARSER")
+    }
+    pub fn daily_horse_event() -> Option<usize> {
+        r("DAILY_HORSE_EVENT")
+    }
+    pub fn track_state_machine() -> Option<usize> {
+        r("TRACK_STATE_MACHINE")
+    }
+    pub fn circus_handler() -> Option<usize> {
+        r("CIRCUS_HANDLER")
+    }
+    pub fn power_plant() -> Option<usize> {
+        r("POWER_PLANT")
+    }
+    pub fn world_action() -> Option<usize> {
+        r("WORLD_ACTION")
+    }
+    pub fn balloon_controller() -> Option<usize> {
+        r("BALLOON_CONTROLLER")
+    }
+    pub fn gene_death_drift() -> Option<usize> {
+        r("GENE_DEATH_DRIFT")
+    }
 }
 
 /// Wire `vanilla.invoke` and `vanilla.list` HTTP cmdlets against
@@ -643,7 +818,8 @@ mod tests {
     #[test]
     fn registry_includes_invocable_signatures() {
         // Targets with `signature: Some(_)` are vanilla-invocable.
-        let invocable: Vec<&'static str> = HORSEY_TARGETS.iter()
+        let invocable: Vec<&'static str> = HORSEY_TARGETS
+            .iter()
             .filter_map(|d| match d.kind {
                 TargetKind::FunctionEntry { signature: Some(_) } => Some(d.name),
                 _ => None,

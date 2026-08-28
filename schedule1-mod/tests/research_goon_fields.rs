@@ -26,10 +26,16 @@ fn goon_unique_fields() {
         return;
     }
     let instances = pool.result.as_array().cloned().unwrap_or_default();
-    let ph = instances.first().and_then(|i| i["handle"].as_i64()).unwrap();
+    let ph = instances
+        .first()
+        .and_then(|i| i["handle"].as_i64())
+        .unwrap();
     let goons_r = api.op("read_field", json!({"handle": ph, "field": "goons"}));
     let gh = handle_of(&goons_r.result).unwrap();
-    let item_r = api.op("invoke_method", json!({"handle": gh, "method": "get_Item", "args": [0]}));
+    let item_r = api.op(
+        "invoke_method",
+        json!({"handle": gh, "method": "get_Item", "args": [0]}),
+    );
     let goon_h = handle_of(&item_r.result).unwrap();
 
     // inspect_object to see all fields

@@ -233,13 +233,10 @@ fn find_game_root(cfg: &ModCfg) -> Result<PathBuf> {
     let steam = find_steam_root()?;
     let vdf_path = steam.join("steamapps").join("libraryfolders.vdf");
     if !vdf_path.is_file() {
-        bail!(
-            "Steam library config not found at {}",
-            vdf_path.display()
-        );
+        bail!("Steam library config not found at {}", vdf_path.display());
     }
-    let vdf = fs::read_to_string(&vdf_path)
-        .with_context(|| format!("reading {}", vdf_path.display()))?;
+    let vdf =
+        fs::read_to_string(&vdf_path).with_context(|| format!("reading {}", vdf_path.display()))?;
     let libraries = parse_library_paths(&vdf);
     for lib in libraries {
         let common = lib.join("steamapps").join("common");
@@ -373,10 +370,7 @@ fn run_install(args: CommonArgs) -> Result<()> {
     if !args.skip_build {
         cargo_build(&cfg)?;
     } else if !cfg.built_dll.is_file() {
-        bail!(
-            "--skip-build set but no DLL at {}",
-            cfg.built_dll.display()
-        );
+        bail!("--skip-build set but no DLL at {}", cfg.built_dll.display());
     }
     let game_root = resolve_game_root(&cfg, args.game_path.as_deref())?;
     if !ue4ss_installed(&cfg, &game_root) {
@@ -386,7 +380,10 @@ fn run_install(args: CommonArgs) -> Result<()> {
             cfg.game_sub_path.display()
         );
     }
-    let mods_dir = game_root.join(&cfg.game_sub_path).join("ue4ss").join("Mods");
+    let mods_dir = game_root
+        .join(&cfg.game_sub_path)
+        .join("ue4ss")
+        .join("Mods");
     let mod_dir = mods_dir.join(&cfg.mod_folder_name);
     let dlls_dir = mod_dir.join("dlls");
     fs::create_dir_all(&dlls_dir)?;
@@ -434,7 +431,10 @@ fn run_install(args: CommonArgs) -> Result<()> {
 fn run_uninstall(args: CommonArgs) -> Result<()> {
     let cfg = read_mod_cfg(&args.package)?;
     let game_root = resolve_game_root(&cfg, args.game_path.as_deref())?;
-    let mods_dir = game_root.join(&cfg.game_sub_path).join("ue4ss").join("Mods");
+    let mods_dir = game_root
+        .join(&cfg.game_sub_path)
+        .join("ue4ss")
+        .join("Mods");
     let mod_dir = mods_dir.join(&cfg.mod_folder_name);
     if !mod_dir.is_dir() {
         println!(
@@ -457,19 +457,15 @@ fn run_package(args: CommonArgs) -> Result<()> {
         cargo_build(&cfg)?;
     }
     fs::create_dir_all(&cfg.dist_dir)?;
-    let zip_path = cfg.dist_dir.join(format!(
-        "{}-v{}.zip",
-        cfg.zip_prefix, cfg.version
-    ));
+    let zip_path = cfg
+        .dist_dir
+        .join(format!("{}-v{}.zip", cfg.zip_prefix, cfg.version));
     if zip_path.exists() {
         fs::remove_file(&zip_path)?;
     }
     println!("==> writing {}", zip_path.display());
     write_dist_zip(&cfg, &zip_path)?;
-    println!(
-        "==> done ({} bytes)",
-        fs::metadata(&zip_path)?.len()
-    );
+    println!("==> done ({} bytes)", fs::metadata(&zip_path)?.len());
     Ok(())
 }
 
@@ -488,12 +484,7 @@ fn write_dist_zip(cfg: &ModCfg, zip_path: &Path) -> Result<()> {
         .join(&cfg.mod_folder_name)
         .join("dlls");
 
-    add_file(
-        &mut w,
-        &stage_rel.join("main.dll"),
-        &cfg.built_dll,
-        opts,
-    )?;
+    add_file(&mut w, &stage_rel.join("main.dll"), &cfg.built_dll, opts)?;
     println!("    + {}/main.dll", cfg.mod_folder_name);
 
     if let Some(example) = &cfg.example_settings

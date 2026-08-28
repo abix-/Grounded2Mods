@@ -52,16 +52,12 @@ fn combinator_address_resolves_identically_via_sleuth() {
         return;
     }
     let spec = common::spec();
-    let game = GameHarness::launch(&spec, "r2_migration_combinator")
-        .expect("harness launch failed");
+    let game =
+        GameHarness::launch(&spec, "r2_migration_combinator").expect("harness launch failed");
 
     // Legacy path: hardcoded RVA -> runtime addr via targets::rebase
     // (exposed by the existing dryrun op).
-    let legacy = dryrun_addr(
-        &game,
-        "genes.ext.combinator.dryrun",
-        &["runtime_addr"],
-    );
+    let legacy = dryrun_addr(&game, "genes.ext.combinator.dryrun", &["runtime_addr"]);
 
     // R2 path: derive a signature from the legacy address (32 bytes
     // of body, masking known wildcards), feed it to sleuth.

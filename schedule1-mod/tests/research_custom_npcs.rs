@@ -23,10 +23,16 @@ fn mint_custom_npcs() {
     if ping_or_skip(&api).is_none() {
         return;
     }
-    let count = api.op("invoke_static", json!({"class": FACTORY, "method": "CustomNpcCount", "args": []}));
+    let count = api.op(
+        "invoke_static",
+        json!({"class": FACTORY, "method": "CustomNpcCount", "args": []}),
+    );
     println!("CustomNpcCount: ok={} {}", count.ok, count.result);
     if !count.ok {
-        println!("factory unreachable (S1API missing or shim stale?): {:?}", count.error);
+        println!(
+            "factory unreachable (S1API missing or shim stale?): {:?}",
+            count.error
+        );
         return;
     }
     let Some((px, py, pz)) = player_position(&api) else {
@@ -57,7 +63,12 @@ fn mint_custom_npcs() {
             }
         }
     }
-    let count = api.op("invoke_static", json!({"class": FACTORY, "method": "CustomNpcCount", "args": []}));
+    let count = api.op(
+        "invoke_static",
+        json!({"class": FACTORY, "method": "CustomNpcCount", "args": []}),
+    );
     println!("CustomNpcCount after: {}", count.result);
-    println!("OPERATOR CHECK: five new people in a line beside you (3 goons, 1 cop, 1 soldier)? Visible, solid, alive?");
+    println!(
+        "OPERATOR CHECK: five new people in a line beside you (3 goons, 1 cop, 1 soldier)? Visible, solid, alive?"
+    );
 }

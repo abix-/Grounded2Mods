@@ -12,10 +12,12 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn snapshot(game: &modforge::harness::RunningGame) -> Vec<(u64, String, f32, f32)> {
-    let v = game.op_json("gamestate.owned_horses", &json!({})).unwrap_or(Value::Null);
+    let v = game
+        .op_json("gamestate.owned_horses", &json!({}))
+        .unwrap_or(Value::Null);
     let r = v.get("result").unwrap_or(&v);
     r.get("horses")
         .and_then(Value::as_array)
@@ -24,7 +26,11 @@ fn snapshot(game: &modforge::harness::RunningGame) -> Vec<(u64, String, f32, f32
         .iter()
         .map(|h| {
             let idx = h.get("idx").and_then(Value::as_u64).unwrap_or(0);
-            let c = h.get("container").and_then(Value::as_str).unwrap_or("?").to_string();
+            let c = h
+                .get("container")
+                .and_then(Value::as_str)
+                .unwrap_or("?")
+                .to_string();
             let x = h.get("scene_x").and_then(Value::as_f64).unwrap_or(f64::NAN) as f32;
             let y = h.get("scene_y").and_then(Value::as_f64).unwrap_or(f64::NAN) as f32;
             (idx, c, x, y)
@@ -35,7 +41,9 @@ fn snapshot(game: &modforge::harness::RunningGame) -> Vec<(u64, String, f32, f32
 #[test]
 #[ignore = "manual: operator moves a horse during the 90s window"]
 fn hk1_move_verify() {
-    let Some(game) = common::launch("hk1_container_watch") else { return };
+    let Some(game) = common::launch("hk1_container_watch") else {
+        return;
+    };
 
     // Wait out the load race.
     let dl = std::time::Instant::now() + std::time::Duration::from_secs(30);
@@ -48,7 +56,9 @@ fn hk1_move_verify() {
     for (idx, c, x, y) in &last {
         eprintln!("  horse[{idx}] container={c} scene=({x}, {y})");
     }
-    eprintln!("[VERIFY] >>> NOW: enter your house, then drag a horse between trailer and pasture. Watching 90s...");
+    eprintln!(
+        "[VERIFY] >>> NOW: enter your house, then drag a horse between trailer and pasture. Watching 90s..."
+    );
 
     let end = std::time::Instant::now() + std::time::Duration::from_secs(90);
     while std::time::Instant::now() < end {
@@ -57,7 +67,9 @@ fn hk1_move_verify() {
         for (i, (idx, c, x, y)) in now.iter().enumerate() {
             if let Some((_, pc, px, py)) = last.get(i) {
                 if c != pc || (x - px).abs() > 0.01 || (y - py).abs() > 0.01 {
-                    eprintln!("[CHANGE] horse[{idx}] container {pc}->{c}  scene ({px},{py})->({x},{y})");
+                    eprintln!(
+                        "[CHANGE] horse[{idx}] container {pc}->{c}  scene ({px},{py})->({x},{y})"
+                    );
                 }
             }
         }

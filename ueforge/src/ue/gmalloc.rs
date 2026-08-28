@@ -72,12 +72,10 @@ type MallocFn = unsafe extern "system" fn(*mut c_void, usize, u32) -> *mut c_voi
 /// resolved on demand: a lazy resolve fires a fresh scan at
 /// whatever moment a mod first grows an array, which puts a
 /// rayon-backed scan on the game thread mid-frame.
-static GMALLOC_GLOBAL: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
+static GMALLOC_GLOBAL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// Set once the first allocation has been announced in the log.
-static ANNOUNCED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+static ANNOUNCED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Record the resolved `GMalloc` global. Called at init.
 pub fn set_global(addr: usize) {

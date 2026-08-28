@@ -15,7 +15,7 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn result<'a>(v: &'a Value) -> &'a Value {
     v.get("result").unwrap_or(v)
@@ -52,7 +52,9 @@ fn screen_move(game: &modforge::harness::RunningGame, x: i32, y: i32) {
 
 #[test]
 fn hk1_calibration_recon() {
-    let Some(game) = common::launch("hk1_calibration_recon") else { return };
+    let Some(game) = common::launch("hk1_calibration_recon") else {
+        return;
+    };
 
     let (bx, by) = screen_cursor(&game);
     eprintln!("baseline screen cursor: ({bx}, {by})");
@@ -97,8 +99,10 @@ fn hk1_calibration_recon() {
             }
         }
     } else {
-        eprintln!("[INFO] LOC cursor unreadable at baseline; \
-likely no save loaded. Re-run with a save active.");
+        eprintln!(
+            "[INFO] LOC cursor unreadable at baseline; \
+likely no save loaded. Re-run with a save active."
+        );
     }
 
     eprintln!("[RECON] hk1_calibration_recon complete; see deltas above");

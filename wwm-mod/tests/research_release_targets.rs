@@ -33,13 +33,23 @@ const DECLARED_TARGETS: &[(&str, &str, &str)] = &[
     ("greedy_miner", "MineDataSO", "_oreValue"),
     ("quick_pickaxe", "DigManager", "_digRange"),
     ("charisma", "WorkersManager", "_hireCostMultiplier"),
-    ("resilient", "PlayerStaminaController", "_staminaDrainMultiplier"),
-    ("slot_key", "GameSerializationSystem", "_currentLoadedSaveNumber"),
+    (
+        "resilient",
+        "PlayerStaminaController",
+        "_staminaDrainMultiplier",
+    ),
+    (
+        "slot_key",
+        "GameSerializationSystem",
+        "_currentLoadedSaveNumber",
+    ),
 ];
 
 /// Harmony postfix targets from skills.rs::install_hooks.
-const HOOK_TARGETS: &[(&str, &str)] =
-    &[("DigManager", "Dig"), ("PlayerManager", "AddPlayerCurrency")];
+const HOOK_TARGETS: &[(&str, &str)] = &[
+    ("DigManager", "Dig"),
+    ("PlayerManager", "AddPlayerCurrency"),
+];
 
 /// Managers First Gun introduced or kept (research doc 11.3).
 const MANAGERS: &[&str] = &[
@@ -76,7 +86,10 @@ fn control_plane_answers() {
     // every survival verdict below is meaningless.
     let bogus = api.op("walk_class", json!({"class": "NoSuchClassZzz"}));
     println!("bogus walk_class ok={} err={:?}", bogus.ok, bogus.error);
-    assert!(!bogus.ok, "walk_class accepts unknown classes; survival checks are unreliable");
+    assert!(
+        !bogus.ok,
+        "walk_class accepts unknown classes; survival checks are unreliable"
+    );
 }
 
 #[test]
@@ -91,7 +104,11 @@ fn declared_effect_targets() {
     for (skill, class, field) in DECLARED_TARGETS {
         println!("{skill}:");
         if let Err(e) = try_walk(&api, class) {
-            let verdict = if is_type_not_found(&e) { "CLASS GONE" } else { "WALK FAILED" };
+            let verdict = if is_type_not_found(&e) {
+                "CLASS GONE"
+            } else {
+                "WALK FAILED"
+            };
             println!("  {class}: {verdict} ({e})");
             continue;
         }
@@ -99,7 +116,10 @@ fn declared_effect_targets() {
             alive += 1;
         }
     }
-    println!("{alive}/{} declared targets readable", DECLARED_TARGETS.len());
+    println!(
+        "{alive}/{} declared targets readable",
+        DECLARED_TARGETS.len()
+    );
 }
 
 #[test]
@@ -126,7 +146,10 @@ fn harmony_hook_targets() {
                         .unwrap_or(&empty)
                         .iter()
                         .any(|m| m["name"].as_str() == Some(method));
-                    println!("  {method}: {}", if listed { "present" } else { "NOT LISTED" });
+                    println!(
+                        "  {method}: {}",
+                        if listed { "present" } else { "NOT LISTED" }
+                    );
                 } else {
                     println!("  list_methods unavailable: {:?}", methods.error);
                 }
@@ -152,8 +175,16 @@ fn resolve_and_singleton() {
     }
 
     println!("=== raw walk_class (namespace + instances) ===");
-    for class in ["DigManager", "PlayerManager", "SkillsManager", "GameSerializationSystem"] {
-        let r = api.op("walk_class", json!({"class": class, "include_inactive": true}));
+    for class in [
+        "DigManager",
+        "PlayerManager",
+        "SkillsManager",
+        "GameSerializationSystem",
+    ] {
+        let r = api.op(
+            "walk_class",
+            json!({"class": class, "include_inactive": true}),
+        );
         println!("{class}: ok={} result={}", r.ok, r.result);
     }
 

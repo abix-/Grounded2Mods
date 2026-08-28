@@ -25,9 +25,9 @@ use crate::scene;
 /// Details panel. State is global across horses so that flipping
 /// between horses keeps the strip layout stable.
 struct HorseyOverlay {
-    expanded_row:      Option<usize>,
+    expanded_row: Option<usize>,
     collapsed_chromos: HashSet<u8>,
-    ext_collapsed:     bool,
+    ext_collapsed: bool,
 }
 
 impl ImguiRenderLoop for HorseyOverlay {
@@ -107,7 +107,9 @@ fn render_horses(
     const MAX_ROWS: usize = 32;
     let shown = owned.min(MAX_ROWS);
     for i in 0..shown {
-        let Some(p) = gamestate::owned_horse_ptr(i) else { continue };
+        let Some(p) = gamestate::owned_horse_ptr(i) else {
+            continue;
+        };
         let name_id = horse::name_id(p).unwrap_or(0);
         let name = horse::name(p).unwrap_or_else(|| format!("#{name_id}"));
         let age = horse::age(p).unwrap_or(-1);
@@ -115,12 +117,18 @@ fn render_horses(
         let skill = horse::skill(p).unwrap_or(-1);
 
         let is_expanded = *expanded == Some(i);
-        let label = if is_expanded { format!("[-]##h{i}") } else { format!("[+]##h{i}") };
+        let label = if is_expanded {
+            format!("[-]##h{i}")
+        } else {
+            format!("[+]##h{i}")
+        };
         if ui.button(&label) {
             *expanded = if is_expanded { None } else { Some(i) };
         }
         ui.same_line();
-        ui.text(format!("{i:>2}  {name:<16}  age {age:>3}/{max_age:<3}  skill {skill:>4}"));
+        ui.text(format!(
+            "{i:>2}  {name:<16}  age {age:>3}/{max_age:<3}  skill {skill:>4}"
+        ));
 
         if is_expanded {
             render_horse_details(ui, i, p, collapsed_chromos, ext_collapsed);
@@ -173,11 +181,20 @@ fn render_horse_details(
     {
         use crate::hk1;
         let t = hk1::load_targets();
-        let truck_s = t.truck.map(|(x, y)| format!("({x:.1},{y:.1})")).unwrap_or("(unset)".into());
-        let pasture_s = t.pasture.map(|(x, y)| format!("({x:.1},{y:.1})")).unwrap_or("(unset)".into());
+        let truck_s = t
+            .truck
+            .map(|(x, y)| format!("({x:.1},{y:.1})"))
+            .unwrap_or("(unset)".into());
+        let pasture_s = t
+            .pasture
+            .map(|(x, y)| format!("({x:.1},{y:.1})"))
+            .unwrap_or("(unset)".into());
         let cursor_s = hk1::read_cursor()
-            .map(|(x, y)| format!("({x:.1},{y:.1})")).unwrap_or("(unreadable)".into());
-        ui.text(format!("HK1 calibration: truck={truck_s}  pasture={pasture_s}"));
+            .map(|(x, y)| format!("({x:.1},{y:.1})"))
+            .unwrap_or("(unreadable)".into());
+        ui.text(format!(
+            "HK1 calibration: truck={truck_s}  pasture={pasture_s}"
+        ));
         ui.text(format!("    in-game cursor now: {cursor_s}"));
         if ui.small_button(&format!("Save cursor as TRUCK##hk1_calT_{row_idx}")) {
             hk1::snapshot_here(&format!("cal_truck_pre name='{name}'"), horse_ptr);
@@ -245,34 +262,58 @@ fn render_horse_details(
     if chromos.is_empty() {
         ui.text_disabled("(chromosome table not yet resolved -- falling back to flat layout)");
     }
-    ui.text(format!("VANILLA  ({} chromosomes, click to cycle 0->1->2->3->0)", chromos.len()));
+    ui.text(format!(
+        "VANILLA  ({} chromosomes, click to cycle 0->1->2->3->0)",
+        chromos.len()
+    ));
 
     for chromo in chromos {
         let cid = chromo.id;
         let is_collapsed = collapsed_chromos.contains(&cid);
         let toggle_label = if is_collapsed {
-            format!("[>] c{cid:<2} ({} genes)##chr_{row_idx}_{cid}", chromo.slots.len())
+            format!(
+                "[>] c{cid:<2} ({} genes)##chr_{row_idx}_{cid}",
+                chromo.slots.len()
+            )
         } else {
-            format!("[v] c{cid:<2} ({} genes)##chr_{row_idx}_{cid}", chromo.slots.len())
+            format!(
+                "[v] c{cid:<2} ({} genes)##chr_{row_idx}_{cid}",
+                chromo.slots.len()
+            )
         };
         if ui.small_button(&toggle_label) {
-            if is_collapsed { collapsed_chromos.remove(&cid); }
-            else { collapsed_chromos.insert(cid); }
+            if is_collapsed {
+                collapsed_chromos.remove(&cid);
+            } else {
+                collapsed_chromos.insert(cid);
+            }
         }
         // Show a comma-separated preview of the genes on this
         // chromosome next to its header (works whether expanded or
         // not). Useful as a one-glance chromosome identifier.
         ui.same_line();
-        let preview = chromo.slots.iter()
-            .map(|&flat| crate::gene_names::vanilla_gene_name(flat)
-                .unwrap_or("?").to_string())
+        let preview = chromo
+            .slots
+            .iter()
+            .map(|&flat| {
+                crate::gene_names::vanilla_gene_name(flat)
+                    .unwrap_or("?")
+                    .to_string()
+            })
             .collect::<Vec<_>>()
             .join(", ");
         ui.text_disabled(format!(" {preview}"));
         if !is_collapsed {
-            render_chromo_strip(ui, row_idx, cid, &chromo.slots, &vanilla, |flat, new_val| {
-                horse::set_vanilla_allele(horse_ptr, flat as usize, new_val);
-            });
+            render_chromo_strip(
+                ui,
+                row_idx,
+                cid,
+                &chromo.slots,
+                &vanilla,
+                |flat, new_val| {
+                    horse::set_vanilla_allele(horse_ptr, flat as usize, new_val);
+                },
+            );
         }
     }
 
@@ -372,7 +413,8 @@ fn render_matrix(ui: &Ui) {
     }
     ui.text(format!(
         "{owned} horses x 480 alleles  (vanilla = {} chromosomes, ext = {} flat)",
-        chromos.len(), EXT_GENE_COUNT
+        chromos.len(),
+        EXT_GENE_COUNT
     ));
     ui.text_disabled("hover for name, click to cycle 0->1->2->3->0");
     ui.separator();
@@ -389,7 +431,9 @@ fn render_matrix(ui: &Ui) {
         .build(|| {
             let dl = ui.get_window_draw_list();
             for i in 0..owned {
-                let Some(p) = gamestate::owned_horse_ptr(i) else { continue };
+                let Some(p) = gamestate::owned_horse_ptr(i) else {
+                    continue;
+                };
                 let name_id = horse::name_id(p).unwrap_or(0);
                 let name = horse::name(p).unwrap_or_else(|| format!("#{name_id}"));
 
@@ -406,18 +450,12 @@ fn render_matrix(ui: &Ui) {
                         let tier = vanilla[flat as usize].min(3);
                         let pos = ui.cursor_screen_pos();
                         let color = tier_color(tier);
-                        dl.add_rect(
-                            pos,
-                            [pos[0] + CELL_W, pos[1] + CELL_H],
-                            color,
-                        ).filled(true).build();
-                        let _ = ui.invisible_button(
-                            format!("vc_{i}_{flat}"),
-                            [CELL_W, CELL_H],
-                        );
+                        dl.add_rect(pos, [pos[0] + CELL_W, pos[1] + CELL_H], color)
+                            .filled(true)
+                            .build();
+                        let _ = ui.invisible_button(format!("vc_{i}_{flat}"), [CELL_W, CELL_H]);
                         if ui.is_item_hovered() {
-                            let gname = gene_names::vanilla_gene_name(flat)
-                                .unwrap_or("?");
+                            let gname = gene_names::vanilla_gene_name(flat).unwrap_or("?");
                             ui.tooltip(|| {
                                 ui.text(format!("{name} . {gname}  (c{}, tier {tier})", chromo.id));
                             });
@@ -440,17 +478,13 @@ fn render_matrix(ui: &Ui) {
                 let horse_id = p as u64;
                 for ext_idx in 0..EXT_GENE_COUNT {
                     let tier = genes::get_horse_ext_alleles(horse_id, ext_idx)
-                        .map(|(m, _)| m.min(3)).unwrap_or(0);
+                        .map(|(m, _)| m.min(3))
+                        .unwrap_or(0);
                     let pos = ui.cursor_screen_pos();
-                    dl.add_rect(
-                        pos,
-                        [pos[0] + CELL_W, pos[1] + CELL_H],
-                        tier_color(tier),
-                    ).filled(true).build();
-                    let _ = ui.invisible_button(
-                        format!("ec_{i}_{ext_idx}"),
-                        [CELL_W, CELL_H],
-                    );
+                    dl.add_rect(pos, [pos[0] + CELL_W, pos[1] + CELL_H], tier_color(tier))
+                        .filled(true)
+                        .build();
+                    let _ = ui.invisible_button(format!("ec_{i}_{ext_idx}"), [CELL_W, CELL_H]);
                     if ui.is_item_hovered() {
                         ui.tooltip(|| {
                             ui.text(format!("{name} . ext[{ext_idx}]  (tier {tier})"));
@@ -491,29 +525,49 @@ fn render_debug(ui: &Ui) {
     ui.separator();
     let money = gamestate::money().unwrap_or(0);
     ui.text(format!("Money:  ${money}"));
-    if ui.button("+1k")          { gamestate::set_money(money.saturating_add(1_000)); }
+    if ui.button("+1k") {
+        gamestate::set_money(money.saturating_add(1_000));
+    }
     ui.same_line();
-    if ui.button("+10k")         { gamestate::set_money(money.saturating_add(10_000)); }
+    if ui.button("+10k") {
+        gamestate::set_money(money.saturating_add(10_000));
+    }
     ui.same_line();
-    if ui.button("+100k")        { gamestate::set_money(money.saturating_add(100_000)); }
+    if ui.button("+100k") {
+        gamestate::set_money(money.saturating_add(100_000));
+    }
     ui.same_line();
-    if ui.button("+1M")          { gamestate::set_money(money.saturating_add(1_000_000)); }
+    if ui.button("+1M") {
+        gamestate::set_money(money.saturating_add(1_000_000));
+    }
     ui.same_line();
-    if ui.button("MAX")          { gamestate::set_money(99_999_999); }
+    if ui.button("MAX") {
+        gamestate::set_money(99_999_999);
+    }
     ui.same_line();
-    if ui.button("zero##money")  { gamestate::set_money(0); }
+    if ui.button("zero##money") {
+        gamestate::set_money(0);
+    }
 
     // --- Time ---
     ui.separator();
     let year = gamestate::year().unwrap_or(0);
     ui.text(format!("Year:   {} (raw {year})", year + 1));
-    if ui.button("Year +1")  { gamestate::set_year(year.saturating_add(1)); }
+    if ui.button("Year +1") {
+        gamestate::set_year(year.saturating_add(1));
+    }
     ui.same_line();
-    if ui.button("Year +10") { gamestate::set_year(year.saturating_add(10)); }
+    if ui.button("Year +10") {
+        gamestate::set_year(year.saturating_add(10));
+    }
     ui.same_line();
-    if ui.button("Year -1")  { gamestate::set_year(year.saturating_sub(1)); }
+    if ui.button("Year -1") {
+        gamestate::set_year(year.saturating_sub(1));
+    }
     ui.same_line();
-    if ui.button("Year = 0") { gamestate::set_year(0); }
+    if ui.button("Year = 0") {
+        gamestate::set_year(0);
+    }
 
     let sleeps = gamestate::sleeps().unwrap_or(0);
     ui.text(format!("Sleeps: {sleeps}"));
@@ -564,7 +618,9 @@ fn render_where_am_i(ui: &Ui) {
             let label = scene::scene_id_label(id).unwrap_or("(unmapped scene_id)");
             ui.text(format!("active_scene_id: {id} ({})", label));
             if id == 21 {
-                ui.text_disabled("  ^ if you are currently AT YOUR HOUSE, this confirms scene 21 = Stable!");
+                ui.text_disabled(
+                    "  ^ if you are currently AT YOUR HOUSE, this confirms scene 21 = Stable!",
+                );
             }
         }
         None => ui.text_disabled("active_scene_id: (unreadable -- no save loaded?)"),
@@ -626,10 +682,11 @@ fn render_where_am_i(ui: &Ui) {
 
     // --- Tile scale + truck tile ---
     if let Some(s) = scene::tile_scale() {
-        ui.text(format!("tile_scale (DAT_140303fb4): {s} (1/{:.0})", 1.0 / s));
-        if let Some((tx, ty)) = scene::truck_pos()
-            .and_then(|(x, y)| scene::pos_to_tile(x, y))
-        {
+        ui.text(format!(
+            "tile_scale (DAT_140303fb4): {s} (1/{:.0})",
+            1.0 / s
+        ));
+        if let Some((tx, ty)) = scene::truck_pos().and_then(|(x, y)| scene::pos_to_tile(x, y)) {
             ui.text(format!("truck tile (scaled): ({tx}, {ty})"));
         }
     } else {
@@ -660,9 +717,7 @@ fn invoke_exit_to_overworld() {
         modforge::log!("overlay: exit_to_overworld -- already overworld; skipping");
         return;
     }
-    let invoker = modforge::vanilla::Invoker::new(
-        &crate::targets_registry::HORSEY_RESOLVER,
-    );
+    let invoker = modforge::vanilla::Invoker::new(&crate::targets_registry::HORSEY_RESOLVER);
     match invoker.call(
         "EXIT_TO_OVERWORLD",
         &[modforge::vanilla::ArgValue::Ptr(gs as u64)],
@@ -678,9 +733,9 @@ fn invoke_exit_to_overworld() {
 /// Install the overlay. Idempotent.
 pub fn arm() -> Result<(), String> {
     overlay::arm(HorseyOverlay {
-        expanded_row:      None,
+        expanded_row: None,
         collapsed_chromos: HashSet::new(),
-        ext_collapsed:     false,
+        ext_collapsed: false,
     })
 }
 

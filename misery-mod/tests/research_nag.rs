@@ -33,7 +33,10 @@ fn nag_class_detail() {
     assert!(r.ok, "nag_stats failed: {:?}", r.error);
     println!("present: {}", r.result["present"]);
     println!("hooked:  {}", r.result["hooked"]);
-    let fns = r.result["functions"].as_array().cloned().unwrap_or_default();
+    let fns = r.result["functions"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     println!("{} function(s) on {NAG}:", fns.len());
     for f in &fns {
         println!("  {}", f.as_str().unwrap_or("?"));
@@ -53,9 +56,15 @@ fn widgets_on_screen() {
     // /Game/....WidgetTree; the ones actually created and on
     // screen live under /Engine/Transient. Only the latter
     // matter for what the player is looking at.
-    let r = api.op("walk_class_chain", json!({"needle": "UserWidget", "max": 400}));
+    let r = api.op(
+        "walk_class_chain",
+        json!({"needle": "UserWidget", "max": 400}),
+    );
     assert!(r.ok, "walk failed: {:?}", r.error);
-    let all = r.result["instances"].as_array().cloned().unwrap_or_default();
+    let all = r.result["instances"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     let live: Vec<&serde_json::Value> = all
         .iter()
         .filter(|w| {
@@ -91,7 +100,10 @@ fn nag_state() {
     println!("notice at {}", w.addr_selector);
     let r = api.op("inspect_address", json!({"addr": w.addr}));
     if r.ok {
-        println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&r.result).unwrap_or_default()
+        );
     } else {
         println!("inspect failed: {:?}", r.error);
     }

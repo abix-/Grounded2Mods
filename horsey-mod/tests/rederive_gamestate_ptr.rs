@@ -17,7 +17,7 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Parse the first `n` bytes of a `"e8 c1 .. .."` hex string as a
 /// little-endian unsigned integer (how Horsey stores pointers/ints).
@@ -35,7 +35,10 @@ fn le_from_hex(hex: &str, n: usize) -> u64 {
 
 fn read_le(game: &modforge::harness::RunningGame, addr_va: u64, n: usize) -> Option<u64> {
     let v = game
-        .op_json("patterns.read_bytes", &json!({"addr": format!("0x{addr_va:x}"), "n": n}))
+        .op_json(
+            "patterns.read_bytes",
+            &json!({"addr": format!("0x{addr_va:x}"), "n": n}),
+        )
         .ok()?;
     let r = v.get("result").unwrap_or(&v);
     let hex = r.get("bytes").and_then(Value::as_str)?;
@@ -48,11 +51,16 @@ fn heap_shaped(p: u64) -> bool {
 
 #[test]
 fn rederive_gamestate_ptr() {
-    let Some(game) = common::launch("rederive_gamestate_ptr") else { return };
+    let Some(game) = common::launch("rederive_gamestate_ptr") else {
+        return;
+    };
 
     // --- 1. Binary identity (did Steam patch the game?) ---
     match game.op_json("game.build_info", &json!({})) {
-        Ok(info) => eprintln!("[BUILD_INFO] {}", serde_json::to_string_pretty(&info).unwrap()),
+        Ok(info) => eprintln!(
+            "[BUILD_INFO] {}",
+            serde_json::to_string_pretty(&info).unwrap()
+        ),
         Err(e) => eprintln!("[BUILD_INFO] op failed: {e}"),
     }
 
@@ -61,9 +69,15 @@ fn rederive_gamestate_ptr() {
         .op_json("targets.resolve.gamestate_ptr", &json!({}))
         .expect("resolve op");
     let r = res.get("result").unwrap_or(&res);
-    eprintln!("[RESOLVE current] {}", serde_json::to_string_pretty(r).unwrap());
+    eprintln!(
+        "[RESOLVE current] {}",
+        serde_json::to_string_pretty(r).unwrap()
+    );
     let image_base = u64::from_str_radix(
-        r.get("image_base").and_then(Value::as_str).unwrap_or("0x0").trim_start_matches("0x"),
+        r.get("image_base")
+            .and_then(Value::as_str)
+            .unwrap_or("0x0")
+            .trim_start_matches("0x"),
         16,
     )
     .unwrap_or(0);
@@ -82,7 +96,11 @@ fn rederive_gamestate_ptr() {
         )
         .expect("scan_all op");
     let s = scan.get("result").unwrap_or(&scan);
-    let hits = s.get("hits").and_then(Value::as_array).cloned().unwrap_or_default();
+    let hits = s
+        .get("hits")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
     eprintln!("[SCAN] {} hit(s) for the world-root store sig", hits.len());
 
     if hits.is_empty() {
@@ -96,7 +114,10 @@ fn rederive_gamestate_ptr() {
     let mut winners: Vec<u64> = Vec::new();
     for (i, h) in hits.iter().enumerate() {
         let instr = h.get("instr_addr").and_then(Value::as_str).unwrap_or("?");
-        let target = h.get("decoded_target").and_then(Value::as_str).unwrap_or("0x0");
+        let target = h
+            .get("decoded_target")
+            .and_then(Value::as_str)
+            .unwrap_or("0x0");
         let ctx = h.get("context_hex").and_then(Value::as_str).unwrap_or("");
         let slot_va = u64::from_str_radix(target.trim_start_matches("0x"), 16).unwrap_or(0);
         let slot_rva = slot_va.wrapping_sub(image_base);
@@ -123,7 +144,9 @@ fn rederive_gamestate_ptr() {
         );
         eprintln!(
             "         scene_table(+0x438) = {} (heap-shaped={st_ok})",
-            scene_table.map(|v| format!("0x{v:x}")).unwrap_or_else(|| "<unreadable>".into())
+            scene_table
+                .map(|v| format!("0x{v:x}"))
+                .unwrap_or_else(|| "<unreadable>".into())
         );
         if asid_ok && st_ok {
             eprintln!("         -> STRUCTURALLY VALID. new GAMESTATE_PTR RVA = 0x{slot_rva:x}");
@@ -136,7 +159,12 @@ fn rederive_gamestate_ptr() {
             "[VERDICT] unique structurally-valid slot. Bake into targets_registry::GAMESTATE_PTR.hint_rva \
              and targets::GAMESTATE_PTR: 0x1{rva:08x} (RVA 0x{rva:x})"
         ),
-        [] => eprintln!("[VERDICT] pattern matched but no hit passed structural validation -- investigate."),
-        many => eprintln!("[VERDICT] {} structurally-valid slots; need a tighter anchor: {many:x?}", many.len()),
+        [] => eprintln!(
+            "[VERDICT] pattern matched but no hit passed structural validation -- investigate."
+        ),
+        many => eprintln!(
+            "[VERDICT] {} structurally-valid slots; need a tighter anchor: {many:x?}",
+            many.len()
+        ),
     }
 }

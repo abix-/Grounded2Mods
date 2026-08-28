@@ -42,8 +42,7 @@ use std::sync::atomic::Ordering;
 use parking_lot::Mutex;
 
 use super::process_event::{
-    HookDef, ProcessEventHook, SHUTTING_DOWN, installed_defs, leaked_entry_count,
-    panic_count_total,
+    HookDef, ProcessEventHook, SHUTTING_DOWN, installed_defs, leaked_entry_count, panic_count_total,
 };
 
 /// The `<Subject>Registry` for the hook subsystem. Owns the

@@ -45,7 +45,10 @@ fn set_dig_radius() {
         return;
     };
     let name = tool.result["name"].as_str().unwrap_or("?").to_string();
-    let data = api.op("invoke_method", json!({"handle": th, "method": "GetToolData", "args": []}));
+    let data = api.op(
+        "invoke_method",
+        json!({"handle": th, "method": "GetToolData", "args": []}),
+    );
     let Some(dh) = handle_of(&data.result) else {
         println!("no tool data: {}", data.result);
         return;
@@ -54,10 +57,17 @@ fn set_dig_radius() {
     let before = api.op("read_field", json!({"handle": dh, "field": "radius"}));
     println!("{name}: radius before = {}", before.result);
 
-    let write = api.op("write_field", json!({"handle": dh, "field": "radius", "value": want}));
+    let write = api.op(
+        "write_field",
+        json!({"handle": dh, "field": "radius", "value": want}),
+    );
     assert!(write.ok, "write_field failed: {:?}", write.error);
 
     let after = api.op("read_field", json!({"handle": dh, "field": "radius"}));
     println!("{name}: radius after  = {}", after.result);
-    assert_eq!(after.result.as_f64(), Some(want), "radius did not take the new value");
+    assert_eq!(
+        after.result.as_f64(),
+        Some(want),
+        "radius did not take the new value"
+    );
 }

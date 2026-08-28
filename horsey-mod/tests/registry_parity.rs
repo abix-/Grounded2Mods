@@ -16,25 +16,33 @@ use modforge::testkit::registry as r_tests;
 
 #[test]
 fn every_target_in_registry_resolves() {
-    let Some(game) = common::launch("registry_resolves") else { return };
+    let Some(game) = common::launch("registry_resolves") else {
+        return;
+    };
     r_tests::assert_every_target_resolves(&game, &HORSEY_TARGETS, &HORSEY_RESOLVER);
 }
 
 #[test]
 fn every_target_passes_validators() {
-    let Some(game) = common::launch("registry_validators") else { return };
+    let Some(game) = common::launch("registry_validators") else {
+        return;
+    };
     r_tests::assert_every_target_passes_validators(&game, &HORSEY_TARGETS, &HORSEY_RESOLVER);
 }
 
 #[test]
 fn every_field_offset_matches_hint() {
-    let Some(game) = common::launch("registry_field_offsets") else { return };
+    let Some(game) = common::launch("registry_field_offsets") else {
+        return;
+    };
     r_tests::assert_every_field_offset_matches_hint(&game, &HORSEY_TARGETS, &HORSEY_RESOLVER);
 }
 
 #[test]
 fn diagnostic_includes_every_entry() {
-    let Some(game) = common::launch("registry_diagnostic") else { return };
+    let Some(game) = common::launch("registry_diagnostic") else {
+        return;
+    };
     r_tests::assert_diagnostic_includes_every_entry(&game, &HORSEY_TARGETS, &HORSEY_RESOLVER);
 }
 
@@ -44,7 +52,9 @@ fn diagnostic_includes_every_entry() {
 /// paths coexist.
 #[test]
 fn registry_gamestate_ptr_matches_legacy_resolver() {
-    let Some(_game) = common::launch("registry_gamestate_parity") else { return };
+    let Some(_game) = common::launch("registry_gamestate_parity") else {
+        return;
+    };
 
     let registry_value = HORSEY_RESOLVER.resolve("GAMESTATE_PTR");
     let legacy_value = resolve::gamestate_ptr();
@@ -54,19 +64,23 @@ fn registry_gamestate_ptr_matches_legacy_resolver() {
 
     match (registry_value, legacy_value) {
         (Some(r), Some(l)) => {
-            assert_eq!(r as usize, l,
-                "registry resolved 0x{r:x}, legacy resolved 0x{l:x}");
+            assert_eq!(
+                r as usize, l,
+                "registry resolved 0x{r:x}, legacy resolved 0x{l:x}"
+            );
         }
         (None, None) => {
             // Both paths failed. Acceptable as long as the hint
             // fallback was tried; the registry should at minimum
             // report from_hint=true.
             let resolved = HORSEY_RESOLVER.resolve_all();
-            eprintln!("both paths failed; registry log: {:?}",
-                resolved.get("GAMESTATE_PTR").map(|r| r.validation_log.clone()));
+            eprintln!(
+                "both paths failed; registry log: {:?}",
+                resolved
+                    .get("GAMESTATE_PTR")
+                    .map(|r| r.validation_log.clone())
+            );
         }
-        (r, l) => panic!(
-            "registry/legacy disagree: registry={r:?} legacy={l:?}"
-        ),
+        (r, l) => panic!("registry/legacy disagree: registry={r:?} legacy={l:?}"),
     }
 }

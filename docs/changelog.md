@@ -40,6 +40,14 @@ Newest first.
 
 | System | Item | Done when |
 |---|---|---|
+| Workspace Rust | [x] Apply the current formatter consistently across every workspace crate | `k3sc cargo-lock fmt --all` completes and `k3sc cargo-lock check --workspace --all-targets` passes. |
+| `modforge::route` | [x] Replace the waypoint graph and its second A* with one ordered route | `Route` contains only ordered waypoints and actions; the graph types and waypoint-graph search no longer exist. |
+| `modforge::route` | [x] Separate the shared path, path point, and player observation from waypoints | Tests prove path points are not waypoints and player observations carry position, yaw, and pitch. |
+| `modforge::route` | [x] Make the shared bot return only virtual W/A/S/D state and relative mouse movement | Bot tests prove travel, arrival, stuck detection, cancellation, and release of all four movement keys. |
+| `modforge::route` | [x] Remove the old path execution code and replace it with the shared bot | MISERY gives Unreal path points and player observations to the shared bot, then sends the returned player commands. |
+| Ueforge and Unityforge input | [x] Accept the same ordered Modforge player commands without engine-specific steering | Ueforge and Unityforge tests prove each engine connection receives the shared command batch unchanged. |
+| Ueforge and MISERY input | [x] Reject production paths that move, look, interact, or write transforms directly | The permanent source test reads the actual production files and rejects every named bypass. |
+| Unityforge bot navigation | [x] Add Unity main-thread connections for the shared path and player-observation formats | Unityforge tests return a shared path and observation through its real main-thread queue. |
 | `ueforge::ue::actor` | [x] Add cached Unreal world actor enumeration and actor component lookup without walking the global UObject list | Unit tests validate both reflected parameter layouts, Ueforge reuses the resolved classes, functions, layouts, and actor output buffer, and the live MISERY diagnostic selected a real `BP_WoodenCrate2_C` through `GetAllActorsOfClass`. |
 | MISERY navigation | [x] Reject an engine-complete loot-box route when observed movement stops making progress | The live diagnostic rejected a 6575.8 cm complete navigation path after movement stopped 773.5 cm from the selected crate instead of treating the engine result as successful traversal. |
 | `modforge::route` | [x] Distill MISERY spawn-to-expedition travel into exactly three durable stop waypoints with player-like door interaction | A cold live run saved three waypoints and two travel steps, opened the closed bunker metal door once, entered the expedition with one targeted `E` keypress, and completed in 23.94 seconds with 75 debug positions kept outside the route. |

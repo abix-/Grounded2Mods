@@ -33,7 +33,7 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const ROSTER_STRIDE: usize = 0x24;
 const SUB_STRUCT_OFF: usize = 0x438;
@@ -112,10 +112,15 @@ fn investigate_roster_and_live_chain() {
         .and_then(Value::as_str)
         .expect("diag missing ptr");
     let gs_ptr = parse_hex(gs_ptr_s);
-    assert!(heap_shaped(gs_ptr as u64), "GameState ptr not heap-shaped: {gs_ptr_s}");
+    assert!(
+        heap_shaped(gs_ptr as u64),
+        "GameState ptr not heap-shaped: {gs_ptr_s}"
+    );
     eprintln!("\n=== GameState @ 0x{gs_ptr:x} ===");
 
-    let roster = result.get("roster_0x280_0x288").expect("diag missing roster");
+    let roster = result
+        .get("roster_0x280_0x288")
+        .expect("diag missing roster");
     let r_begin = parse_hex(roster.get("begin").and_then(Value::as_str).unwrap());
     let r_end = parse_hex(roster.get("end").and_then(Value::as_str).unwrap());
     let span = r_end.saturating_sub(r_begin);
@@ -125,7 +130,10 @@ fn investigate_roster_and_live_chain() {
     );
 
     // --- Step 2: dump each 36-byte roster entry ---
-    assert!(count > 0, "roster is empty; load a save before running this test");
+    assert!(
+        count > 0,
+        "roster is empty; load a save before running this test"
+    );
     let entry_bytes = read_bytes_must(&game, r_begin, count * ROSTER_STRIDE);
     assert_eq!(entry_bytes.len(), count * ROSTER_STRIDE);
 
@@ -201,9 +209,7 @@ fn investigate_roster_and_live_chain() {
             off += 8;
         }
         for (off, b, e, n) in &found_pairs {
-            eprintln!(
-                "  pair@+0x{off:03x}: begin=0x{b:x} end=0x{e:x} count={n}",
-            );
+            eprintln!("  pair@+0x{off:03x}: begin=0x{b:x} end=0x{e:x} count={n}",);
             if expected_owned == Some(*n) {
                 eprintln!(
                     "  ^^^ MATCH: count == HORSEY_EXPECT_OWNED ({n}). Likely live-horse vector at *(GS+0x438)+0x{off:x}"

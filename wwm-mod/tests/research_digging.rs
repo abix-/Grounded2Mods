@@ -30,7 +30,10 @@ fn global_digging_settings() {
         println!("DiggingSettingsManager: no live instance");
         return;
     };
-    let settings = api.op("read_field", json!({"handle": mgr, "field": "diggingSettings"}));
+    let settings = api.op(
+        "read_field",
+        json!({"handle": mgr, "field": "diggingSettings"}),
+    );
     let Some(sh) = handle_of(&settings.result) else {
         println!("no diggingSettings handle: {}", settings.result);
         return;
@@ -58,7 +61,10 @@ fn current_dig_tool() {
     let Some(th) = handle_of(&tool.result) else {
         return;
     };
-    let data = api.op("invoke_method", json!({"handle": th, "method": "GetToolData", "args": []}));
+    let data = api.op(
+        "invoke_method",
+        json!({"handle": th, "method": "GetToolData", "args": []}),
+    );
     let Some(dh) = handle_of(&data.result) else {
         println!("no tool data handle: {}", data.result);
         return;

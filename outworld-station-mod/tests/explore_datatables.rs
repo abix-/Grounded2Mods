@@ -25,7 +25,10 @@ fn list_all_datatables() {
         json!({ "class": "DataTable", "max": 10000, "include_cdo": false }),
     );
     if !r.ok {
-        eprintln!("walk_class failed: {:?} (offsets not filled in yet?)", r.error);
+        eprintln!(
+            "walk_class failed: {:?} (offsets not filled in yet?)",
+            r.error
+        );
         return;
     }
     let total = r.result["total"].as_u64().unwrap_or(0);

@@ -11,11 +11,13 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 #[test]
 fn gamestate_resolver_is_alive() {
-    let Some(game) = common::launch("gamestate_resolver_lives") else { return };
+    let Some(game) = common::launch("gamestate_resolver_lives") else {
+        return;
+    };
 
     // The save auto-loads on launch, but the HTTP plane comes up
     // DURING the load: there is a brief window where GAMESTATE_PTR's
@@ -25,7 +27,9 @@ fn gamestate_resolver_is_alive() {
     // t=0 reads the empty slot and false-fails. That exact early
     // read got misdiagnosed as an address drift once.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    let mut v = game.op_json("targets.resolve.gamestate_ptr", &json!({})).expect("resolve op");
+    let mut v = game
+        .op_json("targets.resolve.gamestate_ptr", &json!({}))
+        .expect("resolve op");
     loop {
         let loaded = v
             .get("result")
@@ -37,7 +41,9 @@ fn gamestate_resolver_is_alive() {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(250));
-        v = game.op_json("targets.resolve.gamestate_ptr", &json!({})).expect("resolve op");
+        v = game
+            .op_json("targets.resolve.gamestate_ptr", &json!({}))
+            .expect("resolve op");
     }
     let r = v.get("result").unwrap_or(&v);
     eprintln!("[RESOLVE] {}", serde_json::to_string_pretty(r).unwrap());
@@ -55,5 +61,8 @@ fn gamestate_resolver_is_alive() {
         let n = h.get("name").and_then(Value::as_str).unwrap_or("?");
         eprintln!("  - {n}");
     }
-    assert!(!owned.is_empty(), "owned_horses empty -- GS deref worked but horse list reader broke");
+    assert!(
+        !owned.is_empty(),
+        "owned_horses empty -- GS deref worked but horse list reader broke"
+    );
 }

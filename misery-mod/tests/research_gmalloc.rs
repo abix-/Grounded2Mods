@@ -55,9 +55,15 @@ fn the_image_says_which_slot_malloc_is() {
         println!("measure_malloc_slot failed: {:?}", r.error);
         return;
     }
-    println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&r.result).unwrap_or_default()
+    );
 
-    let found = r.result["slots_found"].as_array().cloned().unwrap_or_default();
+    let found = r.result["slots_found"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     println!("\nconfigured: {}", r.result["configured"]);
     println!("measured:   {found:?}");
 
@@ -85,7 +91,10 @@ fn gmalloc_is_reachable() {
         println!("inspect_gmalloc failed: {:?}", r.error);
         return;
     }
-    println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&r.result).unwrap_or_default()
+    );
 }
 
 /// The bytes at every instruction that references GMalloc.
@@ -102,10 +111,17 @@ fn what_the_call_sites_actually_look_like() {
         println!("gmalloc_call_sites failed: {:?}", r.error);
         return;
     }
-    println!("{} site(s) reference GMalloc
-", r.result["count"]);
+    println!(
+        "{} site(s) reference GMalloc
+",
+        r.result["count"]
+    );
     for s in r.result["sites"].as_array().cloned().unwrap_or_default() {
-        println!("{}  {}", s["at"].as_str().unwrap_or("?"), s["bytes"].as_str().unwrap_or(""));
+        println!(
+            "{}  {}",
+            s["at"].as_str().unwrap_or("?"),
+            s["bytes"].as_str().unwrap_or("")
+        );
     }
 }
 
@@ -127,6 +143,9 @@ fn a_grow_actually_grows() {
     );
 
     let grow = api.op("tarray_grow", json!({}));
-    println!("{}", serde_json::to_string_pretty(&grow.result).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&grow.result).unwrap_or_default()
+    );
     assert!(grow.ok, "tarray_grow failed: {:?}", grow.error);
 }

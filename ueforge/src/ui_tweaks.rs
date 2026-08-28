@@ -210,10 +210,7 @@ pub fn render() {
             let kind = e.get("kind").and_then(|v| v.as_str()).unwrap_or("?");
             let table = e.get("table_name").and_then(|v| v.as_str()).unwrap_or("?");
             let field = e.get("field_name").and_then(|v| v.as_str()).unwrap_or("?");
-            let vanilla_count = e
-                .get("vanilla_count")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
+            let vanilla_count = e.get("vanilla_count").and_then(|v| v.as_u64()).unwrap_or(0);
             let offset = e.get("offset").and_then(|v| v.as_u64()).unwrap_or(0);
 
             ui::text(&format!(
@@ -224,8 +221,9 @@ pub fn render() {
             if ui::small_button(&revert_label) {
                 let rows = crate::data_table::dynamic_revert_one(table, field);
                 let _ = crate::data_table::forget_persisted_pub(table, field);
-                s.last_result =
-                    Some(format!("reverted {table}.{field}: {rows} rows; forgot persisted"));
+                s.last_result = Some(format!(
+                    "reverted {table}.{field}: {rows} rows; forgot persisted"
+                ));
                 s.last_error = None;
             }
         }
@@ -237,10 +235,7 @@ pub fn render() {
 
     if ui::collapsing_header("Persisted on disk") {
         let list = crate::data_table::persisted_list_json();
-        let path = list
-            .get("path")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let path = list.get("path").and_then(|v| v.as_str()).unwrap_or("");
         let count = list.get("count").and_then(|v| v.as_u64()).unwrap_or(0);
         ui::text(&format!("file: {path}"));
         ui::text(&format!("count: {count}"));
@@ -269,9 +264,7 @@ pub fn render() {
             let kind = e.get("kind").and_then(|v| v.as_str()).unwrap_or("?");
             let op = e.get("op").and_then(|v| v.as_str()).unwrap_or("?");
             let value = e.get("value").cloned().unwrap_or(Json::Null);
-            ui::text(&format!(
-                "[{kind}] {op} {value} on {table}.{field}"
-            ));
+            ui::text(&format!("[{kind}] {op} {value} on {table}.{field}"));
         }
     }
 }

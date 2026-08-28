@@ -31,16 +31,15 @@ use std::time::{Duration, SystemTime};
 use clap::Parser;
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, HMODULE};
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-    CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
-    TH32CS_SNAPPROCESS,
+    CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
 };
 use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 use windows_sys::Win32::System::Memory::{
-    VirtualAllocEx, VirtualFreeEx, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE,
+    MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE, VirtualAllocEx, VirtualFreeEx,
 };
 use windows_sys::Win32::System::Threading::{
-    CreateRemoteThread, GetExitCodeThread, OpenProcess, WaitForSingleObject, INFINITE,
-    PROCESS_ALL_ACCESS,
+    CreateRemoteThread, GetExitCodeThread, INFINITE, OpenProcess, PROCESS_ALL_ACCESS,
+    WaitForSingleObject,
 };
 
 #[derive(Parser, Debug)]
@@ -142,7 +141,11 @@ fn main() -> anyhow::Result<()> {
         // SAFETY: h_proc was returned by OpenProcess.
         unsafe { CloseHandle(h_proc) };
 
-        InjState { hmodule, staged_path: staged }.save(&state_path)?;
+        InjState {
+            hmodule,
+            staged_path: staged,
+        }
+        .save(&state_path)?;
         println!("[inject] reload OK");
         return Ok(());
     }
@@ -167,7 +170,11 @@ fn main() -> anyhow::Result<()> {
     // SAFETY: h_proc was returned by OpenProcess.
     unsafe { CloseHandle(h_proc) };
 
-    InjState { hmodule, staged_path: staged }.save(&state_path)?;
+    InjState {
+        hmodule,
+        staged_path: staged,
+    }
+    .save(&state_path)?;
     println!("[inject] OK; hmod=0x{:x}", hmodule);
     Ok(())
 }
@@ -194,10 +201,14 @@ impl InjState {
     fn load(path: &Path) -> anyhow::Result<Self> {
         let s = std::fs::read_to_string(path)?;
         let mut lines = s.lines();
-        let hex = lines.next().ok_or_else(|| anyhow::anyhow!("empty injstate"))?;
+        let hex = lines
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("empty injstate"))?;
         let hex = hex.trim().trim_start_matches("0x");
         let hmodule = u64::from_str_radix(hex, 16)?;
-        let staged = lines.next().ok_or_else(|| anyhow::anyhow!("missing staged path"))?;
+        let staged = lines
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("missing staged path"))?;
         Ok(Self {
             hmodule,
             staged_path: PathBuf::from(staged.trim()),
@@ -275,8 +286,8 @@ fn find_pid_by_name(name: &str) -> anyhow::Result<u32> {
     if unsafe { Process32FirstW(snap, &mut entry) } != 0 {
         loop {
             let len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(0);
-            let proc_name = widestring::U16Str::from_slice(&entry.szExeFile[..len])
-                .to_string_lossy();
+            let proc_name =
+                widestring::U16Str::from_slice(&entry.szExeFile[..len]).to_string_lossy();
             if proc_name.to_ascii_lowercase() == target {
                 found_pid = entry.th32ProcessID;
                 break;
@@ -330,8 +341,7 @@ fn resolve_kernel32_proc(name: &[u8]) -> anyhow::Result<usize> {
 /// LoadLibraryW(`dll_path`) inside the target process. Returns the
 /// HMODULE the target loader assigned.
 fn load_library_remote(h_proc: HANDLE, dll_path: &Path) -> anyhow::Result<u64> {
-    let load_library_w =
-        resolve_kernel32_proc(b"LoadLibraryW\0")?;
+    let load_library_w = resolve_kernel32_proc(b"LoadLibraryW\0")?;
 
     let mut wide: Vec<u16> = OsString::from(dll_path).encode_wide().collect();
     wide.push(0);
@@ -423,7 +433,9 @@ fn find_module_hmodule(h_proc: HANDLE, dll_path: &Path) -> anyhow::Result<u64> {
         EnumProcessModulesEx, GetModuleFileNameExW, LIST_MODULES_ALL,
     };
 
-    let want = dll_path.canonicalize().unwrap_or_else(|_| dll_path.to_path_buf());
+    let want = dll_path
+        .canonicalize()
+        .unwrap_or_else(|_| dll_path.to_path_buf());
     let want_str = want.to_string_lossy().to_lowercase();
 
     let mut handles: Vec<HMODULE> = vec![std::ptr::null_mut(); 4096];
@@ -448,12 +460,7 @@ fn find_module_hmodule(h_proc: HANDLE, dll_path: &Path) -> anyhow::Result<u64> {
     for hmod in handles.iter().take(n).copied() {
         // SAFETY: hmod returned by EnumProcessModulesEx; target valid.
         let len = unsafe {
-            GetModuleFileNameExW(
-                h_proc,
-                hmod,
-                path_buf.as_mut_ptr(),
-                path_buf.len() as u32,
-            )
+            GetModuleFileNameExW(h_proc, hmod, path_buf.as_mut_ptr(), path_buf.len() as u32)
         };
         if len == 0 {
             continue;
@@ -502,10 +509,8 @@ fn send_shutdown_op(_prev: &InjState) -> anyhow::Result<()> {
     // POST is synchronous without pulling in a runtime/reqwest.
     use std::io::Write;
     use std::net::TcpStream;
-    let mut stream = TcpStream::connect_timeout(
-        &"127.0.0.1:33077".parse()?,
-        Duration::from_secs(2),
-    )?;
+    let mut stream =
+        TcpStream::connect_timeout(&"127.0.0.1:33077".parse()?, Duration::from_secs(2))?;
     stream.set_write_timeout(Some(Duration::from_secs(2)))?;
     stream.set_read_timeout(Some(Duration::from_secs(2)))?;
 

@@ -31,12 +31,19 @@ fn manager(api: &Api) -> Option<client::ClassInstance> {
 }
 
 fn read_u8_at(api: &Api, addr: u64, off: u64) -> u8 {
-    client::read_bytes(api, addr, off, 1).first().copied().unwrap_or(255)
+    client::read_bytes(api, addr, off, 1)
+        .first()
+        .copied()
+        .unwrap_or(255)
 }
 
 fn read_u32_at(api: &Api, addr: u64, off: u64) -> u32 {
     let b = client::read_bytes(api, addr, off, 4);
-    if b.len() == 4 { client::from_le_u32(&b, 0) } else { 0 }
+    if b.len() == 4 {
+        client::from_le_u32(&b, 0)
+    } else {
+        0
+    }
 }
 
 /// Per-generator snapshot: (name, streaming level count, emissions).
@@ -48,7 +55,11 @@ fn generator_state(api: &Api) -> Vec<(String, i32, i32)> {
                 .map(|h| h.num)
                 .unwrap_or(-1);
             let b = client::read_bytes(api, g.addr, EMISSIONS_PAST, 4);
-            let em = if b.len() == 4 { client::from_le_i32(&b, 0) } else { -1 };
+            let em = if b.len() == 4 {
+                client::from_le_i32(&b, 0)
+            } else {
+                -1
+            };
             (g.name.clone(), streaming, em)
         })
         .collect()
@@ -80,7 +91,6 @@ fn dump_worldgen_state() {
     print_state(&api, "state");
 }
 
-
 const LEVELS_POOL: u64 = 0x2C8;
 const LEVELS_REFRESHED_POOL: u64 = 0x2D8;
 const POOL_STRIDE: u64 = 0x28;
@@ -91,11 +101,7 @@ fn pool_entries(api: &Api, gen_addr: u64) -> Option<(u64, Vec<(String, Vec<u8>)>
     pool_entries_at(api, gen_addr, LEVELS_POOL)
 }
 
-fn pool_entries_at(
-    api: &Api,
-    gen_addr: u64,
-    offset: u64,
-) -> Option<(u64, Vec<(String, Vec<u8>)>)> {
+fn pool_entries_at(api: &Api, gen_addr: u64, offset: u64) -> Option<(u64, Vec<(String, Vec<u8>)>)> {
     let hdr = client::read_tarray_header(api, gen_addr, offset)?;
     if hdr.num <= 0 || hdr.num > 64 {
         return None;
@@ -132,8 +138,14 @@ fn pool_swap_meadows_into_paneli() {
         return;
     }
     let gens = client::walk_class_chain_instances(&api, "BP_WorldGeneration_Base_C", 8);
-    let meadows = gens.iter().find(|g| g.name.contains("Meadows")).expect("no Meadows generator");
-    let paneli = gens.iter().find(|g| g.name.contains("Paneli")).expect("no Paneli generator");
+    let meadows = gens
+        .iter()
+        .find(|g| g.name.contains("Meadows"))
+        .expect("no Meadows generator");
+    let paneli = gens
+        .iter()
+        .find(|g| g.name.contains("Paneli"))
+        .expect("no Paneli generator");
 
     let (_, m_pool) = pool_entries(&api, meadows.addr).expect("meadows pool unreadable");
     let donor = m_pool
@@ -144,7 +156,12 @@ fn pool_swap_meadows_into_paneli() {
     if let Some(victim_idx) = p_pool.iter().position(|(n, _)| n == VICTIM) {
         println!("writing {DONOR} over Paneli slot {victim_idx} ({VICTIM})");
         let sel = format!("addr:0x{p_ptr:x}");
-        assert!(modforge::client::write_bytes_at(&api, &sel, victim_idx as u64 * POOL_STRIDE, &donor.1));
+        assert!(modforge::client::write_bytes_at(
+            &api,
+            &sel,
+            victim_idx as u64 * POOL_STRIDE,
+            &donor.1
+        ));
         let (_, p_after) = pool_entries(&api, paneli.addr).expect("paneli pool unreadable");
         assert_eq!(p_after[victim_idx].0, DONOR, "write did not land");
     } else {
@@ -163,8 +180,13 @@ fn pool_swap_meadows_into_paneli() {
 
     let m = manager(&api).expect("no global manager");
     println!("forcing Paneli world (GenerateCustomBiom(3))");
-    api.call_ufunction("BP_GlobalManager_C", "GenerateCustomBiom", &m.addr_selector, &[3u8])
-        .expect("GenerateCustomBiom failed");
+    api.call_ufunction(
+        "BP_GlobalManager_C",
+        "GenerateCustomBiom",
+        &m.addr_selector,
+        &[3u8],
+    )
+    .expect("GenerateCustomBiom failed");
 
     // Streaming plus NPC creation takes a while.
     std::thread::sleep(Duration::from_secs(20));
@@ -215,8 +237,14 @@ fn mixed_pool_area() {
         return;
     }
     let gens = client::walk_class_chain_instances(&api, "BP_WorldGeneration_Base_C", 8);
-    let meadows = gens.iter().find(|g| g.name.contains("Meadows")).expect("no Meadows generator");
-    let paneli = gens.iter().find(|g| g.name.contains("Paneli")).expect("no Paneli generator");
+    let meadows = gens
+        .iter()
+        .find(|g| g.name.contains("Meadows"))
+        .expect("no Meadows generator");
+    let paneli = gens
+        .iter()
+        .find(|g| g.name.contains("Paneli"))
+        .expect("no Paneli generator");
 
     // Collect source elements from both pools before writing.
     let (_, m_pool) = pool_entries(&api, meadows.addr).expect("meadows pool unreadable");
@@ -245,8 +273,13 @@ fn mixed_pool_area() {
 
     let m = manager(&api).expect("no global manager");
     println!("generating the mixed world (GenerateCustomBiom(3))");
-    api.call_ufunction("BP_GlobalManager_C", "GenerateCustomBiom", &m.addr_selector, &[3u8])
-        .expect("GenerateCustomBiom failed");
+    api.call_ufunction(
+        "BP_GlobalManager_C",
+        "GenerateCustomBiom",
+        &m.addr_selector,
+        &[3u8],
+    )
+    .expect("GenerateCustomBiom failed");
     std::thread::sleep(Duration::from_secs(20));
 
     let mut board: Vec<String> = Vec::new();
@@ -265,11 +298,23 @@ fn mixed_pool_area() {
     for s in &board {
         println!("  {s}");
     }
-    let meadows_squares = ["L_Kolhoz01", "L_VehCemetry_Bridge", "L_River_LoggingCamp",
-        "L_Village_Dwarf_Hole", "L_BombCrater", "L_Forest02"];
+    let meadows_squares = [
+        "L_Kolhoz01",
+        "L_VehCemetry_Bridge",
+        "L_River_LoggingCamp",
+        "L_Village_Dwarf_Hole",
+        "L_BombCrater",
+        "L_Forest02",
+    ];
     let town_squares = ["L_TownSwamp01", "L_Anomaly_House", "L_Town_Anomaly01"];
-    let m_hit = board.iter().filter(|s| meadows_squares.iter().any(|q| s.contains(q))).count();
-    let t_hit = board.iter().filter(|s| town_squares.iter().any(|q| s.contains(q))).count();
+    let m_hit = board
+        .iter()
+        .filter(|s| meadows_squares.iter().any(|q| s.contains(q)))
+        .count();
+    let t_hit = board
+        .iter()
+        .filter(|s| town_squares.iter().any(|q| s.contains(q)))
+        .count();
     println!("meadows squares on the board: {m_hit}, town squares: {t_hit}");
     assert!(
         m_hit > 0 && t_hit > 0,
@@ -294,8 +339,14 @@ fn size_mismatch_probe() {
         return;
     }
     let gens = client::walk_class_chain_instances(&api, "BP_WorldGeneration_Base_C", 8);
-    let factory = gens.iter().find(|g| g.name.contains("Factory")).expect("no Factory generator");
-    let paneli = gens.iter().find(|g| g.name.contains("Paneli")).expect("no Paneli generator");
+    let factory = gens
+        .iter()
+        .find(|g| g.name.contains("Factory"))
+        .expect("no Factory generator");
+    let paneli = gens
+        .iter()
+        .find(|g| g.name.contains("Paneli"))
+        .expect("no Paneli generator");
 
     let (_, f_pool) = pool_entries(&api, factory.addr).expect("factory pool unreadable");
     let donor = f_pool
@@ -304,7 +355,10 @@ fn size_mismatch_probe() {
         .expect("donor square not in Factory pool");
     let (p_ptr, p_pool) = pool_entries(&api, paneli.addr).expect("paneli pool unreadable");
     let original = p_pool[0].1.clone();
-    println!("writing {DONOR} (16500) over Paneli slot 0 ({})", p_pool[0].0);
+    println!(
+        "writing {DONOR} (16500) over Paneli slot 0 ({})",
+        p_pool[0].0
+    );
     let sel = format!("addr:0x{p_ptr:x}");
     assert!(modforge::client::write_bytes_at(&api, &sel, 0, &donor.1));
 
@@ -312,8 +366,13 @@ fn size_mismatch_probe() {
     let mut placed: Option<String> = None;
     for attempt in 1..=4 {
         println!("attempt {attempt}: generating Paneli world");
-        api.call_ufunction("BP_GlobalManager_C", "GenerateCustomBiom", &m.addr_selector, &[3u8])
-            .expect("GenerateCustomBiom failed");
+        api.call_ufunction(
+            "BP_GlobalManager_C",
+            "GenerateCustomBiom",
+            &m.addr_selector,
+            &[3u8],
+        )
+        .expect("GenerateCustomBiom failed");
         std::thread::sleep(Duration::from_secs(20));
         for n in client::walk_class_chain_instances(&api, "BP_MasterAICharacter_C", 400) {
             if n.full_name.contains(DONOR) {
@@ -330,7 +389,10 @@ fn size_mismatch_probe() {
     }
 
     // Restore the pool slot regardless of outcome.
-    assert!(modforge::client::write_bytes_at(&api, &sel, 0, &original), "slot restore failed");
+    assert!(
+        modforge::client::write_bytes_at(&api, &sel, 0, &original),
+        "slot restore failed"
+    );
     println!("pool slot 0 restored");
 
     match &placed {
@@ -356,7 +418,12 @@ fn factory_via_generate_biom() {
     }
     let m = manager(&api).expect("no global manager");
     print_state(&api, "before");
-    assert!(modforge::client::write_bytes_at(&api, &m.addr_selector, CURRENT_GENERATED_LEVEL, &[1u8]));
+    assert!(modforge::client::write_bytes_at(
+        &api,
+        &m.addr_selector,
+        CURRENT_GENERATED_LEVEL,
+        &[1u8]
+    ));
     println!("wrote CurrentGeneratedLevel=1, calling GenerateBiom()");
     api.call_ufunction("BP_GlobalManager_C", "GenerateBiom", &m.addr_selector, &[])
         .expect("GenerateBiom failed");
@@ -378,7 +445,10 @@ fn factory_via_generator_direct() {
         return;
     }
     let gens = client::walk_class_chain_instances(&api, "BP_WorldGeneration_Base_C", 8);
-    let factory = gens.iter().find(|g| g.name.contains("Factory")).expect("no Factory generator");
+    let factory = gens
+        .iter()
+        .find(|g| g.name.contains("Factory"))
+        .expect("no Factory generator");
     print_state(&api, "before");
     println!("calling GenerateNewRandomLevels on {}", factory.name);
     api.call_ufunction(
@@ -407,7 +477,10 @@ fn dump_both_pools() {
         return;
     }
     for g in client::walk_class_chain_instances(&api, "BP_WorldGeneration_Base_C", 8) {
-        for (label, off) in [("Levels", LEVELS_POOL), ("LevelsRefreshed", LEVELS_REFRESHED_POOL)] {
+        for (label, off) in [
+            ("Levels", LEVELS_POOL),
+            ("LevelsRefreshed", LEVELS_REFRESHED_POOL),
+        ] {
             match pool_entries_at(&api, g.addr, off) {
                 Some((_, entries)) => {
                     println!("=== {} {label}: {} entries ===", g.name, entries.len());
@@ -436,8 +509,12 @@ fn square_world_bounds() {
     let mut by_square: std::collections::BTreeMap<String, Vec<(f64, f64, f64)>> =
         std::collections::BTreeMap::new();
     for n in client::walk_class_chain_instances(&api, "BP_MasterAICharacter_C", 400) {
-        let Some(path) = n.full_name.split(' ').nth(1) else { continue };
-        let Some(sq) = path.split(".PersistentLevel").next() else { continue };
+        let Some(path) = n.full_name.split(' ').nth(1) else {
+            continue;
+        };
+        let Some(sq) = path.split(".PersistentLevel").next() else {
+            continue;
+        };
         let short = sq.rsplit('/').next().unwrap_or(sq).to_string();
         if !short.contains('_') {
             continue;
@@ -468,7 +545,11 @@ fn square_world_bounds() {
         let cell: Vec<&str> = square.split('.').next().unwrap_or("").split('_').collect();
         let predicted = if cell.len() == 3 {
             match (cell[1].parse::<f64>(), cell[2].parse::<f64>()) {
-                (Ok(cx), Ok(cy)) => format!("cell({cx},{cy}) x12000 = ({}, {})", cx * 12000.0, cy * 12000.0),
+                (Ok(cx), Ok(cy)) => format!(
+                    "cell({cx},{cy}) x12000 = ({}, {})",
+                    cx * 12000.0,
+                    cy * 12000.0
+                ),
                 _ => String::from("(unparsed)"),
             }
         } else {

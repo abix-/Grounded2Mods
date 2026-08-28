@@ -2,9 +2,7 @@
 //! game process" type that tests use.
 
 use super::log::TestLog;
-use super::{
-    GameDef, build, http_probe, injector, process, should_skip_build, steam,
-};
+use super::{GameDef, build, http_probe, injector, process, should_skip_build, steam};
 use serde_json::Value;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -23,10 +21,16 @@ impl GameHarness {
 
         if let Some(b) = &spec.build {
             if !should_skip_build() {
-                log.event("BUILD", &format!("cargo build -p {} (release={})", b.package, b.release));
+                log.event(
+                    "BUILD",
+                    &format!("cargo build -p {} (release={})", b.package, b.release),
+                );
                 let t = Instant::now();
                 build::run(b)?;
-                log.event("BUILD", &format!("done in {:.1}s", t.elapsed().as_secs_f32()));
+                log.event(
+                    "BUILD",
+                    &format!("done in {:.1}s", t.elapsed().as_secs_f32()),
+                );
             } else {
                 log.event("BUILD", "skipped (MODFORGE_SKIP_BUILD=1)");
             }
@@ -39,27 +43,63 @@ impl GameHarness {
         log.event("STEAM", &format!("launching appid {}", spec.app_id));
         steam::launch(spec.app_id)?;
 
-        log.event("WAIT", &format!("waiting for {} to appear (timeout {}s)", spec.process_name, spec.launch_timeout.as_secs()));
+        log.event(
+            "WAIT",
+            &format!(
+                "waiting for {} to appear (timeout {}s)",
+                spec.process_name,
+                spec.launch_timeout.as_secs()
+            ),
+        );
         let t = Instant::now();
         process::wait_for_start(spec.process_name, spec.launch_timeout)?;
-        log.event("WAIT", &format!("{} appeared in {:.1}s", spec.process_name, t.elapsed().as_secs_f32()));
+        log.event(
+            "WAIT",
+            &format!(
+                "{} appeared in {:.1}s",
+                spec.process_name,
+                t.elapsed().as_secs_f32()
+            ),
+        );
 
         if let Some(inj) = &spec.injector {
-            log.event("INJECT", &format!("running {} {:?}", inj.injector_exe.display(), inj.args));
+            log.event(
+                "INJECT",
+                &format!("running {} {:?}", inj.injector_exe.display(), inj.args),
+            );
             let t = Instant::now();
             injector::run(inj)?;
-            log.event("INJECT", &format!("injector exited cleanly in {:.1}s", t.elapsed().as_secs_f32()));
+            log.event(
+                "INJECT",
+                &format!(
+                    "injector exited cleanly in {:.1}s",
+                    t.elapsed().as_secs_f32()
+                ),
+            );
         } else {
             log.event("INJECT", "skipped (no injector configured)");
         }
 
-        log.event("HTTP", &format!("waiting for HTTP plane on port {} (timeout {}s)", spec.http.port, spec.launch_timeout.as_secs()));
+        log.event(
+            "HTTP",
+            &format!(
+                "waiting for HTTP plane on port {} (timeout {}s)",
+                spec.http.port,
+                spec.launch_timeout.as_secs()
+            ),
+        );
         let t = Instant::now();
         http_probe::wait_for_ready(&spec.http, spec.launch_timeout)?;
-        log.event("HTTP", &format!("ping ok in {:.1}s", t.elapsed().as_secs_f32()));
+        log.event(
+            "HTTP",
+            &format!("ping ok in {:.1}s", t.elapsed().as_secs_f32()),
+        );
 
         log.event("READY", "game running, mod injected, HTTP ready");
-        Ok(RunningGame { spec: spec.clone(), log })
+        Ok(RunningGame {
+            spec: spec.clone(),
+            log,
+        })
     }
 
     /// Skip launch; assume the game is already running and the mod
@@ -68,7 +108,10 @@ impl GameHarness {
     /// wanted to keep).
     pub fn attach_existing(spec: &GameDef, test_name: &str) -> anyhow::Result<RunningGame> {
         let log = TestLog::open(&workspace_root(spec), test_name)?;
-        log.event("ATTACH", &format!("verifying HTTP plane on port {}", spec.http.port));
+        log.event(
+            "ATTACH",
+            &format!("verifying HTTP plane on port {}", spec.http.port),
+        );
         http_probe::wait_for_ready(&spec.http, Duration::from_secs(5))?;
         log.event("ATTACH", "HTTP ready; attached without launch");
         Ok(RunningGame {
@@ -112,7 +155,10 @@ impl RunningGame {
                 Ok(resp)
             }
             Err(e) => {
-                let msg = format!("{op} -> ERR in {:.0}ms: {e}", t.elapsed().as_secs_f32() * 1000.0);
+                let msg = format!(
+                    "{op} -> ERR in {:.0}ms: {e}",
+                    t.elapsed().as_secs_f32() * 1000.0
+                );
                 self.log.event("OP", &msg);
                 Err(anyhow::anyhow!(msg))
             }
@@ -167,10 +213,7 @@ impl Drop for RunningGame {
             ),
         );
         std::thread::sleep(self.spec.shutdown_grace);
-        let _ = process::kill_and_wait(
-            self.spec.process_name,
-            Duration::from_secs(30),
-        );
+        let _ = process::kill_and_wait(self.spec.process_name, Duration::from_secs(30));
         self.log.event("TEARDOWN", "done");
     }
 }

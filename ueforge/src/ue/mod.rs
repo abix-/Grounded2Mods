@@ -9,27 +9,27 @@
 
 pub mod actor;
 pub mod class_ref;
-pub mod damage_info;
 pub mod class_tweak;
 pub mod core_types;
+pub mod damage_info;
 pub mod datatable;
 pub mod field;
 pub mod fname;
 pub mod fstring;
 pub mod gmalloc;
 pub mod offsets;
+pub mod parts;
 pub mod pe_call;
+pub mod phenomena;
 pub mod platform;
 pub mod player;
 pub mod probe;
 pub mod resolvers;
-pub mod status_effect;
-pub mod struct_fields;
-pub mod phenomena;
-pub mod parts;
 pub mod rooms;
 pub mod spawn;
+pub mod status_effect;
 pub mod streaming;
+pub mod struct_fields;
 pub mod tarray;
 pub mod tmap;
 pub mod trace;
@@ -39,12 +39,12 @@ pub mod uobject;
 
 pub use class_ref::ClassRef;
 pub use core_types::{EStatusEffectValueType, FDataTableRowHandle, FGuid, FWeakObjectPtr};
-pub use player::PlayerRef;
-pub use typed_field::TypedField;
 pub use fname::FName;
 pub use fstring::FString;
 pub use offsets::{GObjectsLayout, Platform, PlatformOffsets};
+pub use player::PlayerRef;
 pub use tarray::TArray;
+pub use typed_field::TypedField;
 pub use uobject::{
     GObjectsView, ProcessEventFn, Runtime, UClass, UFunction, UObject, find_class_fast,
     init_runtime, runtime, try_runtime,
@@ -78,10 +78,7 @@ pub unsafe fn write_at<T: Copy>(ptr: *const u8, offset: usize, value: T) {
 /// # Safety
 /// Each intermediate pointer must be valid for a u64 read at
 /// the given offset.
-pub unsafe fn follow_ptr_chain(
-    base: *const u8,
-    offsets: &[usize],
-) -> Result<*const u8, String> {
+pub unsafe fn follow_ptr_chain(base: *const u8, offsets: &[usize]) -> Result<*const u8, String> {
     let mut ptr = base;
     for (i, &off) in offsets.iter().enumerate() {
         let next: u64 = unsafe { read_at(ptr, off) };
@@ -100,19 +97,13 @@ pub unsafe fn follow_ptr_chain(
 /// Convenience wrapper for ad-hoc snapshot / debug call sites that
 /// don't deserve a `static ClassRef` (typically: read a singleton
 /// data asset's fields once into a serializable view).
-pub fn with_first_instance_of<R>(
-    class_name: &str,
-    f: impl FnOnce(&UObject) -> R,
-) -> Option<R> {
+pub fn with_first_instance_of<R>(class_name: &str, f: impl FnOnce(&UObject) -> R) -> Option<R> {
     ClassRef::new_dynamic(class_name).with_first_instance(f)
 }
 
 /// Look up a class by name and pass its first matching CDO to
 /// `f`. Walks every `is_a(class) && is_default_object`, so
 /// subclass CDOs match the parent name too.
-pub fn with_first_cdo_of<R>(
-    class_name: &str,
-    f: impl FnOnce(&UObject) -> R,
-) -> Option<R> {
+pub fn with_first_cdo_of<R>(class_name: &str, f: impl FnOnce(&UObject) -> R) -> Option<R> {
     ClassRef::new_dynamic(class_name).with_first_cdo(f)
 }

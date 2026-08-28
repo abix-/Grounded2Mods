@@ -56,9 +56,7 @@ pub fn render<F: Fn()>(tweaks: &[DynamicTweak], reload_settings: F) {
                  in settings.json.",
             );
         } else {
-            ui::text_disabled(
-                "Tweaks declared but not yet applied. Click Re-apply all.",
-            );
+            ui::text_disabled("Tweaks declared but not yet applied. Click Re-apply all.");
         }
         return;
     }

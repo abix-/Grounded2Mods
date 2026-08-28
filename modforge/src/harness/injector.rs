@@ -7,10 +7,7 @@ use std::process::Command;
 /// shows the injector's progress. Bails on non-zero exit.
 pub fn run(spec: &InjectorDef) -> anyhow::Result<()> {
     if !spec.injector_exe.is_file() {
-        anyhow::bail!(
-            "injector exe not found at {}",
-            spec.injector_exe.display()
-        );
+        anyhow::bail!("injector exe not found at {}", spec.injector_exe.display());
     }
     let mut cmd = Command::new(&spec.injector_exe);
     cmd.args(&spec.args);

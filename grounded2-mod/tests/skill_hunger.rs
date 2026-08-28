@@ -11,7 +11,9 @@ fn hunger_drain(s: &common::Snapshot) -> Option<f32> {
 
 #[test]
 fn hunger_drain_grows_toward_zero_on_spend() {
-    let Some(api) = common::Api::try_connect() else { return };
+    let Some(api) = common::Api::try_connect() else {
+        return;
+    };
     // drain is negative; less drain = closer to 0 = strictly greater.
     scenario::for_skill(api.inner(), "hunger")
         .reads(hunger_drain)
@@ -20,7 +22,9 @@ fn hunger_drain_grows_toward_zero_on_spend() {
 
 #[test]
 fn hunger_reverts_on_refund() {
-    let Some(api) = common::Api::try_connect() else { return };
+    let Some(api) = common::Api::try_connect() else {
+        return;
+    };
     scenario::for_skill(api.inner(), "hunger")
         .reads(hunger_drain)
         .should_revert_when_refunded();

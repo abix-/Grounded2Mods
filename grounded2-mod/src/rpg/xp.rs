@@ -29,29 +29,86 @@ pub fn xp_for_creature(class_name: &str) -> u32 {
 pub static CREATURES: CreatureRegistry = CreatureRegistry::new(
     &[
         // Tier 1. Common starter bugs
-        CreatureDef { class_name: "BP_Aphid_C",       base_xp: 5 },
-        CreatureDef { class_name: "BP_Larva_C",       base_xp: 5 },
-        CreatureDef { class_name: "BP_Larva_Burrow_C", base_xp: 5 },
-        CreatureDef { class_name: "BP_Grub_C",        base_xp: 5 },
-        CreatureDef { class_name: "BP_Mite_C",        base_xp: 3 },
-        CreatureDef { class_name: "BP_Gnat_C",        base_xp: 3 },
+        CreatureDef {
+            class_name: "BP_Aphid_C",
+            base_xp: 5,
+        },
+        CreatureDef {
+            class_name: "BP_Larva_C",
+            base_xp: 5,
+        },
+        CreatureDef {
+            class_name: "BP_Larva_Burrow_C",
+            base_xp: 5,
+        },
+        CreatureDef {
+            class_name: "BP_Grub_C",
+            base_xp: 5,
+        },
+        CreatureDef {
+            class_name: "BP_Mite_C",
+            base_xp: 3,
+        },
+        CreatureDef {
+            class_name: "BP_Gnat_C",
+            base_xp: 3,
+        },
         // Tier 2. Combatants
-        CreatureDef { class_name: "BP_Weevil_C",          base_xp: 15 },
-        CreatureDef { class_name: "BP_Roly_Poly_C",       base_xp: 25 },
-        CreatureDef { class_name: "BP_Ladybug_Augusta_C", base_xp: 30 },
-        CreatureDef { class_name: "BP_Ant_C",             base_xp: 20 },
-        CreatureDef { class_name: "BP_Bee_C",             base_xp: 35 },
+        CreatureDef {
+            class_name: "BP_Weevil_C",
+            base_xp: 15,
+        },
+        CreatureDef {
+            class_name: "BP_Roly_Poly_C",
+            base_xp: 25,
+        },
+        CreatureDef {
+            class_name: "BP_Ladybug_Augusta_C",
+            base_xp: 30,
+        },
+        CreatureDef {
+            class_name: "BP_Ant_C",
+            base_xp: 20,
+        },
+        CreatureDef {
+            class_name: "BP_Bee_C",
+            base_xp: 35,
+        },
         // Tier 3. Mid-game
-        CreatureDef { class_name: "BP_Spider_C",      base_xp: 75 },
-        CreatureDef { class_name: "BP_Wolf_Spider_C", base_xp: 100 },
-        CreatureDef { class_name: "BP_Stinkbug_C",    base_xp: 60 },
-        CreatureDef { class_name: "BP_Mosquito_C",    base_xp: 50 },
+        CreatureDef {
+            class_name: "BP_Spider_C",
+            base_xp: 75,
+        },
+        CreatureDef {
+            class_name: "BP_Wolf_Spider_C",
+            base_xp: 100,
+        },
+        CreatureDef {
+            class_name: "BP_Stinkbug_C",
+            base_xp: 60,
+        },
+        CreatureDef {
+            class_name: "BP_Mosquito_C",
+            base_xp: 50,
+        },
         // Tier 4. Elites
-        CreatureDef { class_name: "BP_Black_Widow_C", base_xp: 250 },
-        CreatureDef { class_name: "BP_Mantis_C",      base_xp: 300 },
-        CreatureDef { class_name: "BP_Wasp_Queen_C",  base_xp: 400 },
+        CreatureDef {
+            class_name: "BP_Black_Widow_C",
+            base_xp: 250,
+        },
+        CreatureDef {
+            class_name: "BP_Mantis_C",
+            base_xp: 300,
+        },
+        CreatureDef {
+            class_name: "BP_Wasp_Queen_C",
+            base_xp: 400,
+        },
         // Bosses
-        CreatureDef { class_name: "BP_Spider_Tarantula_Boss_C", base_xp: 750 },
+        CreatureDef {
+            class_name: "BP_Spider_Tarantula_Boss_C",
+            base_xp: 750,
+        },
     ],
     5,
 );

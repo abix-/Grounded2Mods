@@ -114,10 +114,7 @@ where
         let initial = match std::fs::read_to_string(&path) {
             Ok(text) => match serde_json::from_str::<T>(&text) {
                 Ok(v) => {
-                    crate::log::log(format_args!(
-                        "settings: loaded {}",
-                        path.display()
-                    ));
+                    crate::log::log(format_args!("settings: loaded {}", path.display()));
                     v
                 }
                 Err(e) => {
@@ -233,9 +230,8 @@ where
         let join = std::thread::Builder::new()
             .name("ueforge-settings-watch".into())
             .spawn(move || {
-                let mut last_mtime: Option<SystemTime> = std::fs::metadata(&path)
-                    .and_then(|m| m.modified())
-                    .ok();
+                let mut last_mtime: Option<SystemTime> =
+                    std::fs::metadata(&path).and_then(|m| m.modified()).ok();
                 loop {
                     if stop_clone.load(Ordering::Relaxed) {
                         return;
@@ -244,9 +240,7 @@ where
                     if stop_clone.load(Ordering::Relaxed) {
                         return;
                     }
-                    let cur_mtime = std::fs::metadata(&path)
-                        .and_then(|m| m.modified())
-                        .ok();
+                    let cur_mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
                     if cur_mtime == last_mtime {
                         continue;
                     }
@@ -260,9 +254,7 @@ where
                             on_reload(&snap);
                         }
                         Err(e) => {
-                            crate::log::log(format_args!(
-                                "settings: hot-reload skipped: {e}"
-                            ));
+                            crate::log::log(format_args!("settings: hot-reload skipped: {e}"));
                         }
                     }
                 }

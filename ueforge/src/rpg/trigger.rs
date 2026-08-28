@@ -17,9 +17,7 @@
 //! `OnSlotChange` is engine-agnostic; it's defined in modforge
 //! and re-exported via [`crate::rpg::ON_SLOT_CHANGE`].
 
-pub use modforge::rpg::trigger::{
-    ON_SLOT_CHANGE, OnSlotChangeTrigger, Trigger, TriggerDef,
-};
+pub use modforge::rpg::trigger::{ON_SLOT_CHANGE, OnSlotChangeTrigger, Trigger, TriggerDef};
 
 use modforge::rpg::Engine;
 
@@ -119,8 +117,7 @@ impl Trigger for OnDamageDealtTrigger {
     }
 }
 static ON_DAMAGE_DEALT_IMP: OnDamageDealtTrigger = OnDamageDealtTrigger;
-pub static ON_DAMAGE_DEALT: TriggerDef =
-    TriggerDef::new("OnDamageDealt", &ON_DAMAGE_DEALT_IMP);
+pub static ON_DAMAGE_DEALT: TriggerDef = TriggerDef::new("OnDamageDealt", &ON_DAMAGE_DEALT_IMP);
 
 /// Fires per player-target damage hit, AFTER the engine
 /// applies the damage. Used by Evasion (pre-mutate via binder)
@@ -133,8 +130,7 @@ impl Trigger for OnDamageTakenTrigger {
     }
 }
 static ON_DAMAGE_TAKEN_IMP: OnDamageTakenTrigger = OnDamageTakenTrigger;
-pub static ON_DAMAGE_TAKEN: TriggerDef =
-    TriggerDef::new("OnDamageTaken", &ON_DAMAGE_TAKEN_IMP);
+pub static ON_DAMAGE_TAKEN: TriggerDef = TriggerDef::new("OnDamageTaken", &ON_DAMAGE_TAKEN_IMP);
 
 /// Fires per confirmed creature kill (killing-blow flag set on
 /// the damage multicast). Used by kill-credit driven skills.

@@ -16,7 +16,10 @@ fn factory_call(
     method: &str,
     args: serde_json::Value,
 ) -> Option<serde_json::Value> {
-    let r = api.op("invoke_static", json!({"class": FACTORY, "method": method, "args": args}));
+    let r = api.op(
+        "invoke_static",
+        json!({"class": FACTORY, "method": method, "args": args}),
+    );
     if !r.ok {
         println!("{method}: op failed: {:?}", r.error);
         return None;
@@ -70,7 +73,10 @@ fn retaliate_against_player() {
     // Check state before
     println!("\n=== Before retaliation ===");
     if let Some(v) = factory_call(&api, "GetBehaviourState", json!([idx])) {
-        println!("  active: {}, enabled: {}", v["active_type"], v["enabled_count"]);
+        println!(
+            "  active: {}, enabled: {}",
+            v["active_type"], v["enabled_count"]
+        );
     }
 
     // Trigger retaliation

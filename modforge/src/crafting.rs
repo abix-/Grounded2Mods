@@ -92,7 +92,10 @@ impl RecipeRegistry {
 
 /// Check whether an inventory has all inputs for a recipe.
 pub fn can_craft(recipe: &RecipeDef, inventory: &Inventory) -> bool {
-    recipe.inputs.iter().all(|(id, count)| inventory.count_of(id) >= *count)
+    recipe
+        .inputs
+        .iter()
+        .all(|(id, count)| inventory.count_of(id) >= *count)
 }
 
 /// Execute a recipe: remove inputs from inventory, create the output
@@ -126,62 +129,79 @@ pub fn craft(
         }
     }
     let output_def = items.def(&recipe.output.0)?;
-    Some(item::create(output_def, recipe.output.1, quality_odds, now, salt))
+    Some(item::create(
+        output_def,
+        recipe.output.1,
+        quality_odds,
+        now,
+        salt,
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::item::{ItemDef, ItemKind, ItemRegistry, Inventory};
+    use crate::item::{Inventory, ItemDef, ItemKind, ItemRegistry};
 
     fn setup() -> (ItemRegistry, RecipeRegistry, Inventory) {
         let mut items = ItemRegistry::default();
-        items.register(ItemDef {
-            name: "scrap".to_string(),
-            unique: false,
-            kind: ItemKind::Material,
-            max_stack: 20,
-            quality_siblings: 1,
-            combat: None,
-            food: None,
-            storage: None,
-            armor: None,
-            good_for: Default::default(),
-            model: None,
-        }).unwrap();
-        items.register(ItemDef {
-            name: "knife".to_string(),
-            unique: false,
-            kind: ItemKind::Weapon,
-            max_stack: 1,
-            quality_siblings: 3,
-            combat: Some(crate::item::CombatStats {
-                damage: "knife slash".to_string(),
-                delay: 0.8,
-                reach: 1.5,
-                pellets: 1,
-                spread_degrees: 0.0,
-                ammo: None,
-            }),
-            food: None,
-            storage: None,
-            armor: None,
-            good_for: Default::default(),
-            model: None,
-        }).unwrap();
+        items
+            .register(ItemDef {
+                name: "scrap".to_string(),
+                unique: false,
+                kind: ItemKind::Material,
+                max_stack: 20,
+                quality_siblings: 1,
+                combat: None,
+                food: None,
+                storage: None,
+                armor: None,
+                good_for: Default::default(),
+                model: None,
+            })
+            .unwrap();
+        items
+            .register(ItemDef {
+                name: "knife".to_string(),
+                unique: false,
+                kind: ItemKind::Weapon,
+                max_stack: 1,
+                quality_siblings: 3,
+                combat: Some(crate::item::CombatStats {
+                    damage: "knife slash".to_string(),
+                    delay: 0.8,
+                    reach: 1.5,
+                    pellets: 1,
+                    spread_degrees: 0.0,
+                    ammo: None,
+                }),
+                food: None,
+                storage: None,
+                armor: None,
+                good_for: Default::default(),
+                model: None,
+            })
+            .unwrap();
 
         let mut recipes = RecipeRegistry::default();
-        recipes.register(RecipeDef {
-            name: "craft knife".to_string(),
-            inputs: vec![("scrap".to_string(), 3)],
-            output: ("knife".to_string(), 1),
-            station: StationKind::CraftingBench,
-            craft_time: 2.0,
-        }).unwrap();
+        recipes
+            .register(RecipeDef {
+                name: "craft knife".to_string(),
+                inputs: vec![("scrap".to_string(), 3)],
+                output: ("knife".to_string(), 1),
+                station: StationKind::CraftingBench,
+                craft_time: 2.0,
+            })
+            .unwrap();
 
         let mut inv = Inventory::new(5);
         inv.add(
-            ItemStack { item: "scrap".to_string(), count: 10, quality: None, note: None },
+            ItemStack {
+                item: "scrap".to_string(),
+                count: 10,
+                quality: None,
+                note: None,
+            },
             20,
         );
 

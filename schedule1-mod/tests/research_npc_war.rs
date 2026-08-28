@@ -51,7 +51,10 @@ fn goon_vs_goon_with_weapons() {
     println!("waiting 10s for the spawn pipeline to settle...");
     std::thread::sleep(std::time::Duration::from_secs(10));
 
-    for (i, weapon) in [(0usize, "Avatar/Equippables/Knife"), (1usize, "Avatar/Equippables/Baton")] {
+    for (i, weapon) in [
+        (0usize, "Avatar/Equippables/Knife"),
+        (1usize, "Avatar/Equippables/Baton"),
+    ] {
         let r = api.op(
             "invoke_static",
             json!({"class": FACTORY, "method": "Arm", "args": [indices[i], weapon]}),

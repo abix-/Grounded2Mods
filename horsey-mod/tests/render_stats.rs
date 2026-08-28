@@ -12,7 +12,7 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const DEFAULT_STATS_OPS: &[&str] = &[
     "genes.ext.stats",
@@ -31,18 +31,26 @@ const DEFAULT_DRYRUN_OPS: &[&str] = &[
 
 fn env_csv(key: &str, default: &[&str]) -> Vec<String> {
     match std::env::var(key) {
-        Ok(s) => s.split(',').map(|t| t.trim().to_string()).filter(|s| !s.is_empty()).collect(),
+        Ok(s) => s
+            .split(',')
+            .map(|t| t.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
         Err(_) => default.iter().map(|s| s.to_string()).collect(),
     }
 }
 
 #[test]
 fn snapshot_all_stats_and_dryruns() {
-    let Some(game) = common::launch("render_stats") else { return };
+    let Some(game) = common::launch("render_stats") else {
+        return;
+    };
     let stats_ops = env_csv("HORSEY_STATS_OPS", DEFAULT_STATS_OPS);
     let dryrun_ops = env_csv("HORSEY_DRYRUN_OPS", DEFAULT_DRYRUN_OPS);
     let expect_armed: Vec<String> = env_csv("HORSEY_EXPECT_ARMED", &[])
-        .into_iter().filter(|s| !s.is_empty()).collect();
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .collect();
 
     eprintln!("\n=== STATS ===");
     for op in &stats_ops {
@@ -51,15 +59,23 @@ fn snapshot_all_stats_and_dryruns() {
         let err = r.get("error").and_then(Value::as_str).unwrap_or("");
         eprintln!("\n--- {op} ---\nresult: {res}\nerror:  {err}");
         assert!(err.is_empty(), "stats op {op} returned error: {err}");
-        assert!(r.get("result").is_some(), "stats op {op} returned no result");
+        assert!(
+            r.get("result").is_some(),
+            "stats op {op} returned no result"
+        );
 
         // Optional armed-check: if the op name is in expect_armed (by
         // full op name OR by subsystem prefix), require armed=true.
         if expect_armed.iter().any(|e| op.contains(e)) {
-            let armed = res.get("armed").and_then(Value::as_bool)
+            let armed = res
+                .get("armed")
+                .and_then(Value::as_bool)
                 .or_else(|| res.get("armed_ctor").and_then(Value::as_bool));
-            assert_eq!(armed, Some(true),
-                "expected {op} armed=true, got result {res}");
+            assert_eq!(
+                armed,
+                Some(true),
+                "expected {op} armed=true, got result {res}"
+            );
         }
     }
 
@@ -70,11 +86,15 @@ fn snapshot_all_stats_and_dryruns() {
         let err = r.get("error").and_then(Value::as_str).unwrap_or("");
         eprintln!("\n--- {op} ---\nresult: {res}\nerror:  {err}");
         assert!(err.is_empty(), "dryrun op {op} returned error: {err}");
-        assert!(r.get("result").is_some(), "dryrun op {op} returned no result");
+        assert!(
+            r.get("result").is_some(),
+            "dryrun op {op} returned no result"
+        );
     }
 
     game.pass(&format!(
         "snapshot ok: {} stats + {} dryrun ops well-formed",
-        stats_ops.len(), dryrun_ops.len()
+        stats_ops.len(),
+        dryrun_ops.len()
     ));
 }

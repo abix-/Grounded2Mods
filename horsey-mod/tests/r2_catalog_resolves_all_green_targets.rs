@@ -110,8 +110,7 @@ fn catalog_resolves_every_green_target() {
         return;
     }
     let spec = common::spec();
-    let game = GameHarness::launch(&spec, "r2_catalog_all_green")
-        .expect("harness launch failed");
+    let game = GameHarness::launch(&spec, "r2_catalog_all_green").expect("harness launch failed");
 
     // Pass 1: gather legacy addresses for each target.
     let mut legacy: Vec<(String, String)> = Vec::new();
@@ -127,8 +126,7 @@ fn catalog_resolves_every_green_target() {
     // sig will. Either way we have a green parity assertion.
     let mut owned_sigs: Vec<Vec<String>> = Vec::with_capacity(CATALOG.len());
     for (entry, (_, addr)) in CATALOG.iter().zip(legacy.iter()) {
-        let mut sigs: Vec<String> =
-            entry.sigs.iter().map(|s| s.to_string()).collect();
+        let mut sigs: Vec<String> = entry.sigs.iter().map(|s| s.to_string()).collect();
         sigs.push(fetch_signature_at(&game, addr, 32));
         owned_sigs.push(sigs);
     }
@@ -136,9 +134,7 @@ fn catalog_resolves_every_green_target() {
     let patterns_json: Vec<_> = CATALOG
         .iter()
         .zip(owned_sigs.iter())
-        .map(|(entry, sigs)| {
-            json!({"name": entry.name, "sigs": sigs})
-        })
+        .map(|(entry, sigs)| json!({"name": entry.name, "sigs": sigs}))
         .collect();
 
     let resp = game
@@ -164,12 +160,12 @@ fn catalog_resolves_every_green_target() {
             .and_then(|v| v.as_str())
             .unwrap_or_default();
         if got != expected.as_str() {
-            failures.push(format!(
-                "{name}: legacy {expected} != sleuth {got}"
-            ));
+            failures.push(format!("{name}: legacy {expected} != sleuth {got}"));
         } else {
-            game.log()
-                .event("CATALOG", &format!("{name}: legacy + sleuth converge at {expected}"));
+            game.log().event(
+                "CATALOG",
+                &format!("{name}: legacy + sleuth converge at {expected}"),
+            );
         }
     }
     if !failures.is_empty() {

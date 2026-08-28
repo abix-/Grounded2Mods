@@ -6,7 +6,7 @@
 //! ```
 
 mod common;
-use common::{api, handle_of, ping_or_skip, walk, count_of};
+use common::{api, count_of, handle_of, ping_or_skip, walk};
 use serde_json::json;
 
 #[test]
@@ -102,7 +102,9 @@ fn sentry_location_and_route() {
                     if let Some(fields) = inspect.result["fields"].as_object() {
                         println!("\n  SentryRoute[{i}]:");
                         for (k, v) in fields {
-                            if skip_noise(k) { continue; }
+                            if skip_noise(k) {
+                                continue;
+                            }
                             println!("    {k} = {}", compact_val(v));
                         }
                     }
@@ -167,7 +169,9 @@ fn npcbehaviour_slots() {
                     }
                     println!("\n  ALL remaining fields:");
                     for (k, v) in fields {
-                        if skip_noise(k) { continue; }
+                        if skip_noise(k) {
+                            continue;
+                        }
                         if k.contains("Behaviour")
                             || k.contains("behaviour")
                             || k.contains("Combat")
@@ -221,37 +225,56 @@ fn idle_behaviour_owners() {
         for (i, inst) in list.iter().enumerate() {
             if let Some(h) = inst["handle"].as_i64() {
                 // Read the Npc getter to get the owning NPC
-                let npc = api.op("invoke_method",
-                    json!({"handle": h, "method": "get_Npc", "args": []}));
+                let npc = api.op(
+                    "invoke_method",
+                    json!({"handle": h, "method": "get_Npc", "args": []}),
+                );
                 if npc.ok {
                     if let Some(nh) = handle_of(&npc.result) {
                         // Get the NPC's name
-                        let name = api.op("invoke_method",
-                            json!({"handle": nh, "method": "get_name", "args": []}));
-                        let npc_name = name.result.as_str()
+                        let name = api.op(
+                            "invoke_method",
+                            json!({"handle": nh, "method": "get_name", "args": []}),
+                        );
+                        let npc_name = name
+                            .result
+                            .as_str()
                             .or_else(|| name.result.get("str").and_then(|s| s.as_str()))
                             .unwrap_or("?");
                         // Get the NPC's type
-                        let gt = api.op("invoke_method",
-                            json!({"handle": nh, "method": "GetType", "args": []}));
+                        let gt = api.op(
+                            "invoke_method",
+                            json!({"handle": nh, "method": "GetType", "args": []}),
+                        );
                         let mut type_name = String::from("?");
                         if gt.ok {
                             if let Some(th) = handle_of(&gt.result) {
-                                let tn = api.op("invoke_method",
-                                    json!({"handle": th, "method": "get_FullName", "args": []}));
-                                type_name = tn.result.as_str()
+                                let tn = api.op(
+                                    "invoke_method",
+                                    json!({"handle": th, "method": "get_FullName", "args": []}),
+                                );
+                                type_name = tn
+                                    .result
+                                    .as_str()
                                     .or_else(|| tn.result.get("str").and_then(|s| s.as_str()))
-                                    .unwrap_or("?").to_string();
+                                    .unwrap_or("?")
+                                    .to_string();
                                 api.op("release_handle", json!({"handle": th}));
                             }
                         }
                         // Read Active and Enabled
-                        let active = api.op("read_field",
-                            json!({"handle": h, "field": "_Active_k__BackingField"}));
-                        let enabled = api.op("read_field",
-                            json!({"handle": h, "field": "_Enabled_k__BackingField"}));
-                        println!("  [{i}] name={npc_name} type={type_name} active={} enabled={}",
-                            active.result, enabled.result);
+                        let active = api.op(
+                            "read_field",
+                            json!({"handle": h, "field": "_Active_k__BackingField"}),
+                        );
+                        let enabled = api.op(
+                            "read_field",
+                            json!({"handle": h, "field": "_Enabled_k__BackingField"}),
+                        );
+                        println!(
+                            "  [{i}] name={npc_name} type={type_name} active={} enabled={}",
+                            active.result, enabled.result
+                        );
                         api.op("release_handle", json!({"handle": nh}));
                     }
                 } else {
@@ -277,24 +300,35 @@ fn foot_patrol_chain_live() {
         // Find one that is Active
         for (i, inst) in list.iter().enumerate() {
             if let Some(h) = inst["handle"].as_i64() {
-                let active = api.op("read_field",
-                    json!({"handle": h, "field": "_Active_k__BackingField"}));
-                let enabled = api.op("read_field",
-                    json!({"handle": h, "field": "_Enabled_k__BackingField"}));
+                let active = api.op(
+                    "read_field",
+                    json!({"handle": h, "field": "_Active_k__BackingField"}),
+                );
+                let enabled = api.op(
+                    "read_field",
+                    json!({"handle": h, "field": "_Enabled_k__BackingField"}),
+                );
                 let a = active.result.as_bool().unwrap_or(false);
                 let e = enabled.result.as_bool().unwrap_or(false);
 
                 // Get owning NPC name
-                let npc = api.op("invoke_method",
-                    json!({"handle": h, "method": "get_Npc", "args": []}));
+                let npc = api.op(
+                    "invoke_method",
+                    json!({"handle": h, "method": "get_Npc", "args": []}),
+                );
                 let mut npc_name = String::from("?");
                 if npc.ok {
                     if let Some(nh) = handle_of(&npc.result) {
-                        let name = api.op("invoke_method",
-                            json!({"handle": nh, "method": "get_name", "args": []}));
-                        npc_name = name.result.as_str()
+                        let name = api.op(
+                            "invoke_method",
+                            json!({"handle": nh, "method": "get_name", "args": []}),
+                        );
+                        npc_name = name
+                            .result
+                            .as_str()
                             .or_else(|| name.result.get("str").and_then(|s| s.as_str()))
-                            .unwrap_or("?").to_string();
+                            .unwrap_or("?")
+                            .to_string();
                         api.op("release_handle", json!({"handle": nh}));
                     }
                 }
@@ -302,29 +336,30 @@ fn foot_patrol_chain_live() {
                 println!("\n  fpb[{i}] npc={npc_name} active={a} enabled={e}");
 
                 // Follow Group -> PatrolGroup
-                let group = api.op("read_field",
-                    json!({"handle": h, "field": "_Group_k__BackingField"}));
+                let group = api.op(
+                    "read_field",
+                    json!({"handle": h, "field": "_Group_k__BackingField"}),
+                );
                 if let Some(gh) = handle_of(&group.result) {
                     println!("    Group handle={gh}");
                     let inspect = api.op("inspect_object", json!({"handle": gh}));
                     if let Some(fields) = inspect.result["fields"].as_object() {
                         for (k, v) in fields {
-                            if skip_noise(k) { continue; }
+                            if skip_noise(k) {
+                                continue;
+                            }
                             println!("      {k} = {}", compact_val(v));
                         }
                     }
 
                     // Follow Route -> FootPatrolRoute
-                    let route = api.op("read_field",
-                        json!({"handle": gh, "field": "Route"}));
+                    let route = api.op("read_field", json!({"handle": gh, "field": "Route"}));
                     if let Some(rh) = handle_of(&route.result) {
                         println!("    Route handle={rh}");
-                        let rn = api.op("read_field",
-                            json!({"handle": rh, "field": "RouteName"}));
+                        let rn = api.op("read_field", json!({"handle": rh, "field": "RouteName"}));
                         println!("      RouteName = {}", rn.result);
 
-                        let wp = api.op("read_field",
-                            json!({"handle": rh, "field": "Waypoints"}));
+                        let wp = api.op("read_field", json!({"handle": rh, "field": "Waypoints"}));
                         if let Some(wh) = handle_of(&wp.result) {
                             if let Some(n) = count_of(&api, wh) {
                                 println!("      Waypoints = {n}");
@@ -337,20 +372,27 @@ fn foot_patrol_chain_live() {
                     }
 
                     // Read Members
-                    let members = api.op("read_field",
-                        json!({"handle": gh, "field": "Members"}));
+                    let members = api.op("read_field", json!({"handle": gh, "field": "Members"}));
                     if let Some(mh) = handle_of(&members.result) {
                         if let Some(n) = count_of(&api, mh) {
                             println!("    Members = {n}");
                             for j in 0..n {
-                                let item = api.op("invoke_method",
-                                    json!({"handle": mh, "method": "get_Item", "args": [j]}));
+                                let item = api.op(
+                                    "invoke_method",
+                                    json!({"handle": mh, "method": "get_Item", "args": [j]}),
+                                );
                                 if item.ok {
                                     if let Some(ih) = handle_of(&item.result) {
-                                        let mn = api.op("invoke_method",
-                                            json!({"handle": ih, "method": "get_name", "args": []}));
-                                        let mname = mn.result.as_str()
-                                            .or_else(|| mn.result.get("str").and_then(|s| s.as_str()))
+                                        let mn = api.op(
+                                            "invoke_method",
+                                            json!({"handle": ih, "method": "get_name", "args": []}),
+                                        );
+                                        let mname = mn
+                                            .result
+                                            .as_str()
+                                            .or_else(|| {
+                                                mn.result.get("str").and_then(|s| s.as_str())
+                                            })
                                             .unwrap_or("?");
                                         println!("      member[{j}] = {mname}");
                                         api.op("release_handle", json!({"handle": ih}));
@@ -386,56 +428,69 @@ fn sentry_behaviour_live_state() {
         println!("{} SentryBehaviour(s)", list.len());
         for (i, inst) in list.iter().enumerate() {
             if let Some(h) = inst["handle"].as_i64() {
-                let active = api.op("read_field",
-                    json!({"handle": h, "field": "_Active_k__BackingField"}));
-                let enabled = api.op("read_field",
-                    json!({"handle": h, "field": "_Enabled_k__BackingField"}));
+                let active = api.op(
+                    "read_field",
+                    json!({"handle": h, "field": "_Active_k__BackingField"}),
+                );
+                let enabled = api.op(
+                    "read_field",
+                    json!({"handle": h, "field": "_Enabled_k__BackingField"}),
+                );
 
                 // officer field
-                let officer = api.op("read_field",
-                    json!({"handle": h, "field": "officer"}));
+                let officer = api.op("read_field", json!({"handle": h, "field": "officer"}));
                 let officer_val = compact_val(&officer.result);
 
                 // assigned location
-                let loc = api.op("read_field",
-                    json!({"handle": h, "field": "_AssignedLocation_k__BackingField"}));
+                let loc = api.op(
+                    "read_field",
+                    json!({"handle": h, "field": "_AssignedLocation_k__BackingField"}),
+                );
                 let loc_val = compact_val(&loc.result);
 
                 // stand point
-                let sp = api.op("read_field",
-                    json!({"handle": h, "field": "_standPoint"}));
+                let sp = api.op("read_field", json!({"handle": h, "field": "_standPoint"}));
                 let sp_val = compact_val(&sp.result);
 
                 // current route
-                let cr = api.op("read_field",
-                    json!({"handle": h, "field": "_currentRoute"}));
+                let cr = api.op("read_field", json!({"handle": h, "field": "_currentRoute"}));
                 let cr_val = compact_val(&cr.result);
 
                 // route point index
-                let rpi = api.op("read_field",
-                    json!({"handle": h, "field": "_currentRoutePointIndex"}));
+                let rpi = api.op(
+                    "read_field",
+                    json!({"handle": h, "field": "_currentRoutePointIndex"}),
+                );
                 // minutes at current point
-                let macp = api.op("read_field",
-                    json!({"handle": h, "field": "_minutesAtCurrentPoint"}));
+                let macp = api.op(
+                    "read_field",
+                    json!({"handle": h, "field": "_minutesAtCurrentPoint"}),
+                );
 
                 // owning NPC
-                let npc = api.op("invoke_method",
-                    json!({"handle": h, "method": "get_Npc", "args": []}));
+                let npc = api.op(
+                    "invoke_method",
+                    json!({"handle": h, "method": "get_Npc", "args": []}),
+                );
                 let mut npc_name = String::from("?");
                 if npc.ok {
                     if let Some(nh) = handle_of(&npc.result) {
-                        let name = api.op("invoke_method",
-                            json!({"handle": nh, "method": "get_name", "args": []}));
-                        npc_name = name.result.as_str()
+                        let name = api.op(
+                            "invoke_method",
+                            json!({"handle": nh, "method": "get_name", "args": []}),
+                        );
+                        npc_name = name
+                            .result
+                            .as_str()
                             .or_else(|| name.result.get("str").and_then(|s| s.as_str()))
-                            .unwrap_or("?").to_string();
+                            .unwrap_or("?")
+                            .to_string();
                         api.op("release_handle", json!({"handle": nh}));
                     }
                 }
 
                 println!("\n  sentry[{i}] npc={npc_name}");
-                println!("    active={} enabled={}",
-                    active.result, enabled.result);
+                println!("    active={} enabled={}", active.result, enabled.result);
                 println!("    officer={officer_val}");
                 println!("    assignedLocation={loc_val}");
                 println!("    _standPoint={sp_val}");
@@ -445,12 +500,13 @@ fn sentry_behaviour_live_state() {
 
                 // If assigned location is not null, inspect it
                 if let Some(lh) = handle_of(&loc.result) {
-                    let loc_inspect = api.op("inspect_object",
-                        json!({"handle": lh}));
+                    let loc_inspect = api.op("inspect_object", json!({"handle": lh}));
                     if let Some(fields) = loc_inspect.result["fields"].as_object() {
                         println!("    SentryLocation fields:");
                         for (k, v) in fields {
-                            if skip_noise(k) { continue; }
+                            if skip_noise(k) {
+                                continue;
+                            }
                             println!("      {k} = {}", compact_val(v));
                         }
                     }
@@ -459,12 +515,13 @@ fn sentry_behaviour_live_state() {
 
                 // If current route is not null, inspect it
                 if let Some(crh) = handle_of(&cr.result) {
-                    let cr_inspect = api.op("inspect_object",
-                        json!({"handle": crh}));
+                    let cr_inspect = api.op("inspect_object", json!({"handle": crh}));
                     if let Some(fields) = cr_inspect.result["fields"].as_object() {
                         println!("    SentryRoute fields:");
                         for (k, v) in fields {
-                            if skip_noise(k) { continue; }
+                            if skip_noise(k) {
+                                continue;
+                            }
                             println!("      {k} = {}", compact_val(v));
                         }
                     }
@@ -510,8 +567,10 @@ fn npcbehaviour_behaviour_list() {
         if let Some(sentries) = walk(&api, "ScheduleOne.NPCs.Behaviour.SentryBehaviour") {
             if let Some(first_sentry) = sentries.first() {
                 if let Some(sh) = first_sentry["handle"].as_i64() {
-                    let beh = api.op("read_field",
-                        json!({"handle": sh, "field": "_beh_k__BackingField"}));
+                    let beh = api.op(
+                        "read_field",
+                        json!({"handle": sh, "field": "_beh_k__BackingField"}),
+                    );
                     if let Some(bh) = handle_of(&beh.result) {
                         println!("  police NPCBehaviour (via SentryBehaviour.beh):");
                         dump_behaviour_stack(&api, bh);
@@ -531,31 +590,36 @@ fn npcbehaviour_behaviour_list() {
 
 fn dump_behaviour_stack(api: &modforge::client::Api<serde_json::Value>, npcbeh_handle: i64) {
     // Read behaviourStack
-    let stack = api.op("read_field",
-        json!({"handle": npcbeh_handle, "field": "behaviourStack"}));
+    let stack = api.op(
+        "read_field",
+        json!({"handle": npcbeh_handle, "field": "behaviourStack"}),
+    );
     if let Some(sh) = handle_of(&stack.result) {
         if let Some(n) = count_of(api, sh) {
             println!("    behaviourStack: {n} entries");
             for j in 0..n {
-                let item = api.op("invoke_method",
-                    json!({"handle": sh, "method": "get_Item", "args": [j]}));
+                let item = api.op(
+                    "invoke_method",
+                    json!({"handle": sh, "method": "get_Item", "args": [j]}),
+                );
                 if item.ok {
                     if let Some(ih) = handle_of(&item.result) {
-                        let insp = api.op("inspect_object",
-                            json!({"handle": ih}));
-                        let type_name = insp.result["type"]
-                            .as_str()
-                            .unwrap_or("?")
-                            .to_string();
-                        let pri = api.op("read_field",
-                            json!({"handle": ih, "field": "Priority"}));
-                        let act = api.op("read_field",
-                            json!({"handle": ih, "field": "_Active_k__BackingField"}));
-                        let ena = api.op("read_field",
-                            json!({"handle": ih, "field": "_Enabled_k__BackingField"}));
+                        let insp = api.op("inspect_object", json!({"handle": ih}));
+                        let type_name = insp.result["type"].as_str().unwrap_or("?").to_string();
+                        let pri = api.op("read_field", json!({"handle": ih, "field": "Priority"}));
+                        let act = api.op(
+                            "read_field",
+                            json!({"handle": ih, "field": "_Active_k__BackingField"}),
+                        );
+                        let ena = api.op(
+                            "read_field",
+                            json!({"handle": ih, "field": "_Enabled_k__BackingField"}),
+                        );
                         let short = type_name.rsplit('.').next().unwrap_or(&type_name);
-                        println!("    [{j}] {short} pri={} active={} enabled={}",
-                            pri.result, act.result, ena.result);
+                        println!(
+                            "    [{j}] {short} pri={} active={} enabled={}",
+                            pri.result, act.result, ena.result
+                        );
                         api.op("release_handle", json!({"handle": ih}));
                     }
                 }
@@ -567,22 +631,22 @@ fn dump_behaviour_stack(api: &modforge::client::Api<serde_json::Value>, npcbeh_h
     }
 
     // Read enabledBehaviours
-    let enabled = api.op("read_field",
-        json!({"handle": npcbeh_handle, "field": "enabledBehaviours"}));
+    let enabled = api.op(
+        "read_field",
+        json!({"handle": npcbeh_handle, "field": "enabledBehaviours"}),
+    );
     if let Some(eh) = handle_of(&enabled.result) {
         if let Some(n) = count_of(api, eh) {
             println!("    enabledBehaviours: {n} entries");
             for j in 0..n {
-                let item = api.op("invoke_method",
-                    json!({"handle": eh, "method": "get_Item", "args": [j]}));
+                let item = api.op(
+                    "invoke_method",
+                    json!({"handle": eh, "method": "get_Item", "args": [j]}),
+                );
                 if item.ok {
                     if let Some(ih) = handle_of(&item.result) {
-                        let insp = api.op("inspect_object",
-                            json!({"handle": ih}));
-                        let type_name = insp.result["type"]
-                            .as_str()
-                            .unwrap_or("?")
-                            .to_string();
+                        let insp = api.op("inspect_object", json!({"handle": ih}));
+                        let type_name = insp.result["type"].as_str().unwrap_or("?").to_string();
                         let short = type_name.rsplit('.').next().unwrap_or(&type_name);
                         println!("    [{j}] {short}");
                         api.op("release_handle", json!({"handle": ih}));
@@ -594,14 +658,13 @@ fn dump_behaviour_stack(api: &modforge::client::Api<serde_json::Value>, npcbeh_h
     }
 
     // Read activeBehaviour
-    let active = api.op("read_field",
-        json!({"handle": npcbeh_handle, "field": "_activeBehaviour_k__BackingField"}));
+    let active = api.op(
+        "read_field",
+        json!({"handle": npcbeh_handle, "field": "_activeBehaviour_k__BackingField"}),
+    );
     if let Some(ah) = handle_of(&active.result) {
         let insp = api.op("inspect_object", json!({"handle": ah}));
-        let type_name = insp.result["type"]
-            .as_str()
-            .unwrap_or("?")
-            .to_string();
+        let type_name = insp.result["type"].as_str().unwrap_or("?").to_string();
         let short = type_name.rsplit('.').next().unwrap_or(&type_name);
         println!("    activeBehaviour = {short}");
         api.op("release_handle", json!({"handle": ah}));

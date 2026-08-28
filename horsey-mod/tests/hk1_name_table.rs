@@ -10,11 +10,14 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn hex_at(game: &modforge::harness::RunningGame, abs: u64, n: usize) -> String {
     let v = game
-        .op_json("patterns.read_bytes", &json!({"addr": format!("0x{abs:x}"), "n": n}))
+        .op_json(
+            "patterns.read_bytes",
+            &json!({"addr": format!("0x{abs:x}"), "n": n}),
+        )
         .unwrap_or(Value::Null);
     v.get("result")
         .unwrap_or(&v)
@@ -26,15 +29,23 @@ fn hex_at(game: &modforge::harness::RunningGame, abs: u64, n: usize) -> String {
 
 #[test]
 fn rederive_name_table() {
-    let Some(game) = common::launch("hk1_name_table") else { return };
+    let Some(game) = common::launch("hk1_name_table") else {
+        return;
+    };
 
     // Wait for load + collect horse name_ids.
     let dl = std::time::Instant::now() + std::time::Duration::from_secs(30);
     let mut horses: Vec<Value> = vec![];
     loop {
-        let v = game.op_json("gamestate.owned_horses", &json!({})).unwrap_or(Value::Null);
+        let v = game
+            .op_json("gamestate.owned_horses", &json!({}))
+            .unwrap_or(Value::Null);
         let r = v.get("result").unwrap_or(&v);
-        horses = r.get("horses").and_then(Value::as_array).cloned().unwrap_or_default();
+        horses = r
+            .get("horses")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
         if !horses.is_empty() || std::time::Instant::now() >= dl {
             break;
         }
@@ -48,9 +59,14 @@ fn rederive_name_table() {
         let c = h.get("container").and_then(Value::as_str).unwrap_or("?");
         let sx = h.get("scene_x").and_then(Value::as_f64).unwrap_or(0.0);
         let sy = h.get("scene_y").and_then(Value::as_f64).unwrap_or(0.0);
-        eprintln!("  horse[{idx}] name={name:?} name_id={nid} container={c} scene=({sx:.2}, {sy:.2})");
+        eprintln!(
+            "  horse[{idx}] name={name:?} name_id={nid} container={c} scene=({sx:.2}, {sy:.2})"
+        );
     }
-    let nids: Vec<u64> = horses.iter().filter_map(|h| h.get("name_id").and_then(Value::as_u64)).collect();
+    let nids: Vec<u64> = horses
+        .iter()
+        .filter_map(|h| h.get("name_id").and_then(Value::as_u64))
+        .collect();
     let nid0 = nids.first().copied().unwrap_or(0);
 
     // Current resolver state for one name_id.
@@ -92,14 +108,26 @@ fn rederive_name_table() {
             &json!({"sig": "48 69 c0 88 00 00 00 48 03 05 ?? ?? ?? ??", "disp32_offset": 10, "instr_len": 14, "max_hits": 8}),
         )
         .expect("targeted scan");
-    let th = t.get("result").unwrap_or(&t).get("hits").and_then(Value::as_array).cloned().unwrap_or_default();
+    let th = t
+        .get("result")
+        .unwrap_or(&t)
+        .get("hits")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
     eprintln!("[TARGETED] sig matched {} site(s)", th.len());
     let _ = nid0;
     let bytes_at = |abs: u64, n: usize| -> Vec<u8> {
-        hex_at(&game, abs, n).split_whitespace().filter_map(|x| u8::from_str_radix(x, 16).ok()).collect()
+        hex_at(&game, abs, n)
+            .split_whitespace()
+            .filter_map(|x| u8::from_str_radix(x, 16).ok())
+            .collect()
     };
     if let Some(h0) = th.first() {
-        let slot = h0.get("decoded_target").and_then(Value::as_str).unwrap_or("0x0");
+        let slot = h0
+            .get("decoded_target")
+            .and_then(Value::as_str)
+            .unwrap_or("0x0");
         let sv = u64::from_str_radix(slot.trim_start_matches("0x"), 16).unwrap_or(0);
         let tb = bytes_at(sv, 8);
         if tb.len() >= 8 {

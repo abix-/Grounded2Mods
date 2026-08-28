@@ -14,20 +14,28 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 #[test]
 fn dump_owned_horses() {
-    let Some(game) = common::launch("horse_full_dump") else { return };
+    let Some(game) = common::launch("horse_full_dump") else {
+        return;
+    };
 
     let dump = |label: &str| {
         eprintln!("\n################ SCENE STATE: {label} ################");
         eprintln!("active_scene_id : {:?}", common::active_scene_id(&game));
 
         // ---- Owned horses (scene-table slot 0 -> +0x130/+0x138) ----
-        let v = game.op_json("gamestate.owned_horses", &json!({})).expect("owned_horses op");
+        let v = game
+            .op_json("gamestate.owned_horses", &json!({}))
+            .expect("owned_horses op");
         let r = v.get("result").unwrap_or(&v);
-        let horses = r.get("horses").and_then(Value::as_array).cloned().unwrap_or_default();
+        let horses = r
+            .get("horses")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
         eprintln!("owned count     : {}", horses.len());
 
         for h in &horses {
@@ -37,10 +45,22 @@ fn dump_owned_horses() {
             eprintln!("    name        : {:?}", h.get("name"));
             eprintln!("    name_id     : {:?}", h.get("name_id"));
             eprintln!("    species     : {:?}", h.get("species"));
-            eprintln!("    age/max_age : {:?} / {:?}", h.get("age"), h.get("max_age"));
+            eprintln!(
+                "    age/max_age : {:?} / {:?}",
+                h.get("age"),
+                h.get("max_age")
+            );
             eprintln!("    skill       : {:?}", h.get("skill"));
-            eprintln!("    tired_a/b   : {:?} / {:?}", h.get("tired_a"), h.get("tired_b"));
-            eprintln!("    scene pos   : ({:?}, {:?})", h.get("scene_x"), h.get("scene_y"));
+            eprintln!(
+                "    tired_a/b   : {:?} / {:?}",
+                h.get("tired_a"),
+                h.get("tired_b")
+            );
+            eprintln!(
+                "    scene pos   : ({:?}, {:?})",
+                h.get("scene_x"),
+                h.get("scene_y")
+            );
             eprintln!("    container   : {:?}", h.get("container"));
 
             match game.op_json("horse.read", &json!({ "addr": ptr })) {
@@ -78,7 +98,10 @@ fn dump_owned_horses() {
         match game.op_json("gamestate.scan_438_slots", &json!({})) {
             Ok(sv) => {
                 let ss = sv.get("result").unwrap_or(&sv).clone();
-                eprintln!("{}", serde_json::to_string_pretty(&ss).unwrap_or_else(|_| ss.to_string()));
+                eprintln!(
+                    "{}",
+                    serde_json::to_string_pretty(&ss).unwrap_or_else(|_| ss.to_string())
+                );
             }
             Err(e) => eprintln!("    scan_438_slots err: {e}"),
         }
@@ -96,7 +119,14 @@ fn dump_owned_horses() {
         common::ensure_home_scene_loaded(&game, std::time::Duration::from_secs(15));
     }))
     .is_ok();
-    eprintln!(">>> home-scene entry {}", if entered { "OK" } else { "FAILED (see note above)" });
+    eprintln!(
+        ">>> home-scene entry {}",
+        if entered {
+            "OK"
+        } else {
+            "FAILED (see note above)"
+        }
+    );
 
     dump("PHASE 2 (after home-scene entry attempt)");
 

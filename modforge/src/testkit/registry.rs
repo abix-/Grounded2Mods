@@ -34,7 +34,8 @@ pub fn assert_every_target_resolves(
                 eprintln!("  {}: 0x{addr:x}", def.name);
             }
             None => {
-                let log = resolved.get(def.name)
+                let log = resolved
+                    .get(def.name)
                     .map(|r| r.validation_log.join("; "))
                     .unwrap_or_else(|| "<no log>".into());
                 failures.push(format!("{}: did not resolve. log: {log}", def.name));
@@ -70,12 +71,16 @@ pub fn assert_every_target_passes_validators(
                 continue;
             }
         };
-        let any_rejected = r.validation_log.iter().any(|l| l.contains("validators rejected"));
+        let any_rejected = r
+            .validation_log
+            .iter()
+            .any(|l| l.contains("validators rejected"));
         let resolved_ok = r.value.is_some() && !r.from_hint;
         if any_rejected && !resolved_ok && !r.from_hint {
             failures.push(format!(
                 "{}: every candidate was validator-rejected and no hint fallback. log: {}",
-                def.name, r.validation_log.join("; ")
+                def.name,
+                r.validation_log.join("; ")
             ));
         }
     }
@@ -114,13 +119,12 @@ pub fn assert_every_field_offset_matches_hint(
                 eprintln!("  {}: 0x{v:x} == hint", def.name);
             }
             (Some(v), Some(hint)) => {
-                failures.push(format!(
-                    "{}: resolved 0x{v:x} != hint 0x{hint:x}", def.name
-                ));
+                failures.push(format!("{}: resolved 0x{v:x} != hint 0x{hint:x}", def.name));
             }
             (Some(v), None) => {
                 failures.push(format!(
-                    "{}: resolved 0x{v:x} but no hint to verify against", def.name
+                    "{}: resolved 0x{v:x} but no hint to verify against",
+                    def.name
                 ));
             }
             (None, _) => {
@@ -145,15 +149,19 @@ pub fn assert_diagnostic_includes_every_entry(
     resolver: &Resolver,
 ) {
     let diag = resolver.diagnostic();
-    let entries = diag.get("entries").and_then(|v| v.as_array())
+    let entries = diag
+        .get("entries")
+        .and_then(|v| v.as_array())
         .expect("diagnostic.entries must be array");
-    let names: Vec<&str> = entries.iter()
+    let names: Vec<&str> = entries
+        .iter()
         .filter_map(|e| e.get("name").and_then(|n| n.as_str()))
         .collect();
     for def in registry.iter() {
         assert!(
             names.contains(&def.name),
-            "diagnostic missing entry '{}'", def.name
+            "diagnostic missing entry '{}'",
+            def.name
         );
     }
 }

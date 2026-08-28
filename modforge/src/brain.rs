@@ -24,13 +24,25 @@ use crate::survival::{Need, SurvivalStats};
 pub enum Activity {
     Idle,
     /// Walking to a known thing to satisfy a need.
-    Going { key: u64, to: Vec3, need: Need },
+    Going {
+        key: u64,
+        to: Vec3,
+        need: Need,
+    },
     /// At a known thing, doing it.
-    Doing { key: u64, what: Doing },
+    Doing {
+        key: u64,
+        what: Doing,
+    },
     /// Walking to a known but unchecked thing to see what it holds.
-    Looking { key: u64, to: Vec3 },
+    Looking {
+        key: u64,
+        to: Vec3,
+    },
     /// Strolling to a point near home.
-    Wander { to: Vec3 },
+    Wander {
+        to: Vec3,
+    },
     /// Walking home.
     GoHome,
 }
@@ -94,11 +106,15 @@ impl std::fmt::Debug for Perception<'_> {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Do {
     /// Take food from the known thing `key` and eat it.
-    Eat { key: u64 },
+    Eat {
+        key: u64,
+    },
     Sleep,
     Wake,
     /// Look inside the known thing `key` and note what it held.
-    Check { key: u64 },
+    Check {
+        key: u64,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -122,7 +138,12 @@ pub const REACH: f32 = 1.5;
 const METRES_PER_POINT: f32 = 4.0;
 
 /// The brain. The first rule that applies wins.
-pub fn decide(p: &Perception, activity: &Activity, combat: &CombatState, roll: &mut Roll) -> Decision {
+pub fn decide(
+    p: &Perception,
+    activity: &Activity,
+    combat: &CombatState,
+    roll: &mut Roll,
+) -> Decision {
     if let Some(d) = arrived(p, activity, combat) {
         return d;
     }
@@ -522,7 +543,10 @@ mod tests {
             ..p.clone()
         };
         let d = decide(&p2, &Activity::Idle, &combat, &mut roll);
-        assert!(matches!(d.combat, CombatState::Fighting { .. }), "the brave stand");
+        assert!(
+            matches!(d.combat, CombatState::Fighting { .. }),
+            "the brave stand"
+        );
     }
 
     #[test]
@@ -669,8 +693,14 @@ mod tests {
                     assert!(has_move(&d));
                 }
             }
-            assert!(strolls > 10 && strolls < 120, "{behaviour:?}: {strolls} strolls in 400");
-            assert!(farthest <= behaviour.home_radius() + 1e-3, "{behaviour:?}: {farthest}");
+            assert!(
+                strolls > 10 && strolls < 120,
+                "{behaviour:?}: {strolls} strolls in 400"
+            );
+            assert!(
+                farthest <= behaviour.home_radius() + 1e-3,
+                "{behaviour:?}: {farthest}"
+            );
             assert!(farthest > behaviour.home_radius() * 0.5);
         }
     }

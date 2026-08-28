@@ -118,8 +118,7 @@ pub fn scan_loaded_image(pattern: &str) -> Option<usize> {
     // SAFETY: `text_start..text_start+text_len` is inside the
     // loaded `.exe` image and stays valid for the process
     // lifetime.
-    let bytes =
-        unsafe { std::slice::from_raw_parts(text_start as *const u8, text_len) };
+    let bytes = unsafe { std::slice::from_raw_parts(text_start as *const u8, text_len) };
     let off = find_first_parsed(bytes, &pat)?;
     Some(text_start.wrapping_add(off))
 }
@@ -165,7 +164,11 @@ mod tests {
         let p = parse("48 8b c4").unwrap();
         assert_eq!(
             p,
-            vec![PatByte::Byte(0x48), PatByte::Byte(0x8b), PatByte::Byte(0xc4)]
+            vec![
+                PatByte::Byte(0x48),
+                PatByte::Byte(0x8b),
+                PatByte::Byte(0xc4)
+            ]
         );
     }
 
@@ -174,7 +177,12 @@ mod tests {
         let p = parse("48 ?? c4 ?").unwrap();
         assert_eq!(
             p,
-            vec![PatByte::Byte(0x48), PatByte::Any, PatByte::Byte(0xc4), PatByte::Any]
+            vec![
+                PatByte::Byte(0x48),
+                PatByte::Any,
+                PatByte::Byte(0xc4),
+                PatByte::Any
+            ]
         );
     }
 
@@ -260,10 +268,8 @@ mod tests {
     #[test]
     fn pattern_matches_apply_gene_to_horse_prologue() {
         let hay = [
-            0x90, 0x90, 0x90, 0x90,
-            0x48, 0x8b, 0xc4, 0x55, 0x53, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55,
-            0x41, 0x56, 0x41, 0x57, 0x48,
-            0x90, 0x90,
+            0x90, 0x90, 0x90, 0x90, 0x48, 0x8b, 0xc4, 0x55, 0x53, 0x56, 0x57, 0x41, 0x54, 0x41,
+            0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x90, 0x90,
         ];
         assert_eq!(
             find_first(&hay, "48 8b c4 55 53 56 57 41 54 41 55 41 56 41 57"),
@@ -274,9 +280,8 @@ mod tests {
     #[test]
     fn pattern_matches_combinator_prologue_with_wildcards() {
         let hay = [
-            0xcc, 0xcc, 0xcc,
-            0x48, 0x89, 0x5c, 0x24, 0x08, 0x48, 0x89, 0x6c, 0x24, 0x10,
-            0x48, 0x89, 0x74, 0x24, 0x18, 0x57,
+            0xcc, 0xcc, 0xcc, 0x48, 0x89, 0x5c, 0x24, 0x08, 0x48, 0x89, 0x6c, 0x24, 0x10, 0x48,
+            0x89, 0x74, 0x24, 0x18, 0x57,
         ];
         assert_eq!(
             find_first(&hay, "48 89 5c 24 ?? 48 89 6c 24 ?? 48 89 74 24 ?? 57"),

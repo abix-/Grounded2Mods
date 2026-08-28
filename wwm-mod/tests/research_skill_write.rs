@@ -50,9 +50,12 @@ fn skill_value(api: &Api<Value>, mgr: i64, skill: &str) -> Option<f64> {
 /// on the write rather than just storing a number.
 fn bag_slots(api: &Api<Value>) -> Option<i64> {
     let bag = first_handle(api, "Bag")?;
-    api.op("invoke_method", json!({"handle": bag, "method": "GetSlotsAmount", "args": []}))
-        .result
-        .as_i64()
+    api.op(
+        "invoke_method",
+        json!({"handle": bag, "method": "GetSlotsAmount", "args": []}),
+    )
+    .result
+    .as_i64()
 }
 
 /// Set one vanilla skill to a level and LEAVE IT THERE. Unlike
@@ -97,7 +100,9 @@ fn set_skill() {
     let target = if want == "max" {
         levels
     } else {
-        want.parse::<i64>().expect("WWM_LEVEL must be a number or 'max'").clamp(1, levels)
+        want.parse::<i64>()
+            .expect("WWM_LEVEL must be a number or 'max'")
+            .clamp(1, levels)
     };
 
     let before = skill_level(&api, mgr, &skill);
@@ -149,7 +154,10 @@ fn set_skill_level_moves_bag_capacity() {
         "invoke_method",
         json!({"handle": mgr, "method": "SetSkillLevel", "args": ["Bag", PROBE_LEVEL]}),
     );
-    println!("SetSkillLevel(Bag, {PROBE_LEVEL}): ok={} {:?}", write.ok, write.error);
+    println!(
+        "SetSkillLevel(Bag, {PROBE_LEVEL}): ok={} {:?}",
+        write.ok, write.error
+    );
 
     let after_level = skill_level(&api, mgr, "Bag");
     let after_value = skill_value(&api, mgr, "Bag");
@@ -180,5 +188,9 @@ fn set_skill_level_moves_bag_capacity() {
         Some(BAG_VALUE_AT_LEVEL[(PROBE_LEVEL - 1) as usize] as i64),
         "Bag.GetSlotsAmount did not follow the skill level"
     );
-    assert_eq!(restored_level, Some(original), "SAVE LEFT MODIFIED: restore failed");
+    assert_eq!(
+        restored_level,
+        Some(original),
+        "SAVE LEFT MODIFIED: restore failed"
+    );
 }

@@ -511,9 +511,9 @@ pub fn centroid_and_spread(points: &[(i64, i64)]) -> Option<((i64, i64), i64)> {
     if points.is_empty() {
         return None;
     }
-    let sum = points
-        .iter()
-        .fold((0i64, 0i64), |sum, point| (sum.0 + point.0, sum.1 + point.1));
+    let sum = points.iter().fold((0i64, 0i64), |sum, point| {
+        (sum.0 + point.0, sum.1 + point.1)
+    });
     let count = points.len() as i64;
     let centroid = (sum.0 / count, sum.1 / count);
     let spread = points

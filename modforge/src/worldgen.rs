@@ -86,7 +86,11 @@ impl Wall {
     pub fn distance(&self, p: Vec2) -> f32 {
         let d = self.end - self.start;
         let len2 = d.length_squared();
-        let t = if len2 == 0.0 { 0.0 } else { ((p - self.start).dot(d) / len2).clamp(0.0, 1.0) };
+        let t = if len2 == 0.0 {
+            0.0
+        } else {
+            ((p - self.start).dot(d) / len2).clamp(0.0, 1.0)
+        };
         (self.start + d * t).distance(p)
     }
 }
@@ -218,7 +222,11 @@ impl World {
                 for col in c0..=c1 {
                     let p = self.cell_center(col, row);
                     // Overlap, touching edges excluded.
-                    if p.x - half < max.x && p.x + half > min.x && p.y - half < max.y && p.y + half > min.y {
+                    if p.x - half < max.x
+                        && p.x + half > min.x
+                        && p.y - half < max.y
+                        && p.y + half > min.y
+                    {
                         blocked[self.index(col, row)] = true;
                     }
                 }
@@ -306,7 +314,10 @@ pub fn roll_world(
 ) -> Result<World, String> {
     for rule in &def.biome_rules {
         if biomes.def(&rule.biome).is_none() {
-            return Err(format!("biome rule names unregistered biome '{}'", rule.biome));
+            return Err(format!(
+                "biome rule names unregistered biome '{}'",
+                rule.biome
+            ));
         }
     }
     for (kind, _) in &def.monuments {
@@ -507,7 +518,10 @@ pub fn roll_world(
             // door.
             let landmark = Some(kind) == landmark_type.as_ref() && placed < def.landmarks;
             if landmark
-                && !world.sees(door, Vec3::new(position.x, height + monument.height, position.y))
+                && !world.sees(
+                    door,
+                    Vec3::new(position.x, height + monument.height, position.y),
+                )
             {
                 continue;
             }
@@ -608,7 +622,16 @@ fn path(world: &World, blocked: &[bool], from: Vec2, to: Vec2) -> Result<Vec<Vec
         }
         let g = best[&i];
         let (c, r) = (i % n, i / n);
-        for (dc, dr) in [(-1isize, 0isize), (1, 0), (0, -1), (0, 1), (-1, -1), (1, -1), (-1, 1), (1, 1)] {
+        for (dc, dr) in [
+            (-1isize, 0isize),
+            (1, 0),
+            (0, -1),
+            (0, 1),
+            (-1, -1),
+            (1, -1),
+            (-1, 1),
+            (1, 1),
+        ] {
             let (nc, nr) = (c as isize + dc, r as isize + dr);
             if nc < 0 || nr < 0 || nc >= n as isize || nr >= n as isize {
                 continue;
@@ -818,7 +841,10 @@ fn walls_of_maze(
     let clip = |v: f32| v.clamp(-half, half);
     let mut walls = Vec::new();
     let mut push = |a: Vec2, b: Vec2| {
-        let (a, b) = (Vec2::new(clip(a.x), clip(a.y)), Vec2::new(clip(b.x), clip(b.y)));
+        let (a, b) = (
+            Vec2::new(clip(a.x), clip(a.y)),
+            Vec2::new(clip(b.x), clip(b.y)),
+        );
         if a.distance(b) > 0.01 {
             walls.push(Wall {
                 start: a,
@@ -836,8 +862,7 @@ fn walls_of_maze(
         for col in 0..=n {
             // Closed when the cell below has no north opening (or row 0,
             // the boundary); the cell above's south bit mirrors it.
-            let closed = col < n
-                && (row == 0 || row == n || open[(row - 1) * n + col] & 1 == 0);
+            let closed = col < n && (row == 0 || row == n || open[(row - 1) * n + col] & 1 == 0);
             match (closed, run) {
                 (true, None) => run = Some((col, col)),
                 (true, Some((s, _))) => run = Some((s, col)),
@@ -858,8 +883,7 @@ fn walls_of_maze(
         let x = origin.x + col as f32 * corridor;
         let mut run: Option<(usize, usize)> = None;
         for row in 0..=n {
-            let closed = row < n
-                && (col == 0 || col == n || open[row * n + col - 1] & 2 == 0);
+            let closed = row < n && (col == 0 || col == n || open[row * n + col - 1] & 2 == 0);
             match (closed, run) {
                 (true, None) => run = Some((row, row)),
                 (true, Some((s, _))) => run = Some((s, row)),
@@ -882,8 +906,8 @@ mod tests {
     use super::*;
     use crate::biome::{BiomeDef, BiomeRegistry};
     use crate::monument::{
-        Arrangement, BuildingRegistry, BuildingSize, BuildingSlot, BuildingTypeDef, MonumentRegistry,
-        MonumentTypeDef, PropDef,
+        Arrangement, BuildingRegistry, BuildingSize, BuildingSlot, BuildingTypeDef,
+        MonumentRegistry, MonumentTypeDef, PropDef,
     };
     use glam::Vec3;
 
@@ -1020,7 +1044,11 @@ mod tests {
         for seed in 1..=8u64 {
             let world = roll_world(&def(), seed, &biomes, &monuments).unwrap();
             let door = Vec3::new(0.0, 1.7, 0.0);
-            let tower = world.sites.iter().find(|s| s.monument == "radio tower").unwrap();
+            let tower = world
+                .sites
+                .iter()
+                .find(|s| s.monument == "radio tower")
+                .unwrap();
             let ground = world.height_at(tower.position);
             let top = Vec3::new(tower.position.x, ground + 40.0, tower.position.y);
             assert!(world.sees(door, top), "seed {seed}: the tower is hidden");
@@ -1045,10 +1073,20 @@ mod tests {
         assert!(world.sees(eye, Vec3::new(8.0, 1.7, 0.0)));
         let w = &world.walls[0];
         let mid = (w.start + w.end) / 2.0;
-        let across = if w.start.y == w.end.y { Vec2::new(0.0, 3.0) } else { Vec2::new(3.0, 0.0) };
+        let across = if w.start.y == w.end.y {
+            Vec2::new(0.0, 3.0)
+        } else {
+            Vec2::new(3.0, 0.0)
+        };
         let (a, b) = (mid - across, mid + across);
-        assert!(!world.sees(Vec3::new(a.x, 1.7, a.y), Vec3::new(b.x, 1.7, b.y)), "a wall blocks");
-        assert!(world.sees(Vec3::new(a.x, 12.0, a.y), Vec3::new(b.x, 12.0, b.y)), "over the wall");
+        assert!(
+            !world.sees(Vec3::new(a.x, 1.7, a.y), Vec3::new(b.x, 1.7, b.y)),
+            "a wall blocks"
+        );
+        assert!(
+            world.sees(Vec3::new(a.x, 12.0, a.y), Vec3::new(b.x, 12.0, b.y)),
+            "over the wall"
+        );
     }
 
     #[test]
@@ -1087,7 +1125,10 @@ mod tests {
                     );
                 }
                 let allowed = biomes.def(&site.biome).unwrap();
-                assert!(allowed.monuments.contains(&site.monument), "seed {seed}: {site:?}");
+                assert!(
+                    allowed.monuments.contains(&site.monument),
+                    "seed {seed}: {site:?}"
+                );
                 if site.monument == "radio tower" {
                     assert_eq!(site.biome, "hills");
                 }
@@ -1111,14 +1152,21 @@ mod tests {
                 let first = road.points[0];
                 let last = *road.points.last().unwrap();
                 let (sc, sr) = world.cell_of(site.position);
-                assert_eq!(world.cell_of(first), (sc, sr), "seed {seed}: road starts at its site");
+                assert_eq!(
+                    world.cell_of(first),
+                    (sc, sr),
+                    "seed {seed}: road starts at its site"
+                );
                 let ends_well = world
                     .sites
                     .iter()
                     .any(|s| world.cell_of(s.position) == world.cell_of(last));
                 assert!(ends_well, "seed {seed}: road ends nowhere");
                 for p in &road.points {
-                    assert!(p.distance(Vec2::ZERO) > 20.0, "seed {seed}: a road at the bunker");
+                    assert!(
+                        p.distance(Vec2::ZERO) > 20.0,
+                        "seed {seed}: a road at the bunker"
+                    );
                 }
             }
         }
@@ -1157,16 +1205,30 @@ mod tests {
         let world = roll_world(&def(), 3, &biomes, &monuments).unwrap();
         // Inside the flat radius less one cell (the edge cells blend).
         let at = world.height_at(Vec2::ZERO);
-        assert!(at.abs() < 1e-4, "the bunker stands at height zero, not {at}");
-        for d in [Vec2::new(10.0, 0.0), Vec2::new(-6.0, 8.0), Vec2::new(0.0, -10.0)] {
-            assert!((world.height_at(d) - at).abs() < 1e-3, "bunker ground slopes at {d}");
+        assert!(
+            at.abs() < 1e-4,
+            "the bunker stands at height zero, not {at}"
+        );
+        for d in [
+            Vec2::new(10.0, 0.0),
+            Vec2::new(-6.0, 8.0),
+            Vec2::new(0.0, -10.0),
+        ] {
+            assert!(
+                (world.height_at(d) - at).abs() < 1e-3,
+                "bunker ground slopes at {d}"
+            );
         }
         for site in &world.sites {
             let h = world.height_at(site.position);
             // Flat to a quarter of the spacing, less one cell of blend.
             let out = site.spacing * 0.25 - world.def.cell * 1.5;
             let at = world.height_at(site.position + Vec2::new(out, 0.0));
-            assert!((at - h).abs() < 1e-3, "{} slopes {out} m out: {at} vs {h}", site.monument);
+            assert!(
+                (at - h).abs() < 1e-3,
+                "{} slopes {out} m out: {at} vs {h}",
+                site.monument
+            );
         }
     }
 
@@ -1186,7 +1248,10 @@ mod tests {
             let min = w.heights.iter().cloned().fold(f32::MAX, f32::min);
             max - min
         };
-        assert!(relief(&shaped) > relief(&flat) + 10.0, "mountains add relief");
+        assert!(
+            relief(&shaped) > relief(&flat) + 10.0,
+            "mountains add relief"
+        );
         // Plateaus: terraces make runs of cells at exactly the same
         // height; smooth noise never does outside the flattened discs.
         let level_runs = |w: &World| {
@@ -1208,7 +1273,10 @@ mod tests {
         );
         // The biome picture is the same either way: the rules read the
         // base fraction, not the mountains and terraces.
-        assert!(flat.biome_of_cell == shaped.biome_of_cell, "biomes follow the base terrain");
+        assert!(
+            flat.biome_of_cell == shaped.biome_of_cell,
+            "biomes follow the base terrain"
+        );
     }
 
     /// The mixed world must not move when the roll is refactored: a
@@ -1223,8 +1291,12 @@ mod tests {
             sum = sum.wrapping_mul(31).wrapping_add(h.to_bits() as u64);
         }
         for s in &world.sites {
-            sum = sum.wrapping_mul(31).wrapping_add(s.position.x.to_bits() as u64);
-            sum = sum.wrapping_mul(31).wrapping_add(s.position.y.to_bits() as u64);
+            sum = sum
+                .wrapping_mul(31)
+                .wrapping_add(s.position.x.to_bits() as u64);
+            sum = sum
+                .wrapping_mul(31)
+                .wrapping_add(s.position.y.to_bits() as u64);
         }
         for r in &world.roads {
             sum = sum.wrapping_mul(31).wrapping_add(r.points.len() as u64);
@@ -1284,7 +1356,11 @@ mod tests {
         assert!(seen.iter().all(|s| *s), "every cell reachable");
         let dead_ends = open.iter().filter(|o| o.count_ones() == 1).count();
         assert!(dead_ends > 10, "a maze has dead ends: {dead_ends}");
-        assert_eq!(open, carve_maze(n, &none, &mut Roll::new(11)), "same seed same maze");
+        assert_eq!(
+            open,
+            carve_maze(n, &none, &mut Roll::new(11)),
+            "same seed same maze"
+        );
         assert_ne!(open, carve_maze(n, &none, &mut Roll::new(12)));
 
         // A clearing in the middle is open ground the maze grows
@@ -1312,9 +1388,12 @@ mod tests {
         let mut blocked = world.blocked_cells();
         // The strip of ground outside the maze's outer wall is free
         // but not part of the walk: count it as blocked.
-        let (lo, hi) = world.walls.iter().fold((Vec2::MAX, Vec2::MIN), |(lo, hi), w| {
-            (lo.min(w.start).min(w.end), hi.max(w.start).max(w.end))
-        });
+        let (lo, hi) = world
+            .walls
+            .iter()
+            .fold((Vec2::MAX, Vec2::MIN), |(lo, hi), w| {
+                (lo.min(w.start).min(w.end), hi.max(w.start).max(w.end))
+            });
         for i in 0..n * n {
             let p = world.cell_center(i % n, i / n);
             if p.x < lo.x || p.x > hi.x || p.y < lo.y || p.y > hi.y {
@@ -1351,13 +1430,24 @@ mod tests {
                 let line: String = (bc.saturating_sub(20)..(bc + 20).min(n))
                     .map(|c| {
                         let i = r * n + c;
-                        if blocked[i] { '#' } else if seen[i] { '.' } else { 'x' }
+                        if blocked[i] {
+                            '#'
+                        } else if seen[i] {
+                            '.'
+                        } else {
+                            'x'
+                        }
                     })
                     .collect();
                 eprintln!("{line}");
             }
         }
-        assert_eq!(reached, free, "free cells cut off from the bunker: {}", free - reached);
+        assert_eq!(
+            reached,
+            free,
+            "free cells cut off from the bunker: {}",
+            free - reached
+        );
     }
 
     #[test]
@@ -1366,7 +1456,11 @@ mod tests {
         for seed in 1..=6u64 {
             let world = roll_world(&labyrinth_def(), seed, &biomes, &monuments).unwrap();
             assert!(world.heights.iter().all(|h| *h == 0.0), "seed {seed}: flat");
-            assert!(world.walls.len() > 100, "seed {seed}: {} walls", world.walls.len());
+            assert!(
+                world.walls.len() > 100,
+                "seed {seed}: {} walls",
+                world.walls.len()
+            );
             for w in &world.walls {
                 assert!(w.start.x == w.end.x || w.start.y == w.end.y, "axis-aligned");
                 assert_eq!(w.height, 10.0, "as high as the corridor is wide");
@@ -1374,19 +1468,33 @@ mod tests {
             // The bunker's clearing (20 m) is open ground: no wall
             // inside it, so the bunker and its house fit in a 10 m
             // maze.
-            for d in [Vec2::ZERO, Vec2::new(12.0, 0.0), Vec2::new(0.0, -12.0), Vec2::new(-9.0, 9.0)] {
-                assert!(world.in_corridor(d), "seed {seed}: a wall in the clearing at {d}");
+            for d in [
+                Vec2::ZERO,
+                Vec2::new(12.0, 0.0),
+                Vec2::new(0.0, -12.0),
+                Vec2::new(-9.0, 9.0),
+            ] {
+                assert!(
+                    world.in_corridor(d),
+                    "seed {seed}: a wall in the clearing at {d}"
+                );
             }
             assert_eq!(world.sites.len(), 22, "seed {seed}");
             for site in &world.sites {
-                assert!(world.in_corridor(site.position), "seed {seed}: site in a wall");
+                assert!(
+                    world.in_corridor(site.position),
+                    "seed {seed}: site in a wall"
+                );
             }
             // A road winds through the corridors from the second
             // built site to the first.
             assert_eq!(world.roads.len(), 1);
             for road in &world.roads {
                 for p in &road.points {
-                    assert!(world.in_corridor(*p), "seed {seed}: road through a wall at {p}");
+                    assert!(
+                        world.in_corridor(*p),
+                        "seed {seed}: road through a wall at {p}"
+                    );
                 }
             }
         }

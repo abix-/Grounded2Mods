@@ -80,8 +80,8 @@ pub mod debug;
 pub mod discovery;
 pub mod dynamic_tweaks;
 pub mod envelope;
-pub mod features;
 pub mod fall;
+pub mod features;
 pub mod frame;
 pub mod game_thread;
 pub mod hook;
@@ -95,8 +95,8 @@ pub mod mod_main;
 pub mod ops;
 pub mod parms;
 pub mod pe_queue;
-pub mod rpg;
 pub mod ring;
+pub mod rpg;
 pub mod scanner;
 pub mod selector;
 pub mod server;
@@ -121,10 +121,10 @@ pub mod worker;
 pub use modforge::{counter, counter_json, peak};
 
 pub use envelope::{OpResponse, parse_request};
+pub use features::features;
 pub use mod_main::{ModDef, TabDef};
 pub use pe_queue::{DrainStats, Queue};
 pub use server::{Config, spawn};
-pub use features::features;
 
 pub fn register_standard_ops() {
     selector::register_builtins();
@@ -137,11 +137,8 @@ pub fn start_debug_server(cfg: Config) {
     spawn(
         cfg,
         |body| {
-            let resp = envelope::handle_request(
-                body,
-                &ops::OP_REGISTRY,
-                || ue::try_runtime().is_some(),
-            );
+            let resp =
+                envelope::handle_request(body, &ops::OP_REGISTRY, || ue::try_runtime().is_some());
             serde_json::to_vec(&resp).unwrap_or_else(|_| b"{}".to_vec())
         },
         |msg| log::log(format_args!("{msg}")),

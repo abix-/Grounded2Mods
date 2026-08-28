@@ -90,13 +90,7 @@ fn mk_for_button(b: Button) -> WPARAM {
 /// then `WM_*BUTTONDOWN`, then `WM_*BUTTONUP`. Modifier mask
 /// (`mk_extra`) ORed into wParam reports e.g. Shift held; pass 0 if
 /// not chording.
-pub fn click(
-    hwnd: isize,
-    button: Button,
-    x: i32,
-    y: i32,
-    mk_extra: u32,
-) -> Result<(), String> {
+pub fn click(hwnd: isize, button: Button, x: i32, y: i32, mk_extra: u32) -> Result<(), String> {
     let lparam = make_lparam(x, y);
     let mk_btn = mk_for_button(button) as u32;
     let wparam_down = (mk_btn | mk_extra) as WPARAM;
@@ -206,8 +200,7 @@ pub fn drag(
 /// current cursor's screen pos or use `client_to_screen` to convert.
 pub fn scroll(hwnd: isize, screen_x: i32, screen_y: i32, dx: i32, dy: i32) -> Result<(), String> {
     const WHEEL_DELTA: i32 = 120;
-    let lparam_pos =
-        (((screen_y as u32 & 0xFFFF) << 16) | (screen_x as u32 & 0xFFFF)) as LPARAM;
+    let lparam_pos = (((screen_y as u32 & 0xFFFF) << 16) | (screen_x as u32 & 0xFFFF)) as LPARAM;
     if dy != 0 {
         let delta = (dy * WHEEL_DELTA) as i16 as u32; // sign-extended through i16
         let wparam = ((delta as u32) << 16) as WPARAM;

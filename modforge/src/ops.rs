@@ -26,12 +26,7 @@ pub struct OpDef {
 
 impl OpDef {
     /// Convenience constructor.
-    pub fn new<F>(
-        name: &'static str,
-        summary: &'static str,
-        args: &'static str,
-        handler: F,
-    ) -> Self
+    pub fn new<F>(name: &'static str, summary: &'static str, args: &'static str, handler: F) -> Self
     where
         F: Fn(&Json) -> Result<Json, String> + Send + Sync + 'static,
     {

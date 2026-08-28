@@ -33,19 +33,27 @@ fn smoke_checklist() {
     let ping = match api.try_op("ping", json!({})) {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("SKIP: no control plane answering ({e}); launch the game with il2cpp-smoke loaded");
+            eprintln!(
+                "SKIP: no control plane answering ({e}); launch the game with il2cpp-smoke loaded"
+            );
             return;
         }
     };
     assert!(ping.ok, "ping not ok: {:?}", ping.error);
-    assert_eq!(ping.result["pong"], Value::Bool(true), "ping result: {}", ping.result);
+    assert_eq!(
+        ping.result["pong"],
+        Value::Bool(true),
+        "ping result: {}",
+        ping.result
+    );
 
     // smoke_state: runtime tag must be IL2CPP.
     let state = api.op("smoke_state", json!({}));
     assert!(state.ok, "smoke_state not ok: {:?}", state.error);
     assert_eq!(
         state.result["runtime"], "Il2Cpp",
-        "runtime tag: {}", state.result
+        "runtime tag: {}",
+        state.result
     );
 
     // Harmony postfix fires per frame: the counter must move
@@ -65,7 +73,11 @@ fn smoke_checklist() {
     let walk = api.op("walk_class", json!({"class": "UnityEngine.Camera"}));
     assert!(walk.ok, "walk_class not ok: {:?}", walk.error);
     let instances = walk.result.as_array().cloned().unwrap_or_default();
-    assert!(!instances.is_empty(), "no Camera instances: {}", walk.result);
+    assert!(
+        !instances.is_empty(),
+        "no Camera instances: {}",
+        walk.result
+    );
     let handle = instances[0]["handle"].as_i64().expect("instance handle");
 
     // inspect_object: dump the camera's fields, pick a primitive
@@ -77,13 +89,14 @@ fn smoke_checklist() {
         .as_object()
         .cloned()
         .unwrap_or_default();
-    let primitive = fields
-        .iter()
-        .find(|(_, v)| v.is_number() || v.is_boolean());
+    let primitive = fields.iter().find(|(_, v)| v.is_number() || v.is_boolean());
     let (field_name, field_value) = match primitive {
         Some((k, v)) => (k.clone(), v.clone()),
         None => {
-            eprintln!("SKIP read/write round trip: no primitive field in inspect dump: {}", inspect.result);
+            eprintln!(
+                "SKIP read/write round trip: no primitive field in inspect dump: {}",
+                inspect.result
+            );
             println!("smoke checklist PASSED (without field round trip)");
             return;
         }
@@ -96,7 +109,11 @@ fn smoke_checklist() {
         "write_field",
         json!({"handle": handle, "field": field_name, "value": field_value}),
     );
-    assert!(write.ok, "write_field({field_name}) not ok: {:?}", write.error);
+    assert!(
+        write.ok,
+        "write_field({field_name}) not ok: {:?}",
+        write.error
+    );
 
     let reread = api.op("read_field", json!({"handle": handle, "field": field_name}));
     assert!(reread.ok, "re-read not ok: {:?}", reread.error);

@@ -32,7 +32,10 @@ fn grow_the_goon_pool() {
         return;
     };
     let count_before = api
-        .op("invoke_method", json!({"handle": pool, "method": "get_UnspawnedGoonCount", "args": []}))
+        .op(
+            "invoke_method",
+            json!({"handle": pool, "method": "get_UnspawnedGoonCount", "args": []}),
+        )
         .result
         .as_i64();
     println!("UnspawnedGoonCount before: {count_before:?}");
@@ -44,12 +47,17 @@ fn grow_the_goon_pool() {
     };
     let mut template = None;
     for g in &goons {
-        let Some(h) = g["handle"].as_i64() else { continue };
+        let Some(h) = g["handle"].as_i64() else {
+            continue;
+        };
         if g["name"].as_str().unwrap_or("").ends_with("(Clone)") {
             continue;
         }
         let spawned = api
-            .op("invoke_method", json!({"handle": h, "method": "get_IsGoonSpawned", "args": []}))
+            .op(
+                "invoke_method",
+                json!({"handle": h, "method": "get_IsGoonSpawned", "args": []}),
+            )
             .result
             .as_bool();
         if template.is_none() && spawned == Some(false) {
@@ -90,17 +98,29 @@ fn grow_the_goon_pool() {
     let Some((px, py, pz)) = player_position(&api) else {
         return;
     };
-    let appearance = api.op("invoke_method", json!({"handle": pool, "method": "GetRandomAppearance", "args": []}));
+    let appearance = api.op(
+        "invoke_method",
+        json!({"handle": pool, "method": "GetRandomAppearance", "args": []}),
+    );
     let Some(ah) = handle_of(&appearance.result) else {
-        println!("GetRandomAppearance carried no handle: {}", appearance.result);
+        println!(
+            "GetRandomAppearance carried no handle: {}",
+            appearance.result
+        );
         return;
     };
     // Activate first: the template is inactive, so the clone's
     // components never ran Awake (the NPCInventory null lists in
     // the 10:30 stack trace).
-    let go = api.op("invoke_method", json!({"handle": ch, "method": "get_gameObject", "args": []}));
+    let go = api.op(
+        "invoke_method",
+        json!({"handle": ch, "method": "get_gameObject", "args": []}),
+    );
     if let Some(gh) = handle_of(&go.result) {
-        let act = api.op("invoke_method", json!({"handle": gh, "method": "SetActive", "args": [true]}));
+        let act = api.op(
+            "invoke_method",
+            json!({"handle": gh, "method": "SetActive", "args": [true]}),
+        );
         println!("SetActive(true): ok={}", act.ok);
     }
 
@@ -127,10 +147,18 @@ fn grow_the_goon_pool() {
         json!({"handle": ch, "method": "Spawn",
                "args": [{"$handle": pool}, {"x": px + 6.0, "y": py, "z": pz}]}),
     );
-    println!("clone.Spawn(pos, appearance): ok={} {:?}", spawn.ok, spawn.error);
+    println!(
+        "clone.Spawn(pos, appearance): ok={} {:?}",
+        spawn.ok, spawn.error
+    );
     if spawn.ok {
-        let live = api.op("invoke_method", json!({"handle": ch, "method": "get_IsGoonSpawned", "args": []}));
+        let live = api.op(
+            "invoke_method",
+            json!({"handle": ch, "method": "get_IsGoonSpawned", "args": []}),
+        );
         println!("clone IsGoonSpawned: {}", live.result);
-        println!("OPERATOR CHECK: a SIXTH goon 6m from you, looking and behaving normal? Wait 30s: does it stay (not engine-destroyed)?");
+        println!(
+            "OPERATOR CHECK: a SIXTH goon 6m from you, looking and behaving normal? Wait 30s: does it stay (not engine-destroyed)?"
+        );
     }
 }

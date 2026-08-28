@@ -54,7 +54,10 @@ fn farming_anchor_points() {
     };
     for field in ["MaxHealth", "Health"] {
         let before = api.op("read_field", json!({"handle": hh, "field": field}));
-        let w = api.op("write_field", json!({"handle": hh, "field": field, "value": 250.0}));
+        let w = api.op(
+            "write_field",
+            json!({"handle": hh, "field": field, "value": 250.0}),
+        );
         let after = api.op("read_field", json!({"handle": hh, "field": field}));
         println!(
             "goon NPCHealth.{field}: before={} write_ok={} after={}",
@@ -66,7 +69,12 @@ fn farming_anchor_points() {
     let movement = api.op("read_field", json!({"handle": goon, "field": "Movement"}));
     match handle_of(&movement.result) {
         Some(mh) => {
-            for field in ["MoveSpeedMultiplier", "WalkSpeed", "RunSpeed", "SpeedController"] {
+            for field in [
+                "MoveSpeedMultiplier",
+                "WalkSpeed",
+                "RunSpeed",
+                "SpeedController",
+            ] {
                 let r = api.op("read_field", json!({"handle": mh, "field": field}));
                 println!("goon Movement.{field}: ok={} {}", r.ok, r.result);
             }
@@ -82,6 +90,9 @@ fn farming_anchor_points() {
             json!({"handle": goon, "method": "AttackEntity",
                    "args": [{"$handle": player}, true]}),
         );
-        println!("AttackEntity ok={} (fight it to feel the 250 health)", attack.ok);
+        println!(
+            "AttackEntity ok={} (fight it to feel the 250 health)",
+            attack.ok
+        );
     }
 }

@@ -65,8 +65,10 @@ fn set_countdown() {
     while start.elapsed().as_secs() < 45 {
         let t = client::read_f64(&api, addr, TIME_UNTIL_EMMISION);
         let c = client::read_i32(&api, addr, EMISSIONS_COUNT);
-        println!("  t={:5.1}s  TimeUntilEmmision={t}  EmissionsCount={c}",
-            start.elapsed().as_secs_f64());
+        println!(
+            "  t={:5.1}s  TimeUntilEmmision={t}  EmissionsCount={c}",
+            start.elapsed().as_secs_f64()
+        );
         if !fired && c != count_before {
             println!("  *** SHINING: EmissionsCount {count_before} -> {c}, reset to {t}");
             fired = true;

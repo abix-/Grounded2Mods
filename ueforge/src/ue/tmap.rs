@@ -253,8 +253,7 @@ mod tests {
     fn single_slot_walks() {
         let obj = make_tmap(0, &[(0x1234_5678_DEAD_BEEF, 0x1111_2222)]);
         // SAFETY: synthetic buffer.
-        let collected: Vec<(usize, *const u8)> =
-            unsafe { slots(obj, 0).collect() };
+        let collected: Vec<(usize, *const u8)> = unsafe { slots(obj, 0).collect() };
         assert_eq!(collected.len(), 1);
         // SAFETY: element ptr points into the leaked slot buffer.
         let key = unsafe { (collected[0].1 as *const u64).read_unaligned() };
@@ -301,8 +300,7 @@ mod tests {
         // The walker MUST NOT deref into a wild address.
         let mut buf = vec![0u8; 32];
         buf[0..8].copy_from_slice(&0u64.to_le_bytes()); // null data
-        buf[off::DATA_NUM..off::DATA_NUM + 4]
-            .copy_from_slice(&100i32.to_le_bytes()); // num lying about size
+        buf[off::DATA_NUM..off::DATA_NUM + 4].copy_from_slice(&100i32.to_le_bytes()); // num lying about size
         let leaked: &'static [u8] = Box::leak(buf.into_boxed_slice());
         // SAFETY: synthetic.
         let obj = unsafe { &*(leaked.as_ptr() as *const UObject) };
@@ -356,8 +354,7 @@ mod tests {
         // Pretend data is non-null so the null-check doesn't
         // short-circuit; the num check is what must reject this.
         buf[0..8].copy_from_slice(&(1usize).to_le_bytes());
-        buf[off::DATA_NUM..off::DATA_NUM + 4]
-            .copy_from_slice(&(-50i32).to_le_bytes());
+        buf[off::DATA_NUM..off::DATA_NUM + 4].copy_from_slice(&(-50i32).to_le_bytes());
         let leaked: &'static [u8] = Box::leak(buf.into_boxed_slice());
         // SAFETY: synthetic; the walker MUST bail on negative
         // num before any pointer arithmetic.

@@ -133,8 +133,7 @@ impl<'a> IntoIterator for &'a DataTableRegistry {
 // on the runtime `discovery` cache, which covers every live table
 // regardless of registration.
 
-static REGISTERED: std::sync::OnceLock<&'static DataTableRegistry> =
-    std::sync::OnceLock::new();
+static REGISTERED: std::sync::OnceLock<&'static DataTableRegistry> = std::sync::OnceLock::new();
 
 /// Register the process-wide `DataTableRegistry`. Idempotent on
 /// first set; later calls are silently ignored (first writer wins,
@@ -311,8 +310,8 @@ impl<T: Copy + PartialEq + Send + 'static> NamedFieldTweak<T> {
         if let Some(t) = self.inner.get() {
             return Ok(t);
         }
-        let (offset, _size, _class) = resolve_field(self.table_name, self.field_name)
-            .ok_or_else(|| {
+        let (offset, _size, _class) =
+            resolve_field(self.table_name, self.field_name).ok_or_else(|| {
                 format!(
                     "NamedFieldTweak: field '{}.{}' not in discovery cache",
                     self.table_name, self.field_name
@@ -401,14 +400,14 @@ fn dyn_tweak<T: Copy + PartialEq + Send + 'static>(
     if let Some(t) = reg.lock().get(&key) {
         return Ok(*t);
     }
-    let (offset, _size, _class) = resolve_field(table, field).ok_or_else(|| {
-        format!("dynamic_apply: field '{table}.{field}' not in discovery cache")
-    })?;
+    let (offset, _size, _class) = resolve_field(table, field)
+        .ok_or_else(|| format!("dynamic_apply: field '{table}.{field}' not in discovery cache"))?;
     // Leak the table name so FieldTweak's &'static str is satisfied
     // for the process lifetime. One leak per unique table name.
     let table_static: &'static str = Box::leak(table.to_string().into_boxed_str());
-    let tw: &'static ue::datatable::FieldTweak<T> =
-        Box::leak(Box::new(ue::datatable::FieldTweak::new(table_static, offset)));
+    let tw: &'static ue::datatable::FieldTweak<T> = Box::leak(Box::new(
+        ue::datatable::FieldTweak::new(table_static, offset),
+    ));
     reg.lock().insert(key, tw);
     Ok(tw)
 }
@@ -729,8 +728,13 @@ fn save_persisted_to_disk() -> Result<(), String> {
         f.sync_all()
             .map_err(|e| format!("tweaks: fsync {} failed: {e}", tmp.display()))?;
     }
-    fs::rename(&tmp, &path)
-        .map_err(|e| format!("tweaks: rename {} -> {} failed: {e}", tmp.display(), path.display()))?;
+    fs::rename(&tmp, &path).map_err(|e| {
+        format!(
+            "tweaks: rename {} -> {} failed: {e}",
+            tmp.display(),
+            path.display()
+        )
+    })?;
     Ok(())
 }
 
@@ -917,12 +921,9 @@ fn tweak_apply_inner(args: &Json, persist: bool) -> Result<Json, String> {
                     |vanilla| vanilla.saturating_mul(v),
                     |vanilla| vanilla == 0,
                 )?,
-                "add" => dynamic_apply_i32(
-                    table,
-                    field,
-                    |vanilla| vanilla.saturating_add(v),
-                    |_| false,
-                )?,
+                "add" => {
+                    dynamic_apply_i32(table, field, |vanilla| vanilla.saturating_add(v), |_| false)?
+                }
                 other => return Err(format!("tweak_apply: unknown i32 op '{other}'")),
             }
         }
@@ -939,12 +940,9 @@ fn tweak_apply_inner(args: &Json, persist: bool) -> Result<Json, String> {
                     |vanilla| vanilla.saturating_mul(v),
                     |vanilla| vanilla == 0,
                 )?,
-                "add" => dynamic_apply_u32(
-                    table,
-                    field,
-                    |vanilla| vanilla.saturating_add(v),
-                    |_| false,
-                )?,
+                "add" => {
+                    dynamic_apply_u32(table, field, |vanilla| vanilla.saturating_add(v), |_| false)?
+                }
                 other => return Err(format!("tweak_apply: unknown u32 op '{other}'")),
             }
         }
@@ -1088,8 +1086,8 @@ impl<T: Copy + PartialEq + Send + 'static> ClassNamedFieldTweak<T> {
         if let Some(t) = self.inner.get() {
             return Ok(t);
         }
-        let (offset, _size) = resolve_class_field(self.class_name, self.field_name)
-            .ok_or_else(|| {
+        let (offset, _size) =
+            resolve_class_field(self.class_name, self.field_name).ok_or_else(|| {
                 format!(
                     "ClassNamedFieldTweak: field '{}.{}' not in discovery cache",
                     self.class_name, self.field_name
@@ -1128,8 +1126,9 @@ pub fn snapshot_table(table_name: &str, max_rows: Option<usize>) -> Option<Json>
     // read_unaligned because nothing guarantees pointer alignment
     // on the row layout.
     let row_struct_ptr: *const UObject = unsafe {
-        (table.as_ptr().add(crate::ue::offsets::datatable::ROW_STRUCT)
-            as *const *const UObject)
+        (table
+            .as_ptr()
+            .add(crate::ue::offsets::datatable::ROW_STRUCT) as *const *const UObject)
             .read_unaligned()
     };
     // SAFETY: row_struct_ptr was just read from the live table;
@@ -1334,7 +1333,12 @@ fn decode_row_fields(row_ptr: *const u8, schema: &[Json]) -> Json {
     Json::Object(map)
 }
 
-unsafe fn decode_field(row_ptr: *const u8, offset: usize, element_size: usize, class: &str) -> Json {
+unsafe fn decode_field(
+    row_ptr: *const u8,
+    offset: usize,
+    element_size: usize,
+    class: &str,
+) -> Json {
     // SAFETY: caller's `unsafe fn` contract requires row_ptr +
     // offset to be a valid byte address within a live row, and
     // `class` to be the FProperty class name reflected for that
@@ -1360,8 +1364,8 @@ unsafe fn decode_field(row_ptr: *const u8, offset: usize, element_size: usize, c
             "FloatProperty" => json!((p as *const f32).read_unaligned()),
             "DoubleProperty" => json!((p as *const f64).read_unaligned()),
             "NameProperty" => {
-                let fname: crate::ue::fname::FName = (p as *const crate::ue::fname::FName)
-                    .read_unaligned();
+                let fname: crate::ue::fname::FName =
+                    (p as *const crate::ue::fname::FName).read_unaligned();
                 if fname.is_none() {
                     return Json::Null;
                 }
@@ -1383,12 +1387,8 @@ unsafe fn decode_field(row_ptr: *const u8, offset: usize, element_size: usize, c
                 let slice = std::slice::from_raw_parts(data, len);
                 json!(String::from_utf16_lossy(slice))
             }
-            "ObjectProperty"
-            | "ClassProperty"
-            | "SoftObjectProperty"
-            | "SoftClassProperty"
-            | "WeakObjectProperty"
-            | "LazyObjectProperty" => {
+            "ObjectProperty" | "ClassProperty" | "SoftObjectProperty" | "SoftClassProperty"
+            | "WeakObjectProperty" | "LazyObjectProperty" => {
                 let ptr: *const UObject = (p as *const *const UObject).read_unaligned();
                 if ptr.is_null() {
                     return Json::Null;

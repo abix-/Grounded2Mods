@@ -54,7 +54,10 @@ pub fn cursor_pos() -> Result<(i32, i32), String> {
     if ok != 0 {
         Ok((p.x, p.y))
     } else {
-        Err(format!("GetCursorPos failed: {}", std::io::Error::last_os_error()))
+        Err(format!(
+            "GetCursorPos failed: {}",
+            std::io::Error::last_os_error()
+        ))
     }
 }
 
@@ -99,23 +102,43 @@ pub fn move_rel(dx: i32, dy: i32) -> Result<(), String> {
 fn button_flags(b: Button, down: bool) -> (u32, u32) {
     match b {
         Button::Left => (
-            if down { MOUSEEVENTF_LEFTDOWN } else { MOUSEEVENTF_LEFTUP },
+            if down {
+                MOUSEEVENTF_LEFTDOWN
+            } else {
+                MOUSEEVENTF_LEFTUP
+            },
             0,
         ),
         Button::Right => (
-            if down { MOUSEEVENTF_RIGHTDOWN } else { MOUSEEVENTF_RIGHTUP },
+            if down {
+                MOUSEEVENTF_RIGHTDOWN
+            } else {
+                MOUSEEVENTF_RIGHTUP
+            },
             0,
         ),
         Button::Middle => (
-            if down { MOUSEEVENTF_MIDDLEDOWN } else { MOUSEEVENTF_MIDDLEUP },
+            if down {
+                MOUSEEVENTF_MIDDLEDOWN
+            } else {
+                MOUSEEVENTF_MIDDLEUP
+            },
             0,
         ),
         Button::XButton1 => (
-            if down { MOUSEEVENTF_XDOWN } else { MOUSEEVENTF_XUP },
+            if down {
+                MOUSEEVENTF_XDOWN
+            } else {
+                MOUSEEVENTF_XUP
+            },
             0x0001,
         ),
         Button::XButton2 => (
-            if down { MOUSEEVENTF_XDOWN } else { MOUSEEVENTF_XUP },
+            if down {
+                MOUSEEVENTF_XDOWN
+            } else {
+                MOUSEEVENTF_XUP
+            },
             0x0002,
         ),
     }
@@ -203,9 +226,7 @@ const WHEEL_DELTA: i32 = 120;
 /// Vertical / horizontal scroll. `dy > 0` is "scroll up / away from user".
 /// `dx > 0` is "scroll right". Values are in wheel-ticks (one notch each).
 pub fn scroll(dx: i32, dy: i32) -> Result<(), String> {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        MOUSEEVENTF_HWHEEL, MOUSEEVENTF_WHEEL,
-    };
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{MOUSEEVENTF_HWHEEL, MOUSEEVENTF_WHEEL};
     if dy != 0 {
         let input = INPUT {
             r#type: INPUT_MOUSE,
@@ -242,7 +263,9 @@ pub fn scroll(dx: i32, dy: i32) -> Result<(), String> {
 }
 
 fn key_event(key: Key, down: bool) -> Result<(), String> {
-    let scan = unsafe { MapVirtualKeyW(key.0 as u32, 0 /* MAPVK_VK_TO_VSC */) } as u16;
+    let scan = unsafe {
+        MapVirtualKeyW(key.0 as u32, 0 /* MAPVK_VK_TO_VSC */)
+    } as u16;
     let mut flags = KEYEVENTF_SCANCODE;
     if !down {
         flags |= KEYEVENTF_KEYUP;

@@ -94,9 +94,9 @@ pub mod ufield {
 
 pub mod ustruct {
     pub const SUPER_STRUCT: usize = 0x40;
-    pub const CHILDREN: usize = 0x48;            // UField* (functions)
-    pub const CHILD_PROPERTIES: usize = 0x50;    // FField* (native props)
-    pub const SIZE: usize = 0xB0;                // PropertiesSize i32
+    pub const CHILDREN: usize = 0x48; // UField* (functions)
+    pub const CHILD_PROPERTIES: usize = 0x50; // FField* (native props)
+    pub const SIZE: usize = 0xB0; // PropertiesSize i32
 }
 
 /// FField. UE 5.x lightweight property header. Lives off
@@ -105,9 +105,9 @@ pub mod ustruct {
 /// through UE 5.x.
 pub mod ffield {
     pub const CLASS_PRIVATE: usize = 0x08;
-    pub const OWNER: usize = 0x10;          // FFieldVariant (2 ptrs = 0x10)
+    pub const OWNER: usize = 0x10; // FFieldVariant (2 ptrs = 0x10)
     pub const NEXT: usize = 0x20;
-    pub const NAME_PRIVATE: usize = 0x28;   // FName (8 bytes)
+    pub const NAME_PRIVATE: usize = 0x28; // FName (8 bytes)
     pub const SIZE: usize = 0x30;
 }
 
@@ -150,8 +150,8 @@ pub mod tuobject_array {
 /// at offset 0x10. Field offsets are within the inner struct.
 /// Used by `GObjectsLayout::WrappedChunked`.
 pub mod chunked_uobject_array {
-    pub const OBJ_OBJECTS: usize = 0x10;          // FUObjectArray::ObjObjects
-    pub const OBJECTS: usize = 0x00;              // FUObjectItem** chunk-ptrs
+    pub const OBJ_OBJECTS: usize = 0x10; // FUObjectArray::ObjObjects
+    pub const OBJECTS: usize = 0x00; // FUObjectItem** chunk-ptrs
     pub const PRE_ALLOCATED_OBJECTS: usize = 0x08;
     pub const MAX_ELEMENTS: usize = 0x10;
     pub const NUM_ELEMENTS: usize = 0x14;

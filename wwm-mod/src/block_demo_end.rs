@@ -83,7 +83,11 @@ pub fn install() {
     } else {
         unityforge::mono::log(
             unityforge::mono::LogLevel::Info,
-            &format!("wwm-mod: blocked {} method(s): {}", blocked.len(), blocked.join(", ")),
+            &format!(
+                "wwm-mod: blocked {} method(s): {}",
+                blocked.len(),
+                blocked.join(", ")
+            ),
         );
     }
 }
@@ -121,15 +125,30 @@ fn enumerate_methods(type_name: &str) -> Result<Vec<MethodInfo>, String> {
     if let Some(err) = v.get("error").and_then(Json::as_str) {
         return Err(err.to_string());
     }
-    let arr = v.get("methods").and_then(Json::as_array).ok_or("no methods field")?;
+    let arr = v
+        .get("methods")
+        .and_then(Json::as_array)
+        .ok_or("no methods field")?;
     let mut out = Vec::with_capacity(arr.len());
     for m in arr {
         out.push(MethodInfo {
-            name: m.get("name").and_then(Json::as_str).unwrap_or("").to_string(),
-            declared_on: m.get("declared_on").and_then(Json::as_str).unwrap_or("").to_string(),
+            name: m
+                .get("name")
+                .and_then(Json::as_str)
+                .unwrap_or("")
+                .to_string(),
+            declared_on: m
+                .get("declared_on")
+                .and_then(Json::as_str)
+                .unwrap_or("")
+                .to_string(),
             params: m.get("params").and_then(Json::as_i64).unwrap_or(0),
             is_static: m.get("static").and_then(Json::as_bool).unwrap_or(false),
-            ret: m.get("return").and_then(Json::as_str).unwrap_or("").to_string(),
+            ret: m
+                .get("return")
+                .and_then(Json::as_str)
+                .unwrap_or("")
+                .to_string(),
         });
     }
     Ok(out)

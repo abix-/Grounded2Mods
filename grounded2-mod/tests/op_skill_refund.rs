@@ -59,10 +59,7 @@ fn refund_below_zero_clamps() {
 
     // Refund 5 from a skill at level 0 should not error and not
     // change the level.
-    let r = api.op(
-        "skill_refund",
-        serde_json::json!({"id": id, "count": 5}),
-    );
+    let r = api.op("skill_refund", serde_json::json!({"id": id, "count": 5}));
     assert!(r.ok, "refund-from-0 should not error: {:?}", r.error);
     assert_eq!(r.state.skill_level(id), 0);
 }

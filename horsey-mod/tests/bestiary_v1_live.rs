@@ -27,9 +27,7 @@ fn bestiary_v1_lands_after_inject() {
     let resp = game
         .op_json("genes.ext.get", &json!({"ext_idx": 0}))
         .expect("genes.ext.get must succeed");
-    let result = resp
-        .get("result")
-        .expect("response must have a result");
+    let result = resp.get("result").expect("response must have a result");
 
     let name = result
         .get("name")
@@ -44,10 +42,7 @@ fn bestiary_v1_lands_after_inject() {
         .get("alleles")
         .and_then(|v| v.as_array())
         .expect("alleles array");
-    let alleles_u: Vec<u64> = alleles
-        .iter()
-        .filter_map(|a| a.as_u64())
-        .collect();
+    let alleles_u: Vec<u64> = alleles.iter().filter_map(|a| a.as_u64()).collect();
     assert_eq!(
         alleles_u,
         vec![0u64, 50, 100, 200],

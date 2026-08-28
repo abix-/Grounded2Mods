@@ -129,7 +129,7 @@ pub fn all() -> Vec<OpDef> {
         OpDef::new(
             "input.player.commands",
             "Send one ordered command batch through the registered in-process player input surface.",
-            "{commands: [{kind: axis, axis, value, delta_time}|{kind: key, key, down}]}",
+            "{commands: [{kind: mouse_delta, dx, dy}|{kind: key, key, down}]}",
             |args| {
                 let commands: Vec<PlayerCommand> = serde_json::from_value(
                     args.get("commands")
@@ -149,12 +149,12 @@ pub fn all() -> Vec<OpDef> {
         ),
         OpDef::new(
             "input.player.pose",
-            "Read player position and control yaw through the registered in-process input surface.",
+            "Read player position, yaw, and pitch through the registered in-process input surface.",
             "{}",
             |_args| {
                 let surface = super::input_surface()
                     .ok_or("no in-process player input surface is registered")?;
-                Ok(json!({"surface": surface.name(), "pose": surface.pose()?}))
+                Ok(json!({"surface": surface.name(), "pose": surface.observe_player()?}))
             },
         ),
         OpDef::new(
@@ -195,10 +195,7 @@ pub fn all() -> Vec<OpDef> {
                     }
                     Backend::L3 => l3_or_fallback(
                         "mouse.move_rel",
-                        |surface| {
-                            surface.axis(Axis::MouseX, dx as f32, 0.0)?;
-                            surface.axis(Axis::MouseY, dy as f32, 0.0)
-                        },
+                        |surface| surface.move_rel(dx, dy),
                         || l1::move_rel(dx, dy),
                     )?,
                 }

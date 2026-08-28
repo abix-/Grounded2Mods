@@ -1,17 +1,15 @@
-//! Recorded waypoint routes, A* selection, and closed-loop steering.
-//!
-//! A route contains only edges that were traversed successfully while
-//! recording. The graph selects a route; a host-specific follower observes
-//! the live pose and applies [`steer`] until each waypoint is reached.
-
-use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap};
+//! Shared bot navigation for Unreal and Unity games.
 
 use serde::{Deserialize, Serialize};
+use smallvec::{SmallVec, smallvec};
 
-use crate::input::{Axis, InputSurface, PlayerCommand, dispatch_player_commands};
+use crate::input::{Key, PlayerCommand};
 
-pub const SCHEMA: &str = "modforge.route@v1";
+pub const SCHEMA: &str = "modforge.route@v2";
+const W: Key = Key(0x57);
+const A: Key = Key(0x41);
+const S: Key = Key(0x53);
+const D: Key = Key(0x44);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Position {
@@ -37,11 +35,18 @@ impl Position {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WaypointAction {
+    Interact { key: Key },
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Waypoint {
     pub id: String,
     pub position: Position,
     pub arrival_radius: f64,
+    pub action: Option<WaypointAction>,
 }
 
 impl Waypoint {
@@ -50,64 +55,36 @@ impl Waypoint {
             id: id.into(),
             position,
             arrival_radius,
+            action: None,
         }
+    }
+
+    pub fn with_action(mut self, action: WaypointAction) -> Self {
+        self.action = Some(action);
+        self
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct RouteEdge {
-    pub id: String,
-    pub from: String,
-    pub to: String,
-    pub cost: f64,
-}
-
-impl RouteEdge {
-    pub fn new(
-        id: impl Into<String>,
-        from: impl Into<String>,
-        to: impl Into<String>,
-        cost: f64,
-    ) -> Self {
-        Self {
-            id: id.into(),
-            from: from.into(),
-            to: to.into(),
-            cost,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct RouteGraph {
+pub struct Route {
     schema: String,
     pub name: String,
     waypoints: Vec<Waypoint>,
-    edges: Vec<RouteEdge>,
 }
 
-impl RouteGraph {
-    pub fn new(
-        name: impl Into<String>,
-        waypoints: Vec<Waypoint>,
-        edges: Vec<RouteEdge>,
-    ) -> Result<Self, String> {
-        let graph = Self {
+impl Route {
+    pub fn new(name: impl Into<String>, waypoints: Vec<Waypoint>) -> Result<Self, String> {
+        let route = Self {
             schema: SCHEMA.to_string(),
             name: name.into(),
             waypoints,
-            edges,
         };
-        graph.validate()?;
-        Ok(graph)
+        route.validate()?;
+        Ok(route)
     }
 
     pub fn waypoints(&self) -> &[Waypoint] {
         &self.waypoints
-    }
-
-    pub fn edges(&self) -> &[RouteEdge] {
-        &self.edges
     }
 
     pub fn waypoint(&self, id: &str) -> Option<&Waypoint> {
@@ -122,133 +99,69 @@ impl RouteGraph {
         self.waypoints.last().map(|waypoint| waypoint.id.as_str())
     }
 
+    pub fn waypoints_after(&self, start: &str, goal: &str) -> Result<Vec<Waypoint>, String> {
+        let start_index = self.index(start)?;
+        let goal_index = self.index(goal)?;
+        if start_index < goal_index {
+            Ok(self.waypoints[start_index + 1..=goal_index].to_vec())
+        } else if start_index > goal_index {
+            Ok(self.waypoints[goal_index..start_index]
+                .iter()
+                .rev()
+                .cloned()
+                .collect())
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    pub fn reversed(&self, name: impl Into<String>) -> Self {
+        let mut waypoints = self.waypoints.clone();
+        waypoints.reverse();
+        Self::new(name, waypoints).expect("reversing a valid route preserves validity")
+    }
+
     pub fn to_json(&self) -> Result<String, String> {
         serde_json::to_string_pretty(self).map_err(|error| format!("serialize route: {error}"))
     }
 
     pub fn from_json(text: &str) -> Result<Self, String> {
-        let graph: Self =
+        let route: Self =
             serde_json::from_str(text).map_err(|error| format!("parse route: {error}"))?;
-        if graph.schema != SCHEMA {
+        if route.schema != SCHEMA {
             return Err(format!(
                 "unsupported route schema '{}' (expected '{SCHEMA}')",
-                graph.schema
+                route.schema
             ));
         }
-        graph.validate()?;
-        Ok(graph)
+        route.validate()?;
+        Ok(route)
     }
 
-    pub fn reversed(&self, name: impl Into<String>) -> Self {
-        let edges = self
-            .edges
+    fn index(&self, id: &str) -> Result<usize, String> {
+        self.waypoints
             .iter()
-            .map(|edge| {
-                RouteEdge::new(
-                    format!("reverse:{}", edge.id),
-                    edge.to.clone(),
-                    edge.from.clone(),
-                    edge.cost,
-                )
-            })
-            .collect();
-        Self::new(name, self.waypoints.clone(), edges)
-            .expect("reversing a valid graph preserves graph validity")
-    }
-
-    pub fn shortest_path(
-        &self,
-        start: &str,
-        goal: &str,
-        edge_is_available: impl Fn(&RouteEdge) -> bool,
-    ) -> Result<Vec<String>, String> {
-        let indices: HashMap<&str, usize> = self
-            .waypoints
-            .iter()
-            .enumerate()
-            .map(|(index, waypoint)| (waypoint.id.as_str(), index))
-            .collect();
-        let start_index = *indices
-            .get(start)
-            .ok_or_else(|| format!("route start waypoint '{start}' does not exist"))?;
-        let goal_index = *indices
-            .get(goal)
-            .ok_or_else(|| format!("route goal waypoint '{goal}' does not exist"))?;
-
-        let mut best = vec![f64::INFINITY; self.waypoints.len()];
-        let mut came_from = vec![None; self.waypoints.len()];
-        let mut open = BinaryHeap::new();
-        best[start_index] = 0.0;
-        open.push(OpenNode {
-            estimate: self.waypoints[start_index]
-                .position
-                .distance(self.waypoints[goal_index].position),
-            cost: 0.0,
-            index: start_index,
-        });
-
-        while let Some(current) = open.pop() {
-            if current.cost > best[current.index] {
-                continue;
-            }
-            if current.index == goal_index {
-                let mut path = vec![goal_index];
-                let mut at = goal_index;
-                while let Some(previous) = came_from[at] {
-                    path.push(previous);
-                    at = previous;
-                }
-                path.reverse();
-                return Ok(path
-                    .into_iter()
-                    .map(|index| self.waypoints[index].id.clone())
-                    .collect());
-            }
-
-            let current_id = self.waypoints[current.index].id.as_str();
-            for edge in self
-                .edges
-                .iter()
-                .filter(|edge| edge.from == current_id && edge_is_available(edge))
-            {
-                let next = indices[edge.to.as_str()];
-                let next_cost = current.cost + edge.cost;
-                if next_cost >= best[next] {
-                    continue;
-                }
-                best[next] = next_cost;
-                came_from[next] = Some(current.index);
-                let heuristic = self.waypoints[next]
-                    .position
-                    .distance(self.waypoints[goal_index].position);
-                open.push(OpenNode {
-                    estimate: next_cost + heuristic,
-                    cost: next_cost,
-                    index: next,
-                });
-            }
-        }
-
-        Err(format!(
-            "no available recorded route from '{start}' to '{goal}'"
-        ))
+            .position(|waypoint| waypoint.id == id)
+            .ok_or_else(|| format!("route waypoint '{id}' does not exist"))
     }
 
     fn validate(&self) -> Result<(), String> {
         if self.waypoints.is_empty() {
             return Err("route has no waypoints".into());
         }
-        let mut indices = HashMap::with_capacity(self.waypoints.len());
         for (index, waypoint) in self.waypoints.iter().enumerate() {
             if waypoint.id.is_empty() {
                 return Err(format!("waypoint {index} has an empty id"));
             }
-            if indices.insert(waypoint.id.as_str(), index).is_some() {
+            if self.waypoints[..index]
+                .iter()
+                .any(|earlier| earlier.id == waypoint.id)
+            {
                 return Err(format!("duplicate waypoint id '{}'", waypoint.id));
             }
             if !waypoint.position.is_finite() {
                 return Err(format!(
-                    "waypoint '{}' has a non-finite position",
+                    "waypoint '{}' has an invalid position",
                     waypoint.id
                 ));
             }
@@ -259,90 +172,74 @@ impl RouteGraph {
                 ));
             }
         }
-
-        let mut edge_ids = HashMap::with_capacity(self.edges.len());
-        for edge in &self.edges {
-            if edge.id.is_empty() {
-                return Err("route edge has an empty id".into());
-            }
-            if edge_ids.insert(edge.id.as_str(), ()).is_some() {
-                return Err(format!("duplicate route edge id '{}'", edge.id));
-            }
-            let Some(&from) = indices.get(edge.from.as_str()) else {
-                return Err(format!(
-                    "route edge '{}' starts at missing waypoint '{}'",
-                    edge.id, edge.from
-                ));
-            };
-            let Some(&to) = indices.get(edge.to.as_str()) else {
-                return Err(format!(
-                    "route edge '{}' ends at missing waypoint '{}'",
-                    edge.id, edge.to
-                ));
-            };
-            let straight = self.waypoints[from]
-                .position
-                .distance(self.waypoints[to].position);
-            if !edge.cost.is_finite() || edge.cost + f64::EPSILON < straight {
-                return Err(format!(
-                    "route edge '{}' cost must be finite and at least its {:.3} straight-line distance",
-                    edge.id, straight
-                ));
-            }
-        }
         Ok(())
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct OpenNode {
-    estimate: f64,
-    cost: f64,
-    index: usize,
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PathPoint {
+    pub position: Position,
 }
 
-impl PartialEq for OpenNode {
-    fn eq(&self, other: &Self) -> bool {
-        self.estimate == other.estimate && self.index == other.index
+impl PathPoint {
+    pub const fn new(position: Position) -> Self {
+        Self { position }
     }
 }
 
-impl Eq for OpenNode {}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Path {
+    points: Vec<PathPoint>,
+}
 
-impl PartialOrd for OpenNode {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
+impl Path {
+    pub fn new(points: Vec<PathPoint>) -> Result<Self, String> {
+        if points.is_empty() {
+            return Err("path has no path points".into());
+        }
+        if points.iter().any(|point| !point.position.is_finite()) {
+            return Err("path contains an invalid path point".into());
+        }
+        Ok(Self { points })
+    }
+
+    pub fn points(&self) -> &[PathPoint] {
+        &self.points
+    }
+
+    pub fn cost(&self) -> f64 {
+        self.points
+            .windows(2)
+            .map(|pair| pair[0].position.distance(pair[1].position))
+            .sum()
     }
 }
 
-impl Ord for OpenNode {
-    fn cmp(&self, other: &Self) -> Ordering {
-        other
-            .estimate
-            .total_cmp(&self.estimate)
-            .then_with(|| other.index.cmp(&self.index))
-    }
+pub trait GameNavigation: Send + Sync {
+    fn find_path(&self, start: Position, goal: Position) -> Result<Path, String>;
 }
 
-pub struct TrailRecorder {
-    sample_spacing: f64,
-    arrival_radius: f64,
-    retained: Vec<Position>,
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PlayerObservation {
+    pub position: Position,
+    pub yaw_deg: f64,
+    pub pitch_deg: f64,
+}
+
+pub struct DebugPositionRecorder {
+    spacing: f64,
+    positions: Vec<Position>,
     last_observed: Option<Position>,
 }
 
-impl TrailRecorder {
-    pub fn new(sample_spacing: f64, arrival_radius: f64) -> Result<Self, String> {
-        if !sample_spacing.is_finite() || sample_spacing <= 0.0 {
-            return Err("trail sample spacing must be finite and positive".into());
-        }
-        if !arrival_radius.is_finite() || arrival_radius <= 0.0 {
-            return Err("trail arrival radius must be finite and positive".into());
+impl DebugPositionRecorder {
+    pub fn new(spacing: f64) -> Result<Self, String> {
+        if !spacing.is_finite() || spacing <= 0.0 {
+            return Err("debug-position spacing must be finite and positive".into());
         }
         Ok(Self {
-            sample_spacing,
-            arrival_radius,
-            retained: Vec::new(),
+            spacing,
+            positions: Vec::new(),
             last_observed: None,
         })
     }
@@ -352,61 +249,27 @@ impl TrailRecorder {
             return false;
         }
         self.last_observed = Some(position);
-        let retain = self
-            .retained
+        if self
+            .positions
             .last()
-            .is_none_or(|last| last.distance(position) >= self.sample_spacing);
-        if retain {
-            self.retained.push(position);
+            .is_some_and(|last| last.distance(position) < self.spacing)
+        {
+            return false;
         }
-        retain
+        self.positions.push(position);
+        true
     }
 
-    pub fn finish(mut self, name: impl Into<String>) -> Result<RouteGraph, String> {
+    pub fn finish(mut self) -> Vec<Position> {
         if let Some(last) = self.last_observed
             && self
-                .retained
+                .positions
                 .last()
-                .is_none_or(|retained| retained.distance(last) > f64::EPSILON)
+                .is_none_or(|position| position.distance(last) > f64::EPSILON)
         {
-            self.retained.push(last);
+            self.positions.push(last);
         }
-        if self.retained.len() < 2 {
-            return Err("recorded trail requires at least two distinct positions".into());
-        }
-
-        let waypoints: Vec<_> = self
-            .retained
-            .iter()
-            .enumerate()
-            .map(|(index, position)| {
-                Waypoint::new(format!("wp-{index:04}"), *position, self.arrival_radius)
-            })
-            .collect();
-        let edges = waypoints
-            .windows(2)
-            .map(|pair| {
-                RouteEdge::new(
-                    format!("{}->{}", pair[0].id, pair[1].id),
-                    pair[0].id.clone(),
-                    pair[1].id.clone(),
-                    pair[0].position.distance(pair[1].position),
-                )
-            })
-            .collect();
-        RouteGraph::new(name, waypoints, edges)
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Pose {
-    pub position: Position,
-    pub yaw_deg: f64,
-}
-
-impl Pose {
-    pub const fn new(position: Position, yaw_deg: f64) -> Self {
-        Self { position, yaw_deg }
+        self.positions
     }
 }
 
@@ -415,6 +278,7 @@ pub struct SteeringConfig {
     pub mouse_units_per_degree: f64,
     pub max_mouse_delta: i32,
     pub move_yaw_tolerance_deg: f64,
+    pub path_point_radius: f64,
 }
 
 impl Default for SteeringConfig {
@@ -423,6 +287,7 @@ impl Default for SteeringConfig {
             mouse_units_per_degree: 1.0,
             max_mouse_delta: 120,
             move_yaw_tolerance_deg: 10.0,
+            path_point_radius: 75.0,
         }
     }
 }
@@ -436,9 +301,14 @@ pub struct Steering {
     pub distance: f64,
 }
 
-pub fn steer(pose: Pose, waypoint: &Waypoint, config: SteeringConfig) -> Steering {
-    let distance = pose.position.distance(waypoint.position);
-    if distance <= waypoint.arrival_radius {
+pub fn steer(
+    player: PlayerObservation,
+    target: Position,
+    arrival_radius: f64,
+    config: SteeringConfig,
+) -> Steering {
+    let distance = player.position.distance(target);
+    if distance <= arrival_radius {
         return Steering {
             arrived: true,
             forward: false,
@@ -448,10 +318,10 @@ pub fn steer(pose: Pose, waypoint: &Waypoint, config: SteeringConfig) -> Steerin
         };
     }
 
-    let dx = waypoint.position.x - pose.position.x;
-    let dy = waypoint.position.y - pose.position.y;
-    let desired_yaw = dy.atan2(dx).to_degrees();
-    let yaw_error_deg = yaw_error(pose.yaw_deg, desired_yaw);
+    let desired_yaw = (target.y - player.position.y)
+        .atan2(target.x - player.position.x)
+        .to_degrees();
+    let yaw_error_deg = yaw_error(player.yaw_deg, desired_yaw);
     Steering {
         arrived: false,
         forward: yaw_error_deg.abs() <= config.move_yaw_tolerance_deg,
@@ -526,40 +396,51 @@ impl StuckDetector {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum FollowStatus {
-    Moving { path_index: usize },
+pub enum BotStatus {
+    Travelling { path_index: usize },
     Arrived,
     Stuck,
     Cancelled,
 }
 
-/// Executes path points by emitting the same movement and look axes available
-/// to a player. The engine remains responsible only for calculating the path
-/// and reporting the current pose.
-pub struct PathFollower {
-    path: Vec<Waypoint>,
+pub type PlayerCommands = SmallVec<[PlayerCommand; 5]>;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BotOutput {
+    pub status: BotStatus,
+    pub commands: PlayerCommands,
+}
+
+pub struct Bot {
+    path: Path,
     path_index: usize,
+    goal_arrival_radius: f64,
     steering: SteeringConfig,
     min_progress: f64,
     stuck_after_ms: u64,
     stuck: StuckDetector,
-    terminal: Option<FollowStatus>,
+    terminal: Option<BotStatus>,
 }
 
-impl PathFollower {
+impl Bot {
     pub fn new(
-        path: Vec<Waypoint>,
+        path: Path,
+        goal_arrival_radius: f64,
         steering: SteeringConfig,
         min_progress: f64,
         stuck_after_ms: u64,
     ) -> Result<Self, String> {
-        if path.is_empty() {
-            return Err("path follower requires at least one path point".into());
+        if !goal_arrival_radius.is_finite() || goal_arrival_radius <= 0.0 {
+            return Err("goal arrival radius must be finite and positive".into());
+        }
+        if !steering.path_point_radius.is_finite() || steering.path_point_radius <= 0.0 {
+            return Err("path-point radius must be finite and positive".into());
         }
         let stuck = StuckDetector::new(min_progress, stuck_after_ms)?;
         Ok(Self {
             path,
             path_index: 0,
+            goal_arrival_radius,
             steering,
             min_progress,
             stuck_after_ms,
@@ -568,66 +449,84 @@ impl PathFollower {
         })
     }
 
-    pub fn tick(
-        &mut self,
-        surface: &dyn InputSurface,
-        pose: Pose,
-        now_ms: u64,
-        delta_time: f32,
-    ) -> Result<FollowStatus, String> {
+    pub fn tick(&mut self, player: PlayerObservation, now_ms: u64) -> BotOutput {
         if let Some(status) = self.terminal {
-            return Ok(status);
+            return BotOutput {
+                status,
+                commands: PlayerCommands::new(),
+            };
         }
 
         loop {
-            let steering = steer(pose, &self.path[self.path_index], self.steering);
+            let final_point = self.path_index + 1 == self.path.points.len();
+            let arrival_radius = if final_point {
+                self.goal_arrival_radius
+            } else {
+                self.steering.path_point_radius
+            };
+            let steering = steer(
+                player,
+                self.path.points[self.path_index].position,
+                arrival_radius,
+                self.steering,
+            );
             if !steering.arrived {
                 if self.stuck.observe(now_ms, steering.distance) {
-                    self.release(surface, delta_time)?;
-                    self.terminal = Some(FollowStatus::Stuck);
-                    return Ok(FollowStatus::Stuck);
+                    self.terminal = Some(BotStatus::Stuck);
+                    return BotOutput {
+                        status: BotStatus::Stuck,
+                        commands: release_movement(),
+                    };
                 }
-                dispatch_player_commands(
-                    surface,
-                    [
-                        PlayerCommand::axis(Axis::MouseX, steering.mouse_dx as f32, delta_time),
-                        PlayerCommand::axis(
-                            Axis::MoveForward,
-                            if steering.forward { 1.0 } else { 0.0 },
-                            delta_time,
-                        ),
-                        PlayerCommand::axis(Axis::MoveRight, 0.0, delta_time),
-                    ],
-                )?;
-                return Ok(FollowStatus::Moving {
-                    path_index: self.path_index,
-                });
+                return BotOutput {
+                    status: BotStatus::Travelling {
+                        path_index: self.path_index,
+                    },
+                    commands: travel_commands(steering.mouse_dx, steering.forward),
+                };
             }
 
             self.path_index += 1;
-            if self.path_index == self.path.len() {
-                self.release(surface, delta_time)?;
-                self.terminal = Some(FollowStatus::Arrived);
-                return Ok(FollowStatus::Arrived);
+            if self.path_index == self.path.points.len() {
+                self.terminal = Some(BotStatus::Arrived);
+                return BotOutput {
+                    status: BotStatus::Arrived,
+                    commands: release_movement(),
+                };
             }
             self.stuck = StuckDetector::new(self.min_progress, self.stuck_after_ms)
-                .expect("validated path follower progress settings remain valid");
+                .expect("bot progress settings were validated at construction");
         }
     }
 
-    pub fn cancel(&mut self, surface: &dyn InputSurface, delta_time: f32) -> Result<(), String> {
-        self.release(surface, delta_time)?;
-        self.terminal = Some(FollowStatus::Cancelled);
-        Ok(())
+    pub fn cancel(&mut self) -> BotOutput {
+        self.terminal = Some(BotStatus::Cancelled);
+        BotOutput {
+            status: BotStatus::Cancelled,
+            commands: release_movement(),
+        }
     }
+}
 
-    fn release(&self, surface: &dyn InputSurface, delta_time: f32) -> Result<(), String> {
-        dispatch_player_commands(
-            surface,
-            [
-                PlayerCommand::axis(Axis::MoveForward, 0.0, delta_time),
-                PlayerCommand::axis(Axis::MoveRight, 0.0, delta_time),
-            ],
-        )
+fn travel_commands(mouse_dx: i32, forward: bool) -> PlayerCommands {
+    let mut commands = PlayerCommands::new();
+    if mouse_dx != 0 {
+        commands.push(PlayerCommand::mouse_delta(mouse_dx, 0));
     }
+    commands.extend([
+        PlayerCommand::key(W, forward),
+        PlayerCommand::key(A, false),
+        PlayerCommand::key(S, false),
+        PlayerCommand::key(D, false),
+    ]);
+    commands
+}
+
+fn release_movement() -> PlayerCommands {
+    smallvec![
+        PlayerCommand::key(W, false),
+        PlayerCommand::key(A, false),
+        PlayerCommand::key(S, false),
+        PlayerCommand::key(D, false),
+    ]
 }

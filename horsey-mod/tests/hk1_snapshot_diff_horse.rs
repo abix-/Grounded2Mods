@@ -14,25 +14,32 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 
 const HORSE_SIZE: usize = 0x498;
 
 #[test]
 fn snapshot_diff_horse() {
-    let Some(game) = common::launch("hk1_snapshot_diff_horse") else { return };
+    let Some(game) = common::launch("hk1_snapshot_diff_horse") else {
+        return;
+    };
     let h = common::wait_for_target_horse(&game, Duration::from_secs(60));
-    eprintln!("\n[target] horse '{}' at {} (raw {:#x})", h.name, h.ptr_s, h.id);
+    eprintln!(
+        "\n[target] horse '{}' at {} (raw {:#x})",
+        h.name, h.ptr_s, h.id
+    );
 
     let wait_secs: u64 = common::env_or("HK1_SNAPSHOT_WAIT_SECS", 30u64);
-    let ignore_ticker: bool = std::env::var("HK1_DIFF_IGNORE_TICKER")
-        .ok().as_deref() != Some("0");
+    let ignore_ticker: bool = std::env::var("HK1_DIFF_IGNORE_TICKER").ok().as_deref() != Some("0");
 
     let before = read_horse_bytes(&game, &h.ptr_s);
 
     eprintln!("\n=== SNAPSHOT A captured ({} bytes) ===", before.len());
-    eprintln!(">>> NOW: drag '{}' between containers in-game (you have {wait_secs}s) <<<", h.name);
+    eprintln!(
+        ">>> NOW: drag '{}' between containers in-game (you have {wait_secs}s) <<<",
+        h.name
+    );
     let t0 = Instant::now();
     while t0.elapsed().as_secs() < wait_secs {
         std::thread::sleep(Duration::from_secs(1));
@@ -56,7 +63,8 @@ fn snapshot_diff_horse() {
     }
 
     let ticker_range = 0x008..0x00c;
-    let interesting: Vec<_> = diffs.iter()
+    let interesting: Vec<_> = diffs
+        .iter()
         .filter(|(o, _, _)| !(ignore_ticker && ticker_range.contains(o)))
         .collect();
 
@@ -64,8 +72,16 @@ fn snapshot_diff_horse() {
     eprintln!("interesting (ticker excluded): {} bytes", interesting.len());
     eprintln!("\n  off    before  after  ascii_b  ascii_a");
     for (o, b, a) in &interesting {
-        let pb = if b.is_ascii_graphic() { *b as char } else { '.' };
-        let pa = if a.is_ascii_graphic() { *a as char } else { '.' };
+        let pb = if b.is_ascii_graphic() {
+            *b as char
+        } else {
+            '.'
+        };
+        let pa = if a.is_ascii_graphic() {
+            *a as char
+        } else {
+            '.'
+        };
         eprintln!("  +0x{o:03x}  0x{b:02x}    0x{a:02x}    {pb:>4}     {pa:>4}");
     }
 
@@ -85,7 +101,7 @@ fn snapshot_diff_horse() {
         let mut after_word = 0u64;
         for k in 0..len.min(8) {
             before_word |= (before[start + k] as u64) << (k * 8);
-            after_word  |= (after[start + k] as u64) << (k * 8);
+            after_word |= (after[start + k] as u64) << (k * 8);
         }
         eprintln!(
             "  +0x{start:03x}..+0x{end:03x}  ({len} byte{}): 0x{before_word:x} -> 0x{after_word:x}",
@@ -96,15 +112,28 @@ fn snapshot_diff_horse() {
 
     game.pass(&format!(
         "horse='{}' diffs={} interesting={}",
-        h.name, diffs.len(), interesting.len()
+        h.name,
+        diffs.len(),
+        interesting.len()
     ));
 }
 
 fn read_horse_bytes(game: &modforge::harness::RunningGame, ptr_s: &str) -> Vec<u8> {
-    let resp = game.op_json("patterns.read_bytes", &json!({
-        "addr": ptr_s, "n": HORSE_SIZE as u64,
-    })).expect("read_bytes");
-    let hex = resp.get("result").and_then(|r| r.get("bytes")).and_then(Value::as_str)
-        .expect("no bytes").to_string();
-    hex.split_whitespace().map(|s| u8::from_str_radix(s, 16).unwrap_or(0)).collect()
+    let resp = game
+        .op_json(
+            "patterns.read_bytes",
+            &json!({
+                "addr": ptr_s, "n": HORSE_SIZE as u64,
+            }),
+        )
+        .expect("read_bytes");
+    let hex = resp
+        .get("result")
+        .and_then(|r| r.get("bytes"))
+        .and_then(Value::as_str)
+        .expect("no bytes")
+        .to_string();
+    hex.split_whitespace()
+        .map(|s| u8::from_str_radix(s, 16).unwrap_or(0))
+        .collect()
 }

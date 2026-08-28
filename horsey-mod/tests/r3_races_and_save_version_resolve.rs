@@ -40,7 +40,10 @@ fn data_globals_resolve_within_sanity_band() {
             resolved != 0,
             "{name}: resolver returned null. result = {result:#}"
         );
-        assert!(hardcoded != 0, "{name}: missing hardcoded; result = {result:#}");
+        assert!(
+            hardcoded != 0,
+            "{name}: missing hardcoded; result = {result:#}"
+        );
         let delta = resolved.abs_diff(hardcoded);
         assert!(
             delta <= 0x1000,

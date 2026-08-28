@@ -34,7 +34,7 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn diag(game: &modforge::harness::RunningGame) -> Value {
     let resp = game
@@ -55,8 +55,7 @@ fn looks_loaded_is_internally_consistent_with_diag() {
         return;
     };
     let d = diag(&game);
-    game.log()
-        .event("DIAG", &format!("gamestate.diag = {d:#}"));
+    game.log().event("DIAG", &format!("gamestate.diag = {d:#}"));
 
     let verdict = b(&d, "verdict_looks_loaded");
     let roster_loaded = d
@@ -85,9 +84,7 @@ fn looks_loaded_is_internally_consistent_with_diag() {
         let count = roster
             .get("count_if_sane")
             .and_then(|v| v.as_u64())
-            .unwrap_or_else(|| panic!(
-                "verdict=true but count_if_sane is null; diag = {d:#}"
-            ));
+            .unwrap_or_else(|| panic!("verdict=true but count_if_sane is null; diag = {d:#}"));
         assert!(
             count < 2560,
             "verdict=true but count {count} >= 2560 bound; diag = {d:#}"
@@ -108,9 +105,7 @@ fn looks_loaded_is_internally_consistent_with_diag() {
         let too_small = begin < 0x10000;
         let inverted = end < begin;
         let misaligned = end >= begin && (end - begin) % 0x24 != 0;
-        let over_cap = end >= begin
-            && (end - begin) % 0x24 == 0
-            && (end - begin) / 0x24 >= 2560;
+        let over_cap = end >= begin && (end - begin) % 0x24 == 0 && (end - begin) / 0x24 >= 2560;
         assert!(
             too_small || inverted || misaligned || over_cap,
             "verdict=false but no rejection reason fired; diag = {d:#}"

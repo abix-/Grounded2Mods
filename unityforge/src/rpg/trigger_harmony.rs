@@ -48,8 +48,7 @@ impl Trigger for HarmonyPostfixTrigger {
     }
 }
 static ON_HARMONY_POST_IMP: HarmonyPostfixTrigger = HarmonyPostfixTrigger;
-pub static ON_HARMONY_POST: TriggerDef =
-    TriggerDef::new("OnHarmonyPost", &ON_HARMONY_POST_IMP);
+pub static ON_HARMONY_POST: TriggerDef = TriggerDef::new("OnHarmonyPost", &ON_HARMONY_POST_IMP);
 
 /// Marker trigger for Harmony prefix fires.
 pub struct HarmonyPrefixTrigger;
@@ -59,8 +58,7 @@ impl Trigger for HarmonyPrefixTrigger {
     }
 }
 static ON_HARMONY_PRE_IMP: HarmonyPrefixTrigger = HarmonyPrefixTrigger;
-pub static ON_HARMONY_PRE: TriggerDef =
-    TriggerDef::new("OnHarmonyPre", &ON_HARMONY_PRE_IMP);
+pub static ON_HARMONY_PRE: TriggerDef = TriggerDef::new("OnHarmonyPre", &ON_HARMONY_PRE_IMP);
 
 /// Marker trigger for `static event Action` subscriptions
 /// (`OnUnityEvent`). Game crates that subscribe to a
@@ -73,8 +71,7 @@ impl Trigger for UnityEventTrigger {
     }
 }
 static ON_UNITY_EVENT_IMP: UnityEventTrigger = UnityEventTrigger;
-pub static ON_UNITY_EVENT: TriggerDef =
-    TriggerDef::new("OnUnityEvent", &ON_UNITY_EVENT_IMP);
+pub static ON_UNITY_EVENT: TriggerDef = TriggerDef::new("OnUnityEvent", &ON_UNITY_EVENT_IMP);
 
 /// Fire an `OnHarmonyPost` event through the tracker. Called
 /// from a game-side trampoline's `extern "C"` body once it has
@@ -95,12 +92,7 @@ pub fn fire_post(
 }
 
 /// Fire an `OnHarmonyPre` event through the tracker.
-pub fn fire_pre(
-    tracker: &Tracker,
-    class: &'static str,
-    method: &'static str,
-    args_json: &str,
-) {
+pub fn fire_pre(tracker: &Tracker, class: &'static str, method: &'static str, args_json: &str) {
     tracker.fire(&TriggerCtx::Engine(UnityEvent::HarmonyPre {
         class,
         method,

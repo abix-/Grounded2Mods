@@ -18,9 +18,9 @@
 use glam::Vec3;
 
 use crate::structure::{
-    Aabb, Gate, LightDef, LootSpot, MonumentDef, MonumentMember, NpcSpot, Opening, Rgb,
+    Aabb, Gate, LightDef, LootSpot, MonumentDef, MonumentMember, NpcSpot, Opening, PartDef, Rgb,
     RoomDef, SLAB, STEP_DEPTH, STEP_RISE_MAX, Side, SolidDef, StairDef, StructureDef,
-    PartDef, room_interior_aabb, validate,
+    room_interior_aabb, validate,
 };
 use crate::unknown::rng;
 
@@ -58,7 +58,11 @@ impl Roll {
     pub fn next(&mut self, n: u64) -> u64 {
         self.draws += 1;
         let now = f32::from_bits((self.seed as u32) | 0x3F80_0000);
-        rng(now, self.draws ^ (self.seed >> 32).wrapping_mul(0x9E37_79B9), n)
+        rng(
+            now,
+            self.draws ^ (self.seed >> 32).wrapping_mul(0x9E37_79B9),
+            n,
+        )
     }
 
     /// An integer in [lo, hi].
@@ -221,14 +225,19 @@ pub fn generate_building(def: &BuildingTypeDef, roll: &mut Roll) -> StructureDef
     for r in (0..rows).rev() {
         for c in (0..columns).rev() {
             let keep = (c == 0 && r == 0) || (c == last_col && r == 0 && levels > 1);
-            let corner = (c == last_col || !present[r][c + 1]) && (r == last_row || !present[r + 1][c]);
+            let corner =
+                (c == last_col || !present[r][c + 1]) && (r == last_row || !present[r + 1][c]);
             if !keep && corner && roll.chance(p.carve) {
                 present[r][c] = false;
             }
         }
     }
     let has = |r: isize, c: isize| -> bool {
-        r >= 0 && c >= 0 && (r as usize) < rows && (c as usize) < columns && present[r as usize][c as usize]
+        r >= 0
+            && c >= 0
+            && (r as usize) < rows
+            && (c as usize) < columns
+            && present[r as usize][c as usize]
     };
 
     // Shared doorway offsets, rolled once per wall so both rooms
@@ -236,10 +245,18 @@ pub fn generate_building(def: &BuildingTypeDef, roll: &mut Roll) -> StructureDef
     // keyed by (r, c).
     let slack = |run: f32| (run / 2.0 - DOOR_WIDTH / 2.0 - 0.4).max(0.0);
     let east_offsets: Vec<Vec<f32>> = (0..rows)
-        .map(|r| (0..columns).map(|_| roll.measure(-slack(lengths[r]), slack(lengths[r]))).collect())
+        .map(|r| {
+            (0..columns)
+                .map(|_| roll.measure(-slack(lengths[r]), slack(lengths[r])))
+                .collect()
+        })
         .collect();
     let north_offsets: Vec<Vec<f32>> = (0..rows)
-        .map(|_| (0..columns).map(|c| roll.measure(-slack(widths[c]), slack(widths[c]))).collect())
+        .map(|_| {
+            (0..columns)
+                .map(|c| roll.measure(-slack(widths[c]), slack(widths[c])))
+                .collect()
+        })
         .collect();
 
     let mut rooms = Vec::new();
@@ -348,8 +365,10 @@ pub fn generate_building(def: &BuildingTypeDef, roll: &mut Roll) -> StructureDef
                     // the wall centres, furniture keeps to the corners.
                     let sx = (w / 2.0 - size.x / 2.0 - 0.2).max(0.0);
                     let sz = (l / 2.0 - size.z / 2.0 - 0.2).max(0.0);
-                    let dx = sx * if roll.chance(500) { 1.0 } else { -1.0 } * roll.measure(0.6, 1.0);
-                    let dz = sz * if roll.chance(500) { 1.0 } else { -1.0 } * roll.measure(0.6, 1.0);
+                    let dx =
+                        sx * if roll.chance(500) { 1.0 } else { -1.0 } * roll.measure(0.6, 1.0);
+                    let dz =
+                        sz * if roll.chance(500) { 1.0 } else { -1.0 } * roll.measure(0.6, 1.0);
                     furniture.push(SolidDef {
                         center: origin + Vec3::new(dx, size.y / 2.0, dz),
                         size,
@@ -395,7 +414,8 @@ pub fn generate_building(def: &BuildingTypeDef, roll: &mut Roll) -> StructureDef
                 side: Side::West,
                 offset: 0.0,
                 width: DOOR_WIDTH,
-                sill: (level as f32 * height - bottom) + if level > -basements { SLAB } else { 0.0 },
+                sill: (level as f32 * height - bottom)
+                    + if level > -basements { SLAB } else { 0.0 },
                 door: false,
             });
         }
@@ -858,10 +878,7 @@ pub fn build_at(buildings: Vec<StructureDef>, x: f64, z: f64) -> BuiltMonument {
             });
         }
     }
-    BuiltMonument {
-        arrangement,
-        parts,
-    }
+    BuiltMonument { arrangement, parts }
 }
 
 /// A seed from a place, so the same place rolls the same layout.
@@ -1099,12 +1116,18 @@ mod tests {
 
     fn registries() -> (BuildingRegistry, MonumentRegistry) {
         let mut b = BuildingRegistry::default();
-        b.register(building("shack", (1, 1), (1, 1), (1, 1), (0, 0))).unwrap();
-        b.register(building("office", (2, 4), (1, 2), (2, 2), (0, 0))).unwrap();
-        b.register(building("warehouse", (2, 3), (1, 1), (1, 1), (0, 0))).unwrap();
-        b.register(building("tower block", (4, 5), (4, 5), (2, 10), (0, 0))).unwrap();
-        b.register(building("bunker", (2, 3), (2, 3), (1, 1), (3, 10))).unwrap();
-        b.register(building("spire", (2, 2), (2, 2), (6, 10), (2, 10))).unwrap();
+        b.register(building("shack", (1, 1), (1, 1), (1, 1), (0, 0)))
+            .unwrap();
+        b.register(building("office", (2, 4), (1, 2), (2, 2), (0, 0)))
+            .unwrap();
+        b.register(building("warehouse", (2, 3), (1, 1), (1, 1), (0, 0)))
+            .unwrap();
+        b.register(building("tower block", (4, 5), (4, 5), (2, 10), (0, 0)))
+            .unwrap();
+        b.register(building("bunker", (2, 3), (2, 3), (1, 1), (3, 10)))
+            .unwrap();
+        b.register(building("spire", (2, 2), (2, 2), (6, 10), (2, 10)))
+            .unwrap();
         let mut m = MonumentRegistry::default();
         m.set_name_words(
             vec!["Ash".into(), "Rust".into(), "Grey".into()],
@@ -1183,9 +1206,13 @@ mod tests {
     #[test]
     fn registries_reject_unknown_buildings_and_duplicates() {
         let (mut b, mut m) = registries();
-        assert!(b.register(building("shack", (1, 1), (1, 1), (1, 1), (0, 0))).is_err());
         assert!(
-            b.register(building("too tall", (1, 1), (1, 1), (1, 11), (0, 0))).is_err(),
+            b.register(building("shack", (1, 1), (1, 1), (1, 1), (0, 0)))
+                .is_err()
+        );
+        assert!(
+            b.register(building("too tall", (1, 1), (1, 1), (1, 11), (0, 0)))
+                .is_err(),
             "ten floors is the most"
         );
         assert!(b.def("shack").is_some() && b.def("tower").is_none());
@@ -1252,7 +1279,11 @@ mod tests {
             assert!(site.members.is_empty());
             assert_eq!(site.loot_spots.len(), 1, "one box at the origin");
             assert!(site.npc_spots.is_empty());
-            assert!((1..=3).contains(&site.props.len()), "{} props", site.props.len());
+            assert!(
+                (1..=3).contains(&site.props.len()),
+                "{} props",
+                site.props.len()
+            );
             for prop in &site.props {
                 let flat = prop.position.with_y(0.0).length();
                 assert!(flat >= 1.0 && flat <= 5.0, "prop at {flat}");
@@ -1279,7 +1310,14 @@ mod tests {
     #[test]
     fn generated_buildings_are_legal_and_within_their_ranges() {
         let (b, _) = registries();
-        for name in ["shack", "office", "warehouse", "tower block", "bunker", "spire"] {
+        for name in [
+            "shack",
+            "office",
+            "warehouse",
+            "tower block",
+            "bunker",
+            "spire",
+        ] {
             let p = b.def(name).unwrap();
             for seed in 0..25u64 {
                 let def = generate_building(p, &mut Roll::new(seed));
@@ -1287,7 +1325,10 @@ mod tests {
                 // Every room shares the floor height; the tower is
                 // the one room taller than that.
                 let height = def.rooms[0].interior.y;
-                assert!(height >= p.height.0 && height < p.height.1 + 0.11, "{name} height");
+                assert!(
+                    height >= p.height.0 && height < p.height.1 + 0.11,
+                    "{name} height"
+                );
                 let levels: std::collections::BTreeSet<i32> = def
                     .rooms
                     .iter()
@@ -1297,7 +1338,10 @@ mod tests {
                 let up = levels.iter().filter(|l| **l >= 0).count() as u32;
                 let down = levels.iter().filter(|l| **l < 0).count() as u32;
                 assert!(up >= p.floors.0 && up <= p.floors.1, "{name} floors {up}");
-                assert!(down >= p.basements.0 && down <= p.basements.1, "{name} basements {down}");
+                assert!(
+                    down >= p.basements.0 && down <= p.basements.1,
+                    "{name} basements {down}"
+                );
                 let total = up + down;
                 let towers = def.rooms.iter().filter(|r| r.interior.y > height).count();
                 assert_eq!(towers, usize::from(total > 1), "{name} stair tower");
@@ -1306,9 +1350,16 @@ mod tests {
                 if total > 1 {
                     let tower = def.rooms.iter().find(|r| r.interior.y > height).unwrap();
                     assert!((tower.interior.y - total as f32 * height).abs() < 1e-3);
-                    assert!(tower.origin.y <= 0.0, "the tower starts at the deepest level");
+                    assert!(
+                        tower.origin.y <= 0.0,
+                        "the tower starts at the deepest level"
+                    );
                     // One doorway per level on its west wall.
-                    assert_eq!(tower.openings.len(), total as usize, "{name} tower doorways");
+                    assert_eq!(
+                        tower.openings.len(),
+                        total as usize,
+                        "{name} tower doorways"
+                    );
                 }
                 let ground: Vec<_> = def
                     .rooms
@@ -1332,8 +1383,12 @@ mod tests {
                 let touching = |a: &RoomDef, b: &RoomDef, side: Side| {
                     let d = b.origin - a.origin;
                     match side {
-                        Side::East => d.z.abs() < 1e-3 && d.x > 0.0 && d.x < a.interior.x + b.interior.x,
-                        Side::North => d.x.abs() < 1e-3 && d.z < 0.0 && -d.z < a.interior.z + b.interior.z,
+                        Side::East => {
+                            d.z.abs() < 1e-3 && d.x > 0.0 && d.x < a.interior.x + b.interior.x
+                        }
+                        Side::North => {
+                            d.x.abs() < 1e-3 && d.z < 0.0 && -d.z < a.interior.z + b.interior.z
+                        }
                         _ => false,
                     }
                 };
@@ -1360,7 +1415,10 @@ mod tests {
         validate_monument(&city).unwrap();
         assert_eq!(city.members.len(), 50);
         let rooms: usize = city.members.iter().map(|x| x.structure.rooms.len()).sum();
-        assert!(rooms >= 50 * 16, "a city is thousands of rooms, got {rooms}");
+        assert!(
+            rooms >= 50 * 16,
+            "a city is thousands of rooms, got {rooms}"
+        );
         let blocks = city
             .members
             .iter()
@@ -1368,7 +1426,10 @@ mod tests {
             .map(|x| x.structure.rooms.len())
             .min()
             .unwrap();
-        assert!(blocks >= 12, "a tower block stays big after carving, got {blocks}");
+        assert!(
+            blocks >= 12,
+            "a tower block stays big after carving, got {blocks}"
+        );
     }
 
     #[test]

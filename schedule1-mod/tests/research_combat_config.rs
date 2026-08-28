@@ -18,7 +18,10 @@ fn factory_call(
     method: &str,
     args: serde_json::Value,
 ) -> Option<serde_json::Value> {
-    let r = api.op("invoke_static", json!({"class": FACTORY, "method": method, "args": args}));
+    let r = api.op(
+        "invoke_static",
+        json!({"class": FACTORY, "method": method, "args": args}),
+    );
     if !r.ok {
         println!("{method}: op failed: {:?}", r.error);
         return None;
@@ -56,11 +59,11 @@ fn read_field_str(
     format!("{}", r.result)
 }
 
-fn get_type_name(
-    api: &modforge::client::Api<serde_json::Value>,
-    handle: i64,
-) -> String {
-    let r = api.op("invoke_method", json!({"handle": handle, "method": "GetType", "args": []}));
+fn get_type_name(api: &modforge::client::Api<serde_json::Value>, handle: i64) -> String {
+    let r = api.op(
+        "invoke_method",
+        json!({"handle": handle, "method": "GetType", "args": []}),
+    );
     if !r.ok {
         return "(GetType failed)".into();
     }
@@ -71,7 +74,10 @@ fn get_type_name(
         return s.into();
     }
     if let Some(h) = r.result.get("handle").and_then(|v| v.as_i64()) {
-        let name = api.op("invoke_method", json!({"handle": h, "method": "get_FullName", "args": []}));
+        let name = api.op(
+            "invoke_method",
+            json!({"handle": h, "method": "get_FullName", "args": []}),
+        );
         if let Some(s) = name.result.as_str() {
             return s.into();
         }
@@ -80,11 +86,7 @@ fn get_type_name(
 }
 
 /// Read combat fields from an NPC handle and print them.
-fn inspect_combat_fields(
-    api: &modforge::client::Api<serde_json::Value>,
-    label: &str,
-    npc_h: i64,
-) {
+fn inspect_combat_fields(api: &modforge::client::Api<serde_json::Value>, label: &str, npc_h: i64) {
     println!("\n=== {label}: NPC-level fields ===");
 
     // NPC type
@@ -189,7 +191,10 @@ fn compare_combat_config() {
         return;
     }
     let instances = pool.result.as_array().cloned().unwrap_or_default();
-    let ph = instances.first().and_then(|i| i["handle"].as_i64()).unwrap();
+    let ph = instances
+        .first()
+        .and_then(|i| i["handle"].as_i64())
+        .unwrap();
     let goons_r = api.op("read_field", json!({"handle": ph, "field": "goons"}));
     let gh = handle_of(&goons_r.result).unwrap();
     let item_r = api.op(
@@ -226,5 +231,8 @@ fn compare_combat_config() {
     print_declared_methods(&api, "Il2CppScheduleOne.NPCs.Responses.NPCResponses");
 
     println!("\n=== NPCResponses_Civilian methods ===");
-    print_declared_methods(&api, "Il2CppScheduleOne.NPCs.Responses.NPCResponses_Civilian");
+    print_declared_methods(
+        &api,
+        "Il2CppScheduleOne.NPCs.Responses.NPCResponses_Civilian",
+    );
 }

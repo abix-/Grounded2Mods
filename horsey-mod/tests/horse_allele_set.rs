@@ -21,7 +21,7 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const VANILLA_LEN: usize = 240;
 const EXT_LEN: usize = 240;
@@ -29,7 +29,9 @@ const TOTAL: usize = VANILLA_LEN + EXT_LEN;
 
 #[test]
 fn horse_allele_set() {
-    let Some(game) = common::launch("horse_allele_set") else { return };
+    let Some(game) = common::launch("horse_allele_set") else {
+        return;
+    };
     let h = common::target_horse(&game);
     eprintln!("target: {} (id {})", h.name, h.id);
 
@@ -44,21 +46,41 @@ fn horse_allele_set() {
     if all {
         // Vanilla: 240 bytes of `value`.
         let alleles: Vec<u8> = vec![value; VANILLA_LEN];
-        let r = game.op_json("horse.vanilla.genome.set", &json!({
-            "addr": h.ptr_s, "alleles": alleles,
-        })).unwrap();
-        assert_eq!(r.get("ok").and_then(Value::as_bool), Some(true), "vanilla genome.set: {r}");
+        let r = game
+            .op_json(
+                "horse.vanilla.genome.set",
+                &json!({
+                    "addr": h.ptr_s, "alleles": alleles,
+                }),
+            )
+            .unwrap();
+        assert_eq!(
+            r.get("ok").and_then(Value::as_bool),
+            Some(true),
+            "vanilla genome.set: {r}"
+        );
         // Ext: 240 slots of (value,value) clamped 0..=3.
         let v3 = value.min(3);
         for ext_idx in 0..EXT_LEN as u32 {
-            let r = game.op_json("horse.ext.alleles.set", &json!({
-                "horse_id": h.id, "ext_gene_idx": ext_idx,
-                "maternal": v3, "paternal": v3,
-            })).unwrap();
-            assert_eq!(r.get("ok").and_then(Value::as_bool), Some(true),
-                "ext.set ext_idx={ext_idx}: {r}");
+            let r = game
+                .op_json(
+                    "horse.ext.alleles.set",
+                    &json!({
+                        "horse_id": h.id, "ext_gene_idx": ext_idx,
+                        "maternal": v3, "paternal": v3,
+                    }),
+                )
+                .unwrap();
+            assert_eq!(
+                r.get("ok").and_then(Value::as_bool),
+                Some(true),
+                "ext.set ext_idx={ext_idx}: {r}"
+            );
         }
-        eprintln!("[PASS] all {TOTAL} alleles on '{}' set to {value} (ext clamped to {v3})", h.name);
+        eprintln!(
+            "[PASS] all {TOTAL} alleles on '{}' set to {value} (ext clamped to {v3})",
+            h.name
+        );
         return;
     }
 
@@ -66,19 +88,40 @@ fn horse_allele_set() {
     assert!(idx < TOTAL, "HORSEY_IDX {idx} out of range 0..{TOTAL}");
 
     if idx < VANILLA_LEN {
-        let r = game.op_json("horse.vanilla.alleles.set", &json!({
-            "addr": h.ptr_s, "idx": idx, "value": value as u64,
-        })).unwrap();
-        assert_eq!(r.get("ok").and_then(Value::as_bool), Some(true), "vanilla.set: {r}");
+        let r = game
+            .op_json(
+                "horse.vanilla.alleles.set",
+                &json!({
+                    "addr": h.ptr_s, "idx": idx, "value": value as u64,
+                }),
+            )
+            .unwrap();
+        assert_eq!(
+            r.get("ok").and_then(Value::as_bool),
+            Some(true),
+            "vanilla.set: {r}"
+        );
         eprintln!("[PASS] '{}' vanilla[{idx}] = {value}", h.name);
     } else {
         let ext_idx = (idx - VANILLA_LEN) as u32;
         let v3 = value.min(3);
-        let r = game.op_json("horse.ext.alleles.set", &json!({
-            "horse_id": h.id, "ext_gene_idx": ext_idx,
-            "maternal": v3, "paternal": v3,
-        })).unwrap();
-        assert_eq!(r.get("ok").and_then(Value::as_bool), Some(true), "ext.set: {r}");
-        eprintln!("[PASS] '{}' ext[{ext_idx}] = ({v3},{v3}) (idx {idx}, clamped from {value})", h.name);
+        let r = game
+            .op_json(
+                "horse.ext.alleles.set",
+                &json!({
+                    "horse_id": h.id, "ext_gene_idx": ext_idx,
+                    "maternal": v3, "paternal": v3,
+                }),
+            )
+            .unwrap();
+        assert_eq!(
+            r.get("ok").and_then(Value::as_bool),
+            Some(true),
+            "ext.set: {r}"
+        );
+        eprintln!(
+            "[PASS] '{}' ext[{ext_idx}] = ({v3},{v3}) (idx {idx}, clamped from {value})",
+            h.name
+        );
     }
 }

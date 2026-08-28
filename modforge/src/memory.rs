@@ -64,7 +64,9 @@ impl Known {
 
     /// Seen holding this kind of stack.
     pub fn held_kind(&self, kind: &str) -> bool {
-        self.held.as_ref().is_some_and(|h| h.iter().any(|k| k == kind))
+        self.held
+            .as_ref()
+            .is_some_and(|h| h.iter().any(|k| k == kind))
     }
 }
 
@@ -131,7 +133,8 @@ impl Memory {
 
     /// Drop what is too old to trust.
     pub fn forget_old(&mut self, now: u64) {
-        self.known.retain(|k| now.saturating_sub(k.seen_at) < FORGET_AFTER);
+        self.known
+            .retain(|k| now.saturating_sub(k.seen_at) < FORGET_AFTER);
         if let Some((_, _, when)) = self.last_threat
             && now.saturating_sub(when) >= FORGET_AFTER
         {
@@ -223,10 +226,17 @@ mod tests {
         let mut m = Memory::default();
         m.see(7, "storage box", Vec3::ZERO, 10);
         assert_eq!(m.good_for(Need::Hunger, &worth).count(), 1);
-        assert_eq!(m.good_for(Need::Rest, &worth).count(), 0, "a box is not a bed");
+        assert_eq!(
+            m.good_for(Need::Rest, &worth).count(),
+            0,
+            "a box is not a bed"
+        );
         m.checked(7, vec![], 30);
         assert_eq!(m.good_for(Need::Hunger, &worth).count(), 0, "known empty");
-        assert!(m.unchecked_nearest(Vec3::ZERO).is_none(), "checked, so not a place to look");
+        assert!(
+            m.unchecked_nearest(Vec3::ZERO).is_none(),
+            "checked, so not a place to look"
+        );
         m.checked(7, kinds(&["canned food"]), 40);
         assert_eq!(m.good_for(Need::Hunger, &worth).count(), 1);
     }

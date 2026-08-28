@@ -81,25 +81,33 @@ macro_rules! ue4ss_mod {
 
         #[unsafe(no_mangle)]
         pub extern "C" fn ueforge_mod_get_name(out_len: *mut usize) -> *const u8 {
-            unsafe { *out_len = $mod_info.name.len(); }
+            unsafe {
+                *out_len = $mod_info.name.len();
+            }
             $mod_info.name.as_ptr()
         }
 
         #[unsafe(no_mangle)]
         pub extern "C" fn ueforge_mod_get_version(out_len: *mut usize) -> *const u8 {
-            unsafe { *out_len = $mod_info.version.len(); }
+            unsafe {
+                *out_len = $mod_info.version.len();
+            }
             $mod_info.version.as_ptr()
         }
 
         #[unsafe(no_mangle)]
         pub extern "C" fn ueforge_mod_get_log_file(out_len: *mut usize) -> *const u8 {
-            unsafe { *out_len = $mod_info.log_file.len(); }
+            unsafe {
+                *out_len = $mod_info.log_file.len();
+            }
             $mod_info.log_file.as_ptr()
         }
 
         #[unsafe(no_mangle)]
         pub extern "C" fn ueforge_mod_get_console_title(out_len: *mut usize) -> *const u8 {
-            unsafe { *out_len = $mod_info.console_title.len(); }
+            unsafe {
+                *out_len = $mod_info.console_title.len();
+            }
             $mod_info.console_title.as_ptr()
         }
 
@@ -112,11 +120,15 @@ macro_rules! ue4ss_mod {
         pub extern "C" fn ueforge_mod_get_tab_name(idx: u32, out_len: *mut usize) -> *const u8 {
             let i = idx as usize;
             if i >= $mod_info.tabs.len() {
-                unsafe { *out_len = 0; }
+                unsafe {
+                    *out_len = 0;
+                }
                 return ::std::ptr::null();
             }
             let s = $mod_info.tabs[i].name;
-            unsafe { *out_len = s.len(); }
+            unsafe {
+                *out_len = s.len();
+            }
             s.as_ptr()
         }
 
@@ -228,9 +240,7 @@ macro_rules! ue4ss_mod {
 #[doc(hidden)]
 pub fn finalize_hot_reload_swap() {
     let Some(dir) = crate::log::dll_dir() else {
-        crate::log!(
-            "ueforge: hot-reload swap skipped (dll_dir unresolved)"
-        );
+        crate::log!("ueforge: hot-reload swap skipped (dll_dir unresolved)");
         return;
     };
     let new_dll = dir.join("main-new.dll");
@@ -291,9 +301,7 @@ pub fn apply_pending_swap_at_init() {
     let _ = std::fs::remove_file(&old_dll);
 
     if let Err(e) = std::fs::rename(&main_dll, &old_dll) {
-        crate::log!(
-            "ueforge: init-time swap step 1 failed (rename main.dll -> main-old.dll): {e}"
-        );
+        crate::log!("ueforge: init-time swap step 1 failed (rename main.dll -> main-old.dll): {e}");
         return;
     }
     if let Err(e) = std::fs::rename(&new_dll, &main_dll) {
@@ -322,12 +330,10 @@ pub fn cleanup_old_dll() {
     let old_dll = dir.join("main-old.dll");
     if old_dll.is_file() {
         match std::fs::remove_file(&old_dll) {
-            Ok(()) => crate::log!(
-                "ueforge: cleaned up main-old.dll from previous hot-reload"
-            ),
-            Err(e) => crate::log!(
-                "ueforge: could not remove main-old.dll: {e} (will retry next init)"
-            ),
+            Ok(()) => crate::log!("ueforge: cleaned up main-old.dll from previous hot-reload"),
+            Err(e) => {
+                crate::log!("ueforge: could not remove main-old.dll: {e} (will retry next init)")
+            }
         }
     }
 }

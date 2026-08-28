@@ -85,9 +85,13 @@ struct BuyEntry {
 
 fn read_sell_entries(api: &Api, comp_addr: u64) -> Option<Vec<SellEntry>> {
     let hdr = client::read_tarray_header(api, comp_addr, SELL_LIST_OFFSET)?;
-    if hdr.num <= 0 || hdr.num > 500 { return None; }
+    if hdr.num <= 0 || hdr.num > 500 {
+        return None;
+    }
     let data = client::read_bytes(api, hdr.ptr, 0, (hdr.num as u64) * SELL_STRIDE);
-    if data.is_empty() { return None; }
+    if data.is_empty() {
+        return None;
+    }
     let mut entries = Vec::new();
     for i in 0..hdr.num as usize {
         let base = i * SELL_STRIDE as usize;
@@ -99,16 +103,29 @@ fn read_sell_entries(api: &Api, comp_addr: u64) -> Option<Vec<SellEntry>> {
         let price_num = client::from_le_i32(&data, base + 0x20);
         let (price_qty, currency) = read_price0(api, &data, base);
         let cat_num = client::from_le_i32(&data, base + 0x30);
-        entries.push(SellEntry { item_ptr, fname_idx, fname_num, item_name, price_num, price_qty, currency, cat_num });
+        entries.push(SellEntry {
+            item_ptr,
+            fname_idx,
+            fname_num,
+            item_name,
+            price_num,
+            price_qty,
+            currency,
+            cat_num,
+        });
     }
     Some(entries)
 }
 
 fn read_buy_entries(api: &Api, comp_addr: u64) -> Option<Vec<BuyEntry>> {
     let hdr = client::read_tarray_header(api, comp_addr, BUY_LIST_OFFSET)?;
-    if hdr.num <= 0 || hdr.num > 500 { return None; }
+    if hdr.num <= 0 || hdr.num > 500 {
+        return None;
+    }
     let data = client::read_bytes(api, hdr.ptr, 0, (hdr.num as u64) * BUY_STRIDE);
-    if data.is_empty() { return None; }
+    if data.is_empty() {
+        return None;
+    }
     let mut entries = Vec::new();
     for i in 0..hdr.num as usize {
         let base = i * BUY_STRIDE as usize;
@@ -121,7 +138,17 @@ fn read_buy_entries(api: &Api, comp_addr: u64) -> Option<Vec<BuyEntry>> {
         let (price_qty, currency) = read_price0(api, &data, base);
         let stock = client::from_le_i32(&data, base + 0x28);
         let cat_num = client::from_le_i32(&data, base + 0x38);
-        entries.push(BuyEntry { item_ptr, fname_idx, fname_num, item_name, price_num, price_qty, currency, stock, cat_num });
+        entries.push(BuyEntry {
+            item_ptr,
+            fname_idx,
+            fname_num,
+            item_name,
+            price_num,
+            price_qty,
+            currency,
+            stock,
+            cat_num,
+        });
     }
     Some(entries)
 }
@@ -160,18 +187,30 @@ fn dump_all_vendors() {
         };
 
         if let Some(sells) = read_sell_entries(&api, comp_addr) {
-            println!("  SELL LIST (vendor buys these from player): {} entries", sells.len());
+            println!(
+                "  SELL LIST (vendor buys these from player): {} entries",
+                sells.len()
+            );
             for (i, e) in sells.iter().enumerate() {
-                println!("    {i:>2}. {:<40} pays={} {} (elems={}) cats={}", e.item_name, e.price_qty, e.currency, e.price_num, e.cat_num);
+                println!(
+                    "    {i:>2}. {:<40} pays={} {} (elems={}) cats={}",
+                    e.item_name, e.price_qty, e.currency, e.price_num, e.cat_num
+                );
             }
         } else {
             println!("  SELL LIST: could not read");
         }
 
         if let Some(buys) = read_buy_entries(&api, comp_addr) {
-            println!("  BUY LIST (player buys these from vendor): {} entries", buys.len());
+            println!(
+                "  BUY LIST (player buys these from vendor): {} entries",
+                buys.len()
+            );
             for (i, e) in buys.iter().enumerate() {
-                println!("    {i:>2}. {:<40} stock={:<4} costs={} {} (elems={}) cats={}", e.item_name, e.stock, e.price_qty, e.currency, e.price_num, e.cat_num);
+                println!(
+                    "    {i:>2}. {:<40} stock={:<4} costs={} {} (elems={}) cats={}",
+                    e.item_name, e.stock, e.price_qty, e.currency, e.price_num, e.cat_num
+                );
             }
         } else {
             println!("  BUY LIST: could not read");
@@ -193,21 +232,28 @@ fn no_duplicate_vendor_entries() {
         return;
     }
     let vendors = find_all_vendors(&api);
-    assert!(!vendors.is_empty(), "no vendor actors (load into the safe hub)");
+    assert!(
+        !vendors.is_empty(),
+        "no vendor actors (load into the safe hub)"
+    );
 
     let mut within_dups: Vec<String> = Vec::new();
     let mut sell_owners: HashMap<String, Vec<String>> = HashMap::new();
     let mut buy_owners: HashMap<String, Vec<String>> = HashMap::new();
 
     for v in &vendors {
-        let Some(comp_addr) = get_component_addr(&api, v.addr) else { continue };
+        let Some(comp_addr) = get_component_addr(&api, v.addr) else {
+            continue;
+        };
         if let Some(sells) = read_sell_entries(&api, comp_addr) {
             let mut seen = std::collections::HashSet::new();
             for e in &sells {
                 if !seen.insert(e.item_name.clone()) {
                     within_dups.push(format!("{} sell list: {}", v.name, e.item_name));
                 }
-                sell_owners.entry(e.item_name.clone()).or_default()
+                sell_owners
+                    .entry(e.item_name.clone())
+                    .or_default()
                     .push(format!("{} pays={}", v.name, e.price_qty));
             }
         }
@@ -217,34 +263,50 @@ fn no_duplicate_vendor_entries() {
                 if !seen.insert(e.item_name.clone()) {
                     within_dups.push(format!("{} buy list: {}", v.name, e.item_name));
                 }
-                buy_owners.entry(e.item_name.clone()).or_default()
+                buy_owners
+                    .entry(e.item_name.clone())
+                    .or_default()
                     .push(format!("{} costs={}", v.name, e.price_qty));
             }
         }
     }
 
-    let cross_sell: Vec<String> = sell_owners.iter()
+    let cross_sell: Vec<String> = sell_owners
+        .iter()
         .filter(|(_, owners)| owners.len() > 1)
         .map(|(item, owners)| format!("{item}: {}", owners.join(", ")))
         .collect();
     // Vanilla itself sells Weapon_TOZ at two vendors (Hunter for
     // rubles, Technician for weapon parts). The mod never edits
     // vanilla entries, so that one is exempt.
-    let cross_buy: Vec<String> = buy_owners.iter()
+    let cross_buy: Vec<String> = buy_owners
+        .iter()
         .filter(|(item, owners)| owners.len() > 1 && item.as_str() != "Weapon_TOZ")
         .map(|(item, owners)| format!("{item}: {}", owners.join(", ")))
         .collect();
 
     println!("within-list duplicates: {}", within_dups.len());
-    for d in &within_dups { println!("  {d}"); }
+    for d in &within_dups {
+        println!("  {d}");
+    }
     println!("items on more than one sell list: {}", cross_sell.len());
-    for d in &cross_sell { println!("  {d}"); }
+    for d in &cross_sell {
+        println!("  {d}");
+    }
     println!("items on more than one buy list: {}", cross_buy.len());
-    for d in &cross_buy { println!("  {d}"); }
+    for d in &cross_buy {
+        println!("  {d}");
+    }
 
     assert!(within_dups.is_empty(), "within-list duplicates found");
-    assert!(cross_sell.is_empty(), "items sellable at more than one vendor");
-    assert!(cross_buy.is_empty(), "items buyable at more than one vendor");
+    assert!(
+        cross_sell.is_empty(),
+        "items sellable at more than one vendor"
+    );
+    assert!(
+        cross_buy.is_empty(),
+        "items buyable at more than one vendor"
+    );
 }
 
 /// Check whether the Item pointer (offset 0x00 in each entry)
@@ -263,12 +325,19 @@ fn check_item_is_datatable_handle() {
         println!("discover_data_tables(ItemList) failed: {:?}", r.error);
         return;
     }
-    let item_list_addr = r.result["addr"].as_str()
+    let item_list_addr = r.result["addr"]
+        .as_str()
         .or_else(|| r.result["address"].as_str())
-        .or_else(|| r.result["tables"].as_array()
-            .and_then(|t| t.first())
-            .and_then(|t| t["addr"].as_str().or_else(|| t["address"].as_str())));
-    println!("ItemList DataTable lookup result: {}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+        .or_else(|| {
+            r.result["tables"]
+                .as_array()
+                .and_then(|t| t.first())
+                .and_then(|t| t["addr"].as_str().or_else(|| t["address"].as_str()))
+        });
+    println!(
+        "ItemList DataTable lookup result: {}",
+        serde_json::to_string_pretty(&r.result).unwrap_or_default()
+    );
     let _ = item_list_addr;
 
     let vendors = find_all_vendors(&api);
@@ -281,16 +350,25 @@ fn check_item_is_datatable_handle() {
         return;
     };
     let hdr = client::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET);
-    let Some(hdr) = hdr else { return; };
-    if hdr.num <= 0 { return; }
+    let Some(hdr) = hdr else {
+        return;
+    };
+    if hdr.num <= 0 {
+        return;
+    }
     let first_entry = client::read_bytes(&api, hdr.ptr, 0, 0x18);
-    if first_entry.len() < 0x18 { return; }
+    if first_entry.len() < 0x18 {
+        return;
+    }
     let item_ptr = client::from_le_u64(&first_entry, 0);
     println!("first sell entry item_ptr = {item_ptr:#x}");
 
     let r2 = api.op("inspect_address", json!({"addr": format!("{item_ptr:#x}")}));
-    println!("inspect_address({item_ptr:#x}): ok={}, result={}", r2.ok,
-        serde_json::to_string(&r2.result).unwrap_or_default());
+    println!(
+        "inspect_address({item_ptr:#x}): ok={}, result={}",
+        r2.ok,
+        serde_json::to_string(&r2.result).unwrap_or_default()
+    );
 }
 
 /// Try resolving item identifiers by cross-referencing with
@@ -304,10 +382,16 @@ fn resolve_items_via_itemlist() {
         return;
     }
 
-    let r = api.try_op("dump_data_table", json!({"table_name": "ItemList", "max_rows": 10}));
+    let r = api.try_op(
+        "dump_data_table",
+        json!({"table_name": "ItemList", "max_rows": 10}),
+    );
     let r = match r {
         Ok(r) => r,
-        Err(e) => { println!("dump_data_table failed: {e}"); return; }
+        Err(e) => {
+            println!("dump_data_table failed: {e}");
+            return;
+        }
     };
     if !r.ok {
         println!("dump_data_table error: {:?}", r.error);
@@ -321,12 +405,19 @@ fn resolve_items_via_itemlist() {
     }
 
     let vendors = find_all_vendors(&api);
-    let Some(v) = vendors.first() else { return; };
-    let Some(comp_addr) = get_component_addr(&api, v.addr) else { return; };
+    let Some(v) = vendors.first() else {
+        return;
+    };
+    let Some(comp_addr) = get_component_addr(&api, v.addr) else {
+        return;
+    };
     if let Some(sells) = read_sell_entries(&api, comp_addr) {
         println!("\n{} sell entries, fname indices:", v.name);
         for (i, e) in sells.iter().enumerate() {
-            println!("  {i}: idx={:#x} num={} resolved={}", e.fname_idx, e.fname_num, e.item_name);
+            println!(
+                "  {i}: idx={:#x} num={} resolved={}",
+                e.fname_idx, e.fname_num, e.item_name
+            );
         }
     }
 }
@@ -341,14 +432,24 @@ fn probe_price_arrays() {
         return;
     }
     let vendors = find_all_vendors(&api);
-    let Some(v) = vendors.first() else { return; };
-    let Some(comp_addr) = get_component_addr(&api, v.addr) else { return; };
+    let Some(v) = vendors.first() else {
+        return;
+    };
+    let Some(comp_addr) = get_component_addr(&api, v.addr) else {
+        return;
+    };
 
     let sell_hdr = client::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET);
-    let Some(sell_hdr) = sell_hdr else { return; };
-    if sell_hdr.num <= 0 { return; }
+    let Some(sell_hdr) = sell_hdr else {
+        return;
+    };
+    if sell_hdr.num <= 0 {
+        return;
+    }
     let entry0 = client::read_bytes(&api, sell_hdr.ptr, 0, SELL_STRIDE);
-    if entry0.len() < SELL_STRIDE as usize { return; }
+    if entry0.len() < SELL_STRIDE as usize {
+        return;
+    }
 
     let price_ptr = client::from_le_u64(&entry0, 0x18);
     let price_num = client::from_le_i32(&entry0, 0x20);
@@ -367,7 +468,9 @@ fn probe_price_arrays() {
             println!("  {offset:04x}: {}", hex_str.join(" "));
         }
         for off in (0..32).step_by(4) {
-            if off + 4 > price_data.len() { break; }
+            if off + 4 > price_data.len() {
+                break;
+            }
             let val = client::from_le_u32(&price_data, off);
             let name = client::fname_from_parts(&api, val, 0)
                 .unwrap_or_else(|| format!("(?idx={val:#x})"));
@@ -376,10 +479,16 @@ fn probe_price_arrays() {
     }
 
     let buy_hdr = client::read_tarray_header(&api, comp_addr, BUY_LIST_OFFSET);
-    let Some(buy_hdr) = buy_hdr else { return; };
-    if buy_hdr.num <= 0 { return; }
+    let Some(buy_hdr) = buy_hdr else {
+        return;
+    };
+    if buy_hdr.num <= 0 {
+        return;
+    }
     let buy_entry0 = client::read_bytes(&api, buy_hdr.ptr, 0, BUY_STRIDE);
-    if buy_entry0.len() < BUY_STRIDE as usize { return; }
+    if buy_entry0.len() < BUY_STRIDE as usize {
+        return;
+    }
 
     let buy_price_ptr = client::from_le_u64(&buy_entry0, 0x18);
     let buy_price_num = client::from_le_i32(&buy_entry0, 0x20);
@@ -387,7 +496,9 @@ fn probe_price_arrays() {
 
     if buy_price_num > 0 && buy_price_num < 20 {
         let price_data = client::read_bytes(&api, buy_price_ptr, 0, 256);
-        if price_data.is_empty() { return; }
+        if price_data.is_empty() {
+            return;
+        }
         println!("buy price array raw hex ({} bytes):", price_data.len());
         for (i, chunk) in price_data.chunks(16).enumerate() {
             let offset = i * 16;
@@ -395,7 +506,9 @@ fn probe_price_arrays() {
             println!("  {offset:04x}: {}", hex_str.join(" "));
         }
         for off in (0..64).step_by(4) {
-            if off + 4 > price_data.len() { break; }
+            if off + 4 > price_data.len() {
+                break;
+            }
             let val = client::from_le_u32(&price_data, off);
             let name = client::fname_from_parts(&api, val, 0)
                 .unwrap_or_else(|| format!("(?idx={val:#x})"));
@@ -416,23 +529,42 @@ fn shared_item_pointer_check() {
     let mut all_ptrs: HashMap<u64, Vec<String>> = HashMap::new();
 
     for v in &vendors {
-        let Some(comp_addr) = get_component_addr(&api, v.addr) else { continue; };
+        let Some(comp_addr) = get_component_addr(&api, v.addr) else {
+            continue;
+        };
         if let Some(sells) = read_sell_entries(&api, comp_addr) {
             for e in &sells {
-                all_ptrs.entry(e.item_ptr).or_default().push(format!("{} sell", v.name));
+                all_ptrs
+                    .entry(e.item_ptr)
+                    .or_default()
+                    .push(format!("{} sell", v.name));
             }
         }
         if let Some(buys) = read_buy_entries(&api, comp_addr) {
             for e in &buys {
-                all_ptrs.entry(e.item_ptr).or_default().push(format!("{} buy", v.name));
+                all_ptrs
+                    .entry(e.item_ptr)
+                    .or_default()
+                    .push(format!("{} buy", v.name));
             }
         }
     }
 
-    println!("{} unique item_ptr value(s) across all vendors:", all_ptrs.len());
+    println!(
+        "{} unique item_ptr value(s) across all vendors:",
+        all_ptrs.len()
+    );
     for (ptr, sources) in &all_ptrs {
-        println!("  {ptr:#x}: used by {} entries ({} ...)", sources.len(),
-            sources.iter().take(3).cloned().collect::<Vec<_>>().join(", "));
+        println!(
+            "  {ptr:#x}: used by {} entries ({} ...)",
+            sources.len(),
+            sources
+                .iter()
+                .take(3)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
     }
 
     if all_ptrs.len() == 1 {
@@ -465,13 +597,21 @@ fn add_plastic_to_resourcesaler_sell_list() {
     let buy_entry1 = client::read_bytes(&api, buy_hdr.ptr, BUY_STRIDE, BUY_STRIDE);
     let plastic_fname_idx = client::from_le_u32(&buy_entry1, 0x08);
     let plastic_fname_num = client::from_le_u32(&buy_entry1, 0x0C);
-    let plastic_name = client::fname_from_parts(&api, plastic_fname_idx, plastic_fname_num)
-        .unwrap_or_default();
-    println!("Resource_Plastic FName: idx={plastic_fname_idx:#x} num={plastic_fname_num} => {plastic_name}");
-    assert!(plastic_name.contains("Plastic"), "expected Plastic, got {plastic_name}");
+    let plastic_name =
+        client::fname_from_parts(&api, plastic_fname_idx, plastic_fname_num).unwrap_or_default();
+    println!(
+        "Resource_Plastic FName: idx={plastic_fname_idx:#x} num={plastic_fname_num} => {plastic_name}"
+    );
+    assert!(
+        plastic_name.contains("Plastic"),
+        "expected Plastic, got {plastic_name}"
+    );
 
     let sell_hdr = client::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET).unwrap();
-    println!("SellList: ptr={:#x} num={} max={}", sell_hdr.ptr, sell_hdr.num, sell_hdr.max);
+    println!(
+        "SellList: ptr={:#x} num={} max={}",
+        sell_hdr.ptr, sell_hdr.num, sell_hdr.max
+    );
 
     if let Some(sells) = read_sell_entries(&api, comp_addr) {
         for e in &sells {
@@ -491,11 +631,14 @@ fn add_plastic_to_resourcesaler_sell_list() {
 
     let new_offset = (sell_hdr.num as u64) * SELL_STRIDE;
     let hex_str: String = new_entry.iter().map(|b| format!("{b:02x}")).collect();
-    let r = api.op("write_bytes", json!({
-        "instance_selector": format!("addr:0x{:X}", sell_hdr.ptr),
-        "offset": new_offset,
-        "bytes_hex": hex_str
-    }));
+    let r = api.op(
+        "write_bytes",
+        json!({
+            "instance_selector": format!("addr:0x{:X}", sell_hdr.ptr),
+            "offset": new_offset,
+            "bytes_hex": hex_str
+        }),
+    );
     if !r.ok {
         println!("write_bytes failed: {:?}", r.error);
         return;
@@ -503,12 +646,19 @@ fn add_plastic_to_resourcesaler_sell_list() {
     println!("wrote new entry at offset {new_offset:#x}");
 
     let new_count: i32 = sell_hdr.num + 1;
-    let count_hex: String = new_count.to_le_bytes().iter().map(|b| format!("{b:02x}")).collect();
-    let r = api.op("write_bytes", json!({
-        "instance_selector": comp_sel,
-        "offset": SELL_LIST_OFFSET + 8,
-        "bytes_hex": count_hex
-    }));
+    let count_hex: String = new_count
+        .to_le_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let r = api.op(
+        "write_bytes",
+        json!({
+            "instance_selector": comp_sel,
+            "offset": SELL_LIST_OFFSET + 8,
+            "bytes_hex": count_hex
+        }),
+    );
     if !r.ok {
         println!("write num/max failed: {:?}", r.error);
         return;
@@ -523,7 +673,10 @@ fn add_plastic_to_resourcesaler_sell_list() {
     let verify_num = client::from_le_u32(&last, 0x0C);
     let verify_name = client::fname_from_parts(&api, verify_idx, verify_num).unwrap_or_default();
     println!("last entry: {verify_name}");
-    assert!(verify_name.contains("Plastic"), "verify failed: got {verify_name}");
+    assert!(
+        verify_name.contains("Plastic"),
+        "verify failed: got {verify_name}"
+    );
     println!("SUCCESS: Resource_Plastic added to ResourseSaler sell list");
 }
 
@@ -537,30 +690,48 @@ fn find_sewing_kit_fname() {
     }
 
     let tables = [
-        "ItemList", "MasterItemList", "CraftingRecipesList",
-        "MasterCraftingRecipeList", "BuildPartList", "MasterBuildPartList",
-        "DT_Artifacts", "DeviceList", "MasterDeviceList",
-        "CookingList", "MasterCookingList", "ItemSpawnerList",
-        "MasterSpawnerList", "DifficultyList", "InventoryGridLayout",
-        "MasterGridLayoutList", "LOOK_Presets", "DT_Weather",
+        "ItemList",
+        "MasterItemList",
+        "CraftingRecipesList",
+        "MasterCraftingRecipeList",
+        "BuildPartList",
+        "MasterBuildPartList",
+        "DT_Artifacts",
+        "DeviceList",
+        "MasterDeviceList",
+        "CookingList",
+        "MasterCookingList",
+        "ItemSpawnerList",
+        "MasterSpawnerList",
+        "DifficultyList",
+        "InventoryGridLayout",
+        "MasterGridLayoutList",
+        "LOOK_Presets",
+        "DT_Weather",
         "DT_PlayerStatDescr",
     ];
     for table in &tables {
         let r = api.try_op("list_row_names", json!({"table_name": table}));
         let r = match r {
             Ok(r) => r,
-            Err(e) => { println!("  {table}: error {e}"); continue; }
+            Err(e) => {
+                println!("  {table}: error {e}");
+                continue;
+            }
         };
         if !r.ok {
             println!("  {table}: op failed {:?}", r.error);
             continue;
         }
         let rows = r.result["rows"].as_array().cloned().unwrap_or_default();
-        let has_sewing = rows.iter().any(|v| {
-            v.as_str().map_or(false, |s| s.contains("SewingKit"))
-        });
+        let has_sewing = rows
+            .iter()
+            .any(|v| v.as_str().map_or(false, |s| s.contains("SewingKit")));
         if has_sewing {
-            println!("  {table}: CONTAINS Resource_SewingKit ({} rows total)", rows.len());
+            println!(
+                "  {table}: CONTAINS Resource_SewingKit ({} rows total)",
+                rows.len()
+            );
         }
     }
 
@@ -580,19 +751,26 @@ fn find_sewing_kit_fname() {
         println!("could not read buy list header");
         return;
     };
-    println!("\nResourseSaler buy list: num={} max={}", buy_hdr.num, buy_hdr.max);
+    println!(
+        "\nResourseSaler buy list: num={} max={}",
+        buy_hdr.num, buy_hdr.max
+    );
 
     for i in 0..buy_hdr.num {
         let offset = (i as u64) * BUY_STRIDE;
         let entry = client::read_bytes(&api, buy_hdr.ptr, offset, 0x18);
-        if entry.len() < 0x18 { continue; }
+        if entry.len() < 0x18 {
+            continue;
+        }
         let dt_ptr = client::from_le_u64(&entry, 0);
         let fname_idx = client::from_le_u32(&entry, 0x08);
         let fname_num = client::from_le_u32(&entry, 0x0C);
         let field_10 = client::from_le_u64(&entry, 0x10);
         let name = client::fname_from_parts(&api, fname_idx, fname_num)
             .unwrap_or_else(|| format!("(?idx={fname_idx:#x})"));
-        println!("  buy[{i:>2}] dt={dt_ptr:#x} fname_idx={fname_idx:#x} fname_num={fname_num} field_10={field_10:#x} => {name}");
+        println!(
+            "  buy[{i:>2}] dt={dt_ptr:#x} fname_idx={fname_idx:#x} fname_num={fname_num} field_10={field_10:#x} => {name}"
+        );
     }
 
     let sell_hdr = client::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET);
@@ -615,26 +793,39 @@ fn find_sewing_kit_fname() {
 
     println!("\nScanning all vendors for any existing SewingKit entry...");
     for v2 in &vendors {
-        let Some(cs) = get_component_addr(&api, v2.addr) else { continue };
+        let Some(cs) = get_component_addr(&api, v2.addr) else {
+            continue;
+        };
         if let Some(sells) = read_sell_entries(&api, cs) {
             for (i, e) in sells.iter().enumerate() {
                 if e.item_name.contains("SewingKit") {
-                    println!("  FOUND in {}'s sell list[{i}]: fname_idx={:#x} fname_num={}", v2.name, e.fname_idx, e.fname_num);
+                    println!(
+                        "  FOUND in {}'s sell list[{i}]: fname_idx={:#x} fname_num={}",
+                        v2.name, e.fname_idx, e.fname_num
+                    );
                 }
             }
         }
         if let Some(buys) = read_buy_entries(&api, cs) {
             for (i, e) in buys.iter().enumerate() {
                 if e.item_name.contains("SewingKit") {
-                    println!("  FOUND in {}'s buy list[{i}]: fname_idx={:#x} fname_num={}", v2.name, e.fname_idx, e.fname_num);
+                    println!(
+                        "  FOUND in {}'s buy list[{i}]: fname_idx={:#x} fname_num={}",
+                        v2.name, e.fname_idx, e.fname_num
+                    );
                 }
             }
         }
     }
 
-    println!("\nDone. Key question: can we use the same DataTable pointer ({:#x}) with Resource_SewingKit's FName,", 0x239cff8cf00u64);
+    println!(
+        "\nDone. Key question: can we use the same DataTable pointer ({:#x}) with Resource_SewingKit's FName,",
+        0x239cff8cf00u64
+    );
     println!("even though the item is in MasterItemList not ItemList?");
-    println!("If MasterItemList is a CompositeDataTable wrapping ItemList, the pointer might resolve correctly.");
+    println!(
+        "If MasterItemList is a CompositeDataTable wrapping ItemList, the pointer might resolve correctly."
+    );
 }
 
 /// Read-only: resolve GMalloc via patternsleuth.
@@ -650,7 +841,10 @@ fn inspect_gmalloc_vtable() {
     let r = slow_api.try_op("inspect_gmalloc", json!({}));
     match r {
         Ok(r) if r.ok => {
-            println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&r.result).unwrap_or_default()
+            );
         }
         Ok(r) => {
             println!("ERROR: {:?}", r.error);
@@ -683,7 +877,10 @@ fn add_sewingkit_to_resourcesaler_buy_list() {
     println!("ResourseSaler component: {comp_sel}");
 
     let buy_hdr = client::read_tarray_header(&api, comp_addr, BUY_LIST_OFFSET).unwrap();
-    println!("buy list before: ptr={:#x} num={} max={}", buy_hdr.ptr, buy_hdr.num, buy_hdr.max);
+    println!(
+        "buy list before: ptr={:#x} num={} max={}",
+        buy_hdr.ptr, buy_hdr.num, buy_hdr.max
+    );
 
     if let Some(buys) = read_buy_entries(&api, comp_addr) {
         for e in &buys {
@@ -700,7 +897,10 @@ fn add_sewingkit_to_resourcesaler_buy_list() {
     let r = slow_api.try_op("inspect_gmalloc", json!({}));
     match r {
         Ok(r) if r.ok => {
-            println!("GMalloc inspection: {}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+            println!(
+                "GMalloc inspection: {}",
+                serde_json::to_string_pretty(&r.result).unwrap_or_default()
+            );
         }
         Ok(r) => {
             println!("inspect_gmalloc error: {:?}", r.error);
@@ -713,16 +913,25 @@ fn add_sewingkit_to_resourcesaler_buy_list() {
     }
 
     if buy_hdr.num >= buy_hdr.max {
-        println!("buy list is full (num=max={}), growing to 30...", buy_hdr.max);
-        let r = slow_api.try_op("tarray_grow", json!({
-            "instance_selector": comp_sel,
-            "offset": BUY_LIST_OFFSET,
-            "stride": BUY_STRIDE,
-            "new_max": 30
-        }));
+        println!(
+            "buy list is full (num=max={}), growing to 30...",
+            buy_hdr.max
+        );
+        let r = slow_api.try_op(
+            "tarray_grow",
+            json!({
+                "instance_selector": comp_sel,
+                "offset": BUY_LIST_OFFSET,
+                "stride": BUY_STRIDE,
+                "new_max": 30
+            }),
+        );
         match r {
             Ok(r) if r.ok => {
-                println!("tarray_grow result: {}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+                println!(
+                    "tarray_grow result: {}",
+                    serde_json::to_string_pretty(&r.result).unwrap_or_default()
+                );
             }
             Ok(r) => {
                 println!("tarray_grow FAILED: {:?}", r.error);
@@ -736,7 +945,10 @@ fn add_sewingkit_to_resourcesaler_buy_list() {
     }
 
     let buy_hdr = client::read_tarray_header(&api, comp_addr, BUY_LIST_OFFSET).unwrap();
-    println!("buy list after grow: ptr={:#x} num={} max={}", buy_hdr.ptr, buy_hdr.num, buy_hdr.max);
+    println!(
+        "buy list after grow: ptr={:#x} num={} max={}",
+        buy_hdr.ptr, buy_hdr.num, buy_hdr.max
+    );
     assert!(buy_hdr.num < buy_hdr.max, "still no room after grow");
 
     let r = api.op("list_row_fnames", json!({"table_name": "MasterItemList"}));
@@ -745,7 +957,9 @@ fn add_sewingkit_to_resourcesaler_buy_list() {
         return;
     }
     let rows = r.result["rows"].as_array().cloned().unwrap_or_default();
-    let sewing = rows.iter().find(|r| r["name"].as_str() == Some("Resource_SewingKit"));
+    let sewing = rows
+        .iter()
+        .find(|r| r["name"].as_str() == Some("Resource_SewingKit"));
     let Some(sewing) = sewing else {
         println!("Resource_SewingKit not found in MasterItemList");
         return;
@@ -764,11 +978,14 @@ fn add_sewingkit_to_resourcesaler_buy_list() {
 
     let new_offset = (buy_hdr.num as u64) * BUY_STRIDE;
     let hex_str: String = new_entry.iter().map(|b| format!("{b:02x}")).collect();
-    let r = api.op("write_bytes", json!({
-        "instance_selector": format!("addr:0x{:X}", buy_hdr.ptr),
-        "offset": new_offset,
-        "bytes_hex": hex_str
-    }));
+    let r = api.op(
+        "write_bytes",
+        json!({
+            "instance_selector": format!("addr:0x{:X}", buy_hdr.ptr),
+            "offset": new_offset,
+            "bytes_hex": hex_str
+        }),
+    );
     if !r.ok {
         println!("write_bytes failed: {:?}", r.error);
         return;
@@ -776,12 +993,19 @@ fn add_sewingkit_to_resourcesaler_buy_list() {
     println!("wrote new entry at offset {new_offset:#x}");
 
     let new_count: i32 = buy_hdr.num + 1;
-    let count_hex: String = new_count.to_le_bytes().iter().map(|b| format!("{b:02x}")).collect();
-    let r = api.op("write_bytes", json!({
-        "instance_selector": comp_sel,
-        "offset": BUY_LIST_OFFSET + 8,
-        "bytes_hex": count_hex
-    }));
+    let count_hex: String = new_count
+        .to_le_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let r = api.op(
+        "write_bytes",
+        json!({
+            "instance_selector": comp_sel,
+            "offset": BUY_LIST_OFFSET + 8,
+            "bytes_hex": count_hex
+        }),
+    );
     if !r.ok {
         println!("write num failed: {:?}", r.error);
         return;
@@ -796,7 +1020,10 @@ fn add_sewingkit_to_resourcesaler_buy_list() {
     let verify_num = client::from_le_u32(&last, 0x0C);
     let verify_name = client::fname_from_parts(&api, verify_idx, verify_num).unwrap_or_default();
     println!("last entry: {verify_name}");
-    assert!(verify_name.contains("SewingKit"), "verify failed: got {verify_name}");
+    assert!(
+        verify_name.contains("SewingKit"),
+        "verify failed: got {verify_name}"
+    );
     println!("SUCCESS: Resource_SewingKit added to ResourseSaler buy list");
 }
 
@@ -817,13 +1044,17 @@ fn dump_full_itemlist() {
     let rows = r.result["rows"].as_array().cloned().unwrap_or_default();
     println!("ItemList: {} rows", rows.len());
 
-    let mut names: Vec<String> = rows.iter()
+    let mut names: Vec<String> = rows
+        .iter()
         .filter_map(|v| v.as_str().map(str::to_string))
         .collect();
     names.sort();
 
     let mut out = String::from("# MISERY ItemList\n\n");
-    out.push_str(&format!("{} items total, dumped from live game 2026-08-17.\n\n", names.len()));
+    out.push_str(&format!(
+        "{} items total, dumped from live game 2026-08-17.\n\n",
+        names.len()
+    ));
 
     let mut current_prefix = String::new();
     for name in &names {

@@ -47,8 +47,8 @@
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use hudhook::hooks::dx11::ImguiDx11Hooks;
 use hudhook::Hudhook;
+use hudhook::hooks::dx11::ImguiDx11Hooks;
 
 // Re-exports so consumers don't need to depend on hudhook + imgui
 // directly. Anything they need to write a render loop is available
@@ -66,9 +66,7 @@ struct FrameCountingLoop<R: ImguiRenderLoop> {
     inner: R,
 }
 
-impl<R: ImguiRenderLoop + Send + Sync + 'static> ImguiRenderLoop
-    for FrameCountingLoop<R>
-{
+impl<R: ImguiRenderLoop + Send + Sync + 'static> ImguiRenderLoop for FrameCountingLoop<R> {
     fn render(&mut self, ui: &mut Ui) {
         FRAMES.fetch_add(1, Ordering::Relaxed);
         self.inner.render(ui);
@@ -83,16 +81,12 @@ impl<R: ImguiRenderLoop + Send + Sync + 'static> ImguiRenderLoop
 /// calls `IDXGISwapChain::Present`). All `imgui-rs` calls inside
 /// `render` must stay on that thread; do not pass the `&mut Ui` token
 /// to other threads or store it.
-pub fn arm<R: ImguiRenderLoop + Send + Sync + 'static>(
-    render_loop: R,
-) -> Result<(), String> {
+pub fn arm<R: ImguiRenderLoop + Send + Sync + 'static>(render_loop: R) -> Result<(), String> {
     if ARMED.swap(true, Ordering::SeqCst) {
         return Ok(());
     }
     let wrapped = FrameCountingLoop { inner: render_loop };
-    let hudhook = Hudhook::builder()
-        .with::<ImguiDx11Hooks>(wrapped)
-        .build();
+    let hudhook = Hudhook::builder().with::<ImguiDx11Hooks>(wrapped).build();
     hudhook.apply().map_err(|status| {
         ARMED.store(false, Ordering::SeqCst);
         format!("hudhook apply failed: {status:?}")

@@ -129,8 +129,7 @@ fn ext_alleles_survive_save_restart_reload() {
     // -----------------------------------------------------------------
     let sidecar_path: String;
     {
-        let game = GameHarness::launch(&spec, "r2_e2e_game1")
-            .expect("harness launch 1 failed");
+        let game = GameHarness::launch(&spec, "r2_e2e_game1").expect("harness launch 1 failed");
 
         // Set deterministic allele patterns on two horses.
         set_alleles(&game, TEST_HORSE_IDS[0], 0, 1, 2);
@@ -144,10 +143,8 @@ fn ext_alleles_survive_save_restart_reload() {
 
         // Write sidecar to disk.
         let (path, horses) = write_now(&game, TEST_CHANNEL);
-        game.log().event(
-            "E2E",
-            &format!("game1 wrote {} horses to {}", horses, path),
-        );
+        game.log()
+            .event("E2E", &format!("game1 wrote {} horses to {}", horses, path));
         assert_eq!(horses, TEST_HORSE_IDS.len() as u64, "wrong horse count");
         assert!(
             std::path::Path::new(&path).exists(),
@@ -176,8 +173,7 @@ fn ext_alleles_survive_save_restart_reload() {
     // Game 2: read sidecar, assert alleles match game 1.
     // -----------------------------------------------------------------
     {
-        let game = GameHarness::launch(&spec, "r2_e2e_game2")
-            .expect("harness launch 2 failed");
+        let game = GameHarness::launch(&spec, "r2_e2e_game2").expect("harness launch 2 failed");
 
         // EXT_HORSE_GENOMES should be empty at this point (fresh
         // process); confirm by attempting to read a value that
@@ -227,33 +223,15 @@ fn ext_alleles_survive_save_restart_reload() {
 
         // Specific assertions.
         let (m, p) = get_alleles(&game, TEST_HORSE_IDS[0], 0);
-        assert_eq!(
-            (m, p),
-            (1, 2),
-            "horse 0 gene 0 mismatch after roundtrip"
-        );
+        assert_eq!((m, p), (1, 2), "horse 0 gene 0 mismatch after roundtrip");
         let (m, p) = get_alleles(&game, TEST_HORSE_IDS[0], 1);
-        assert_eq!(
-            (m, p),
-            (3, 0),
-            "horse 0 gene 1 mismatch after roundtrip"
-        );
+        assert_eq!((m, p), (3, 0), "horse 0 gene 1 mismatch after roundtrip");
         let (m, p) = get_alleles(&game, TEST_HORSE_IDS[1], 0);
-        assert_eq!(
-            (m, p),
-            (2, 3),
-            "horse 1 gene 0 mismatch after roundtrip"
-        );
+        assert_eq!((m, p), (2, 3), "horse 1 gene 0 mismatch after roundtrip");
         let (m, p) = get_alleles(&game, TEST_HORSE_IDS[1], 1);
-        assert_eq!(
-            (m, p),
-            (0, 1),
-            "horse 1 gene 1 mismatch after roundtrip"
-        );
+        assert_eq!((m, p), (0, 1), "horse 1 gene 1 mismatch after roundtrip");
 
-        game.pass(
-            "ext alleles round-tripped through save/restart/reload via BXSAVEXT sidecar",
-        );
+        game.pass("ext alleles round-tripped through save/restart/reload via BXSAVEXT sidecar");
     } // game 2 drops
 
     // -----------------------------------------------------------------

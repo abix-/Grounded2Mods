@@ -144,9 +144,7 @@ fn poll_status_effects_during_bandage() {
     );
 
     if all_seen_extra.is_empty() {
-        eprintln!(
-            "\nNO NEW STATUS EFFECTS observed during the bandage window."
-        );
+        eprintln!("\nNO NEW STATUS EFFECTS observed during the bandage window.");
         eprintln!("If CurrentDamage dropped, the heal goes through a non-status-effect mechanism.");
         eprintln!("If CurrentDamage didn't drop, the bandage was suppressed upstream of the heal.");
     }

@@ -25,10 +25,7 @@ use serde_json::{Value, json};
 pub use ueforge::client::perf::PerfLog;
 
 pub fn open_perf_log(test_name: &str) -> PerfLog {
-    ueforge::client::perf::open(
-        test_name,
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")),
-    )
+    ueforge::client::perf::open(test_name, std::path::Path::new(env!("CARGO_MANIFEST_DIR")))
 }
 
 // HTTP wrapper, hex codec, and parm helpers all live in

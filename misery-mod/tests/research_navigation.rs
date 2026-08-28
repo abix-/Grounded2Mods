@@ -1,8 +1,8 @@
 //! Walk from the live MISERY player into an expedition through Unreal navigation.
 //!
 //! Unreal owns the navigation mesh and supplies path points between three
-//! meaningful stops. Modforge's shared follower executes those points through
-//! the same movement, look, and interaction inputs as the player. Dense positions
+//! meaningful stops. Modforge's shared bot travels through those points using
+//! the same movement, look, and interaction inputs as the player. Debug positions
 //! remain diagnostics only.
 //!
 //! ```text
@@ -16,9 +16,9 @@ use std::time::{Duration, Instant};
 
 use common::{Api, api_or_skip, offsets_live};
 use modforge::client::{self, ClassInstance};
-use modforge::input::{Axis, Button, InputSurface, Key, PlayerCommand, PlayerPose};
+use modforge::input::{Button, InputSurface, Key, PlayerCommand};
 use modforge::route::{
-    FollowStatus, PathFollower, Pose, Position, RouteEdge, RouteGraph, SteeringConfig, Waypoint,
+    Bot, BotStatus, Path, PathPoint, PlayerObservation, Position, Route, SteeringConfig, Waypoint,
 };
 use serde_json::{Value, json};
 
@@ -91,12 +91,12 @@ impl InputSurface for ControlPlaneInput<'_> {
         Err("MISERY route input does not move the physical cursor".into())
     }
 
-    fn key(&self, key: Key, down: bool) -> Result<(), String> {
-        self.commands(&[PlayerCommand::key(key, down)])
+    fn move_rel(&self, dx: i32, dy: i32) -> Result<(), String> {
+        self.commands(&[PlayerCommand::mouse_delta(dx, dy)])
     }
 
-    fn axis(&self, axis: Axis, value: f32, delta_time: f32) -> Result<(), String> {
-        self.commands(&[PlayerCommand::axis(axis, value, delta_time)])
+    fn key(&self, key: Key, down: bool) -> Result<(), String> {
+        self.commands(&[PlayerCommand::key(key, down)])
     }
 
     fn commands(&self, commands: &[PlayerCommand]) -> Result<(), String> {
@@ -113,7 +113,7 @@ impl InputSurface for ControlPlaneInput<'_> {
         }
     }
 
-    fn pose(&self) -> Result<PlayerPose, String> {
+    fn observe_player(&self) -> Result<PlayerObservation, String> {
         let response = self
             .api
             .try_op("input.player.pose", json!({}))
@@ -124,7 +124,7 @@ impl InputSurface for ControlPlaneInput<'_> {
                 .unwrap_or_else(|| "player pose observation failed".into()));
         }
         serde_json::from_value(response.result["pose"].clone())
-            .map_err(|error| format!("decode player pose: {error}"))
+            .map_err(|error| format!("decode player observation: {error}"))
     }
 }
 
@@ -209,8 +209,10 @@ impl Drop for StopMovement<'_> {
         let _ = self.api.try_op(
             "input.player.commands",
             json!({"commands": [
-                PlayerCommand::axis(Axis::MoveForward, 0.0, 0.0),
-                PlayerCommand::axis(Axis::MoveRight, 0.0, 0.0),
+                PlayerCommand::key(Key(0x57), false),
+                PlayerCommand::key(Key(0x41), false),
+                PlayerCommand::key(Key(0x53), false),
+                PlayerCommand::key(Key(0x44), false),
             ]}),
         );
     }
@@ -311,45 +313,25 @@ fn spawn_to_expedition_route(
     spawn: [f64; 3],
     metal_door: [f64; 3],
     expedition_door: [f64; 3],
-) -> RouteGraph {
-    RouteGraph::new(
+) -> Route {
+    Route::new(
         "misery spawn to expedition",
         vec![
             Waypoint::new("spawn", position(spawn), ARRIVAL_CM),
             Waypoint::new("metal-door", position(metal_door), ARRIVAL_CM),
             Waypoint::new("expedition-door", position(expedition_door), ARRIVAL_CM),
         ],
-        vec![
-            RouteEdge::new(
-                "spawn->metal-door",
-                "spawn",
-                "metal-door",
-                distance(spawn, metal_door),
-            ),
-            RouteEdge::new(
-                "metal-door->expedition-door",
-                "metal-door",
-                "expedition-door",
-                distance(metal_door, expedition_door),
-            ),
-        ],
     )
     .unwrap()
 }
 
-fn expedition_to_loot_route(start: [f64; 3], loot_box: [f64; 3]) -> RouteGraph {
-    RouteGraph::new(
+fn expedition_to_loot_route(start: [f64; 3], loot_box: [f64; 3]) -> Route {
+    Route::new(
         "misery expedition to loot box",
         vec![
             Waypoint::new("expedition-entry", position(start), ARRIVAL_CM),
             Waypoint::new("loot-box", position(loot_box), ARRIVAL_CM),
         ],
-        vec![RouteEdge::new(
-            "expedition-entry->loot-box",
-            "expedition-entry",
-            "loot-box",
-            distance(start, loot_box),
-        )],
     )
     .unwrap()
 }
@@ -366,12 +348,12 @@ fn metal_door_approach(spawn: [f64; 3], door: [f64; 3]) -> [f64; 3] {
     ]
 }
 
-fn retain_breadcrumb(breadcrumbs: &mut Vec<Position>, current: Position) {
-    if breadcrumbs
+fn retain_debug_position(debug_positions: &mut Vec<Position>, current: Position) {
+    if debug_positions
         .last()
         .is_none_or(|last| last.distance(current) >= SAMPLE_CM)
     {
-        breadcrumbs.push(current);
+        debug_positions.push(current);
     }
 }
 
@@ -394,16 +376,11 @@ fn signed_degrees(degrees: f64) -> f64 {
     (degrees + 180.0).rem_euclid(360.0) - 180.0
 }
 
-fn look_command(yaw_error: f64, pitch_error: f64) -> (f32, f32) {
+fn look_command(yaw_error: f64, pitch_error: f64) -> (i32, i32) {
     (
-        (yaw_error * 0.25).clamp(-10.0, 10.0) as f32,
-        (-pitch_error * 0.25).clamp(-10.0, 10.0) as f32,
+        (yaw_error * 0.25).round().clamp(-10.0, 10.0) as i32,
+        (-pitch_error * 0.25).round().clamp(-10.0, 10.0) as i32,
     )
-}
-
-fn player_axis_input(api: &Api, axis: &str, value: f32) {
-    let axis = Axis::parse(axis).expect("known player axis");
-    player_commands(api, &[PlayerCommand::axis(axis, value, 0.016)]);
 }
 
 fn player_commands(api: &Api, commands: &[PlayerCommand]) {
@@ -431,14 +408,8 @@ fn aim_at(api: &Api, player_selector: &str, target: [f64; 3]) {
             started.elapsed() < Duration::from_secs(4),
             "could not aim at target: rotation={rotation:?} target_yaw={target_yaw:.1} target_pitch={target_pitch:.1} error=({yaw_error:.1},{pitch_error:.1})"
         );
-        if yaw_error.abs() > 1.0 {
-            let (yaw_input, _) = look_command(yaw_error, pitch_error);
-            player_axis_input(api, "mouse_x", yaw_input);
-        }
-        if pitch_error.abs() > 1.0 {
-            let (_, pitch_input) = look_command(yaw_error, pitch_error);
-            player_axis_input(api, "mouse_y", pitch_input);
-        }
+        let (mouse_x, mouse_y) = look_command(yaw_error, pitch_error);
+        player_commands(api, &[PlayerCommand::mouse_delta(mouse_x, mouse_y)]);
         std::thread::sleep(Duration::from_millis(16));
         let after = control_rotation(api, player_selector);
         if signed_degrees(after[1] - rotation[1]).abs() < 0.01
@@ -850,7 +821,7 @@ fn open_loot_box(
     panic!("E was pressed at the loot box, but its inventory did not gain a using player")
 }
 
-fn walk_edge(
+fn walk_to_waypoint(
     api: &Api,
     calls: &NavigationCalls,
     world_context: u64,
@@ -858,7 +829,7 @@ fn walk_edge(
     player_selector: &str,
     waypoint: &Waypoint,
     bunker_door: Option<&ClassInstance>,
-    breadcrumbs: &mut Vec<Position>,
+    debug_positions: &mut Vec<Position>,
 ) -> Result<usize, String> {
     let started = Instant::now();
     let mut last_report = 0;
@@ -875,57 +846,46 @@ fn walk_edge(
             point(waypoint.position),
         )
         .ok_or_else(|| format!("Unreal returned no complete path to '{}'", waypoint.id))?;
-        let last_index = path_points.len() - 1;
-        let path = path_points
-            .into_iter()
-            .enumerate()
-            .map(|(index, point)| {
-                Waypoint::new(
-                    format!("{}-path-{index}", waypoint.id),
-                    position(point),
-                    if index == last_index {
-                        waypoint.arrival_radius
-                    } else {
-                        75.0
-                    },
-                )
-            })
-            .collect();
+        let path = Path::new(
+            path_points
+                .into_iter()
+                .map(|point| PathPoint::new(position(point)))
+                .collect(),
+        )?;
         let steering = SteeringConfig {
             mouse_units_per_degree: 0.25,
             max_mouse_delta: 10,
             move_yaw_tolerance_deg: 10.0,
+            path_point_radius: 75.0,
         };
-        let mut follower = PathFollower::new(path, steering, 50.0, 10_000)?;
+        let mut bot = Bot::new(path, waypoint.arrival_radius, steering, 50.0, 10_000)?;
 
         loop {
             std::thread::sleep(Duration::from_millis(16));
-            let observed = surface.pose()?;
-            let current = observed.position;
-            retain_breadcrumb(breadcrumbs, position(current));
+            let observed = surface.observe_player()?;
+            let current = point(observed.position);
+            retain_debug_position(debug_positions, observed.position);
             let remaining = distance(current, point(waypoint.position));
             if started.elapsed() >= MOVE_TIMEOUT {
-                follower.cancel(&surface, 0.016)?;
+                let output = bot.cancel();
+                surface.commands(&output.commands)?;
                 return Err(format!(
                     "player-input navigation timed out at {current:?}, {remaining:.1} cm from '{}'",
                     waypoint.id
                 ));
             }
-            match follower.tick(
-                &surface,
-                Pose::new(position(current), observed.yaw_deg),
-                started.elapsed().as_millis() as u64,
-                0.016,
-            )? {
-                FollowStatus::Arrived => return Ok(interactions),
-                FollowStatus::Moving { .. } => {}
-                FollowStatus::Cancelled => {
+            let output = bot.tick(observed, started.elapsed().as_millis() as u64);
+            surface.commands(&output.commands)?;
+            match output.status {
+                BotStatus::Arrived => return Ok(interactions),
+                BotStatus::Travelling { .. } => {}
+                BotStatus::Cancelled => {
                     return Err(format!(
                         "player-input navigation to '{}' was cancelled",
                         waypoint.id
                     ));
                 }
-                FollowStatus::Stuck => {
+                BotStatus::Stuck => {
                     let blocking_door = bunker_door.filter(|door| {
                         distance(current, actor_location(api, &door.addr_selector)) <= 1_000.0
                             && interactions < 3
@@ -1133,7 +1093,7 @@ fn unreal_navigation_opens_nearest_expedition_loot_box() {
     let player_items_before = client::read_i32(&api, player_inventory, INVENTORY_ITEM_COUNT_OFFSET);
     let _stop = StopMovement { api: &api };
     let started = Instant::now();
-    let mut breadcrumbs = vec![position(start)];
+    let mut debug_positions = vec![position(start)];
     let targets = reachable_loot_boxes(&api, &calls, &player, start);
     let mut selected = None;
     for target in targets {
@@ -1142,11 +1102,11 @@ fn unreal_navigation_opens_nearest_expedition_loot_box() {
         let route = expedition_to_loot_route(projected_start, target.approach);
         assert_eq!(
             route
-                .shortest_path("expedition-entry", "loot-box", |_| true)
+                .waypoints_after("expedition-entry", "loot-box")
                 .unwrap(),
-            ["expedition-entry", "loot-box"]
+            [route.waypoint("loot-box").unwrap().clone()]
         );
-        match walk_edge(
+        match walk_to_waypoint(
             &api,
             &calls,
             player.addr,
@@ -1154,7 +1114,7 @@ fn unreal_navigation_opens_nearest_expedition_loot_box() {
             &player.addr_selector,
             route.waypoint("loot-box").unwrap(),
             None,
-            &mut breadcrumbs,
+            &mut debug_positions,
         ) {
             Ok(_) => {
                 selected = Some((target, route));
@@ -1185,13 +1145,12 @@ fn unreal_navigation_opens_nearest_expedition_loot_box() {
         open_loot_box(&api, &calls, &player.addr_selector, storage_inventory);
     let timing_report = timing.finish();
     println!(
-        "loot_box_opened elapsed_s={:.2} target={} path_cost={:.1} interaction_attempts={interaction_attempts} storage_inventory=0x{storage_inventory:X} storage_items={storage_items_before} player_inventory=0x{player_inventory:X} player_items={player_items_before} waypoints={} edges={} breadcrumbs={}",
+        "loot_box_opened elapsed_s={:.2} target={} path_cost={:.1} interaction_attempts={interaction_attempts} storage_inventory=0x{storage_inventory:X} storage_items={storage_items_before} player_inventory=0x{player_inventory:X} player_items={player_items_before} waypoints={} debug_positions={}",
         started.elapsed().as_secs_f64(),
         loot_box.actor.full_name,
         loot_box.path_cost,
         route.waypoints().len(),
-        route.edges().len(),
-        breadcrumbs.len(),
+        debug_positions.len(),
     );
     println!("loot_performance={timing_report}");
     println!(
@@ -1303,23 +1262,23 @@ fn unreal_navigation_enters_expedition_through_three_stops() {
         .join("spawn-to-expedition.json");
     std::fs::create_dir_all(route_path.parent().unwrap()).unwrap();
     std::fs::write(&route_path, route.to_json().unwrap()).unwrap();
-    let route = RouteGraph::from_json(&std::fs::read_to_string(&route_path).unwrap()).unwrap();
+    let route = Route::from_json(&std::fs::read_to_string(&route_path).unwrap()).unwrap();
     assert_eq!(route.waypoints().len(), 3);
-    assert_eq!(route.edges().len(), 2);
     assert_eq!(
-        route
-            .shortest_path("spawn", "expedition-door", |_| true)
-            .unwrap(),
-        ["spawn", "metal-door", "expedition-door"]
+        route.waypoints_after("spawn", "expedition-door").unwrap(),
+        [
+            route.waypoint("metal-door").unwrap().clone(),
+            route.waypoint("expedition-door").unwrap().clone()
+        ]
     );
     println!("route_saved={}", route_path.display());
 
     let _stop = StopMovement { api: &api };
     let started = Instant::now();
-    let mut breadcrumbs = vec![position(start)];
+    let mut debug_positions = vec![position(start)];
     let metal_door_waypoint = route.waypoint("metal-door").unwrap();
     let expedition_door_waypoint = route.waypoint("expedition-door").unwrap();
-    let first_edge_interactions = walk_edge(
+    let first_travel_interactions = walk_to_waypoint(
         &api,
         &calls,
         player.addr,
@@ -1327,11 +1286,11 @@ fn unreal_navigation_enters_expedition_through_three_stops() {
         &player.addr_selector,
         metal_door_waypoint,
         None,
-        &mut breadcrumbs,
+        &mut debug_positions,
     )
     .expect("spawn to metal door traversal failed");
-    assert_eq!(first_edge_interactions, 0);
-    let bunker_door_interactions = walk_edge(
+    assert_eq!(first_travel_interactions, 0);
+    let bunker_door_interactions = walk_to_waypoint(
         &api,
         &calls,
         player.addr,
@@ -1339,17 +1298,16 @@ fn unreal_navigation_enters_expedition_through_three_stops() {
         &player.addr_selector,
         expedition_door_waypoint,
         Some(&metal_door.1),
-        &mut breadcrumbs,
+        &mut debug_positions,
     )
     .expect("metal door to expedition door traversal failed");
     let (entered_location, expedition_door_interactions) =
         enter_expedition(&api, &calls, &player.addr_selector, projected_goal);
     println!(
-        "expedition_entered elapsed_s={:.2} location={entered_location:?} waypoints={} edges={} breadcrumbs={} bunker_door_interactions={bunker_door_interactions} expedition_door_interactions={expedition_door_interactions}",
+        "expedition_entered elapsed_s={:.2} location={entered_location:?} waypoints={} debug_positions={} bunker_door_interactions={bunker_door_interactions} expedition_door_interactions={expedition_door_interactions}",
         started.elapsed().as_secs_f64(),
         route.waypoints().len(),
-        route.edges().len(),
-        breadcrumbs.len(),
+        debug_positions.len(),
     );
     println!("route_performance={}", timing.finish());
 }
@@ -1366,7 +1324,6 @@ fn spawn_to_expedition_route_contains_only_meaningful_stops() {
             .collect::<Vec<_>>(),
         ["spawn", "metal-door", "expedition-door"]
     );
-    assert_eq!(route.edges().len(), 2);
 }
 
 #[test]
@@ -1389,7 +1346,6 @@ fn expedition_loot_route_adds_only_the_discovered_target() {
             .collect::<Vec<_>>(),
         ["expedition-entry", "loot-box"]
     );
-    assert_eq!(route.edges().len(), 1);
 }
 
 #[test]
@@ -1439,9 +1395,9 @@ fn interaction_range_uses_the_nearest_point_on_actor_bounds() {
 
 #[test]
 fn look_commands_are_bounded_and_follow_control_rotation_errors() {
-    assert_eq!(look_command(20.0, -8.0), (5.0, 2.0));
-    assert_eq!(look_command(100.0, -100.0), (10.0, 10.0));
-    assert_eq!(look_command(-100.0, 100.0), (-10.0, -10.0));
+    assert_eq!(look_command(20.0, -8.0), (5, 2));
+    assert_eq!(look_command(100.0, -100.0), (10, 10));
+    assert_eq!(look_command(-100.0, 100.0), (-10, -10));
 }
 
 #[test]

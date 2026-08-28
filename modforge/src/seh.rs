@@ -58,7 +58,11 @@ impl std::fmt::Display for SehError {
             0xc000_00fd => "STACK_OVERFLOW",
             _ => "UNKNOWN",
         };
-        write!(f, "SEH {name} (code=0x{:08x}) at rip=0x{:x}", self.code, self.fault_address)
+        write!(
+            f,
+            "SEH {name} (code=0x{:08x}) at rip=0x{:x}",
+            self.code, self.fault_address
+        )
     }
 }
 
@@ -113,7 +117,10 @@ pub fn guard<F, R>(f: F) -> Result<R, SehError>
 where
     F: FnOnce() -> R,
 {
-    let mut payload: Payload<F, R> = Payload { f: Some(f), result: None };
+    let mut payload: Payload<F, R> = Payload {
+        f: Some(f),
+        result: None,
+    };
     let mut code: u32 = 0;
     let mut addr: usize = 0;
     INSIDE_GUARD.with(|c| c.set(true));
@@ -132,7 +139,10 @@ where
     if raised == 0 {
         Ok(payload.result.expect("thunk succeeded but result missing"))
     } else {
-        Err(SehError { code, fault_address: addr })
+        Err(SehError {
+            code,
+            fault_address: addr,
+        })
     }
 }
 

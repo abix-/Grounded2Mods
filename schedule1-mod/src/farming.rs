@@ -77,7 +77,9 @@ const FACTORY: &str = "Unityforge.Shim.Schedule1.NpcFactory";
 /// Stays here because the factory and its response contract are Schedule 1 shim details; Unityforge owns generic static invocation.
 fn factory_call(method: &str, args: serde_json::Value) -> Result<serde_json::Value, String> {
     let v = mono::invoke_static(FACTORY, method, &args)?;
-    let s = v.as_str().ok_or_else(|| format!("{method}: non-string factory result: {v}"))?;
+    let s = v
+        .as_str()
+        .ok_or_else(|| format!("{method}: non-string factory result: {v}"))?;
     let parsed: serde_json::Value =
         serde_json::from_str(s).map_err(|e| format!("{method}: bad factory json: {e}"))?;
     if parsed["ok"].as_bool() != Some(true) {
@@ -135,13 +137,19 @@ pub fn tick() {
                 &format!("schedule1-mod: {n} regions mapped; the cartel is taking its posts"),
             ),
             Err(e) => {
-                mono::log(LogLevel::Warn, &format!("schedule1-mod: region load failed: {e}"));
+                mono::log(
+                    LogLevel::Warn,
+                    &format!("schedule1-mod: region load failed: {e}"),
+                );
                 return;
             }
         }
     }
     if let Err(e) = war_pass() {
-        mono::log(LogLevel::Warn, &format!("schedule1-mod: war pass failed: {e}"));
+        mono::log(
+            LogLevel::Warn,
+            &format!("schedule1-mod: war pass failed: {e}"),
+        );
     }
 }
 
@@ -153,7 +161,10 @@ pub fn on_mob_down(npc_ptr: i64) -> Option<(f32, f32, String)> {
     let mut forces = FORCES.lock();
     let i = forces.iter().position(|m| m.npc_ptr == npc_ptr)?;
     let m = forces.remove(i);
-    let live_here = forces.iter().filter(|x| x.region_idx == m.region_idx).count();
+    let live_here = forces
+        .iter()
+        .filter(|x| x.region_idx == m.region_idx)
+        .count();
     drop(forces);
 
     let region_name = {
@@ -183,8 +194,8 @@ pub fn on_mob_down(npc_ptr: i64) -> Option<(f32, f32, String)> {
 
     // The war ledger: this death costs the cartel its grip.
     if m.faction == Faction::Cartel {
-        let delta = INFLUENCE_PER_KILL.0
-            + fastrand::f64() * (INFLUENCE_PER_KILL.1 - INFLUENCE_PER_KILL.0);
+        let delta =
+            INFLUENCE_PER_KILL.0 + fastrand::f64() * (INFLUENCE_PER_KILL.1 - INFLUENCE_PER_KILL.0);
         let before = get_influence(m.region_idx).unwrap_or(-1.0);
         vlog(&format!(
             "influence change: {region_name} before={before:.4} delta={delta:.4}"
@@ -215,7 +226,11 @@ pub fn on_mob_down(npc_ptr: i64) -> Option<(f32, f32, String)> {
             ),
         }
     }
-    Some((m.xp_mult, m.loot_mult, format!("{} ({region_name})", m.label)))
+    Some((
+        m.xp_mult,
+        m.loot_mult,
+        format!("{} ({region_name})", m.label),
+    ))
 }
 
 /// Kill tally per region since load.
@@ -364,7 +379,11 @@ fn load_regions() -> Result<usize, String> {
             name,
             rank,
             posts,
-            owner: if influence > 0.005 { Faction::Cartel } else { Faction::None },
+            owner: if influence > 0.005 {
+                Faction::Cartel
+            } else {
+                Faction::None
+            },
             casualties: 0,
             next_reinforce: None,
         });
@@ -524,7 +543,9 @@ fn hold_posts(px: f64, pz: f64) {
             if let Some(g) = FORCES.lock().get_mut(i) {
                 g.aggroed = true;
             }
-            vlog(&format!("aggro: {label} (mint={minted}) ordered onto player"));
+            vlog(&format!(
+                "aggro: {label} (mint={minted}) ordered onto player"
+            ));
         }
     }
 }
@@ -536,7 +557,10 @@ fn hold_posts(px: f64, pz: f64) {
 fn spawn_mob(region_idx: usize, region_name: &str, post: (f64, f64, f64)) -> Result<bool, String> {
     let spawn = factory_call("SpawnGoon", json!([post.0, post.1, post.2]))?;
     let minted_index = spawn["index"].as_i64().ok_or("no mint index")?;
-    let npc_ptr = spawn["ptr"].as_i64().filter(|p| *p != 0).ok_or("no npc ptr from factory")?;
+    let npc_ptr = spawn["ptr"]
+        .as_i64()
+        .filter(|p| *p != 0)
+        .ok_or("no npc ptr from factory")?;
 
     // Roll the mob's types.
     let roll = fastrand::f32();

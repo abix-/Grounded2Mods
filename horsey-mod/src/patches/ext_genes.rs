@@ -244,12 +244,7 @@ unsafe extern "system" fn eval_b_handler(genome: *const u8, idx: i32) -> u32 {
 /// and crash).
 ///
 /// SAFETY: extern "system" matches `(undefined8, int, int, int) -> void`.
-unsafe extern "system" fn allele_swap_handler(
-    ctx: usize,
-    gene_idx: i32,
-    a: i32,
-    b: i32,
-) {
+unsafe extern "system" fn allele_swap_handler(ctx: usize, gene_idx: i32, a: i32, b: i32) {
     CALL_COUNT_SWAP.fetch_add(1, Ordering::Relaxed);
     let idx_u = gene_idx.max(0) as u64;
     LAST_IDX_SWAP.store(idx_u, Ordering::Relaxed);
@@ -330,8 +325,7 @@ fn install_eval_a() -> anyhow::Result<()> {
     let detour = unsafe { GenericDetour::new(target, eval_a_handler) }
         .map_err(|e| anyhow::anyhow!("eval_a: GenericDetour::new failed: {e}"))?;
     // SAFETY: enable writes the JMP + installs the trampoline.
-    unsafe { detour.enable() }
-        .map_err(|e| anyhow::anyhow!("eval_a: enable failed: {e}"))?;
+    unsafe { detour.enable() }.map_err(|e| anyhow::anyhow!("eval_a: enable failed: {e}"))?;
     // Publish via leak + atomic-release so handlers can read lock-free.
     let leaked: *mut GenericDetour<EvalDiploidBlendFn> = Box::into_raw(Box::new(detour));
     EVAL_A_DETOUR.store(leaked, Ordering::Release);
@@ -348,8 +342,7 @@ fn install_eval_b() -> anyhow::Result<()> {
     let detour = unsafe { GenericDetour::new(target, eval_b_handler) }
         .map_err(|e| anyhow::anyhow!("eval_b: GenericDetour::new failed: {e}"))?;
     // SAFETY: enable installs the detour.
-    unsafe { detour.enable() }
-        .map_err(|e| anyhow::anyhow!("eval_b: enable failed: {e}"))?;
+    unsafe { detour.enable() }.map_err(|e| anyhow::anyhow!("eval_b: enable failed: {e}"))?;
     let leaked: *mut GenericDetour<EvalDiploidBlendBFn> = Box::into_raw(Box::new(detour));
     EVAL_B_DETOUR.store(leaked, Ordering::Release);
     modforge::log!("ext_genes: armed EVAL_DIPLOID_BLEND_B at 0x{runtime_addr:x}");
@@ -365,8 +358,7 @@ fn install_allele_swap() -> anyhow::Result<()> {
     let detour = unsafe { GenericDetour::new(target, allele_swap_handler) }
         .map_err(|e| anyhow::anyhow!("allele_swap: GenericDetour::new failed: {e}"))?;
     // SAFETY: enable installs the detour.
-    unsafe { detour.enable() }
-        .map_err(|e| anyhow::anyhow!("allele_swap: enable failed: {e}"))?;
+    unsafe { detour.enable() }.map_err(|e| anyhow::anyhow!("allele_swap: enable failed: {e}"))?;
     let leaked: *mut GenericDetour<GeneAlleleSwapFn> = Box::into_raw(Box::new(detour));
     ALLELE_SWAP_DETOUR.store(leaked, Ordering::Release);
     modforge::log!("ext_genes: armed GENE_ALLELE_SWAP at 0x{runtime_addr:x}");

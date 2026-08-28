@@ -32,11 +32,17 @@ fn max_health(api: &modforge::client::Api<serde_json::Value>) -> Option<f64> {
 fn punch_damage(api: &modforge::client::Api<serde_json::Value>) -> Option<(f64, f64)> {
     let h = common::first_handle(api, "ScheduleOne.Combat.PunchController")?;
     let min = api
-        .op("invoke_method", json!({"handle": h, "method": "get_MinPunchDamage", "args": []}))
+        .op(
+            "invoke_method",
+            json!({"handle": h, "method": "get_MinPunchDamage", "args": []}),
+        )
         .result
         .as_f64()?;
     let max = api
-        .op("invoke_method", json!({"handle": h, "method": "get_MaxPunchDamage", "args": []}))
+        .op(
+            "invoke_method",
+            json!({"handle": h, "method": "get_MaxPunchDamage", "args": []}),
+        )
         .result
         .as_f64()?;
     Some((min, max))
@@ -71,7 +77,10 @@ fn instance_prop_probe() {
         ("get_MaxPunchDamage", json!([])),
     ] {
         println!("-- {method} {args} ...");
-        let r = api.op("invoke_method", json!({"handle": h, "method": method, "args": args}));
+        let r = api.op(
+            "invoke_method",
+            json!({"handle": h, "method": method, "args": args}),
+        );
         println!("   ok={} result={} err={:?}", r.ok, r.result, r.error);
         std::thread::sleep(std::time::Duration::from_secs(3));
         match api.try_op("ping", json!({})) {
@@ -100,16 +109,43 @@ fn static_prop_probe() {
         return;
     }
     let steps: [(&str, &str, serde_json::Value); 6] = [
-        ("Il2CppScheduleOne.Combat.PunchController", "get_PUNCH_RANGE", json!([])),
-        ("Il2CppScheduleOne.PlayerScripts.Health.PlayerHealth", "get_HealthRecoveryPerMinute", json!([])),
-        ("Il2CppScheduleOne.PlayerScripts.Health.PlayerHealth", "get_MaxHealth", json!([])),
-        ("Il2CppScheduleOne.PlayerScripts.Health.PlayerHealth", "set_MaxHealth", json!([123.0])),
-        ("Il2CppScheduleOne.PlayerScripts.Health.PlayerHealth", "get_MaxHealth", json!([])),
-        ("Il2CppScheduleOne.PlayerScripts.Health.PlayerHealth", "set_MaxHealth", json!([100.0])),
+        (
+            "Il2CppScheduleOne.Combat.PunchController",
+            "get_PUNCH_RANGE",
+            json!([]),
+        ),
+        (
+            "Il2CppScheduleOne.PlayerScripts.Health.PlayerHealth",
+            "get_HealthRecoveryPerMinute",
+            json!([]),
+        ),
+        (
+            "Il2CppScheduleOne.PlayerScripts.Health.PlayerHealth",
+            "get_MaxHealth",
+            json!([]),
+        ),
+        (
+            "Il2CppScheduleOne.PlayerScripts.Health.PlayerHealth",
+            "set_MaxHealth",
+            json!([123.0]),
+        ),
+        (
+            "Il2CppScheduleOne.PlayerScripts.Health.PlayerHealth",
+            "get_MaxHealth",
+            json!([]),
+        ),
+        (
+            "Il2CppScheduleOne.PlayerScripts.Health.PlayerHealth",
+            "set_MaxHealth",
+            json!([100.0]),
+        ),
     ];
     for (class, method, args) in steps {
         println!("-- {class} :: {method} ...");
-        let r = api.op("invoke_static", json!({"class": class, "method": method, "args": args}));
+        let r = api.op(
+            "invoke_static",
+            json!({"class": class, "method": method, "args": args}),
+        );
         println!("   ok={} result={} err={:?}", r.ok, r.result, r.error);
         std::thread::sleep(std::time::Duration::from_secs(3));
         match api.try_op("ping", json!({})) {
@@ -138,7 +174,12 @@ fn bisect_effects() {
     }
     let state = api.op("skill_state", json!({}));
     println!("skill_state: {}", state.result);
-    if state.result.get("active").and_then(serde_json::Value::as_bool) == Some(false) {
+    if state
+        .result
+        .get("active")
+        .and_then(serde_json::Value::as_bool)
+        == Some(false)
+    {
         println!("no slot active; load a save and wait 15s first");
         return;
     }
@@ -178,8 +219,14 @@ fn xp_levels_and_vitality_raises_max_health() {
     );
     if let Some(h) = lm.result["singletons"][0]["handle"].as_i64() {
         let loaded = api.op("read_field", json!({"handle": h, "field": "IsGameLoaded"}));
-        let path = api.op("read_field", json!({"handle": h, "field": "LoadedGameFolderPath"}));
-        println!("LoadManager: IsGameLoaded={} path={}", loaded.result, path.result);
+        let path = api.op(
+            "read_field",
+            json!({"handle": h, "field": "LoadedGameFolderPath"}),
+        );
+        println!(
+            "LoadManager: IsGameLoaded={} path={}",
+            loaded.result, path.result
+        );
     } else {
         println!("LoadManager singleton not found");
     }
@@ -204,7 +251,10 @@ fn xp_levels_and_vitality_raises_max_health() {
     println!("skill_add_xp: ok={} {}", xp.ok, xp.result);
 
     let spend = api.op("skill_levelup", json!({"id": "heavy_hands"}));
-    println!("skill_levelup heavy_hands: ok={} {}", spend.ok, spend.result);
+    println!(
+        "skill_levelup heavy_hands: ok={} {}",
+        spend.ok, spend.result
+    );
     if spend.result["spent"].as_u64() == Some(0) {
         println!("no point spent (none available?); punch damage will not move");
     }
@@ -216,9 +266,13 @@ fn xp_levels_and_vitality_raises_max_health() {
     match (before, after) {
         (Some((b, _)), Some((a, amax))) if a > b => {
             println!("HEAVY HANDS WORKS: min punch {b} -> {a} (max {amax})");
-            println!("OPERATOR CHECK: punches hit harder. Kill an NPC (XP line in console), save + reload, rerun this test: levels must persist.");
+            println!(
+                "OPERATOR CHECK: punches hit harder. Kill an NPC (XP line in console), save + reload, rerun this test: levels must persist."
+            );
         }
-        (Some(b), Some(a)) => println!("punch damage unchanged ({b:?} -> {a:?}); heavy_hands did not land"),
+        (Some(b), Some(a)) => {
+            println!("punch damage unchanged ({b:?} -> {a:?}); heavy_hands did not land")
+        }
         _ => println!("could not read punch damage"),
     }
 }

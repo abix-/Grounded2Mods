@@ -9,15 +9,19 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 #[test]
 fn owned_horses_report_container() {
-    let Some(game) = common::launch("horse_container_detect") else { return };
+    let Some(game) = common::launch("horse_container_detect") else {
+        return;
+    };
 
     // Wait out the save-load race.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    let mut v = game.op_json("gamestate.owned_horses", &json!({})).expect("owned_horses op");
+    let mut v = game
+        .op_json("gamestate.owned_horses", &json!({}))
+        .expect("owned_horses op");
     loop {
         let n = v
             .get("result")
@@ -29,13 +33,22 @@ fn owned_horses_report_container() {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(250));
-        v = game.op_json("gamestate.owned_horses", &json!({})).expect("owned_horses op");
+        v = game
+            .op_json("gamestate.owned_horses", &json!({}))
+            .expect("owned_horses op");
     }
 
     let r = v.get("result").unwrap_or(&v);
-    let horses = r.get("horses").and_then(Value::as_array).cloned().unwrap_or_default();
+    let horses = r
+        .get("horses")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
     eprintln!("[OWNED] {} horse(s)", horses.len());
-    assert!(!horses.is_empty(), "no owned horses -- gamestate not loaded?");
+    assert!(
+        !horses.is_empty(),
+        "no owned horses -- gamestate not loaded?"
+    );
 
     for h in &horses {
         let idx = h.get("idx").and_then(Value::as_u64).unwrap_or(0);

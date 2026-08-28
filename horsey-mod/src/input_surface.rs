@@ -27,7 +27,9 @@ use crate::hk1;
 pub struct HorseyInputSurface;
 
 impl HorseyInputSurface {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 fn screen_to_client_self(x: i32, y: i32) -> Result<(i32, i32), String> {
@@ -65,7 +67,9 @@ fn try_write_loc_cursor(client_x: f32, client_y: f32) -> bool {
 }
 
 impl InputSurface for HorseyInputSurface {
-    fn name(&self) -> &'static str { "horsey" }
+    fn name(&self) -> &'static str {
+        "horsey"
+    }
 
     fn move_abs(&self, x: i32, y: i32) -> Result<(), String> {
         // Write OS cursor first. This keeps the user's visible cursor
@@ -81,11 +85,13 @@ impl InputSurface for HorseyInputSurface {
         if !try_write_loc_cursor(cx as f32, cy as f32) {
             // No save loaded; L3 degrades to L1. Quiet log because
             // this is expected at the main menu.
-            modforge::log!(
-                "[l3 input] LOC unresolved; cursor moved via L1 only ({x},{y})"
-            );
+            modforge::log!("[l3 input] LOC unresolved; cursor moved via L1 only ({x},{y})");
         }
         Ok(())
+    }
+
+    fn move_rel(&self, dx: i32, dy: i32) -> Result<(), String> {
+        modforge::input::l1::move_rel(dx, dy)
     }
 
     fn click(&self, button: Button, x: i32, y: i32) -> Result<(), String> {

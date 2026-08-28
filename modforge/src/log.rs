@@ -15,8 +15,8 @@ use std::fs::File;
 use std::io::Write;
 use std::os::windows::ffi::OsStringExt;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::SystemTime;
 
 use parking_lot::Mutex;

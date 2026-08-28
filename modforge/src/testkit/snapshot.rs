@@ -7,7 +7,7 @@
 
 use crate::harness::RunningGame;
 use crate::research;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -25,7 +25,8 @@ pub struct Config {
 impl Config {
     /// Default workspace root: the parent of CARGO_MANIFEST_DIR.
     pub fn workspace_from_manifest(manifest_dir: &str) -> PathBuf {
-        Path::new(manifest_dir).parent()
+        Path::new(manifest_dir)
+            .parent()
             .expect("no workspace root")
             .to_path_buf()
     }
@@ -49,7 +50,11 @@ pub fn take(game: &RunningGame, cfg: &Config) -> Result<SnapshotTaken> {
     eprintln!("\n[{}] bytes @ 0x{:x} (rows of 32):", cfg.tag, cfg.addr);
     for (i, chunk) in bytes.chunks(32).enumerate() {
         let off = i * 32;
-        let row: String = chunk.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");
+        let row: String = chunk
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<Vec<_>>()
+            .join(" ");
         eprintln!("  +0x{off:03x}  {row}");
     }
 
@@ -57,8 +62,7 @@ pub fn take(game: &RunningGame, cfg: &Config) -> Result<SnapshotTaken> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).ok();
     }
-    std::fs::write(&path, &bytes)
-        .with_context(|| format!("write snapshot {path:?}"))?;
+    std::fs::write(&path, &bytes).with_context(|| format!("write snapshot {path:?}"))?;
     eprintln!("\n[{}] wrote snapshot: {}", cfg.tag, path.display());
 
     Ok(SnapshotTaken { path, bytes })
@@ -86,7 +90,9 @@ pub fn diff_against(
         .with_context(|| format!("read {other_path:?}; run with tag={other_tag} first"))?;
     if other.len() != cfg.len {
         return Err(anyhow!(
-            "stored snapshot {other_path:?} wrong size {} != {}", other.len(), cfg.len
+            "stored snapshot {other_path:?} wrong size {} != {}",
+            other.len(),
+            cfg.len
         ));
     }
 
@@ -98,11 +104,15 @@ pub fn diff_against(
     }
     eprintln!("\ndiff vs [{other_tag}]: {} bytes changed", changed.len());
     for off in &changed {
-        eprintln!("  +0x{:03x}: {:02x} -> {:02x}", off, other[*off], current[*off]);
+        eprintln!(
+            "  +0x{:03x}: {:02x} -> {:02x}",
+            off, other[*off], current[*off]
+        );
     }
     if changed.is_empty() {
         return Err(anyhow!(
-            "snapshots [{other_tag}] and [{}] are byte-identical", cfg.tag
+            "snapshots [{other_tag}] and [{}] are byte-identical",
+            cfg.tag
         ));
     }
 
@@ -110,13 +120,20 @@ pub fn diff_against(
         if &changed != want {
             return Err(anyhow!(
                 "diff mismatch. got={:?} want={:?}",
-                changed.iter().map(|o| format!("0x{o:x}")).collect::<Vec<_>>(),
+                changed
+                    .iter()
+                    .map(|o| format!("0x{o:x}"))
+                    .collect::<Vec<_>>(),
                 want.iter().map(|o| format!("0x{o:x}")).collect::<Vec<_>>(),
             ));
         }
     }
 
-    Ok(DiffResult { current, other, changed_offsets: changed })
+    Ok(DiffResult {
+        current,
+        other,
+        changed_offsets: changed,
+    })
 }
 
 /// Compute the offsets at which two byte slices differ. Pure; the
@@ -133,13 +150,17 @@ pub fn diff_bytes(a: &[u8], b: &[u8]) -> BTreeSet<usize> {
 }
 
 pub fn snapshot_path(workspace: &Path, scope: &str, tag: &str) -> PathBuf {
-    let safe_scope: String = scope.chars()
+    let safe_scope: String = scope
+        .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
         .collect();
-    let safe_tag: String = tag.chars()
+    let safe_tag: String = tag
+        .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
         .collect();
-    workspace.join("target").join("test-runs")
+    workspace
+        .join("target")
+        .join("test-runs")
         .join(format!("{safe_scope}_{safe_tag}.bin"))
 }
 
@@ -190,8 +211,8 @@ mod tests {
     #[test]
     fn diff_against_real_file_roundtrip() {
         // Use a unique tempdir under the OS temp directory.
-        let tmp = std::env::temp_dir().join(format!("modforge_snapshot_test_{}",
-            std::process::id()));
+        let tmp =
+            std::env::temp_dir().join(format!("modforge_snapshot_test_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(tmp.join("target/test-runs")).unwrap();
 

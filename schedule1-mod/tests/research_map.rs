@@ -36,7 +36,10 @@ fn map_region_owner() {
 
     // Influence per region, plus the live influence list.
     if let Some(h) = first_handle(&api, "ScheduleOne.Cartel.CartelInfluence") {
-        let infl = api.op("read_field", json!({"handle": h, "field": "regionInfluence"}));
+        let infl = api.op(
+            "read_field",
+            json!({"handle": h, "field": "regionInfluence"}),
+        );
         match handle_of(&infl.result) {
             Some(seq) => dump_sequence(&api, "CartelInfluence.regionInfluence", seq),
             None => println!("regionInfluence carried no handle: {}", infl.result),

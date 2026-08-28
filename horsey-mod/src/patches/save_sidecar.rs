@@ -219,11 +219,7 @@ fn crc32_update(crc: u32, bytes: &[u8]) -> u32 {
 // ---------------------------------------------------------------------------
 
 /// Write magic + version + ext_count + horse_count.
-pub fn write_header<W: Write>(
-    w: &mut W,
-    ext_count: u32,
-    horse_count: u32,
-) -> std::io::Result<()> {
+pub fn write_header<W: Write>(w: &mut W, ext_count: u32, horse_count: u32) -> std::io::Result<()> {
     w.write_all(MAGIC)?;
     w.write_all(&VERSION.to_le_bytes())?;
     w.write_all(&ext_count.to_le_bytes())?;
@@ -281,9 +277,7 @@ pub fn write_horse_record<W: Write>(
 
 /// Read one horse's dense alleles into a fresh `ExtHorseGenome`,
 /// masking each byte to 0..3 to defend against tampered files.
-pub fn read_horse_record<R: Read>(
-    r: &mut R,
-) -> std::io::Result<genes::ExtHorseGenome> {
+pub fn read_horse_record<R: Read>(r: &mut R) -> std::io::Result<genes::ExtHorseGenome> {
     let mut bytes = vec![0u8; 2 * EXT_GENE_COUNT];
     r.read_exact(&mut bytes)?;
     let mut g = genes::ExtHorseGenome::empty();
@@ -378,8 +372,7 @@ mod tests {
 
         // Expected size: 8 magic + 4 version + 4 ext_count + 4 horse_count
         // + 3 horses * 2 * EXT_GENE_COUNT bytes.
-        let expected_size =
-            8 + 4 + 4 + 4 + parents.len() * 2 * EXT_GENE_COUNT;
+        let expected_size = 8 + 4 + 4 + 4 + parents.len() * 2 * EXT_GENE_COUNT;
         assert_eq!(buf.len(), expected_size);
 
         let mut r = Cursor::new(&buf);
@@ -403,10 +396,7 @@ mod tests {
 // D4.1: save-write path
 // ---------------------------------------------------------------------------
 
-unsafe extern "system" fn save_writer_handler(
-    gamestate: *mut c_void,
-    channel: u32,
-) {
+unsafe extern "system" fn save_writer_handler(gamestate: *mut c_void, channel: u32) {
     SAVE_CALLS.fetch_add(1, Ordering::Relaxed);
 
     // Open sidecar BEFORE vanilla runs (so per-horse hook has somewhere
@@ -502,8 +492,8 @@ unsafe extern "system" fn horse_writer_handler(horse: *mut c_void) {
 
 #[inline(never)]
 fn append_horse_record(horse_id: u64) {
-    let genome = genes::get_horse_ext_genome(horse_id)
-        .unwrap_or_else(|| genes::ExtHorseGenome::empty());
+    let genome =
+        genes::get_horse_ext_genome(horse_id).unwrap_or_else(|| genes::ExtHorseGenome::empty());
     let mut slot = writer_slot().lock();
     let Some(state) = slot.as_mut() else {
         // No open writer (vanilla called per-horse writer outside a
@@ -511,9 +501,7 @@ fn append_horse_record(horse_id: u64) {
         return;
     };
     if let Err(e) = state.file.write_all(&genome.alleles) {
-        modforge::log!(
-            "save_sidecar: append for horse 0x{horse_id:x} failed: {e}"
-        );
+        modforge::log!("save_sidecar: append for horse 0x{horse_id:x} failed: {e}");
         return;
     }
     state.horse_count = state.horse_count.saturating_add(1);
@@ -523,10 +511,7 @@ fn append_horse_record(horse_id: u64) {
 // D4.2: save-load path
 // ---------------------------------------------------------------------------
 
-unsafe extern "system" fn load_game_handler(
-    gamestate: *mut c_void,
-    channel: u32,
-) {
+unsafe extern "system" fn load_game_handler(gamestate: *mut c_void, channel: u32) {
     LOAD_CALLS.fetch_add(1, Ordering::Relaxed);
 
     // Open sidecar reader BEFORE vanilla load runs, so per-horse load
@@ -605,9 +590,7 @@ fn open_reader_inner(path: &std::path::Path) -> std::io::Result<ReaderState> {
     if ext_count as usize != EXT_GENE_COUNT {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!(
-                "ext_count mismatch: file={ext_count} build={EXT_GENE_COUNT}"
-            ),
+            format!("ext_count mismatch: file={ext_count} build={EXT_GENE_COUNT}"),
         ));
     }
     f.read_exact(&mut buf4)?;
@@ -713,8 +696,7 @@ fn dryrun_at(name: &'static str, rva: usize) -> TargetReport {
     let runtime_addr = targets::rebase(rva);
     let mut prologue = [0u8; 16];
     // SAFETY: function entry inside our running image; read-only.
-    let view =
-        unsafe { std::slice::from_raw_parts(runtime_addr as *const u8, 16) };
+    let view = unsafe { std::slice::from_raw_parts(runtime_addr as *const u8, 16) };
     prologue.copy_from_slice(view);
     TargetReport {
         name,
@@ -747,14 +729,14 @@ pub fn arm() -> anyhow::Result<()> {
     let horse_save_loader = crate::targets_registry::resolve::horse_save_loader()
         .unwrap_or_else(|| targets::rebase(fn_addr::HORSE_SAVE_LOADER));
 
-    arm_one("SAVE_WRITER", save_writer, &SAVE_WRITER_DETOUR, save_writer_handler)
-        .map_err(|e| anyhow::anyhow!("save_sidecar: arm SAVE_WRITER: {e}"))?;
-    if let Err(e) = arm_one(
-        "LOAD_GAME",
-        load_game,
-        &LOAD_GAME_DETOUR,
-        load_game_handler,
-    ) {
+    arm_one(
+        "SAVE_WRITER",
+        save_writer,
+        &SAVE_WRITER_DETOUR,
+        save_writer_handler,
+    )
+    .map_err(|e| anyhow::anyhow!("save_sidecar: arm SAVE_WRITER: {e}"))?;
+    if let Err(e) = arm_one("LOAD_GAME", load_game, &LOAD_GAME_DETOUR, load_game_handler) {
         revert();
         return Err(anyhow::anyhow!("save_sidecar: arm LOAD_GAME: {e}"));
     }
@@ -793,8 +775,7 @@ where
         anyhow::bail!("{name}: already armed");
     }
     // SAFETY: target inside our loaded image; 8 bytes readable.
-    let prologue =
-        unsafe { std::slice::from_raw_parts(runtime_addr as *const u8, 8) };
+    let prologue = unsafe { std::slice::from_raw_parts(runtime_addr as *const u8, 8) };
     let prologue_hex: String = prologue
         .iter()
         .map(|b| format!("{b:02x}"))
@@ -809,8 +790,7 @@ where
     let detour = unsafe { GenericDetour::new(target, handler) }
         .map_err(|e| anyhow::anyhow!("{name}: GenericDetour::new failed: {e}"))?;
     // SAFETY: enable installs JMP + trampoline.
-    unsafe { detour.enable() }
-        .map_err(|e| anyhow::anyhow!("{name}: enable failed: {e}"))?;
+    unsafe { detour.enable() }.map_err(|e| anyhow::anyhow!("{name}: enable failed: {e}"))?;
     let leaked: *mut GenericDetour<F> = Box::into_raw(Box::new(detour));
     slot.store(leaked, Ordering::Release);
     modforge::log!("save_sidecar: armed {name} at 0x{runtime_addr:x}");

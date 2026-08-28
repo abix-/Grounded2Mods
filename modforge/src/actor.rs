@@ -461,7 +461,11 @@ mod tests {
         p.axes[Axis::Power as usize] = -1.0;
         assert_eq!(p.damage_mult(1.0), 0.75);
         p.axes[Axis::Ferocity as usize] = 1.0;
-        assert_eq!(p.damage_mult(0.4), 0.75 * 1.5, "berserker under half health");
+        assert_eq!(
+            p.damage_mult(0.4),
+            0.75 * 1.5,
+            "berserker under half health"
+        );
         p.axes[Axis::Courage as usize] = -1.0;
         assert!((p.flee_line() - 0.5).abs() < 1e-6, "a coward flees at half");
         p.axes[Axis::Courage as usize] = 1.0;

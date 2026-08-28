@@ -55,7 +55,10 @@ const CANDIDATE_CLASSES: &[&str] = &[
 #[ignore]
 fn probe_all_candidates() {
     let Some(api) = api_or_skip() else { return };
-    println!("probing {} candidate class names...\n", CANDIDATE_CLASSES.len());
+    println!(
+        "probing {} candidate class names...\n",
+        CANDIDATE_CLASSES.len()
+    );
     let mut found = Vec::new();
     for class in CANDIDATE_CLASSES {
         let r = api.op("walk_class", json!({"class": class, "max": 5}));
@@ -85,7 +88,11 @@ fn probe_all_candidates() {
         }
         println!();
     }
-    println!("--- found {} of {} candidates", found.len(), CANDIDATE_CLASSES.len());
+    println!(
+        "--- found {} of {} candidates",
+        found.len(),
+        CANDIDATE_CLASSES.len()
+    );
     for c in &found {
         println!("  {c}");
     }

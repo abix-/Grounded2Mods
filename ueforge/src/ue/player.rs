@@ -49,10 +49,7 @@ impl PlayerRef {
     /// optional substring of the Blueprint-generated subclass's
     /// full name (e.g. `BP_SurvivalPlayerCharacter` to exclude NPC
     /// SurvivalCharacter subclasses).
-    pub const fn new(
-        base_class_name: &'static str,
-        bp_name_filter: Option<&'static str>,
-    ) -> Self {
+    pub const fn new(base_class_name: &'static str, bp_name_filter: Option<&'static str>) -> Self {
         Self {
             base_class: ClassRef::new(base_class_name),
             bp_name_filter,

@@ -36,9 +36,15 @@ pub fn drop_cash_at(x: f64, y: f64, z: f64, toughness: f32) {
     let amount = (base * (0.7 + fastrand::f64() * 0.8)).round().max(5.0);
     MAIN_QUEUE.push(move || {
         if let Err(e) = spawn_cash(x, y, z, amount) {
-            mono::log(LogLevel::Warn, &format!("schedule1-mod: loot drop failed: {e}"));
+            mono::log(
+                LogLevel::Warn,
+                &format!("schedule1-mod: loot drop failed: {e}"),
+            );
         } else {
-            mono::log(LogLevel::Info, &format!("schedule1-mod: loot dropped (${amount:.0})"));
+            mono::log(
+                LogLevel::Info,
+                &format!("schedule1-mod: loot dropped (${amount:.0})"),
+            );
         }
     });
 }

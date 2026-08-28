@@ -23,7 +23,10 @@ fn factory_call(
     method: &str,
     args: serde_json::Value,
 ) -> Option<serde_json::Value> {
-    let r = api.op("invoke_static", json!({"class": FACTORY, "method": method, "args": args}));
+    let r = api.op(
+        "invoke_static",
+        json!({"class": FACTORY, "method": method, "args": args}),
+    );
     if !r.ok {
         println!("{method}: op failed: {:?}", r.error);
         return None;
@@ -73,7 +76,10 @@ fn spawn_before_save() {
         match &spawn {
             Some(sv) => {
                 let idx = sv["index"].as_i64().unwrap_or(0);
-                println!("goon {} spawned index={idx} at ({:.1}, {:.1}, {:.1})", i, x, y, z);
+                println!(
+                    "goon {} spawned index={idx} at ({:.1}, {:.1}, {:.1})",
+                    i, x, y, z
+                );
                 indices.push(idx);
             }
             None => println!("goon {} SpawnGoon failed", i),
@@ -103,7 +109,9 @@ fn spawn_before_save() {
     println!("spawned indices: {:?}", indices);
     println!("1. SAVE the game now (quicksave or menu save)");
     println!("2. RELOAD the save (load from menu or quickload)");
-    println!("3. Run: cargo test -p schedule1-mod --test research_save_reload -- --test-threads=1 --nocapture check_after_reload");
+    println!(
+        "3. Run: cargo test -p schedule1-mod --test research_save_reload -- --test-threads=1 --nocapture check_after_reload"
+    );
 }
 
 #[test]

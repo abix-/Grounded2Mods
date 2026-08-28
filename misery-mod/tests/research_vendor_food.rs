@@ -36,9 +36,13 @@ struct SellEntry {
 
 fn read_sell_entries(api: &Api, comp_addr: u64) -> Option<Vec<SellEntry>> {
     let hdr = client::read_tarray_header(api, comp_addr, SELL_LIST_OFFSET)?;
-    if hdr.num <= 0 || hdr.num > 500 { return None; }
+    if hdr.num <= 0 || hdr.num > 500 {
+        return None;
+    }
     let data = client::read_bytes(api, hdr.ptr, 0, (hdr.num as u64) * SELL_STRIDE);
-    if data.is_empty() { return None; }
+    if data.is_empty() {
+        return None;
+    }
     let mut entries = Vec::new();
     for i in 0..hdr.num as usize {
         let base = i * SELL_STRIDE as usize;
@@ -100,7 +104,9 @@ fn find_barman_food_gap() {
     let v = vendors.iter().find(|v| v.name.contains("Barman"));
     let Some(v) = v else {
         println!("Barman not found among {} vendors", vendors.len());
-        for v in &vendors { println!("  {}", v.name); }
+        for v in &vendors {
+            println!("  {}", v.name);
+        }
         return;
     };
     let Some(comp_addr) = get_component_addr(&api, v.addr) else {
@@ -110,7 +116,12 @@ fn find_barman_food_gap() {
 
     let sells = read_sell_entries(&api, comp_addr).unwrap_or_default();
     let hdr = client::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET).unwrap();
-    println!("Barman sell list: {} entries (num={} max={})", sells.len(), hdr.num, hdr.max);
+    println!(
+        "Barman sell list: {} entries (num={} max={})",
+        sells.len(),
+        hdr.num,
+        hdr.max
+    );
 
     let existing: HashSet<String> = sells.iter().map(|e| e.item_name.clone()).collect();
     println!("\ncurrently accepted:");
@@ -118,7 +129,8 @@ fn find_barman_food_gap() {
         println!("  {}", e.item_name);
     }
 
-    let missing: Vec<&&str> = ALL_FOOD_SELLABLE.iter()
+    let missing: Vec<&&str> = ALL_FOOD_SELLABLE
+        .iter()
         .filter(|name| !existing.contains(**name))
         .collect();
 
@@ -128,9 +140,16 @@ fn find_barman_food_gap() {
     }
 
     let total_needed = hdr.num + missing.len() as i32;
-    println!("\ncurrent num={}, need {} slots total, current max={}", hdr.num, total_needed, hdr.max);
+    println!(
+        "\ncurrent num={}, need {} slots total, current max={}",
+        hdr.num, total_needed, hdr.max
+    );
     if total_needed > hdr.max {
-        println!("TArray grow needed: from max={} to at least {}", hdr.max, total_needed + 10);
+        println!(
+            "TArray grow needed: from max={} to at least {}",
+            hdr.max,
+            total_needed + 10
+        );
     } else {
         println!("enough slack, no grow needed");
     }
@@ -164,11 +183,16 @@ fn add_all_food_to_barman_sell_list() {
     println!("sell list before: num={} max={}", hdr.num, hdr.max);
 
     let existing: HashSet<String> = sells.iter().map(|e| e.item_name.clone()).collect();
-    let missing: Vec<&str> = ALL_FOOD_SELLABLE.iter()
+    let missing: Vec<&str> = ALL_FOOD_SELLABLE
+        .iter()
         .filter(|name| !existing.contains(**name))
         .copied()
         .collect();
-    println!("{} items already present, {} to add", existing.len(), missing.len());
+    println!(
+        "{} items already present, {} to add",
+        existing.len(),
+        missing.len()
+    );
 
     if missing.is_empty() {
         println!("nothing to add");
@@ -181,7 +205,8 @@ fn add_all_food_to_barman_sell_list() {
         return;
     }
     let rows = r.result["rows"].as_array().cloned().unwrap_or_default();
-    let mut fname_map: std::collections::HashMap<String, (u32, u32)> = std::collections::HashMap::new();
+    let mut fname_map: std::collections::HashMap<String, (u32, u32)> =
+        std::collections::HashMap::new();
     for row in &rows {
         let name = row["name"].as_str().unwrap_or("");
         let idx = row["fname_idx"].as_u64().unwrap_or(0) as u32;
@@ -210,15 +235,21 @@ fn add_all_food_to_barman_sell_list() {
         println!("growing sell list from max={} to {}", hdr.max, new_max);
         let slow_api: Api = Api::at(17176, "/debug").with_timeout(Duration::from_secs(120));
 
-        let r = slow_api.try_op("tarray_grow", json!({
-            "instance_selector": comp_sel,
-            "offset": SELL_LIST_OFFSET,
-            "stride": SELL_STRIDE,
-            "new_max": new_max
-        }));
+        let r = slow_api.try_op(
+            "tarray_grow",
+            json!({
+                "instance_selector": comp_sel,
+                "offset": SELL_LIST_OFFSET,
+                "stride": SELL_STRIDE,
+                "new_max": new_max
+            }),
+        );
         match r {
             Ok(r) if r.ok => {
-                println!("tarray_grow ok: {}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+                println!(
+                    "tarray_grow ok: {}",
+                    serde_json::to_string_pretty(&r.result).unwrap_or_default()
+                );
             }
             Ok(r) => {
                 println!("tarray_grow FAILED: {:?}", r.error);
@@ -232,8 +263,14 @@ fn add_all_food_to_barman_sell_list() {
     }
 
     let hdr = client::read_tarray_header(&api, comp_addr, SELL_LIST_OFFSET).unwrap();
-    println!("sell list after grow: ptr={:#x} num={} max={}", hdr.ptr, hdr.num, hdr.max);
-    assert!(hdr.num + resolved.len() as i32 <= hdr.max, "still not enough room");
+    println!(
+        "sell list after grow: ptr={:#x} num={} max={}",
+        hdr.ptr, hdr.num, hdr.max
+    );
+    assert!(
+        hdr.num + resolved.len() as i32 <= hdr.max,
+        "still not enough room"
+    );
 
     let template = client::read_bytes(&api, hdr.ptr, 0, SELL_STRIDE);
     println!("template from sell[0]: {} bytes", template.len());
@@ -246,25 +283,40 @@ fn add_all_food_to_barman_sell_list() {
 
         let write_offset = (current_num as u64) * SELL_STRIDE;
         let hex: String = entry.iter().map(|b| format!("{b:02x}")).collect();
-        let r = api.op("write_bytes", json!({
-            "instance_selector": format!("addr:0x{:X}", hdr.ptr),
-            "offset": write_offset,
-            "bytes_hex": hex
-        }));
+        let r = api.op(
+            "write_bytes",
+            json!({
+                "instance_selector": format!("addr:0x{:X}", hdr.ptr),
+                "offset": write_offset,
+                "bytes_hex": hex
+            }),
+        );
         if !r.ok {
             println!("FAILED writing {}: {:?}", name, r.error);
             return;
         }
         current_num += 1;
-        println!("  added {} (fname_idx={:#x}), slot {}", name, fname_idx, current_num - 1);
+        println!(
+            "  added {} (fname_idx={:#x}), slot {}",
+            name,
+            fname_idx,
+            current_num - 1
+        );
     }
 
-    let count_hex: String = current_num.to_le_bytes().iter().map(|b| format!("{b:02x}")).collect();
-    let r = api.op("write_bytes", json!({
-        "instance_selector": comp_sel,
-        "offset": SELL_LIST_OFFSET + 8,
-        "bytes_hex": count_hex
-    }));
+    let count_hex: String = current_num
+        .to_le_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let r = api.op(
+        "write_bytes",
+        json!({
+            "instance_selector": comp_sel,
+            "offset": SELL_LIST_OFFSET + 8,
+            "bytes_hex": count_hex
+        }),
+    );
     if !r.ok {
         println!("FAILED writing num: {:?}", r.error);
         return;
@@ -281,12 +333,20 @@ fn add_all_food_to_barman_sell_list() {
     }
 
     let final_set: HashSet<String> = verify_sells.iter().map(|e| e.item_name.clone()).collect();
-    let still_missing: Vec<&&str> = ALL_FOOD_SELLABLE.iter()
+    let still_missing: Vec<&&str> = ALL_FOOD_SELLABLE
+        .iter()
         .filter(|name| !final_set.contains(**name))
         .collect();
     if still_missing.is_empty() {
-        println!("\nSUCCESS: all {} edible food items now accepted by Barman", ALL_FOOD_SELLABLE.len());
+        println!(
+            "\nSUCCESS: all {} edible food items now accepted by Barman",
+            ALL_FOOD_SELLABLE.len()
+        );
     } else {
-        println!("\nWARNING: {} items still missing: {:?}", still_missing.len(), still_missing);
+        println!(
+            "\nWARNING: {} items still missing: {:?}",
+            still_missing.len(),
+            still_missing
+        );
     }
 }

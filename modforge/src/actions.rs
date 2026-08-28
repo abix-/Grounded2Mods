@@ -125,7 +125,10 @@ impl Bindings {
     }
 
     pub fn binding(&self, key: Key) -> Option<Binding> {
-        self.bindings.iter().find(|(k, _)| *k == key).map(|(_, b)| *b)
+        self.bindings
+            .iter()
+            .find(|(k, _)| *k == key)
+            .map(|(_, b)| *b)
     }
 
     /// Turn one frame of raw key state into actions. `pressed` are
@@ -283,7 +286,10 @@ mod tests {
     #[test]
     fn opposite_move_keys_cancel_and_diagonals_sum() {
         let b = Bindings::defaults();
-        assert!(b.resolve(&[Key::W, Key::S], &[]).is_empty(), "W and S cancel");
+        assert!(
+            b.resolve(&[Key::W, Key::S], &[]).is_empty(),
+            "W and S cancel"
+        );
         let diagonal = b.resolve(&[Key::W, Key::D], &[]);
         assert_eq!(diagonal, vec![Action::Move { x: 1.0, y: 1.0 }]);
     }
@@ -291,7 +297,10 @@ mod tests {
     #[test]
     fn shift_t_transfers_half_and_keys_can_be_rebound() {
         let mut b = Bindings::defaults();
-        assert_eq!(b.resolve(&[Key::T], &[Key::T]), vec![Action::Transfer { half: false }]);
+        assert_eq!(
+            b.resolve(&[Key::T], &[Key::T]),
+            vec![Action::Transfer { half: false }]
+        );
         assert_eq!(
             b.resolve(&[Key::T, Key::ShiftLeft], &[Key::T]),
             vec![Action::Transfer { half: true }]
@@ -300,7 +309,10 @@ mod tests {
         b.bind(Key::MouseLeft, Binding::Tapped(Action::Use));
         let r = b.resolve(&[Key::MouseRight, Key::MouseLeft], &[Key::MouseLeft]);
         assert!(r.contains(&Action::Attack) && r.contains(&Action::Use));
-        assert_eq!(b.binding(Key::MouseLeft), Some(Binding::Tapped(Action::Use)));
+        assert_eq!(
+            b.binding(Key::MouseLeft),
+            Some(Binding::Tapped(Action::Use))
+        );
     }
 
     #[test]

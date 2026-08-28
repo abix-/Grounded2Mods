@@ -216,7 +216,10 @@ pub struct NewLevels {
 
 impl NewLevels {
     pub fn new(streamer: LevelStreamer) -> Self {
-        Self { streamer, seen: modforge::worldgen::Seen::new() }
+        Self {
+            streamer,
+            seen: modforge::worldgen::Seen::new(),
+        }
     }
 
     /// The levels that have appeared since the last call.

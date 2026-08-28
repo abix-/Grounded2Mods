@@ -1,8 +1,8 @@
 //! Asset-file locator. Finds files next to the running game exe.
 
 use crate::harness::RunningGame;
-use anyhow::{anyhow, Result};
-use serde_json::{json, Value};
+use anyhow::{Result, anyhow};
+use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
@@ -36,8 +36,7 @@ impl Config {
     /// - `HORSEY_ASSET_EXPECT_PATH` (suffix match)
     /// - `HORSEY_ASSET_EXPECT_MIN_SIZE`
     pub fn from_env(prefix: &str, default_name: &str) -> Self {
-        let name = std::env::var(format!("{prefix}_NAME"))
-            .unwrap_or_else(|_| default_name.into());
+        let name = std::env::var(format!("{prefix}_NAME")).unwrap_or_else(|_| default_name.into());
         let mut cfg = Self::defaults(name);
         cfg.expect_path_suffix = std::env::var(format!("{prefix}_EXPECT_PATH")).ok();
         cfg.expect_min_size = std::env::var(format!("{prefix}_EXPECT_MIN_SIZE"))
@@ -54,15 +53,20 @@ pub struct AssetFound {
 }
 
 pub fn run(game: &RunningGame, cfg: &Config) -> Result<AssetFound> {
-    let bi = game.op_json("game.build_info", &json!({}))
+    let bi = game
+        .op_json("game.build_info", &json!({}))
         .map_err(|e| anyhow!("game.build_info: {e}"))?;
-    let exe_path = bi.get("result").and_then(|r| r.get("exe_path"))
+    let exe_path = bi
+        .get("result")
+        .and_then(|r| r.get("exe_path"))
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("build_info missing exe_path"))?
         .to_string();
     eprintln!("exe_path: {exe_path}");
     let exe = PathBuf::from(&exe_path);
-    let parent: &Path = exe.parent().ok_or_else(|| anyhow!("exe_path has no parent"))?;
+    let parent: &Path = exe
+        .parent()
+        .ok_or_else(|| anyhow!("exe_path has no parent"))?;
     find_asset_in_dirs(parent, &cfg.asset_name, &cfg.probe_dirs, cfg)
 }
 
@@ -75,7 +79,8 @@ pub fn find_asset_in_dirs(
     probe_dirs: &[String],
     cfg: &Config,
 ) -> Result<AssetFound> {
-    let candidates: Vec<PathBuf> = probe_dirs.iter()
+    let candidates: Vec<PathBuf> = probe_dirs
+        .iter()
         .map(|d| parent.join(d).join(asset_name))
         .collect();
     let mut found: Option<PathBuf> = None;
@@ -86,21 +91,23 @@ pub fn find_asset_in_dirs(
             found = Some(c.clone());
         }
     }
-    let found = found.ok_or_else(|| anyhow!(
-        "{asset_name} not found in any candidate location"
-    ))?;
+    let found = found.ok_or_else(|| anyhow!("{asset_name} not found in any candidate location"))?;
     let size = std::fs::metadata(&found).map(|m| m.len()).unwrap_or(0);
     eprintln!("[FOUND] {} ({} bytes)", found.display(), size);
 
     if let Some(suffix) = &cfg.expect_path_suffix {
         let got = found.to_string_lossy().to_string();
         if !got.ends_with(suffix) && got != *suffix {
-            return Err(anyhow!("expect_path suffix '{suffix}' not matched by '{got}'"));
+            return Err(anyhow!(
+                "expect_path suffix '{suffix}' not matched by '{got}'"
+            ));
         }
     }
     if let Some(min) = cfg.expect_min_size {
         if size < min {
-            return Err(anyhow!("asset {found:?} is {size} bytes, expected >= {min}"));
+            return Err(anyhow!(
+                "asset {found:?} is {size} bytes, expected >= {min}"
+            ));
         }
     }
 
@@ -113,8 +120,7 @@ mod tests {
 
     #[test]
     fn find_asset_in_dirs_returns_first_match() {
-        let tmp = std::env::temp_dir().join(format!("modforge_assets_test_{}",
-            std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("modforge_assets_test_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(tmp.join("data")).unwrap();
         std::fs::create_dir_all(tmp.join("Content/data")).unwrap();
@@ -123,11 +129,7 @@ mod tests {
         // Also place a different file deeper to verify "first match wins".
         let _ = std::fs::write(tmp.join("Content/data/genes.xml"), b"different");
 
-        let probe = vec![
-            "data".into(),
-            ".".into(),
-            "Content/data".into(),
-        ];
+        let probe = vec!["data".into(), ".".into(), "Content/data".into()];
         let cfg = Config::defaults("genes.xml");
         let r = find_asset_in_dirs(&tmp, "genes.xml", &probe, &cfg).unwrap();
         assert_eq!(r.path, asset_in_data);
@@ -138,21 +140,18 @@ mod tests {
 
     #[test]
     fn find_asset_in_dirs_errors_when_missing() {
-        let tmp = std::env::temp_dir().join(format!("modforge_assets_miss_{}",
-            std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("modforge_assets_miss_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
         let cfg = Config::defaults("absent.xml");
-        let r = find_asset_in_dirs(&tmp, "absent.xml",
-            &["data".to_string()], &cfg);
+        let r = find_asset_in_dirs(&tmp, "absent.xml", &["data".to_string()], &cfg);
         assert!(r.is_err());
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn find_asset_in_dirs_enforces_min_size() {
-        let tmp = std::env::temp_dir().join(format!("modforge_assets_size_{}",
-            std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("modforge_assets_size_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(tmp.join("data")).unwrap();
         std::fs::write(tmp.join("data/x.bin"), b"abc").unwrap();

@@ -116,9 +116,7 @@ pub fn process_threads_json() -> serde_json::Value {
     if unsafe { Thread32First(snap, &mut te) } != 0 {
         loop {
             if te.th32OwnerProcessID == pid {
-                let h = unsafe {
-                    OpenThread(THREAD_QUERY_LIMITED_INFORMATION, 0, te.th32ThreadID)
-                };
+                let h = unsafe { OpenThread(THREAD_QUERY_LIMITED_INFORMATION, 0, te.th32ThreadID) };
                 if !h.is_null() {
                     let mut creation = FILETIME {
                         dwLowDateTime: 0,
@@ -193,7 +191,6 @@ pub fn process_threads_json() -> serde_json::Value {
     serde_json::json!({"threads": entries})
 }
 
-
 /// Process CPU time readings (user + kernel, in nanoseconds).
 /// `GetProcessTimes` returns FILETIME (100-ns ticks); we
 /// convert to nanoseconds. Diff over a window gives the
@@ -203,10 +200,22 @@ pub fn process_cpu_json() -> serde_json::Value {
     use windows_sys::Win32::Foundation::FILETIME;
     use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
 
-    let mut creation = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
-    let mut exit = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
-    let mut kernel = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
-    let mut user = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
+    let mut creation = FILETIME {
+        dwLowDateTime: 0,
+        dwHighDateTime: 0,
+    };
+    let mut exit = FILETIME {
+        dwLowDateTime: 0,
+        dwHighDateTime: 0,
+    };
+    let mut kernel = FILETIME {
+        dwLowDateTime: 0,
+        dwHighDateTime: 0,
+    };
+    let mut user = FILETIME {
+        dwLowDateTime: 0,
+        dwHighDateTime: 0,
+    };
     let ok = unsafe {
         GetProcessTimes(
             GetCurrentProcess(),
@@ -325,9 +334,7 @@ pub fn process_regions_json() -> serde_json::Value {
     // takes (lpAddress, lpBuffer, dwLength) and returns bytes
     // written.
     loop {
-        let written = unsafe {
-            VirtualQuery(addr as *const _, &mut info, info_size)
-        };
+        let written = unsafe { VirtualQuery(addr as *const _, &mut info, info_size) };
         if written == 0 {
             break;
         }
@@ -388,17 +395,11 @@ pub fn process_regions_json() -> serde_json::Value {
             // PAGE_NOCACHE, PAGE_WRITECOMBINE) by masking to the
             // low 8 bits of the access protection.
             let base_prot = prot & 0xFF;
-            if base_prot == PAGE_EXECUTE_READWRITE
-                || base_prot == PAGE_EXECUTE_WRITECOPY
-            {
+            if base_prot == PAGE_EXECUTE_READWRITE || base_prot == PAGE_EXECUTE_WRITECOPY {
                 by_prot_rwx += size;
-            } else if base_prot == PAGE_EXECUTE
-                || base_prot == PAGE_EXECUTE_READ
-            {
+            } else if base_prot == PAGE_EXECUTE || base_prot == PAGE_EXECUTE_READ {
                 by_prot_rx += size;
-            } else if base_prot == PAGE_READWRITE
-                || base_prot == PAGE_WRITECOPY
-            {
+            } else if base_prot == PAGE_READWRITE || base_prot == PAGE_WRITECOPY {
                 by_prot_rw += size;
             } else if base_prot == PAGE_READONLY {
                 by_prot_r += size;
@@ -429,13 +430,7 @@ pub fn process_regions_json() -> serde_json::Value {
                 } else {
                     String::new()
                 };
-                top_regions.push((
-                    size,
-                    info.BaseAddress as u64,
-                    mtype,
-                    prot,
-                    name,
-                ));
+                top_regions.push((size, info.BaseAddress as u64, mtype, prot, name));
             }
         }
 
@@ -590,23 +585,15 @@ pub fn sample_thread_modules_json(duration_ms: u32, interval_ms: u32) -> serde_j
                 }
                 let info = info.assume_init();
                 let mut name_buf = [0u16; 260];
-                let nlen = GetModuleFileNameExW(
-                    proc,
-                    h,
-                    name_buf.as_mut_ptr(),
-                    name_buf.len() as u32,
-                );
+                let nlen =
+                    GetModuleFileNameExW(proc, h, name_buf.as_mut_ptr(), name_buf.len() as u32);
                 let name = if nlen > 0 {
                     let s = String::from_utf16_lossy(&name_buf[..nlen as usize]);
                     s.rsplit(['\\', '/']).next().unwrap_or(&s).to_string()
                 } else {
                     format!("module_{:p}", h)
                 };
-                out.push((
-                    info.lpBaseOfDll as u64,
-                    info.SizeOfImage as u64,
-                    name,
-                ));
+                out.push((info.lpBaseOfDll as u64, info.SizeOfImage as u64, name));
             }
             out
         }
@@ -650,9 +637,7 @@ pub fn sample_thread_modules_json(duration_ms: u32, interval_ms: u32) -> serde_j
     // None if the address is unreadable. Used to walk stacks.
     let read_qword = |addr: u64| -> Option<u64> {
         use windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory;
-        let proc = unsafe {
-            windows_sys::Win32::System::Threading::GetCurrentProcess()
-        };
+        let proc = unsafe { windows_sys::Win32::System::Threading::GetCurrentProcess() };
         let mut buf: u64 = 0;
         let mut read: usize = 0;
         let ok = unsafe {
@@ -739,9 +724,8 @@ pub fn sample_thread_modules_json(duration_ms: u32, interval_ms: u32) -> serde_j
                             if ok != 0 {
                                 let ctx = unsafe { ctx.assume_init() };
                                 let (m, _depth) = resolve_caller(ctx.Rip, ctx.Rsp);
-                                let entry = per_thread
-                                    .entry(te.th32ThreadID)
-                                    .or_insert_with(|| {
+                                let entry =
+                                    per_thread.entry(te.th32ThreadID).or_insert_with(|| {
                                         // Resolve thread name once.
                                         let mut nptr: *mut u16 = std::ptr::null_mut();
                                         unsafe extern "system" {
@@ -853,13 +837,8 @@ pub fn process_memory_json() -> serde_json::Value {
 
     let mut info = std::mem::MaybeUninit::<PROCESS_MEMORY_COUNTERS_EX>::zeroed();
     let size = std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32;
-    let ok = unsafe {
-        GetProcessMemoryInfo(
-            GetCurrentProcess(),
-            info.as_mut_ptr() as *mut _,
-            size,
-        )
-    };
+    let ok =
+        unsafe { GetProcessMemoryInfo(GetCurrentProcess(), info.as_mut_ptr() as *mut _, size) };
     if ok == 0 {
         return serde_json::json!({"error": "GetProcessMemoryInfo failed"});
     }

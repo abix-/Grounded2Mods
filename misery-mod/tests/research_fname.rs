@@ -34,13 +34,21 @@ fn a_name_the_game_has_comes_back() {
     let Some(api) = api_or_skip() else { return };
     let r = api.op("string_to_fname", json!({ "text": "StaticMesh" }));
     assert!(r.ok, "string_to_fname failed: {:?}", r.error);
-    println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&r.result).unwrap_or_default()
+    );
 
-    assert_eq!(r.result["found"], json!(true), "the engine has no name 'StaticMesh'?");
+    assert_eq!(
+        r.result["found"],
+        json!(true),
+        "the engine has no name 'StaticMesh'?"
+    );
     // The round trip is the proof. A non-zero FName only says
     // something came back; the same TEXT says it is the right one.
     assert_eq!(
-        r.result["round_trip"], json!("StaticMesh"),
+        r.result["round_trip"],
+        json!("StaticMesh"),
         "the name did not survive the round trip"
     );
 }
@@ -57,9 +65,13 @@ fn a_name_the_game_lacks_stays_missing() {
     let text = "ThisNameCannotExist_ModforgeResearch_9f3a";
     let r = api.op("string_to_fname", json!({ "text": text }));
     assert!(r.ok, "string_to_fname failed: {:?}", r.error);
-    println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&r.result).unwrap_or_default()
+    );
     assert_eq!(
-        r.result["found"], json!(false),
+        r.result["found"],
+        json!(false),
         "find-mode invented a name that should not exist"
     );
 }

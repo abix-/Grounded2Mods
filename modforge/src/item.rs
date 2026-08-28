@@ -468,7 +468,11 @@ impl Inventory {
 /// Everything a dead actor leaves behind: its inventory, its hotbar,
 /// and what it wore, in that order, all holders left empty. The
 /// consumer puts the list in a box where the body fell.
-pub fn loot_all(inv: &mut Inventory, hotbar: &mut Inventory, worn: &mut Equipment) -> Vec<ItemStack> {
+pub fn loot_all(
+    inv: &mut Inventory,
+    hotbar: &mut Inventory,
+    worn: &mut Equipment,
+) -> Vec<ItemStack> {
     let mut loot = inv.drain_all();
     loot.extend(hotbar.drain_all());
     loot.extend(worn.drain_all());
@@ -486,8 +490,7 @@ pub fn move_between(
     to_slot: usize,
     max_stack: u32,
 ) {
-    let (Some(src), Some(dst)) = (from.slots.get_mut(from_slot), to.slots.get_mut(to_slot))
-    else {
+    let (Some(src), Some(dst)) = (from.slots.get_mut(from_slot), to.slots.get_mut(to_slot)) else {
         return;
     };
     match (src.as_mut(), dst.as_mut()) {
@@ -556,7 +559,10 @@ mod tests {
         let stack = write(&paper, note.clone(), 0.0, 1).unwrap();
         assert_eq!(stack.count, 1);
         assert_eq!(stack.note, Some(note.clone()));
-        assert!(write(&def("scrap"), note, 0.0, 1).is_err(), "scrap is not a note");
+        assert!(
+            write(&def("scrap"), note, 0.0, 1).is_err(),
+            "scrap is not a note"
+        );
     }
 
     #[test]
@@ -573,7 +579,10 @@ mod tests {
         assert_eq!(inv.count_of("scrap"), 0);
         assert_eq!(bar.count_of("pipe"), 0);
         assert!(worn.get(EquipSlot::Chest).is_none());
-        assert!(loot_all(&mut inv, &mut bar, &mut worn).is_empty(), "nothing twice");
+        assert!(
+            loot_all(&mut inv, &mut bar, &mut worn).is_empty(),
+            "nothing twice"
+        );
     }
 
     #[test]
@@ -591,7 +600,10 @@ mod tests {
         for slot in EquipSlot::ALL {
             assert!(gear.get(slot).is_none());
         }
-        assert!(gear.set(EquipSlot::Weapon, Some(plain("pipe", 1))).is_none());
+        assert!(
+            gear.set(EquipSlot::Weapon, Some(plain("pipe", 1)))
+                .is_none()
+        );
         let swapped = gear.set(EquipSlot::Weapon, Some(plain("hatchet", 1)));
         assert_eq!(swapped.unwrap().item, "pipe");
         assert_eq!(gear.get(EquipSlot::Weapon).unwrap().item, "hatchet");
@@ -612,7 +624,10 @@ mod tests {
     fn different_quality_never_stacks() {
         let mut inv = Inventory::new(2);
         let mut rare = plain("rifle", 1);
-        rare.quality = Some(ItemQuality { tier: 0, sibling: 1 });
+        rare.quality = Some(ItemQuality {
+            tier: 0,
+            sibling: 1,
+        });
         inv.add(plain("rifle", 1), 10);
         inv.add(rare, 10);
         assert!(inv.slots[0].is_some() && inv.slots[1].is_some());

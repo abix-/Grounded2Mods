@@ -43,8 +43,7 @@ const BUF_LEN_FLOATS: usize = 353;
 type GeneEffectEngineFn = unsafe extern "system" fn(*mut f32, *mut c_void);
 
 /// Lock-free detour storage; same pattern as DI-A.
-static DETOUR: AtomicPtr<GenericDetour<GeneEffectEngineFn>> =
-    AtomicPtr::new(std::ptr::null_mut());
+static DETOUR: AtomicPtr<GenericDetour<GeneEffectEngineFn>> = AtomicPtr::new(std::ptr::null_mut());
 
 static CALL_COUNT: AtomicU64 = AtomicU64::new(0);
 static GENES_APPLIED_TOTAL: AtomicU64 = AtomicU64::new(0);
@@ -100,8 +99,7 @@ unsafe extern "system" fn engine_handler(buf: *mut f32, ctx: *mut c_void) {
 
     // SAFETY: vanilla allocated `float[353]` and just wrote into it;
     // we modify the same backing storage with bounds-checked writes.
-    let applied =
-        unsafe { genes::apply_render_to_buf(buf, BUF_LEN_FLOATS, horse_id) };
+    let applied = unsafe { genes::apply_render_to_buf(buf, BUF_LEN_FLOATS, horse_id) };
     GENES_APPLIED_TOTAL.fetch_add(applied as u64, Ordering::Relaxed);
 }
 
@@ -174,9 +172,7 @@ pub fn arm() -> anyhow::Result<()> {
     let leaked: *mut GenericDetour<GeneEffectEngineFn> = Box::into_raw(Box::new(detour));
     DETOUR.store(leaked, Ordering::Release);
     reset_stats();
-    modforge::log!(
-        "render_trampoline: armed APPLY_GENE_TO_HORSE at 0x{runtime_addr:x}"
-    );
+    modforge::log!("render_trampoline: armed APPLY_GENE_TO_HORSE at 0x{runtime_addr:x}");
     Ok(())
 }
 

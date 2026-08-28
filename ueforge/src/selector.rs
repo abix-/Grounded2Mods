@@ -171,8 +171,8 @@ fn try_singleton(s: &str) -> Option<Result<&'static UObject, String>> {
 }
 
 fn resolve_singleton(class_name: &str) -> Result<&'static UObject, String> {
-    let class = ue::find_class_fast(class_name)
-        .ok_or_else(|| format!("class '{class_name}' not found"))?;
+    let class =
+        ue::find_class_fast(class_name).ok_or_else(|| format!("class '{class_name}' not found"))?;
     let cdo = class
         .class_default_object()
         .ok_or_else(|| format!("class '{class_name}' has no CDO"))?;
@@ -183,8 +183,7 @@ fn resolve_singleton(class_name: &str) -> Result<&'static UObject, String> {
 }
 
 fn resolve_addr(orig: &str, hex: &str) -> Result<&'static UObject, String> {
-    let addr =
-        u64::from_str_radix(hex, 16).map_err(|e| format!("bad address '{orig}': {e}"))?;
+    let addr = u64::from_str_radix(hex, 16).map_err(|e| format!("bad address '{orig}': {e}"))?;
     if addr == 0 {
         return Err("addr is null".to_string());
     }
@@ -194,8 +193,8 @@ fn resolve_addr(orig: &str, hex: &str) -> Result<&'static UObject, String> {
 
 fn resolve_first_class(class_name: &str) -> Result<&'static UObject, String> {
     let rt = ue::try_runtime().ok_or("ueforge: ue runtime not initialized")?;
-    let class = ue::find_class_fast(class_name)
-        .ok_or_else(|| format!("class '{class_name}' not found"))?;
+    let class =
+        ue::find_class_fast(class_name).ok_or_else(|| format!("class '{class_name}' not found"))?;
     let view = unsafe { ue::GObjectsView::from_image(rt.image_base, rt.platform_offsets) };
     if !view.is_valid() {
         return Err("gobjects view invalid".to_string());

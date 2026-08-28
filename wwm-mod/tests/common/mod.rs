@@ -9,14 +9,14 @@
 //! target uses every helper, so dead_code is expected here.
 #![allow(dead_code, unused_imports)]
 
-pub use unityforge::client::{
-    count_of, dump_sequence, fields, find_instances,
-    handle_of, parse_vec3, ping_or_skip, print_declared_methods,
-};
 pub use unityforge::client::first_handle_inactive as first_handle;
+pub use unityforge::client::{
+    count_of, dump_sequence, fields, find_instances, handle_of, parse_vec3, ping_or_skip,
+    print_declared_methods,
+};
 
-use unityforge::client::Api;
 use serde_json::{Value, json};
+use unityforge::client::Api;
 
 /// Control plane port. Override with WWM_MOD_PORT.
 pub fn api() -> Api<Value> {

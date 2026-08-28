@@ -142,10 +142,7 @@ pub fn parse_name_table(uasset: &[u8]) -> Vec<String> {
             }
             let text_bytes = &uasset[i + 4..null_at];
             // Validate ASCII printable + null terminator.
-            if text_bytes
-                .iter()
-                .any(|&b| b < 32 && b != 9)
-            {
+            if text_bytes.iter().any(|&b| b < 32 && b != 9) {
                 i += 1;
                 continue;
             }
@@ -290,9 +287,7 @@ fn find_subseq(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     if needle.is_empty() || haystack.len() < needle.len() {
         return None;
     }
-    haystack
-        .windows(needle.len())
-        .position(|w| w == needle)
+    haystack.windows(needle.len()).position(|w| w == needle)
 }
 
 #[cfg(test)]

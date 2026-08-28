@@ -148,12 +148,9 @@ pub fn walk_struct_fields(struct_obj: &UObject) -> Vec<Json> {
     if !crate::winproc::is_addr_readable(head_addr) {
         return out;
     }
-    let mut cur: *const u8 = unsafe {
-        (head_addr as *const *const u8).read_unaligned()
-    };
+    let mut cur: *const u8 = unsafe { (head_addr as *const *const u8).read_unaligned() };
     let mut depth = 0;
-    let mut seen: std::collections::HashSet<usize> =
-        std::collections::HashSet::with_capacity(64);
+    let mut seen: std::collections::HashSet<usize> = std::collections::HashSet::with_capacity(64);
     while !cur.is_null() && depth < 4096 {
         // Validate that the entire FField head is in mapped memory
         // before any read. The chain walk hits stub / freed nodes
@@ -176,8 +173,8 @@ pub fn walk_struct_fields(struct_obj: &UObject) -> Vec<Json> {
             } else {
                 rt.name_resolver.to_string(name_fname)
             };
-            let offset = (cur.add(offsets::fproperty::OFFSET_INTERNAL) as *const i32)
-                .read_unaligned();
+            let offset =
+                (cur.add(offsets::fproperty::OFFSET_INTERNAL) as *const i32).read_unaligned();
             let element_size =
                 (cur.add(offsets::fproperty::ELEMENT_SIZE) as *const i32).read_unaligned();
             let class = read_ffield_class_name(cur, rt);
@@ -211,9 +208,8 @@ unsafe fn read_ffield_class_name(field_ptr: *const u8, rt: &ue::Runtime) -> Stri
         return String::from("<unreadable>");
     }
     unsafe {
-        let class_ptr: *const u8 = (field_ptr.add(offsets::ffield::CLASS_PRIVATE)
-            as *const *const u8)
-            .read_unaligned();
+        let class_ptr: *const u8 =
+            (field_ptr.add(offsets::ffield::CLASS_PRIVATE) as *const *const u8).read_unaligned();
         if class_ptr.is_null() {
             return String::from("<no-class>");
         }

@@ -36,7 +36,11 @@ impl std::fmt::Display for FieldValue {
 }
 
 /// Read a field from `base_ptr + struct_base + field.offset`.
-pub fn read_field(base_ptr: *const u8, struct_base: usize, field: &FieldDef) -> Result<FieldValue, String> {
+pub fn read_field(
+    base_ptr: *const u8,
+    struct_base: usize,
+    field: &FieldDef,
+) -> Result<FieldValue, String> {
     let abs = struct_base + field.offset;
     match field.ty {
         FieldType::Double => {
@@ -51,13 +55,25 @@ pub fn read_field(base_ptr: *const u8, struct_base: usize, field: &FieldDef) -> 
 }
 
 /// Write a f64 to `base_ptr + struct_base + field.offset`.
-pub fn write_double(base_ptr: *const u8, struct_base: usize, field: &FieldDef, value: f64, label: &str) {
+pub fn write_double(
+    base_ptr: *const u8,
+    struct_base: usize,
+    field: &FieldDef,
+    value: f64,
+    label: &str,
+) {
     unsafe { write_at(base_ptr, struct_base + field.offset, value) };
     crate::log::log(format_args!("{label}: {} = {value}", field.name));
 }
 
 /// Write a bool to `base_ptr + struct_base + field.offset`.
-pub fn write_bool(base_ptr: *const u8, struct_base: usize, field: &FieldDef, value: bool, label: &str) {
+pub fn write_bool(
+    base_ptr: *const u8,
+    struct_base: usize,
+    field: &FieldDef,
+    value: bool,
+    label: &str,
+) {
     unsafe { write_at(base_ptr, struct_base + field.offset, value as u8) };
     crate::log::log(format_args!("{label}: {} = {value}", field.name));
 }
@@ -70,7 +86,11 @@ pub struct FieldAccessor {
 
 impl FieldAccessor {
     pub fn new(ptr: *const u8, base_offset: usize, label: &'static str) -> Self {
-        Self { ptr, base_offset, label }
+        Self {
+            ptr,
+            base_offset,
+            label,
+        }
     }
 
     pub fn ptr(&self) -> *const u8 {

@@ -174,7 +174,10 @@ fn read_gameplay_settings() {
     println!("selector: {}  ({})", inst.addr_selector, inst.full_name);
 
     const SETTINGS: u64 = 0x218;
-    println!("  DifficultyPreset      +0x210 = {}", client::read_u8(&api, addr, 0x210));
+    println!(
+        "  DifficultyPreset      +0x210 = {}",
+        client::read_u8(&api, addr, 0x210)
+    );
     for (name, rel) in [
         ("ShiningsTimer", 0x00u64),
         ("DayLength", 0x08),
@@ -201,7 +204,10 @@ fn read_world_regeneration() {
     for inst in &instances {
         let refresh = client::read_i32(&api, inst.addr, 0x2B8);
         let past = client::read_i32(&api, inst.addr, 0x2F8);
-        println!("  EmissionCountForRefresh={refresh}  EmissionsPast={past}  {}", inst.full_name);
+        println!(
+            "  EmissionCountForRefresh={refresh}  EmissionsPast={past}  {}",
+            inst.full_name
+        );
     }
 }
 
@@ -225,7 +231,11 @@ fn read_respawn_on_emission() {
     let instances = client::walk_class_instances_with_cdo(&api, "BP_PlayerInventory_C", 100);
     for inst in &instances {
         let v = client::read_u8(&api, inst.addr, 0x133A);
-        let kind = if inst.full_name.contains("GEN_VARIABLE") { "template" } else { "live" };
+        let kind = if inst.full_name.contains("GEN_VARIABLE") {
+            "template"
+        } else {
+            "live"
+        };
         println!("  [{kind}] RespawnOnEmission = {v}  {}", inst.full_name);
     }
 }
@@ -242,7 +252,9 @@ fn read_current_biome() {
         println!("SKIP: offsets not live");
         return;
     }
-    let Some(inst) = client::find_live_instance(&api, GLOBAL_MANAGER) else { return };
+    let Some(inst) = client::find_live_instance(&api, GLOBAL_MANAGER) else {
+        return;
+    };
     let addr = inst.addr;
 
     for (name, off, len) in [
@@ -253,7 +265,9 @@ fn read_current_biome() {
         ("CurrentWorldSeed", 0x2BC, 4),
     ] {
         let b = client::read_bytes(&api, addr, off, len);
-        if b.is_empty() { continue; }
+        if b.is_empty() {
+            continue;
+        }
         let v = if len == 4 {
             format!("{}", client::from_le_i32(&b, 0))
         } else {
@@ -272,16 +286,24 @@ fn diagnose_missing_manager() {
     let Some(api) = api_or_skip() else { return };
     println!("offsets_known = {}", offsets_live(&api));
 
-    for class in ["BP_GlobalManager_C", "BP_ExpeditionDoor_C",
-                  "BP_PaneliWorldGeneration_C", "BP_SGKGameInstance_C"] {
+    for class in [
+        "BP_GlobalManager_C",
+        "BP_ExpeditionDoor_C",
+        "BP_PaneliWorldGeneration_C",
+        "BP_SGKGameInstance_C",
+    ] {
         let w = api.op("walk_class", json!({"class": class}));
-        println!("walk {class:<28} ok={} total={} err={:?}",
-            w.ok, w.result["total"], w.error);
+        println!(
+            "walk {class:<28} ok={} total={} err={:?}",
+            w.ok, w.result["total"], w.error
+        );
     }
 
-    let r = api.op("read_bytes",
+    let r = api.op(
+        "read_bytes",
         json!({"instance_selector": "first_class:BP_GlobalManager_C",
-               "offset": 0x2B0, "length": 8}));
+               "offset": 0x2B0, "length": 8}),
+    );
     println!("first_class read: ok={} err={:?}", r.ok, r.error);
 
     let Some(door) = client::find_live_instance(&api, "BP_ExpeditionDoor_C") else {
@@ -292,9 +314,21 @@ fn diagnose_missing_manager() {
         println!("door's GlobalManager pointer is null");
         return;
     };
-    println!("door {} -> GlobalManager = 0x{mgr_ptr:X}", door.addr_selector);
-    println!("TimeUntilEmmision = {}", client::read_f64(&api, mgr_ptr, 0x2B0));
-    println!("EmissionsCount    = {}", client::read_i32(&api, mgr_ptr, 0x2A8));
-    println!("FreezeTimer?      = {}", client::read_u8(&api, mgr_ptr, 0x2B8));
+    println!(
+        "door {} -> GlobalManager = 0x{mgr_ptr:X}",
+        door.addr_selector
+    );
+    println!(
+        "TimeUntilEmmision = {}",
+        client::read_f64(&api, mgr_ptr, 0x2B0)
+    );
+    println!(
+        "EmissionsCount    = {}",
+        client::read_i32(&api, mgr_ptr, 0x2A8)
+    );
+    println!(
+        "FreezeTimer?      = {}",
+        client::read_u8(&api, mgr_ptr, 0x2B8)
+    );
     println!("USE THIS SELECTOR: addr:0x{mgr_ptr:X}");
 }

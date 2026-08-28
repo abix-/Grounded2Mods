@@ -9,13 +9,12 @@
 #![allow(dead_code, unused_imports)]
 
 pub use unityforge::client::{
-    count_of, dump_sequence, field_exists, fields, find_instances,
-    first_handle, handle_of, parse_vec3, ping_or_skip,
-    print_declared_methods,
+    count_of, dump_sequence, field_exists, fields, find_instances, first_handle, handle_of,
+    parse_vec3, ping_or_skip, print_declared_methods,
 };
 
-use unityforge::client::Api;
 use serde_json::{Value, json};
+use unityforge::client::Api;
 
 pub fn api() -> Api<Value> {
     let port = std::env::var("SCHEDULE1_MOD_PORT")
@@ -34,8 +33,14 @@ pub fn walk(api: &Api<Value>, class: &str) -> Option<Vec<Value>> {
 /// The local player's world position via Player.transform.
 pub fn player_position(api: &Api<Value>) -> Option<(f64, f64, f64)> {
     let player = first_handle(api, "ScheduleOne.PlayerScripts.Player")?;
-    let transform = api.op("read_field", json!({"handle": player, "field": "transform"}));
+    let transform = api.op(
+        "read_field",
+        json!({"handle": player, "field": "transform"}),
+    );
     let th = handle_of(&transform.result)?;
-    let pos = api.op("invoke_method", json!({"handle": th, "method": "get_position", "args": []}));
+    let pos = api.op(
+        "invoke_method",
+        json!({"handle": th, "method": "get_position", "args": []}),
+    );
     parse_vec3(&pos.result)
 }

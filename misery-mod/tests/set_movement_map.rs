@@ -25,11 +25,22 @@ struct SpeedOverride {
 }
 
 const OVERRIDES: &[SpeedOverride] = &[
-    SpeedOverride { key: 2, value: 500.0, label: "walk" },
-    SpeedOverride { key: 3, value: 1200.0, label: "sprint" },
-    SpeedOverride { key: 5, value: 200.0, label: "crouch" },
+    SpeedOverride {
+        key: 2,
+        value: 500.0,
+        label: "walk",
+    },
+    SpeedOverride {
+        key: 3,
+        value: 1200.0,
+        label: "sprint",
+    },
+    SpeedOverride {
+        key: 5,
+        value: 200.0,
+        label: "crouch",
+    },
 ];
-
 
 #[test]
 #[ignore = "writes to live game"]
@@ -41,7 +52,9 @@ fn set_movement_map_speeds() {
     }
 
     let instances = client::walk_class_instances(&api, CHAR_COMP, 100);
-    let cc = instances.iter().find(|i| i.full_name.contains("PersistentLevel"));
+    let cc = instances
+        .iter()
+        .find(|i| i.full_name.contains("PersistentLevel"));
     let Some(cc) = cc else {
         println!("no live BP_CharacterComponent_C");
         return;
@@ -87,7 +100,12 @@ fn set_movement_map_speeds() {
         let base = slot as u64 * TMAP_STRIDE;
         let old = client::from_le_f64(&data, slot * 24 + 8);
         let value_offset = base + 8;
-        let ok = modforge::client::write_bytes_at(&api, &format!("addr:0x{elem_ptr:x}"), value_offset, &ov.value.to_le_bytes());
+        let ok = modforge::client::write_bytes_at(
+            &api,
+            &format!("addr:0x{elem_ptr:x}"),
+            value_offset,
+            &ov.value.to_le_bytes(),
+        );
         if ok {
             println!("{}: {} -> {} (slot {slot})", ov.label, old, ov.value);
         } else {
@@ -103,7 +121,9 @@ fn set_movement_map_speeds() {
     }
     for slot in 0..num as usize {
         let base = slot * TMAP_STRIDE as usize;
-        if base + 16 > vdata.len() { break; }
+        if base + 16 > vdata.len() {
+            break;
+        }
         let key = vdata[base];
         let value = client::from_le_f64(&vdata, base + 8);
         println!("  key {key}: {value:.1}");

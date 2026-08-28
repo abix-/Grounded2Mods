@@ -12,11 +12,15 @@ mod common;
 
 use serde_json::json;
 
-fn need(name: &str) -> Option<String> { std::env::var(name).ok().filter(|s| !s.is_empty()) }
+fn need(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|s| !s.is_empty())
+}
 fn parse_hex_or_dec(s: &str) -> u64 {
     if let Some(stripped) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
         u64::from_str_radix(stripped, 16).unwrap_or(0)
-    } else { s.parse().unwrap_or(0) }
+    } else {
+        s.parse().unwrap_or(0)
+    }
 }
 
 #[test]
@@ -27,19 +31,36 @@ fn decode_operand_at_address() {
         eprintln!("skipping: set MODFORGE_ADDR or MODFORGE_RVA");
         return;
     }
-    let offset = need("MODFORGE_OFFSET").map(|s| parse_hex_or_dec(&s) as usize).unwrap_or(0);
-    let size = need("MODFORGE_SIZE").map(|s| parse_hex_or_dec(&s) as usize).unwrap_or(4);
-    let want_signed = need("MODFORGE_SIGNED").map(|s| s == "1" || s == "true").unwrap_or(false);
+    let offset = need("MODFORGE_OFFSET")
+        .map(|s| parse_hex_or_dec(&s) as usize)
+        .unwrap_or(0);
+    let size = need("MODFORGE_SIZE")
+        .map(|s| parse_hex_or_dec(&s) as usize)
+        .unwrap_or(4);
+    let want_signed = need("MODFORGE_SIGNED")
+        .map(|s| s == "1" || s == "true")
+        .unwrap_or(false);
 
-    let Some(game) = common::launch("research_decode_operand") else { return; };
+    let Some(game) = common::launch("research_decode_operand") else {
+        return;
+    };
     let addr = if let Some(a) = addr_env {
         a
     } else {
-        let r = game.op_json("targets.resolve.gamestate_ptr", &json!({})).expect("ok");
+        let r = game
+            .op_json("targets.resolve.gamestate_ptr", &json!({}))
+            .expect("ok");
         let ib = u64::from_str_radix(
-            r.get("result").unwrap().get("image_base").unwrap().as_str().unwrap().trim_start_matches("0x"),
+            r.get("result")
+                .unwrap()
+                .get("image_base")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .trim_start_matches("0x"),
             16,
-        ).unwrap();
+        )
+        .unwrap();
         ib + (rva_env.unwrap() - 0x140000000)
     };
     let read_addr = addr.wrapping_add(offset as u64);

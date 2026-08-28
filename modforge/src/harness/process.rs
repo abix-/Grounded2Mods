@@ -25,10 +25,7 @@ pub fn is_running(process_name: &str) -> bool {
 
 /// Wait until a process appears in `tasklist`. Returns `Ok(())` when
 /// found within `timeout`, `Err(...)` if it never shows up.
-pub fn wait_for_start(
-    process_name: &str,
-    timeout: Duration,
-) -> anyhow::Result<()> {
+pub fn wait_for_start(process_name: &str, timeout: Duration) -> anyhow::Result<()> {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         if is_running(process_name) {
@@ -43,10 +40,7 @@ pub fn wait_for_start(
 }
 
 /// Wait until a process is gone from `tasklist`.
-pub fn wait_for_exit(
-    process_name: &str,
-    timeout: Duration,
-) -> anyhow::Result<()> {
+pub fn wait_for_exit(process_name: &str, timeout: Duration) -> anyhow::Result<()> {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         if !is_running(process_name) {
@@ -73,10 +67,7 @@ pub fn kill(process_name: &str) -> anyhow::Result<()> {
 }
 
 /// Kill a process and wait until it's actually gone.
-pub fn kill_and_wait(
-    process_name: &str,
-    timeout: Duration,
-) -> anyhow::Result<()> {
+pub fn kill_and_wait(process_name: &str, timeout: Duration) -> anyhow::Result<()> {
     kill(process_name)?;
     // If the process was never running, wait_for_exit returns immediately.
     wait_for_exit(process_name, timeout)

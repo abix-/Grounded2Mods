@@ -11,11 +11,18 @@
 /// the dispatcher loads both unconditionally (safe per ABI).
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ArgKind {
-    I8, I16, I32, I64,
-    U8, U16, U32, U64,
+    I8,
+    I16,
+    I32,
+    I64,
+    U8,
+    U16,
+    U32,
+    U64,
     Ptr,
     Bool,
-    F32, F64,
+    F32,
+    F64,
 }
 
 /// Return type of a Win64 function. Integers/pointers come back in
@@ -23,11 +30,18 @@ pub enum ArgKind {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum RetKind {
     Void,
-    I8, I16, I32, I64,
-    U8, U16, U32, U64,
+    I8,
+    I16,
+    I32,
+    I64,
+    U8,
+    U16,
+    U32,
+    U64,
     Ptr,
     Bool,
-    F32, F64,
+    F32,
+    F64,
 }
 
 /// One function's full Win64 signature. Attached as
@@ -49,11 +63,18 @@ impl Signature {
 /// Signature's `args` slot at the matching position.
 #[derive(Debug, Copy, Clone)]
 pub enum ArgValue {
-    I8(i8), I16(i16), I32(i32), I64(i64),
-    U8(u8), U16(u16), U32(u32), U64(u64),
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
     Ptr(u64),
     Bool(bool),
-    F32(f32), F64(f64),
+    F32(f32),
+    F64(f64),
 }
 
 impl ArgValue {
@@ -91,7 +112,13 @@ impl ArgValue {
             Self::U32(v) => v as u64,
             Self::U64(v) => v,
             Self::Ptr(v) => v,
-            Self::Bool(v) => if v { 1 } else { 0 },
+            Self::Bool(v) => {
+                if v {
+                    1
+                } else {
+                    0
+                }
+            }
             Self::F32(v) => v.to_bits() as u64,
             Self::F64(v) => v.to_bits(),
         }
@@ -109,11 +136,18 @@ impl ArgValue {
 #[derive(Debug, Copy, Clone)]
 pub enum RetValue {
     Void,
-    I8(i8), I16(i16), I32(i32), I64(i64),
-    U8(u8), U16(u16), U32(u32), U64(u64),
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
     Ptr(u64),
     Bool(bool),
-    F32(f32), F64(f64),
+    F32(f32),
+    F64(f64),
 }
 
 impl RetValue {
@@ -173,10 +207,7 @@ mod tests {
 
     #[test]
     fn signature_is_const_constructible() {
-        const SIG: Signature = Signature::new(
-            &[ArgKind::Ptr, ArgKind::I32],
-            RetKind::U32,
-        );
+        const SIG: Signature = Signature::new(&[ArgKind::Ptr, ArgKind::I32], RetKind::U32);
         assert_eq!(SIG.args.len(), 2);
         assert_eq!(SIG.ret, RetKind::U32);
     }
@@ -211,26 +242,28 @@ mod tests {
 
     #[test]
     fn ret_value_from_rax_truncates_correctly() {
-        assert_eq!(RetValue::from_rax(0x1_0000_0042, RetKind::U8),
-                   RetValue::U8(0x42));
-        assert_eq!(RetValue::from_rax(0xffff_ffff, RetKind::I32),
-                   RetValue::I32(-1));
-        assert_eq!(RetValue::from_rax(0, RetKind::Bool),
-                   RetValue::Bool(false));
-        assert_eq!(RetValue::from_rax(1, RetKind::Bool),
-                   RetValue::Bool(true));
-        assert_eq!(RetValue::from_rax(0xdeadbeef_cafebabe, RetKind::Void),
-                   RetValue::Void);
+        assert_eq!(
+            RetValue::from_rax(0x1_0000_0042, RetKind::U8),
+            RetValue::U8(0x42)
+        );
+        assert_eq!(
+            RetValue::from_rax(0xffff_ffff, RetKind::I32),
+            RetValue::I32(-1)
+        );
+        assert_eq!(RetValue::from_rax(0, RetKind::Bool), RetValue::Bool(false));
+        assert_eq!(RetValue::from_rax(1, RetKind::Bool), RetValue::Bool(true));
+        assert_eq!(
+            RetValue::from_rax(0xdeadbeef_cafebabe, RetKind::Void),
+            RetValue::Void
+        );
     }
 
     #[test]
     fn ret_value_from_xmm_for_floats() {
         let bits = 3.14f64.to_bits();
-        assert_eq!(RetValue::from_xmm(bits, RetKind::F64),
-                   RetValue::F64(3.14));
+        assert_eq!(RetValue::from_xmm(bits, RetKind::F64), RetValue::F64(3.14));
         let bits = 2.5f32.to_bits() as u64;
-        assert_eq!(RetValue::from_xmm(bits, RetKind::F32),
-                   RetValue::F32(2.5));
+        assert_eq!(RetValue::from_xmm(bits, RetKind::F32), RetValue::F32(2.5));
     }
 }
 

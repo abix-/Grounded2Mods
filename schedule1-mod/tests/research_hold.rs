@@ -39,11 +39,20 @@ fn ambush_machinery() {
     }
     if let Some(instances) = common::walk(&api, "ScheduleOne.Cartel.CartelAmbushLocation") {
         for (i, inst) in instances.iter().enumerate().take(10) {
-            let Some(h) = inst["handle"].as_i64() else { continue };
+            let Some(h) = inst["handle"].as_i64() else {
+                continue;
+            };
             let t = api.op("read_field", json!({"handle": h, "field": "transform"}));
             if let Some(th) = handle_of(&t.result) {
-                let p = api.op("invoke_method", json!({"handle": th, "method": "get_position", "args": []}));
-                println!("ambush location [{i}] {}: {:?}", inst["name"], common::parse_vec3(&p.result));
+                let p = api.op(
+                    "invoke_method",
+                    json!({"handle": th, "method": "get_position", "args": []}),
+                );
+                println!(
+                    "ambush location [{i}] {}: {:?}",
+                    inst["name"],
+                    common::parse_vec3(&p.result)
+                );
             }
         }
     }
@@ -78,12 +87,21 @@ fn spawn_one_ambush() {
     // Nearest location to the player, so the operator can watch.
     let mut best: Option<(i64, f64, (f64, f64, f64))> = None;
     for inst in &locations {
-        let Some(h) = inst["handle"].as_i64() else { continue };
+        let Some(h) = inst["handle"].as_i64() else {
+            continue;
+        };
         let t = api.op("read_field", json!({"handle": h, "field": "transform"}));
-        let Some(th) = handle_of(&t.result) else { continue };
-        let p = api.op("invoke_method", json!({"handle": th, "method": "get_position", "args": []}));
+        let Some(th) = handle_of(&t.result) else {
+            continue;
+        };
+        let p = api.op(
+            "invoke_method",
+            json!({"handle": th, "method": "get_position", "args": []}),
+        );
         api.op("release_handle", json!({"handle": th}));
-        let Some((x, y, z)) = common::parse_vec3(&p.result) else { continue };
+        let Some((x, y, z)) = common::parse_vec3(&p.result) else {
+            continue;
+        };
         let d = ((x - px).powi(2) + (z - pz).powi(2)).sqrt();
         if best.is_none_or(|(_, bd, _)| d < bd) {
             best = Some((h, d, (x, y, z)));
@@ -99,13 +117,22 @@ fn spawn_one_ambush() {
     // SpawnAmbush(Player, Vector3[]). Feed it the location's
     // AmbushPoints positions.
     let mut points = Vec::new();
-    let ap = api.op("read_field", json!({"handle": loc, "field": "AmbushPoints"}));
+    let ap = api.op(
+        "read_field",
+        json!({"handle": loc, "field": "AmbushPoints"}),
+    );
     if let Some(aph) = handle_of(&ap.result) {
         let n = common::count_of(&api, aph).unwrap_or(0);
         for j in 0..n {
-            let e = api.op("invoke_method", json!({"handle": aph, "method": "get_Item", "args": [j]}));
+            let e = api.op(
+                "invoke_method",
+                json!({"handle": aph, "method": "get_Item", "args": [j]}),
+            );
             if let Some(eh) = handle_of(&e.result) {
-                let p = api.op("invoke_method", json!({"handle": eh, "method": "get_position", "args": []}));
+                let p = api.op(
+                    "invoke_method",
+                    json!({"handle": eh, "method": "get_position", "args": []}),
+                );
                 if let Some((x, y, z)) = common::parse_vec3(&p.result) {
                     points.push(json!({"x": x, "y": y, "z": z}));
                 }
@@ -125,9 +152,14 @@ fn spawn_one_ambush() {
         json!({"handle": ambush, "method": "SpawnAmbush",
                "args": [{"$handle": player}, points]}),
     );
-    println!("SpawnAmbush(player, points): ok={} result={} err={:?}", r.ok, r.result, r.error);
+    println!(
+        "SpawnAmbush(player, points): ok={} result={} err={:?}",
+        r.ok, r.result, r.error
+    );
     if r.ok {
-        println!("OPERATOR CHECK: goons standing at {pos:?} ({dist:.0}m away)? Do they hold until you get close? Are they ARMED?");
+        println!(
+            "OPERATOR CHECK: goons standing at {pos:?} ({dist:.0}m away)? Do they hold until you get close? Are they ARMED?"
+        );
     }
 }
 
@@ -139,16 +171,28 @@ fn how_to_hold_a_goon() {
     }
 
     // Guard-flavored surface on the goon + its behaviour brain.
-    let r = api.op("list_methods", json!({"class": "Il2CppScheduleOne.Cartel.CartelGoon"}));
+    let r = api.op(
+        "list_methods",
+        json!({"class": "Il2CppScheduleOne.Cartel.CartelGoon"}),
+    );
     if r.ok {
         for m in r.result["methods"].as_array().cloned().unwrap_or_default() {
             let name = m["name"].as_str().unwrap_or("");
             if name.starts_with("RpcReader") || name.starts_with("RpcWriter") {
                 continue;
             }
-            let hit = ["Guard", "Patrol", "Stay", "Post", "Idle", "Stationary", "Behaviour", "Wander"]
-                .iter()
-                .any(|w| name.contains(w));
+            let hit = [
+                "Guard",
+                "Patrol",
+                "Stay",
+                "Post",
+                "Idle",
+                "Stationary",
+                "Behaviour",
+                "Wander",
+            ]
+            .iter()
+            .any(|w| name.contains(w));
             if hit {
                 println!(
                     "  CartelGoon :: {}({}) -> {} [{}]",
@@ -176,7 +220,13 @@ fn how_to_hold_a_goon() {
         json!([{"x": 100.0, "y": 0.0, "z": 100.0}]),
         json!([{"x": 100.0, "y": 0.0, "z": 100.0}, 1.0]),
     ] {
-        let r = api.op("invoke_method", json!({"handle": mh, "method": "SetDestination", "args": args}));
-        println!("SetDestination {args}: ok={} result={} err={:?}", r.ok, r.result, r.error);
+        let r = api.op(
+            "invoke_method",
+            json!({"handle": mh, "method": "SetDestination", "args": args}),
+        );
+        println!(
+            "SetDestination {args}: ok={} result={} err={:?}",
+            r.ok, r.result, r.error
+        );
     }
 }

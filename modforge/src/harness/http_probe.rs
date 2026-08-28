@@ -16,11 +16,7 @@ pub fn url_for_endpoint(probe: &HttpProbe) -> String {
 /// POST an op with optional JSON args, return raw response body.
 /// `args` is the inner args JSON (e.g. `"{}"`); the envelope wrap
 /// is built here so callers don't repeat themselves.
-pub fn post(
-    probe: &HttpProbe,
-    op: &str,
-    args_json: &str,
-) -> Result<String, ureq::Error> {
+pub fn post(probe: &HttpProbe, op: &str, args_json: &str) -> Result<String, ureq::Error> {
     let url = url_for_endpoint(probe);
     let body = format!(r#"{{"op":"{}","args":{}}}"#, op, args_json);
     let mut req = ureq::post(&url);

@@ -148,8 +148,8 @@ pub fn resolve_image_offsets() -> Result<ResolvedOffsets, String> {
 pub fn resolve_offsets_op(_args: &serde_json::Value) -> Result<serde_json::Value, String> {
     use serde_json::json;
     let resolved = resolve_image_offsets()?;
-    let rt = crate::ue::try_runtime()
-        .ok_or_else(|| "ueforge runtime not initialized".to_string())?;
+    let rt =
+        crate::ue::try_runtime().ok_or_else(|| "ueforge runtime not initialized".to_string())?;
     let rt_off = rt.platform_offsets;
     Ok(json!({
         "resolved": {

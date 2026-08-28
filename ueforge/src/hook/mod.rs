@@ -12,8 +12,8 @@ pub mod registry;
 pub mod vtable;
 
 pub use install::{
-    RetryPolicy, install_for_live_object, install_for_live_object_until,
-    install_immediate_or_log, install_with_backoff,
+    RetryPolicy, install_for_live_object, install_for_live_object_until, install_immediate_or_log,
+    install_with_backoff,
 };
 pub use lazy_function::LazyFunctionPtr;
 pub use process_event::{

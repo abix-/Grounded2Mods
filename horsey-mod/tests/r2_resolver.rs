@@ -55,31 +55,22 @@ fn sleuth_resolves_known_targets_in_one_pass() {
         return;
     }
     let spec = common::spec();
-    let game = GameHarness::launch(&spec, "r2_resolver")
-        .expect("harness launch failed");
+    let game = GameHarness::launch(&spec, "r2_resolver").expect("harness launch failed");
 
     // 1. Get reference addresses + derive signatures.
-    let combinator_addr = dryrun_addr(
-        &game,
-        "genes.ext.combinator.dryrun",
-        &["runtime_addr"],
-    );
-    let apply_addr = dryrun_addr(
-        &game,
-        "genes.ext.render.dryrun",
-        &["runtime_addr"],
-    );
+    let combinator_addr = dryrun_addr(&game, "genes.ext.combinator.dryrun", &["runtime_addr"]);
+    let apply_addr = dryrun_addr(&game, "genes.ext.render.dryrun", &["runtime_addr"]);
     let combinator_sig = fetch_signature_at(&game, &combinator_addr, 32);
     let apply_sig = fetch_signature_at(&game, &apply_addr, 32);
 
     game.log().event(
         "R2",
-        &format!(
-            "combinator expected={combinator_addr} sig=[{combinator_sig}]"
-        ),
+        &format!("combinator expected={combinator_addr} sig=[{combinator_sig}]"),
     );
-    game.log()
-        .event("R2", &format!("apply expected={apply_addr} sig=[{apply_sig}]"));
+    game.log().event(
+        "R2",
+        &format!("apply expected={apply_addr} sig=[{apply_sig}]"),
+    );
 
     // 2. Resolve BOTH in a single op call. CONTRACT: this op does
     //    not exist yet; the test fails until R2 implements it.
@@ -130,8 +121,7 @@ fn sleuth_returns_null_for_missing_signature() {
         return;
     }
     let spec = common::spec();
-    let game = GameHarness::launch(&spec, "r2_resolver_missing")
-        .expect("harness launch failed");
+    let game = GameHarness::launch(&spec, "r2_resolver_missing").expect("harness launch failed");
 
     let resp = game
         .op_json(
@@ -169,14 +159,9 @@ fn sleuth_first_matching_sig_wins() {
         return;
     }
     let spec = common::spec();
-    let game = GameHarness::launch(&spec, "r2_resolver_fallback")
-        .expect("harness launch failed");
+    let game = GameHarness::launch(&spec, "r2_resolver_fallback").expect("harness launch failed");
 
-    let combinator_addr = dryrun_addr(
-        &game,
-        "genes.ext.combinator.dryrun",
-        &["runtime_addr"],
-    );
+    let combinator_addr = dryrun_addr(&game, "genes.ext.combinator.dryrun", &["runtime_addr"]);
     let real_sig = fetch_signature_at(&game, &combinator_addr, 32);
     let fake_sig = "ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff";
 

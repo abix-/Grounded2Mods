@@ -137,7 +137,11 @@ pub fn diag() -> serde_json::Value {
             context.push(format!(
                 "+0x{:03x} @ 0x{addr:x}: 0x{v:x} {}",
                 (addr as i64 - slot as i64),
-                if is_plausible_gamestate_pointer(v) { "<-- plausible" } else { "" }
+                if is_plausible_gamestate_pointer(v) {
+                    "<-- plausible"
+                } else {
+                    ""
+                }
             ));
         }
         return serde_json::json!({
@@ -467,8 +471,12 @@ const LIVE_HORSES_BEGIN: usize = 0x130;
 #[allow(dead_code)]
 const LIVE_HORSES_END: usize = 0x138;
 
-fn live_horses_begin_off() -> usize { targets::gs_offset::live_horses_begin() }
-fn live_horses_end_off() -> usize { targets::gs_offset::live_horses_end() }
+fn live_horses_begin_off() -> usize {
+    targets::gs_offset::live_horses_begin()
+}
+fn live_horses_end_off() -> usize {
+    targets::gs_offset::live_horses_end()
+}
 
 /// Count of live horse pointers in the gamestate `+0x130..+0x138` list.
 pub fn live_horse_count() -> usize {
@@ -479,11 +487,7 @@ pub fn live_horse_count() -> usize {
     // SAFETY: begin/end pointers are stable while the world is alive.
     let begin = unsafe { *((p + live_horses_begin_off()) as *const usize) };
     let end = unsafe { *((p + live_horses_end_off()) as *const usize) };
-    if end < begin {
-        0
-    } else {
-        (end - begin) / 8
-    }
+    if end < begin { 0 } else { (end - begin) / 8 }
 }
 
 /// Get the i-th live Horse pointer. Returns None if out of range or
@@ -559,9 +563,7 @@ fn owned_stable() -> Option<usize> {
     }
     // SAFETY: entry_slot readability checked.
     let stable = unsafe { *(entry_slot as *const usize) };
-    if stable == 0
-        || !modforge::winproc::is_addr_readable(stable + OWNED_VEC_END_OFF)
-    {
+    if stable == 0 || !modforge::winproc::is_addr_readable(stable + OWNED_VEC_END_OFF) {
         return None;
     }
     Some(stable)
@@ -569,15 +571,13 @@ fn owned_stable() -> Option<usize> {
 
 /// Count of owned horses (vector<Horse*> at `stable+0x130/+0x138`).
 pub fn owned_horse_count() -> usize {
-    let Some(stable) = owned_stable() else { return 0; };
+    let Some(stable) = owned_stable() else {
+        return 0;
+    };
     // SAFETY: stable+0x130 and stable+0x138 readability checked in owned_stable.
     let begin = unsafe { *((stable + OWNED_VEC_BEGIN_OFF) as *const usize) };
     let end = unsafe { *((stable + OWNED_VEC_END_OFF) as *const usize) };
-    if end < begin {
-        0
-    } else {
-        (end - begin) / 8
-    }
+    if end < begin { 0 } else { (end - begin) / 8 }
 }
 
 /// Get the i-th owned Horse pointer. Returns None if out of range, the
@@ -658,7 +658,10 @@ mod tests {
     fn null_pointers_are_not_loaded() {
         assert!(!ok(0, 0));
         assert!(!ok(0, 0x1000));
-        assert!(!ok(0x1000, 0x2000), "addrs below 0x10000 don't look like heap");
+        assert!(
+            !ok(0x1000, 0x2000),
+            "addrs below 0x10000 don't look like heap"
+        );
     }
 
     #[test]

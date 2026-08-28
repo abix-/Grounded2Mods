@@ -20,7 +20,7 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const SMALL_OFFSET: i32 = 10;
 
@@ -47,7 +47,9 @@ fn assert_ok(v: &Value, ctx: &str) {
 
 #[test]
 fn input_smoke() {
-    let Some(game) = common::launch("input_smoke") else { return };
+    let Some(game) = common::launch("input_smoke") else {
+        return;
+    };
 
     // ----- L1 cursor round-trip -----
     let base = game.op_json("input.cursor.get", &json!({})).unwrap();
@@ -103,7 +105,10 @@ fn input_smoke() {
     let hwnd_s = match hwnd_r {
         Ok(v) => {
             assert_ok(&v, "input.self.hwnd");
-            result(&v).get("hwnd").and_then(Value::as_str).map(str::to_string)
+            result(&v)
+                .get("hwnd")
+                .and_then(Value::as_str)
+                .map(str::to_string)
         }
         Err(e) => {
             eprintln!("input.self.hwnd failed: {e}");
@@ -146,7 +151,10 @@ fn input_smoke() {
     let after_drag = game.op_json("input.cursor.get", &json!({})).unwrap();
     let ax = result_i64(&after_drag, "x") as i32;
     let ay = result_i64(&after_drag, "y") as i32;
-    eprintln!("after drag: ({ax},{ay}) [wanted ({},{})]", drag_to.0, drag_to.1);
+    eprintln!(
+        "after drag: ({ax},{ay}) [wanted ({},{})]",
+        drag_to.0, drag_to.1
+    );
     let dx = (ax - drag_to.0).abs();
     let dy = (ay - drag_to.1).abs();
     assert!(dx <= 4 && dy <= 4, "drag landed off: delta=({dx},{dy})");
@@ -183,7 +191,10 @@ fn input_smoke() {
     let ly = result_i64(&after_l3, "y") as i32;
     let dlx = (lx - target_l3.0).abs();
     let dly = (ly - target_l3.1).abs();
-    eprintln!("after L3 move:   ({lx},{ly}) [wanted ({},{})]", target_l3.0, target_l3.1);
+    eprintln!(
+        "after L3 move:   ({lx},{ly}) [wanted ({},{})]",
+        target_l3.0, target_l3.1
+    );
     assert!(
         dlx <= 4 && dly <= 4,
         "L3 cursor move missed: delta=({dlx},{dly})"

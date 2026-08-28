@@ -24,56 +24,69 @@ fn r_parity_function_resolvers() {
         (
             "APPLY_GENE_TO_HORSE",
             0x14009f670,
-            &["48 8b c4 55 53 56 57 41 54 41 55 41 56 41 57 48 8d a8 d8 fb ff ff 48 81 ec e8 04 00 00 0f 29 70"],
+            &[
+                "48 8b c4 55 53 56 57 41 54 41 55 41 56 41 57 48 8d a8 d8 fb ff ff 48 81 ec e8 04 00 00 0f 29 70",
+            ],
         ),
         (
             "HORSE_CONSTRUCTOR",
             0x1400aac50,
-            &["48 89 5c 24 10 48 89 4c 24 08 57 48 83 ec 20 48 8b d9 48 8d 05 ?? ?? ?? ?? 48 89 01 33 ff 48 89"],
+            &[
+                "48 89 5c 24 10 48 89 4c 24 08 57 48 83 ec 20 48 8b d9 48 8d 05 ?? ?? ?? ?? 48 89 01 33 ff 48 89",
+            ],
         ),
         (
             "HORSE_DESTRUCTOR",
             0x1400bf1e0,
-            &["48 89 5c 24 08 48 89 74 24 10 57 48 83 ec 20 48 8d 05 ?? ?? ?? ?? 8b f2 48 89 01 48 8b d9 ff 0d"],
+            &[
+                "48 89 5c 24 08 48 89 74 24 10 57 48 83 ec 20 48 8d 05 ?? ?? ?? ?? 8b f2 48 89 01 48 8b d9 ff 0d",
+            ],
         ),
         (
             "GENE_COMBINATOR",
             0x1400a2d70,
-            &["48 89 5c 24 08 48 89 6c 24 10 48 89 74 24 18 57 41 54 41 55 41 56 41 57 48 83 ec 20 4c 8b f9 45"],
+            &[
+                "48 89 5c 24 08 48 89 6c 24 10 48 89 74 24 18 57 41 54 41 55 41 56 41 57 48 83 ec 20 4c 8b f9 45",
+            ],
         ),
         (
             "SAVE_WRITER",
             0x14006d674,
-            &["57 41 56 48 81 ec 40 01 00 00 48 8b e9 48 8d 51 18 48 8d 4c 24 30 e8 ?? ?? ?? ?? 48 8b 54 24 48"],
+            &[
+                "57 41 56 48 81 ec 40 01 00 00 48 8b e9 48 8d 51 18 48 8d 4c 24 30 e8 ?? ?? ?? ?? 48 8b 54 24 48",
+            ],
         ),
         (
             "LOAD_GAME",
             0x14006e350,
-            &["48 89 5c 24 08 55 56 57 41 54 41 55 41 56 41 57 48 8b ec 48 83 ec 70 48 8b f1 44 8b c2 48 8d 15"],
+            &[
+                "48 89 5c 24 08 55 56 57 41 54 41 55 41 56 41 57 48 8b ec 48 83 ec 70 48 8b f1 44 8b c2 48 8d 15",
+            ],
         ),
         (
             "HORSE_SAVE_WRITER",
             0x14006ecfb,
-            &["57 41 56 48 83 ec 40 48 8b e9 e8 ?? ?? ?? ?? 48 8d 8d b8 02 00 00 44 8b f0 e8 ?? ?? ?? ?? 48 8b"],
+            &[
+                "57 41 56 48 83 ec 40 48 8b e9 e8 ?? ?? ?? ?? 48 8d 8d b8 02 00 00 44 8b f0 e8 ?? ?? ?? ?? 48 8b",
+            ],
         ),
         (
             "HORSE_SAVE_LOADER",
             0x14006f031,
-            &["53 57 48 83 ec 58 48 8b f9 48 81 c1 b8 02 00 00 e8 ?? ?? ?? ?? 48 8d 8f a8 02 00 00 e8 ?? ?? ??"],
+            &[
+                "53 57 48 83 ec 58 48 8b f9 48 81 c1 b8 02 00 00 e8 ?? ?? ?? ?? 48 8d 8f a8 02 00 00 e8 ?? ?? ??",
+            ],
         ),
     ];
 
     let image_resp = game
         .op_json("targets.resolve.gamestate_ptr", &json!({}))
         .expect("ok");
-    let ib = u64_of(image_resp.get("result").unwrap(), "image_base")
-        .expect("image_base");
+    let ib = u64_of(image_resp.get("result").unwrap(), "image_base").expect("image_base");
 
     let patterns: Vec<_> = targets
         .iter()
-        .map(|(name, _, sigs)| {
-            json!({"name": *name, "sigs": *sigs})
-        })
+        .map(|(name, _, sigs)| json!({"name": *name, "sigs": *sigs}))
         .collect();
 
     let resp = game
@@ -102,9 +115,7 @@ fn r_parity_function_resolvers() {
         }
         game.log().event(
             "R2-FN",
-            &format!(
-                "{name}: resolved=0x{resolved:x} expected=0x{expected:x} delta=0x{delta:x}"
-            ),
+            &format!("{name}: resolved=0x{resolved:x} expected=0x{expected:x} delta=0x{delta:x}"),
         );
     }
     if !failures.is_empty() {

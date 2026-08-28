@@ -84,8 +84,9 @@ fn do_jump() -> Result<(), String> {
         .and_then(|v| v.as_i64())
         .ok_or_else(|| "instance has no handle".to_string())? as i32;
     // SAFETY: handle from walk_class is live for this call.
-    let player =
-        unsafe { unityforge::mono::MonoObject::from_handle(unityforge::bridge::MonoHandle(handle)) };
+    let player = unsafe {
+        unityforge::mono::MonoObject::from_handle(unityforge::bridge::MonoHandle(handle))
+    };
 
     // Get the Rigidbody handle so we can apply a vertical
     // impulse + the player handle so we can clear isGrounded
@@ -112,11 +113,8 @@ fn do_jump() -> Result<(), String> {
     // overload takes (x, y, z, mode) all as separate primitives
     // so we don't need Vector3 deserialization in the shim.
     // mass = 70, so dv = JUMP_IMPULSE / 70 m/s.
-    rb.invoke(
-        "AddForce",
-        &json!([0.0, JUMP_IMPULSE, 0.0, 1]),
-    )
-    .map_err(|e| format!("AddForce: {e}"))?;
+    rb.invoke("AddForce", &json!([0.0, JUMP_IMPULSE, 0.0, 1]))
+        .map_err(|e| format!("AddForce: {e}"))?;
 
     JUMP_COUNT.fetch_add(1, Ordering::Relaxed);
     Ok(())

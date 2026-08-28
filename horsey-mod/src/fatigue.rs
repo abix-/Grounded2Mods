@@ -68,7 +68,9 @@ fn run() {
 fn clear_race_flag_on_all_live_horses() {
     let n = gamestate::live_horse_count();
     for i in 0..n {
-        let Some(h) = gamestate::live_horse_ptr(i) else { continue };
+        let Some(h) = gamestate::live_horse_ptr(i) else {
+            continue;
+        };
         if h == 0 {
             continue;
         }

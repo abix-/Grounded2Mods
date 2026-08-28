@@ -27,7 +27,11 @@ fn vtable_compare() {
     let live = client::walk_class_chain_instances(&api, "BP_SGKMasterCharacter_C", 4);
     let read_vtable = |addr: u64| -> u64 {
         let b = client::read_bytes(&api, addr, 0, 8);
-        if b.len() == 8 { client::from_le_u64(&b, 0) } else { 0 }
+        if b.len() == 8 {
+            client::from_le_u64(&b, 0)
+        } else {
+            0
+        }
     };
     match (&cdo, live.first()) {
         (Some(c), Some(l)) => {
@@ -99,11 +103,7 @@ fn vtable_compare() {
                 println!("ue4ss ProcessEvent address not found in log");
             }
         }
-        _ => println!(
-            "cdo found={} live found={}",
-            cdo.is_some(),
-            live.len()
-        ),
+        _ => println!("cdo found={} live found={}", cdo.is_some(), live.len()),
     }
 }
 

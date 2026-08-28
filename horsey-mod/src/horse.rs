@@ -287,8 +287,16 @@ pub fn vanilla_alleles_both(
     let mut q = [0u8; VANILLA_GENOME_LEN];
     // SAFETY: live horse; both banks 240 bytes each.
     unsafe {
-        std::ptr::copy_nonoverlapping(primary_ptr(horse) as *const u8, p.as_mut_ptr(), VANILLA_GENOME_LEN);
-        std::ptr::copy_nonoverlapping(paired_ptr(horse) as *const u8,  q.as_mut_ptr(), VANILLA_GENOME_LEN);
+        std::ptr::copy_nonoverlapping(
+            primary_ptr(horse) as *const u8,
+            p.as_mut_ptr(),
+            VANILLA_GENOME_LEN,
+        );
+        std::ptr::copy_nonoverlapping(
+            paired_ptr(horse) as *const u8,
+            q.as_mut_ptr(),
+            VANILLA_GENOME_LEN,
+        );
     }
     Some((p, q))
 }
@@ -310,23 +318,28 @@ pub fn set_vanilla_allele(horse: usize, idx: usize, value: u8) -> bool {
     // SAFETY: bounds checked; live horse; both banks part of Horse.
     unsafe {
         *((primary_ptr(horse) + idx) as *mut u8) = value;
-        *((paired_ptr(horse)  + idx) as *mut u8) = value;
+        *((paired_ptr(horse) + idx) as *mut u8) = value;
     }
     true
 }
 
 /// Overwrite all 240 vanilla allele bytes in BOTH banks.
-pub fn set_vanilla_alleles(
-    horse: usize,
-    alleles: &[u8; VANILLA_GENOME_LEN],
-) -> bool {
+pub fn set_vanilla_alleles(horse: usize, alleles: &[u8; VANILLA_GENOME_LEN]) -> bool {
     if horse == 0 {
         return false;
     }
     // SAFETY: live horse; 240 bytes per bank, both part of Horse.
     unsafe {
-        std::ptr::copy_nonoverlapping(alleles.as_ptr(), primary_ptr(horse) as *mut u8, VANILLA_GENOME_LEN);
-        std::ptr::copy_nonoverlapping(alleles.as_ptr(), paired_ptr(horse)  as *mut u8, VANILLA_GENOME_LEN);
+        std::ptr::copy_nonoverlapping(
+            alleles.as_ptr(),
+            primary_ptr(horse) as *mut u8,
+            VANILLA_GENOME_LEN,
+        );
+        std::ptr::copy_nonoverlapping(
+            alleles.as_ptr(),
+            paired_ptr(horse) as *mut u8,
+            VANILLA_GENOME_LEN,
+        );
     }
     true
 }

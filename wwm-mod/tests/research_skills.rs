@@ -82,7 +82,10 @@ fn skill_catalog_entries() {
         return;
     };
 
-    let count = api.op("invoke_method", json!({"handle": lh, "method": "get_Count", "args": []}));
+    let count = api.op(
+        "invoke_method",
+        json!({"handle": lh, "method": "get_Count", "args": []}),
+    );
     println!("skillDatas count: {} (ok={})", count.result, count.ok);
     let n = count.result.as_i64().unwrap_or(0);
 
@@ -104,7 +107,10 @@ fn skill_catalog_entries() {
         let Some(llh) = handle_of(&levels.result) else {
             continue;
         };
-        let lc = api.op("invoke_method", json!({"handle": llh, "method": "get_Count", "args": []}));
+        let lc = api.op(
+            "invoke_method",
+            json!({"handle": llh, "method": "get_Count", "args": []}),
+        );
         let ln = lc.result.as_i64().unwrap_or(0);
         println!("  levels: {ln}");
         for j in 0..ln {

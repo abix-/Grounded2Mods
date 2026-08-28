@@ -117,8 +117,20 @@ pub fn render() {
 
     // Type selector. Radio-button row.
     ui::text("Type:");
-    let row1 = [TyKind::I32, TyKind::U32, TyKind::F32, TyKind::I64, TyKind::U64];
-    let row2 = [TyKind::I16, TyKind::U16, TyKind::I8, TyKind::U8, TyKind::F64];
+    let row1 = [
+        TyKind::I32,
+        TyKind::U32,
+        TyKind::F32,
+        TyKind::I64,
+        TyKind::U64,
+    ];
+    let row2 = [
+        TyKind::I16,
+        TyKind::U16,
+        TyKind::I8,
+        TyKind::U8,
+        TyKind::F64,
+    ];
     for (i, t) in row1.iter().enumerate() {
         if i > 0 {
             ui::same_line();
@@ -206,10 +218,7 @@ pub fn render() {
     ui::text_disabled("Status");
 
     if let Some(err) = &s.last_error {
-        ui::text_colored(
-            &format!("error: {err}"),
-            (1.0, 0.5, 0.5, 1.0),
-        );
+        ui::text_colored(&format!("error: {err}"), (1.0, 0.5, 0.5, 1.0));
     } else if let Some(sid) = s.last_session {
         ui::text(&format!(
             "Session {sid} ({}): {} matches",
@@ -281,10 +290,7 @@ fn do_scan(s: &mut ScannerUi) {
     match scanner::scan_memory(&args) {
         Ok(r) => {
             s.last_session = r.get("session_id").and_then(|v| v.as_u64());
-            s.last_match_count = r
-                .get("matches")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0) as usize;
+            s.last_match_count = r.get("matches").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
             s.last_sample = r
                 .get("sample")
                 .and_then(|v| v.as_array())
@@ -315,10 +321,7 @@ fn do_rescan(s: &mut ScannerUi, sid: u64, mode: &str) {
     });
     match scanner::scan_rescan(&args) {
         Ok(r) => {
-            s.last_match_count = r
-                .get("matches")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0) as usize;
+            s.last_match_count = r.get("matches").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
             s.last_sample = r
                 .get("sample")
                 .and_then(|v| v.as_array())
@@ -355,8 +358,14 @@ fn format_inspect(j: &serde_json::Value) -> String {
             .to_string();
     }
     let class = j.get("class").and_then(|v| v.as_str()).unwrap_or("?");
-    let inst = j.get("instance_name").and_then(|v| v.as_str()).unwrap_or("?");
-    let off = j.get("offset_in_instance").and_then(|v| v.as_str()).unwrap_or("?");
+    let inst = j
+        .get("instance_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("?");
+    let off = j
+        .get("offset_in_instance")
+        .and_then(|v| v.as_str())
+        .unwrap_or("?");
 
     // Field-name annotation if the property walker found one.
     if let Some(field) = j.get("field").and_then(|v| v.as_str()) {

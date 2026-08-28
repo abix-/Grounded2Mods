@@ -1,8 +1,8 @@
 //! Shared bridge helpers for the survivalist modules (war,
 //! growth, development). Extracted at the third consumer.
 
-use serde_json::{Value as Json, json};
 pub use modforge::item::GoodsFilter;
+use serde_json::{Value as Json, json};
 use unityforge::mono::{self, LogLevel, MonoObject, MonoType};
 
 pub use unityforge::mono::{

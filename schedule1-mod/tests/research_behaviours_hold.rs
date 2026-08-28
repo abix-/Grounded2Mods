@@ -17,7 +17,10 @@ fn factory_call(
     method: &str,
     args: serde_json::Value,
 ) -> Option<serde_json::Value> {
-    let r = api.op("invoke_static", json!({"class": FACTORY, "method": method, "args": args}));
+    let r = api.op(
+        "invoke_static",
+        json!({"class": FACTORY, "method": method, "args": args}),
+    );
     if !r.ok {
         println!("{method}: op failed: {:?}", r.error);
         return None;
@@ -80,7 +83,10 @@ fn idle_no_point_holds_position() {
         return;
     };
     let idx = sv["index"].as_i64().unwrap_or(0);
-    println!("spawned goon index={idx} at ({:.1}, {:.1}, {:.1})", spawn_pos.0, spawn_pos.1, spawn_pos.2);
+    println!(
+        "spawned goon index={idx} at ({:.1}, {:.1}, {:.1})",
+        spawn_pos.0, spawn_pos.1, spawn_pos.2
+    );
 
     println!("waiting 10s for spawn pipeline...");
     std::thread::sleep(std::time::Duration::from_secs(10));
@@ -94,8 +100,7 @@ fn idle_no_point_holds_position() {
     let initial_pos = pos_from(ev);
     println!(
         "idle enabled at ({:.2}, {:.2}, {:.2}), active={}",
-        initial_pos.0, initial_pos.1, initial_pos.2,
-        ev["active_type"]
+        initial_pos.0, initial_pos.1, initial_pos.2, ev["active_type"]
     );
 
     // check position at 10s intervals
@@ -167,8 +172,7 @@ fn idle_with_point_wanders() {
     let initial_pos = pos_from(setv);
     println!(
         "idle point set to ({:.1}, {:.1}, {:.1}), NPC at ({:.2}, {:.2}, {:.2})",
-        target.0, target.1, target.2,
-        initial_pos.0, initial_pos.1, initial_pos.2
+        target.0, target.1, target.2, initial_pos.0, initial_pos.1, initial_pos.2
     );
 
     // check at intervals

@@ -27,12 +27,18 @@ fn spawn_one_goon_near_player() {
         println!("no Player instance; not in a save?");
         return;
     };
-    let transform = api.op("read_field", json!({"handle": player, "field": "transform"}));
+    let transform = api.op(
+        "read_field",
+        json!({"handle": player, "field": "transform"}),
+    );
     let Some(th) = handle_of(&transform.result) else {
         println!("player transform carried no handle: {}", transform.result);
         return;
     };
-    let pos = api.op("invoke_method", json!({"handle": th, "method": "get_position", "args": []}));
+    let pos = api.op(
+        "invoke_method",
+        json!({"handle": th, "method": "get_position", "args": []}),
+    );
     let Some((px, py, pz)) = parse_vec3(&pos.result) else {
         println!("could not parse player position: {}", pos.result);
         return;
@@ -43,7 +49,10 @@ fn spawn_one_goon_near_player() {
     let Some(pool) = first_handle(&api, "ScheduleOne.Cartel.GoonPool") else {
         return;
     };
-    let before = api.op("read_field", json!({"handle": pool, "field": "spawnedGoons"}));
+    let before = api.op(
+        "read_field",
+        json!({"handle": pool, "field": "spawnedGoons"}),
+    );
     let n_before = handle_of(&before.result).and_then(|h| count_of(&api, h));
     println!("spawnedGoons before: {n_before:?}");
 
@@ -70,7 +79,10 @@ fn spawn_one_goon_near_player() {
         }
     }
 
-    let after = api.op("read_field", json!({"handle": pool, "field": "spawnedGoons"}));
+    let after = api.op(
+        "read_field",
+        json!({"handle": pool, "field": "spawnedGoons"}),
+    );
     let n_after = handle_of(&after.result).and_then(|h| count_of(&api, h));
     println!("spawnedGoons after: {n_after:?}");
     println!("OPERATOR CHECK: a goon should be ~3m from you. Report what you see.");

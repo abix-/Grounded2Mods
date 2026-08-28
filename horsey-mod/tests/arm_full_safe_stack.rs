@@ -64,7 +64,10 @@ fn arm_all_green_subsystems_then_disarm_cleanly() {
     let r = game
         .op_json("genes.ext.lifecycle.arm", &json!({}))
         .expect("lifecycle arm");
-    assert!(armed_flag(&r, "armed"), "D3.1/D3.2 lifecycle arm failed: {r}");
+    assert!(
+        armed_flag(&r, "armed"),
+        "D3.1/D3.2 lifecycle arm failed: {r}"
+    );
     game.log().event("ARM", "lifecycle armed");
 
     // D3.4 (combinator)
@@ -77,8 +80,10 @@ fn arm_all_green_subsystems_then_disarm_cleanly() {
     // ---------- idle ----------
 
     let idle = Duration::from_secs(5);
-    game.log()
-        .event("WAIT", &format!("idling {}s with full stack armed", idle.as_secs()));
+    game.log().event(
+        "WAIT",
+        &format!("idling {}s with full stack armed", idle.as_secs()),
+    );
     thread::sleep(idle);
 
     // ---------- stats ----------
@@ -121,7 +126,10 @@ fn arm_all_green_subsystems_then_disarm_cleanly() {
     // Sanity bounds.
     assert!(render_calls < 100_000_000, "render runaway: {render_calls}");
     assert!(ctor_calls < 1_000_000, "ctor runaway: {ctor_calls}");
-    assert!(combinator_calls < 1_000_000, "combinator runaway: {combinator_calls}");
+    assert!(
+        combinator_calls < 1_000_000,
+        "combinator runaway: {combinator_calls}"
+    );
 
     // Cross-subsystem invariants.
     //
@@ -145,11 +153,15 @@ fn arm_all_green_subsystems_then_disarm_cleanly() {
 
     // ---------- disarm in reverse order ----------
 
-    let r = game.op_json("genes.ext.combinator.disarm", &json!({})).unwrap();
+    let r = game
+        .op_json("genes.ext.combinator.disarm", &json!({}))
+        .unwrap();
     assert!(!armed_flag(&r, "armed"), "combinator disarm failed: {r}");
     game.log().event("DISARM", "combinator disarmed");
 
-    let r = game.op_json("genes.ext.lifecycle.disarm", &json!({})).unwrap();
+    let r = game
+        .op_json("genes.ext.lifecycle.disarm", &json!({}))
+        .unwrap();
     assert!(
         !r.get("result")
             .and_then(|x| x.get("armed_ctor"))

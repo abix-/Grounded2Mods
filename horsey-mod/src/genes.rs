@@ -794,7 +794,11 @@ mod tests {
         // SAFETY: buf is a live Vec we own; 353 floats.
         let applied = unsafe { apply_render_to_buf(buf.as_mut_ptr(), buf.len(), 0x1234) };
         assert_eq!(applied, 1);
-        assert!((buf[42] - 81.0).abs() < 1e-6, "expected 81.0 got {}", buf[42]);
+        assert!(
+            (buf[42] - 81.0).abs() < 1e-6,
+            "expected 81.0 got {}",
+            buf[42]
+        );
         // Adjacent slots untouched.
         assert!((buf[41] - 1.0).abs() < 1e-6);
         assert!((buf[43] - 1.0).abs() < 1e-6);
@@ -879,7 +883,11 @@ mod tests {
         // SAFETY: buf is a live Vec we own.
         let applied = unsafe { apply_render_to_buf(buf.as_mut_ptr(), buf.len(), 1) };
         assert_eq!(applied, 2);
-        assert!((buf[5] - 6.0).abs() < 1e-6, "mul: 2 * 3 = 6, got {}", buf[5]);
+        assert!(
+            (buf[5] - 6.0).abs() < 1e-6,
+            "mul: 2 * 3 = 6, got {}",
+            buf[5]
+        );
         assert!((buf[6] - 77.0).abs() < 1e-6, "set: 77, got {}", buf[6]);
     }
 
@@ -912,8 +920,7 @@ mod tests {
         set_horse_ext_genome(200, parent_with_uniform_strands(0, 3));
 
         combine_for_breeding(100, 200, 300);
-        let child = get_horse_ext_genome(300)
-            .expect("child genome should exist after combinator");
+        let child = get_horse_ext_genome(300).expect("child genome should exist after combinator");
 
         for i in 0..EXT_GENE_COUNT {
             let mat = child.alleles[i];
@@ -943,13 +950,26 @@ mod tests {
         let child = get_horse_ext_genome(300).unwrap();
 
         let strand0: Vec<u8> = (0..EXT_GENE_COUNT).map(|i| child.alleles[i]).collect();
-        let strand1: Vec<u8> =
-            (0..EXT_GENE_COUNT).map(|i| child.alleles[i + EXT_GENE_COUNT]).collect();
+        let strand1: Vec<u8> = (0..EXT_GENE_COUNT)
+            .map(|i| child.alleles[i + EXT_GENE_COUNT])
+            .collect();
 
-        assert!(strand0.iter().any(|&a| a == 1), "no 1 in strand 0 (parent A strand A never selected)");
-        assert!(strand0.iter().any(|&a| a == 2), "no 2 in strand 0 (parent A strand B never selected)");
-        assert!(strand1.iter().any(|&a| a == 0), "no 0 in strand 1 (parent B strand A never selected)");
-        assert!(strand1.iter().any(|&a| a == 3), "no 3 in strand 1 (parent B strand B never selected)");
+        assert!(
+            strand0.iter().any(|&a| a == 1),
+            "no 1 in strand 0 (parent A strand A never selected)"
+        );
+        assert!(
+            strand0.iter().any(|&a| a == 2),
+            "no 2 in strand 0 (parent A strand B never selected)"
+        );
+        assert!(
+            strand1.iter().any(|&a| a == 0),
+            "no 0 in strand 1 (parent B strand A never selected)"
+        );
+        assert!(
+            strand1.iter().any(|&a| a == 3),
+            "no 3 in strand 1 (parent B strand B never selected)"
+        );
     }
 
     #[test]
@@ -961,8 +981,8 @@ mod tests {
         // get an entry (so downstream lookups don't fail open) but
         // every allele is 0.
         combine_for_breeding(100, 200, 300);
-        let child = get_horse_ext_genome(300)
-            .expect("child genome should be created even without parents");
+        let child =
+            get_horse_ext_genome(300).expect("child genome should be created even without parents");
         assert!(
             child.alleles.iter().all(|&a| a == 0),
             "missing-parent path should produce all-zero alleles"
@@ -983,7 +1003,11 @@ mod tests {
         let child = get_horse_ext_genome(300).unwrap();
         for i in 0..EXT_GENE_COUNT {
             assert_eq!(child.alleles[i], 2, "strand 0 gene {i} != 2");
-            assert_eq!(child.alleles[i + EXT_GENE_COUNT], 0, "strand 1 gene {i} should be 0");
+            assert_eq!(
+                child.alleles[i + EXT_GENE_COUNT],
+                0,
+                "strand 1 gene {i} should be 0"
+            );
         }
     }
 

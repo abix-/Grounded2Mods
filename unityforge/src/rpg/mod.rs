@@ -22,6 +22,6 @@ pub use std_effect::{
 };
 pub use tracker::Tracker;
 pub use trigger_harmony::{
-    HarmonyPostfixTrigger, HarmonyPrefixTrigger, UnityEventTrigger, ON_HARMONY_POST,
-    ON_HARMONY_PRE, ON_UNITY_EVENT,
+    HarmonyPostfixTrigger, HarmonyPrefixTrigger, ON_HARMONY_POST, ON_HARMONY_PRE, ON_UNITY_EVENT,
+    UnityEventTrigger,
 };

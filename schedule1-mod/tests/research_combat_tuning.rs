@@ -33,7 +33,10 @@ fn owner_name(api: &modforge::client::Api<serde_json::Value>, h: i64) -> String 
     for field in ["npc", "Npc", "NPC"] {
         let r = api.op("read_field", json!({"handle": h, "field": field}));
         if let Some(nh) = handle_of(&r.result) {
-            let name = api.op("invoke_method", json!({"handle": nh, "method": "get_name", "args": []}));
+            let name = api.op(
+                "invoke_method",
+                json!({"handle": nh, "method": "get_name", "args": []}),
+            );
             api.op("release_handle", json!({"handle": nh}));
             if let Some(s) = name.result.as_str() {
                 return s.to_string();
@@ -55,9 +58,12 @@ fn vanilla_vs_minted_combat_config() {
     let mut vanilla: Option<(String, Vec<(String, f64)>)> = None;
     let mut minted: Option<(String, Vec<(String, f64)>)> = None;
     for inst in &instances {
-        let Some(h) = inst["handle"].as_i64() else { continue };
+        let Some(h) = inst["handle"].as_i64() else {
+            continue;
+        };
         let owner = owner_name(&api, h);
-        let is_minted = owner.contains("Hired") || owner.contains("Loyal") || owner.contains("Beat");
+        let is_minted =
+            owner.contains("Hired") || owner.contains("Loyal") || owner.contains("Beat");
         if is_minted && minted.is_none() {
             minted = Some((owner, numeric_fields(&api, h)));
         } else if !is_minted && vanilla.is_none() && owner != "?" {
@@ -77,7 +83,10 @@ fn vanilla_vs_minted_combat_config() {
         let m = mf.iter().find(|(n, _)| n == name).map(|(_, x)| *x);
         let differs = m.map(|x| (x - v).abs() > 1e-4).unwrap_or(true);
         if differs {
-            println!("{name:<40} {v:>12.3} {:>12}", m.map(|x| format!("{x:.3}")).unwrap_or("-".into()));
+            println!(
+                "{name:<40} {v:>12.3} {:>12}",
+                m.map(|x| format!("{x:.3}")).unwrap_or("-".into())
+            );
         }
     }
 }

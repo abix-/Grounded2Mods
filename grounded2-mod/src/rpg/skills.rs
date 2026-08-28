@@ -133,12 +133,11 @@ const LEAP_DISTANCE_OFFSETS: &[usize] = &[
 // effect type. Game-specific effects live in `effects.rs`.
 // ---------------------------------------------------------------------
 
-use ueforge::rpg::{
-    ClassFieldsMultiplyEffect, EffectDef, PlayerFloatEffect, SkillDef,
-    SkillRegistry, SubcomponentAdditiveEffect, SubcomponentFloatEffect,
-    SubcomponentMultiplyEffect,
-};
 use ueforge::rpg::trigger::{ON_DAMAGE_DEALT, ON_DAMAGE_TAKEN, ON_SLOT_CHANGE};
+use ueforge::rpg::{
+    ClassFieldsMultiplyEffect, EffectDef, PlayerFloatEffect, SkillDef, SkillRegistry,
+    SubcomponentAdditiveEffect, SubcomponentFloatEffect, SubcomponentMultiplyEffect,
+};
 use ueforge::ue::TypedField;
 
 static EFFECT_ATTACK_DAMAGE: PlayerFloatEffect = PlayerFloatEffect {
@@ -155,7 +154,9 @@ static EFFECT_ARMOR: SubcomponentFloatEffect = SubcomponentFloatEffect {
     field_offset: TypedField::at(HC_BASE_DAMAGE_REDUCTION),
     base: 0.0,
     max_bonus: 0.50,
-    format: PercentFormat::MinusPercent { word: "damage taken" },
+    format: PercentFormat::MinusPercent {
+        word: "damage taken",
+    },
 };
 
 static EFFECT_MOVE_SPEED: SubcomponentMultiplyEffect = SubcomponentMultiplyEffect {
@@ -293,10 +294,7 @@ pub const CATALOG_ENTRIES: &[SkillDef] = &[
         id: SKILL_IMPACT_RESISTANCE,
         display_name: "Impact Damage Resistance",
         max_level: SKILL_MAX_LEVEL,
-        effect: EffectDef::new(
-            "ImpactReversal",
-            &crate::rpg::effects::IMPACT_REVERSAL,
-        ),
+        effect: EffectDef::new("ImpactReversal", &crate::rpg::effects::IMPACT_REVERSAL),
         trigger: &ON_DAMAGE_TAKEN,
     },
     SkillDef {
@@ -317,10 +315,7 @@ pub const CATALOG_ENTRIES: &[SkillDef] = &[
         id: SKILL_LIFESTEAL,
         display_name: "Lifesteal",
         max_level: SKILL_MAX_LEVEL,
-        effect: EffectDef::new(
-            "Lifesteal",
-            &crate::rpg::effects::LIFESTEAL,
-        ),
+        effect: EffectDef::new("Lifesteal", &crate::rpg::effects::LIFESTEAL),
         trigger: &ON_DAMAGE_DEALT,
     },
 ];

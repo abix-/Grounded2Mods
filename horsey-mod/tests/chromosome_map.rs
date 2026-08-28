@@ -4,30 +4,42 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 #[test]
 fn chromosome_map_complete_and_unique() {
-    let Some(game) = common::launch("chromosome_map") else { return };
+    let Some(game) = common::launch("chromosome_map") else {
+        return;
+    };
 
     let r = game.op_json("genes.chromosomes.dump", &json!({})).unwrap();
     let result = r.get("result").expect("no result");
-    let total = result.get("total_genes").and_then(Value::as_u64).unwrap_or(0);
+    let total = result
+        .get("total_genes")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
     assert_eq!(total, 240, "expected 240 total slots, got {total}");
 
-    let chromos = result.get("chromosomes").and_then(Value::as_array)
-        .cloned().unwrap_or_default();
+    let chromos = result
+        .get("chromosomes")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
     assert!(!chromos.is_empty(), "no chromosomes in dump");
     eprintln!("got {} chromosomes:", chromos.len());
 
     let mut seen = vec![false; 240];
-    let mut reverse: std::collections::HashMap<u8, (u8, u8)> =
-        std::collections::HashMap::new();
+    let mut reverse: std::collections::HashMap<u8, (u8, u8)> = std::collections::HashMap::new();
     for c in &chromos {
         let id = c.get("id").and_then(Value::as_u64).unwrap_or(0) as u8;
-        let slots: Vec<u8> = c.get("slots").and_then(Value::as_array)
-            .cloned().unwrap_or_default().iter()
-            .filter_map(|v| v.as_u64().map(|n| n as u8)).collect();
+        let slots: Vec<u8> = c
+            .get("slots")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|v| v.as_u64().map(|n| n as u8))
+            .collect();
         eprintln!("  c{id:>2}: {slots:?}");
         for (pos, &flat) in slots.iter().enumerate() {
             assert!(!seen[flat as usize], "flat idx {flat} appears twice");
@@ -43,9 +55,14 @@ fn chromosome_map_complete_and_unique() {
     // the assertions above already prove the map is bijective, so
     // building the same reverse here in the test is the round-trip.)
     for flat in [0u8, 7, 100, 239] {
-        let entry = reverse.get(&flat).copied()
+        let entry = reverse
+            .get(&flat)
+            .copied()
             .unwrap_or_else(|| panic!("flat {flat} not mapped"));
         eprintln!("flat {flat} -> chromo {}, slot {}", entry.0, entry.1);
     }
-    eprintln!("[PASS] chromosome map: {} chromosomes, 240 unique slots, reverse bijective", chromos.len());
+    eprintln!(
+        "[PASS] chromosome map: {} chromosomes, 240 unique slots, reverse bijective",
+        chromos.len()
+    );
 }

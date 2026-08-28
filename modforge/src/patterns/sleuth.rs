@@ -18,9 +18,9 @@
 //! used as the source of truth for detour install + patch sites.
 
 use anyhow::{Context, Result, anyhow};
-use patternsleuth::{PatternConfig, ScanResult};
 use patternsleuth::process::internal::read_image;
 use patternsleuth::scanner::Pattern;
+use patternsleuth::{PatternConfig, ScanResult};
 use std::collections::HashMap;
 
 // Scan only the executable .text section, so 16-byte runs of 0xff
@@ -94,8 +94,7 @@ pub fn resolve_all(targets: &[Target<'_>]) -> Result<Resolution> {
         }
     }
 
-    let image = read_image()
-        .map_err(|e| anyhow!("patternsleuth read_image failed: {e}"))?;
+    let image = read_image().map_err(|e| anyhow!("patternsleuth read_image failed: {e}"))?;
     let scan_result: ScanResult<Sig> = image
         .scan(&configs)
         .map_err(|e| anyhow!("patternsleuth scan failed: {e}"))?;
@@ -159,21 +158,19 @@ pub fn scan_rdata_matches(sig: &str) -> Result<Vec<usize>> {
 /// Pass `None` to scan every section the crate walks (note:
 /// patternsleuth's image walker still excludes non-loadable
 /// sections like `.reloc`).
-pub fn scan_section(
-    sig: &str,
-    section: Option<object::SectionKind>,
-) -> Result<Vec<usize>> {
-    let pat = Pattern::new(sig)
-        .with_context(|| format!("sig {sig:?} parse failed"))?;
+pub fn scan_section(sig: &str, section: Option<object::SectionKind>) -> Result<Vec<usize>> {
+    let pat = Pattern::new(sig).with_context(|| format!("sig {sig:?} parse failed"))?;
     let config = PatternConfig::new((), "scan_all".to_string(), section, pat);
-    let image = read_image()
-        .map_err(|e| anyhow!("patternsleuth read_image failed: {e}"))?;
+    let image = read_image().map_err(|e| anyhow!("patternsleuth read_image failed: {e}"))?;
     let configs = [config];
     let scan_result: ScanResult<()> = image
         .scan(&configs)
         .map_err(|e| anyhow!("patternsleuth scan failed: {e}"))?;
-    let mut addrs: Vec<usize> =
-        scan_result.results.iter().map(|(_, r)| r.address as usize).collect();
+    let mut addrs: Vec<usize> = scan_result
+        .results
+        .iter()
+        .map(|(_, r)| r.address as usize)
+        .collect();
     addrs.sort_unstable();
     addrs.dedup();
     Ok(addrs)
@@ -219,7 +216,9 @@ pub enum TargetKind {
     /// address of the first prologue byte. `signature` is `Some`
     /// when the function is callable via `modforge::vanilla::Invoker`;
     /// `None` for hook-only or detour-only targets.
-    FunctionEntry { signature: Option<&'static crate::vanilla::Signature> },
+    FunctionEntry {
+        signature: Option<&'static crate::vanilla::Signature>,
+    },
     /// Data global in `.data` or `.rdata`. Resolved value is the
     /// runtime address of the slot itself, not its dereffed value.
     DataGlobal,
@@ -262,7 +261,10 @@ pub enum Recipe {
     /// value. Used when one anchor produces many candidate
     /// instructions and the right field offset is the most-common
     /// disp.
-    HistogramDisp { window_bytes: u32, predicate: HistPredicate },
+    HistogramDisp {
+        window_bytes: u32,
+        predicate: HistPredicate,
+    },
     /// Decode TWO RIP-relative disp32s at byte offsets `disp1_off`
     /// and `disp2_off` inside the match. Compute their effective
     /// targets: target_i = (match_addr + next_ip_i) + disp_i. Accept
@@ -270,8 +272,10 @@ pub enum Recipe {
     /// `target1`. Used for resolvers like DEBUG_MODE_ACTIVE that
     /// disambiguate by the relative position of two stores.
     PairedRipDispWithDelta {
-        disp1_off: u8, disp1_next_ip: u8,
-        disp2_off: u8, disp2_next_ip: u8,
+        disp1_off: u8,
+        disp1_next_ip: u8,
+        disp2_off: u8,
+        disp2_next_ip: u8,
         delta: i64,
     },
     /// Like `DecodeRipDisp` but ADD `rel_offset` (signed) to the
@@ -279,7 +283,9 @@ pub enum Recipe {
     /// matches a NEIGHBORING global whose offset to the real target
     /// is known from decomp.
     RipDispWithRelOffset {
-        disp_off: u8, instr_len: u8, rel_offset: i64,
+        disp_off: u8,
+        instr_len: u8,
+        rel_offset: i64,
     },
     /// Escape hatch for resolvers whose logic doesn't fit any of
     /// the closed-enum recipes. The function pointer is invoked
@@ -331,7 +337,9 @@ pub trait Validator: Sync + std::fmt::Debug {
 #[derive(Debug)]
 pub struct HeapShape;
 impl Validator for HeapShape {
-    fn name(&self) -> &'static str { "HeapShape" }
+    fn name(&self) -> &'static str {
+        "HeapShape"
+    }
     fn check(&self, v: u64, _: &ValidationCtx) -> Result<()> {
         if v < 0x10000 {
             return Err(anyhow!("HeapShape: 0x{v:x} below heap floor 0x10000"));
@@ -351,7 +359,9 @@ impl Validator for HeapShape {
 #[derive(Debug)]
 pub struct InImage;
 impl Validator for InImage {
-    fn name(&self) -> &'static str { "InImage" }
+    fn name(&self) -> &'static str {
+        "InImage"
+    }
     fn check(&self, v: u64, ctx: &ValidationCtx) -> Result<()> {
         let end = ctx.image_base.saturating_add(0x100_0000);
         if v < ctx.image_base || v >= end {
@@ -369,10 +379,12 @@ impl Validator for InImage {
 #[derive(Debug)]
 pub struct VtableAtRva(pub u64);
 impl Validator for VtableAtRva {
-    fn name(&self) -> &'static str { "VtableAtRva" }
+    fn name(&self) -> &'static str {
+        "VtableAtRva"
+    }
     fn check(&self, v: u64, ctx: &ValidationCtx) -> Result<()> {
-        let bytes = (ctx.read_bytes)(v, 8)
-            .ok_or_else(|| anyhow!("VtableAtRva: 0x{v:x} not readable"))?;
+        let bytes =
+            (ctx.read_bytes)(v, 8).ok_or_else(|| anyhow!("VtableAtRva: 0x{v:x} not readable"))?;
         if bytes.len() != 8 {
             return Err(anyhow!("VtableAtRva: short read at 0x{v:x}"));
         }
@@ -397,12 +409,12 @@ pub struct FieldInRange {
     pub hi: i64,
 }
 impl Validator for FieldInRange {
-    fn name(&self) -> &'static str { "FieldInRange" }
+    fn name(&self) -> &'static str {
+        "FieldInRange"
+    }
     fn check(&self, v: u64, ctx: &ValidationCtx) -> Result<()> {
         let bytes = (ctx.read_bytes)(v + self.off as u64, 4)
-            .ok_or_else(|| anyhow!(
-                "FieldInRange: 0x{:x} + 0x{:x} not readable", v, self.off
-            ))?;
+            .ok_or_else(|| anyhow!("FieldInRange: 0x{:x} + 0x{:x} not readable", v, self.off))?;
         if bytes.len() != 4 {
             return Err(anyhow!("FieldInRange: short read"));
         }
@@ -410,7 +422,9 @@ impl Validator for FieldInRange {
         if val < self.lo || val > self.hi {
             return Err(anyhow!(
                 "FieldInRange: field@+0x{:x}={val} outside [{},{}]",
-                self.off, self.lo, self.hi
+                self.off,
+                self.lo,
+                self.hi
             ));
         }
         Ok(())
@@ -421,15 +435,21 @@ impl Validator for FieldInRange {
 /// readable memory. Use to plausibility-check a candidate that
 /// should have a non-null heap pointer at a known offset.
 #[derive(Debug)]
-pub struct NestedPtrReadable { pub off: usize }
+pub struct NestedPtrReadable {
+    pub off: usize,
+}
 impl Validator for NestedPtrReadable {
-    fn name(&self) -> &'static str { "NestedPtrReadable" }
+    fn name(&self) -> &'static str {
+        "NestedPtrReadable"
+    }
     fn check(&self, v: u64, ctx: &ValidationCtx) -> Result<()> {
-        let p_bytes = (ctx.read_bytes)(v + self.off as u64, 8)
-            .ok_or_else(|| anyhow!(
+        let p_bytes = (ctx.read_bytes)(v + self.off as u64, 8).ok_or_else(|| {
+            anyhow!(
                 "NestedPtrReadable: outer 0x{:x}+0x{:x} not readable",
-                v, self.off
-            ))?;
+                v,
+                self.off
+            )
+        })?;
         if p_bytes.len() != 8 {
             return Err(anyhow!("NestedPtrReadable: short read on outer"));
         }
@@ -439,9 +459,7 @@ impl Validator for NestedPtrReadable {
         }
         let probe = (ctx.read_bytes)(inner, 8);
         if probe.is_none() || probe.unwrap().len() != 8 {
-            return Err(anyhow!(
-                "NestedPtrReadable: inner 0x{inner:x} not readable"
-            ));
+            return Err(anyhow!("NestedPtrReadable: inner 0x{inner:x} not readable"));
         }
         Ok(())
     }
@@ -452,9 +470,7 @@ impl Validator for NestedPtrReadable {
 #[derive(Debug)]
 pub struct WithinHintTolerance;
 impl WithinHintTolerance {
-    fn check_against(
-        &self, value: u64, hint: u64, tolerance: u64,
-    ) -> Result<()> {
+    fn check_against(&self, value: u64, hint: u64, tolerance: u64) -> Result<()> {
         let delta = value.abs_diff(hint);
         if delta > tolerance {
             return Err(anyhow!(
@@ -478,10 +494,7 @@ pub struct TargetRegistry {
 }
 
 impl TargetRegistry {
-    pub const fn new(
-        name: &'static str,
-        entries: &'static [&'static TargetDef],
-    ) -> Self {
+    pub const fn new(name: &'static str, entries: &'static [&'static TargetDef]) -> Self {
         Self { name, entries }
     }
 
@@ -520,7 +533,10 @@ pub struct Resolver {
 
 impl Resolver {
     pub const fn new(registry: &'static TargetRegistry) -> Self {
-        Self { registry, cache: OnceLock::new() }
+        Self {
+            registry,
+            cache: OnceLock::new(),
+        }
     }
 
     pub fn registry(&self) -> &'static TargetRegistry {
@@ -541,20 +557,27 @@ impl Resolver {
     /// validation log. For the HTTP control-plane cmdlet.
     pub fn diagnostic(&self) -> serde_json::Value {
         let all = self.resolve_all();
-        let mut entries: Vec<_> = self.registry.iter().map(|def| {
-            let r = all.get(def.name);
-            serde_json::json!({
-                "name": def.name,
-                "kind": format!("{:?}", def.kind),
-                "value": r.and_then(|x| x.value).map(|v| format!("0x{v:x}")),
-                "candidate_idx": r.and_then(|x| x.candidate_idx),
-                "from_hint": r.map(|x| x.from_hint).unwrap_or(false),
-                "hint_rva": def.hint_rva.map(|h| format!("0x{h:x}")),
-                "validation_log": r.map(|x| x.validation_log.clone()).unwrap_or_default(),
+        let mut entries: Vec<_> = self
+            .registry
+            .iter()
+            .map(|def| {
+                let r = all.get(def.name);
+                serde_json::json!({
+                    "name": def.name,
+                    "kind": format!("{:?}", def.kind),
+                    "value": r.and_then(|x| x.value).map(|v| format!("0x{v:x}")),
+                    "candidate_idx": r.and_then(|x| x.candidate_idx),
+                    "from_hint": r.map(|x| x.from_hint).unwrap_or(false),
+                    "hint_rva": def.hint_rva.map(|h| format!("0x{h:x}")),
+                    "validation_log": r.map(|x| x.validation_log.clone()).unwrap_or_default(),
+                })
             })
-        }).collect();
+            .collect();
         entries.sort_by(|a, b| {
-            a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or(""))
+            a["name"]
+                .as_str()
+                .unwrap_or("")
+                .cmp(b["name"].as_str().unwrap_or(""))
         });
         serde_json::json!({
             "registry": self.registry.name,
@@ -565,7 +588,10 @@ impl Resolver {
     fn run(&self) -> HashMap<&'static str, ResolvedTarget> {
         let image_base = current_image_base();
         let read_bytes = make_read_bytes_closure();
-        let ctx = ValidationCtx { image_base, read_bytes: &read_bytes };
+        let ctx = ValidationCtx {
+            image_base,
+            read_bytes: &read_bytes,
+        };
 
         let mut out = HashMap::new();
         for def in self.registry.iter() {
@@ -578,11 +604,7 @@ impl Resolver {
 
 /// Resolve a single TargetDef: try each candidate in order, decode
 /// per Recipe, run validators, return the first that passes.
-fn resolve_one(
-    def: &'static TargetDef,
-    ctx: &ValidationCtx,
-    image_base: u64,
-) -> ResolvedTarget {
+fn resolve_one(def: &'static TargetDef, ctx: &ValidationCtx, image_base: u64) -> ResolvedTarget {
     let mut log: Vec<String> = Vec::new();
 
     for (idx, cand) in def.candidates.iter().enumerate() {
@@ -595,8 +617,10 @@ fn resolve_one(
                 }
                 log.push(format!("candidate[{idx}] accepted"));
                 return ResolvedTarget {
-                    name: def.name, value: Some(value),
-                    candidate_idx: Some(idx), validation_log: log,
+                    name: def.name,
+                    value: Some(value),
+                    candidate_idx: Some(idx),
+                    validation_log: log,
                     from_hint: false,
                 };
             }
@@ -627,37 +651,41 @@ fn resolve_one(
         };
         log.push(format!("fallback to hint 0x{value:x}"));
         return ResolvedTarget {
-            name: def.name, value: Some(value),
-            candidate_idx: None, validation_log: log, from_hint: true,
+            name: def.name,
+            value: Some(value),
+            candidate_idx: None,
+            validation_log: log,
+            from_hint: true,
         };
     }
 
     log.push("no candidate matched and no hint fallback".into());
     ResolvedTarget {
-        name: def.name, value: None,
-        candidate_idx: None, validation_log: log, from_hint: false,
+        name: def.name,
+        value: None,
+        candidate_idx: None,
+        validation_log: log,
+        from_hint: false,
     }
 }
 
 /// Decode a candidate to its final value per the Recipe.
-fn decode_candidate(
-    cand: &Candidate,
-    def: &TargetDef,
-    image_base: u64,
-) -> Result<u64> {
+fn decode_candidate(cand: &Candidate, def: &TargetDef, image_base: u64) -> Result<u64> {
     let hits = scan_all_matches(cand.sig)?;
     if hits.is_empty() {
         return Err(anyhow!("no match for sig {:?}", cand.sig));
     }
 
     match cand.recipe {
-        Recipe::MatchIsAddress => {
-            Ok(hits[0] as u64)
-        }
-        Recipe::DecodeRipDisp { disp_off, instr_len } => {
+        Recipe::MatchIsAddress => Ok(hits[0] as u64),
+        Recipe::DecodeRipDisp {
+            disp_off,
+            instr_len,
+        } => {
             let match_addr = hits[0] as u64;
             let disp = read_i32_at(match_addr + disp_off as u64)?;
-            Ok(match_addr.wrapping_add(instr_len as u64)
+            Ok(match_addr
+                .wrapping_add(instr_len as u64)
                 .wrapping_add(disp as i64 as u64))
         }
         Recipe::DecodeImm { imm_off, imm_size } => {
@@ -665,11 +693,16 @@ fn decode_candidate(
             let v = read_imm_at(match_addr + imm_off as u64, imm_size)?;
             Ok(v)
         }
-        Recipe::HistogramDisp { window_bytes, predicate } => {
-            decode_histogram(&hits, window_bytes, predicate, def, image_base)
-        }
+        Recipe::HistogramDisp {
+            window_bytes,
+            predicate,
+        } => decode_histogram(&hits, window_bytes, predicate, def, image_base),
         Recipe::PairedRipDispWithDelta {
-            disp1_off, disp1_next_ip, disp2_off, disp2_next_ip, delta,
+            disp1_off,
+            disp1_next_ip,
+            disp2_off,
+            disp2_next_ip,
+            delta,
         } => {
             // Try every match; accept the first one whose two
             // disp32s form effective-targets whose delta matches.
@@ -677,9 +710,11 @@ fn decode_candidate(
                 let m = m as u64;
                 let d1 = read_i32_at(m + disp1_off as u64)?;
                 let d2 = read_i32_at(m + disp2_off as u64)?;
-                let t1 = m.wrapping_add(disp1_next_ip as u64)
+                let t1 = m
+                    .wrapping_add(disp1_next_ip as u64)
                     .wrapping_add(d1 as i64 as u64);
-                let t2 = m.wrapping_add(disp2_next_ip as u64)
+                let t2 = m
+                    .wrapping_add(disp2_next_ip as u64)
                     .wrapping_add(d2 as i64 as u64);
                 let observed = (t2 as i64).wrapping_sub(t1 as i64);
                 if observed == delta {
@@ -688,13 +723,19 @@ fn decode_candidate(
             }
             Err(anyhow!(
                 "no match passed paired-disp delta {} for sig {:?}",
-                delta, cand.sig
+                delta,
+                cand.sig
             ))
         }
-        Recipe::RipDispWithRelOffset { disp_off, instr_len, rel_offset } => {
+        Recipe::RipDispWithRelOffset {
+            disp_off,
+            instr_len,
+            rel_offset,
+        } => {
             let match_addr = hits[0] as u64;
             let disp = read_i32_at(match_addr + disp_off as u64)?;
-            let target = match_addr.wrapping_add(instr_len as u64)
+            let target = match_addr
+                .wrapping_add(instr_len as u64)
                 .wrapping_add(disp as i64 as u64);
             Ok((target as i64).wrapping_add(rel_offset) as u64)
         }
@@ -708,9 +749,7 @@ fn read_i32_at(addr: u64) -> Result<i32> {
     if !crate::winproc::is_addr_readable(addr as usize) {
         return Err(anyhow!("addr 0x{addr:x} not readable"));
     }
-    let bytes = unsafe {
-        std::slice::from_raw_parts(addr as *const u8, 4)
-    };
+    let bytes = unsafe { std::slice::from_raw_parts(addr as *const u8, 4) };
     Ok(i32::from_le_bytes(bytes.try_into().unwrap()))
 }
 
@@ -722,9 +761,7 @@ fn read_imm_at(addr: u64, size: u8) -> Result<u64> {
     if n == 0 || n > 8 {
         return Err(anyhow!("invalid imm size {n}"));
     }
-    let bytes = unsafe {
-        std::slice::from_raw_parts(addr as *const u8, n)
-    };
+    let bytes = unsafe { std::slice::from_raw_parts(addr as *const u8, n) };
     let mut buf = [0u8; 8];
     buf[..n].copy_from_slice(bytes);
     Ok(u64::from_le_bytes(buf))
@@ -744,10 +781,10 @@ fn decode_histogram(
         let end = start.saturating_add(window_bytes as u64);
         let mut p = start;
         while p + 4 <= end {
-            if !crate::winproc::is_addr_readable(p as usize) { break; }
-            let bytes = unsafe {
-                std::slice::from_raw_parts(p as *const u8, 4)
-            };
+            if !crate::winproc::is_addr_readable(p as usize) {
+                break;
+            }
+            let bytes = unsafe { std::slice::from_raw_parts(p as *const u8, 4) };
             let v = i32::from_le_bytes(bytes.try_into().unwrap()) as i64;
             let pass = match predicate {
                 HistPredicate::InRange { lo, hi } => v >= lo && v <= hi,
@@ -769,22 +806,23 @@ fn decode_histogram(
 
 /// Run every validator on a value. Includes the auto-injected
 /// WithinHintTolerance check when hint_rva is set.
-fn run_validators(
-    def: &TargetDef,
-    value: u64,
-    ctx: &ValidationCtx,
-) -> Result<()> {
+fn run_validators(def: &TargetDef, value: u64, ctx: &ValidationCtx) -> Result<()> {
     if let Some(hint) = def.hint_rva {
         let real_hint = match def.kind {
             TargetKind::FieldOffset { .. } => hint,
-            _ => if hint < 0x1_0000_0000 {
-                ctx.image_base.wrapping_add(hint)
-            } else { hint },
+            _ => {
+                if hint < 0x1_0000_0000 {
+                    ctx.image_base.wrapping_add(hint)
+                } else {
+                    hint
+                }
+            }
         };
         WithinHintTolerance.check_against(value, real_hint, def.hint_tolerance)?;
     }
     for v in def.validators {
-        v.check(value, ctx).with_context(|| format!("validator {}", v.name()))?;
+        v.check(value, ctx)
+            .with_context(|| format!("validator {}", v.name()))?;
     }
     Ok(())
 }
@@ -802,12 +840,16 @@ fn current_image_base() -> u64 {
 /// process's VirtualQuery to avoid faulting on unmapped pages.
 fn make_read_bytes_closure() -> impl Fn(u64, usize) -> Option<Vec<u8>> {
     |addr: u64, n: usize| -> Option<Vec<u8>> {
-        if n == 0 || n > 0x1000 { return None; }
-        if !crate::winproc::is_addr_readable(addr as usize) { return None; }
-        if !crate::winproc::is_addr_readable(addr as usize + n - 1) { return None; }
-        let bytes = unsafe {
-            std::slice::from_raw_parts(addr as *const u8, n)
-        };
+        if n == 0 || n > 0x1000 {
+            return None;
+        }
+        if !crate::winproc::is_addr_readable(addr as usize) {
+            return None;
+        }
+        if !crate::winproc::is_addr_readable(addr as usize + n - 1) {
+            return None;
+        }
+        let bytes = unsafe { std::slice::from_raw_parts(addr as *const u8, n) };
         Some(bytes.to_vec())
     }
 }
@@ -862,7 +904,10 @@ mod tests {
 
     #[test]
     fn heapshape_rejects_low_high_unaligned() {
-        let ctx = ValidationCtx { image_base: 0x140000000, read_bytes: &never_readable() };
+        let ctx = ValidationCtx {
+            image_base: 0x140000000,
+            read_bytes: &never_readable(),
+        };
         assert!(HeapShape.check(0x1000, &ctx).is_err());
         assert!(HeapShape.check(0x8000_0000_0000, &ctx).is_err());
         assert!(HeapShape.check(0x1_0000_0001, &ctx).is_err()); // misaligned
@@ -871,7 +916,10 @@ mod tests {
 
     #[test]
     fn inimage_window_check() {
-        let ctx = ValidationCtx { image_base: 0x140000000, read_bytes: &never_readable() };
+        let ctx = ValidationCtx {
+            image_base: 0x140000000,
+            read_bytes: &never_readable(),
+        };
         assert!(InImage.check(0x140000000, &ctx).is_ok());
         assert!(InImage.check(0x140abcdef, &ctx).is_ok());
         assert!(InImage.check(0x13fffffff, &ctx).is_err());
@@ -885,7 +933,10 @@ mod tests {
         let obj_addr = 0x1f_2a7c_8540u64;
         let mut map = HashMap::new();
         map.insert(obj_addr, expected.to_le_bytes().to_vec());
-        let ctx = ValidationCtx { image_base, read_bytes: &scripted_reader(map) };
+        let ctx = ValidationCtx {
+            image_base,
+            read_bytes: &scripted_reader(map),
+        };
 
         assert!(VtableAtRva(0x3037d0).check(obj_addr, &ctx).is_ok());
         assert!(VtableAtRva(0xdeadbeef).check(obj_addr, &ctx).is_err());
@@ -899,11 +950,38 @@ mod tests {
         map.insert(0x1000 + 0x10, 42i32.to_le_bytes().to_vec());
         // value -5 at addr+0x14
         map.insert(0x2000 + 0x14, (-5i32).to_le_bytes().to_vec());
-        let ctx = ValidationCtx { image_base: 0, read_bytes: &scripted_reader(map) };
+        let ctx = ValidationCtx {
+            image_base: 0,
+            read_bytes: &scripted_reader(map),
+        };
 
-        assert!(FieldInRange { off: 0x10, lo: 0, hi: 200 }.check(0x1000, &ctx).is_ok());
-        assert!(FieldInRange { off: 0x10, lo: 100, hi: 200 }.check(0x1000, &ctx).is_err());
-        assert!(FieldInRange { off: 0x14, lo: -10, hi: 0 }.check(0x2000, &ctx).is_ok());
+        assert!(
+            FieldInRange {
+                off: 0x10,
+                lo: 0,
+                hi: 200
+            }
+            .check(0x1000, &ctx)
+            .is_ok()
+        );
+        assert!(
+            FieldInRange {
+                off: 0x10,
+                lo: 100,
+                hi: 200
+            }
+            .check(0x1000, &ctx)
+            .is_err()
+        );
+        assert!(
+            FieldInRange {
+                off: 0x14,
+                lo: -10,
+                hi: 0
+            }
+            .check(0x2000, &ctx)
+            .is_ok()
+        );
     }
 
     #[test]
@@ -913,15 +991,25 @@ mod tests {
         let mut map = HashMap::new();
         map.insert(outer + 0x8, inner.to_le_bytes().to_vec());
         map.insert(inner, vec![0u8; 8]); // make inner readable
-        let ctx = ValidationCtx { image_base: 0, read_bytes: &scripted_reader(map) };
+        let ctx = ValidationCtx {
+            image_base: 0,
+            read_bytes: &scripted_reader(map),
+        };
 
         assert!(NestedPtrReadable { off: 0x8 }.check(outer, &ctx).is_ok());
 
         // Null inner pointer rejects.
         let mut map_null = HashMap::new();
         map_null.insert(outer + 0x8, vec![0u8; 8]);
-        let ctx_null = ValidationCtx { image_base: 0, read_bytes: &scripted_reader(map_null) };
-        assert!(NestedPtrReadable { off: 0x8 }.check(outer, &ctx_null).is_err());
+        let ctx_null = ValidationCtx {
+            image_base: 0,
+            read_bytes: &scripted_reader(map_null),
+        };
+        assert!(
+            NestedPtrReadable { off: 0x8 }
+                .check(outer, &ctx_null)
+                .is_err()
+        );
     }
 
     #[test]
@@ -970,7 +1058,11 @@ mod tests {
             &HeapShape,
             &InImage,
             &VtableAtRva(0x3037d0),
-            &FieldInRange { off: 0x10, lo: 0, hi: 100 },
+            &FieldInRange {
+                off: 0x10,
+                lo: 0,
+                hi: 100,
+            },
             &NestedPtrReadable { off: 0x8 },
         ];
         assert_eq!(VALIDATORS.len(), 5);

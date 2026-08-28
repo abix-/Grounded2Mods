@@ -23,5 +23,8 @@ fn print_farm_state() {
         println!("farm_state FAILED: {:?}", r.error);
         return;
     }
-    println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&r.result).unwrap_or_default()
+    );
 }

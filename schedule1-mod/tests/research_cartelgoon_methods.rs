@@ -39,7 +39,11 @@ fn cartelgoon_methods() {
             m["name"].as_str().unwrap_or("?"),
             m["params"].as_i64().unwrap_or(-1),
             m["return"].as_str().unwrap_or("?"),
-            if m["static"].as_bool() == Some(true) { " [static]" } else { "" },
+            if m["static"].as_bool() == Some(true) {
+                " [static]"
+            } else {
+                ""
+            },
         );
     }
 

@@ -60,7 +60,10 @@ fn live_menu_objects() {
             println!("\n=== {needle}: FAILED {:?}", r.error);
             continue;
         }
-        let all = r.result["instances"].as_array().cloned().unwrap_or_default();
+        let all = r.result["instances"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
         // Templates inside a /Game/... package are not real
         // objects; calling one succeeds and does nothing.
         let live: Vec<&serde_json::Value> = all
@@ -74,7 +77,8 @@ fn live_menu_objects() {
             .collect();
         println!(
             "\n=== {needle}: {} total, {} live",
-            r.result["total"], live.len()
+            r.result["total"],
+            live.len()
         );
         for i in live {
             println!("  {}", i["full_name"].as_str().unwrap_or("?"));
@@ -97,8 +101,8 @@ const LOAD_PATH: &[&str] = &[
 
 /// Words that mark a function worth reading twice.
 const INTERESTING: &[&str] = &[
-    "Load", "Save", "Slot", "Open", "Level", "Travel", "Start",
-    "Single", "Host", "Server", "Button", "BndEvt", "Clicked",
+    "Load", "Save", "Slot", "Open", "Level", "Travel", "Start", "Single", "Host", "Server",
+    "Button", "BndEvt", "Clicked",
 ];
 
 /// Every function each widget on the load path can be told to
@@ -117,12 +121,19 @@ fn load_path_functions() {
             println!("\n=== {class}: FAILED {:?}", r.error);
             continue;
         }
-        let fns = r.result["functions"].as_array().cloned().unwrap_or_default();
+        let fns = r.result["functions"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
         println!("\n=== {class} ({} functions)", fns.len());
         println!("    {}", r.result["full_name"].as_str().unwrap_or("?"));
         for f in &fns {
             let name = f["name"].as_str().unwrap_or("?");
-            let mark = if INTERESTING.iter().any(|w| name.contains(w)) { ">>" } else { "  " };
+            let mark = if INTERESTING.iter().any(|w| name.contains(w)) {
+                ">>"
+            } else {
+                "  "
+            };
             println!(
                 "{mark} {name:<70} parms={} bytes={}",
                 f["num_parms"], f["parms_size"]
@@ -145,9 +156,15 @@ fn save_row_contents() {
         println!("\n=== {class}: {} live instance(s)", live.len());
         for w in &live {
             println!("\n-- {}", w.full_name);
-            let r = api.op("inspect_address", json!({"addr": format!("0x{:X}", w.addr)}));
+            let r = api.op(
+                "inspect_address",
+                json!({"addr": format!("0x{:X}", w.addr)}),
+            );
             if r.ok {
-                println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&r.result).unwrap_or_default()
+                );
             } else {
                 println!("   inspect failed: {:?}", r.error);
             }
@@ -167,12 +184,21 @@ fn save_row_contents() {
 fn the_two_host_objects() {
     let Some(api) = api_or_skip() else { return };
     let live = modforge::client::walk_class_chain_instances(&api, "BP_HostNewGameServer_C", 16);
-    println!("=== BP_HostNewGameServer_C: {} live instance(s)", live.len());
+    println!(
+        "=== BP_HostNewGameServer_C: {} live instance(s)",
+        live.len()
+    );
     for w in &live {
         println!("\n-- {}", w.full_name);
-        let r = api.op("inspect_address", json!({"addr": format!("0x{:X}", w.addr)}));
+        let r = api.op(
+            "inspect_address",
+            json!({"addr": format!("0x{:X}", w.addr)}),
+        );
         if r.ok {
-            println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&r.result).unwrap_or_default()
+            );
         } else {
             println!("   inspect failed: {:?}", r.error);
         }
@@ -192,7 +218,10 @@ fn the_two_host_objects() {
 fn what_the_game_intends_to_load() {
     let Some(api) = api_or_skip() else { return };
     let live = modforge::client::walk_class_chain_instances(&api, "BP_SGKGameInstance_C", 4);
-    let Some(gi) = live.iter().find(|w| w.full_name.contains("/Engine/Transient")) else {
+    let Some(gi) = live
+        .iter()
+        .find(|w| w.full_name.contains("/Engine/Transient"))
+    else {
         println!("no live game instance");
         return;
     };
@@ -223,4 +252,3 @@ fn what_the_game_intends_to_load() {
         println!("slot name: {:?}", modforge::client::read_fstring(&api, hex));
     }
 }
-

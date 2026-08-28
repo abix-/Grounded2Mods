@@ -79,10 +79,7 @@ fn dump_responses_type(
     );
     if aware_r.ok {
         if let Some(ah) = handle_of(&aware_r.result) {
-            let aware_resp = api.op(
-                "read_field",
-                json!({"handle": ah, "field": "Responses"}),
-            );
+            let aware_resp = api.op("read_field", json!({"handle": ah, "field": "Responses"}));
             if aware_resp.ok {
                 if let Some(arh) = handle_of(&aware_resp.result) {
                     let aware_type = get_type_name(api, arh);
@@ -117,10 +114,7 @@ fn compare_responses_type() {
         if let Some(first) = instances.first() {
             if let Some(ph) = first["handle"].as_i64() {
                 // Read goons list
-                let goons_r = api.op(
-                    "read_field",
-                    json!({"handle": ph, "field": "goons"}),
-                );
+                let goons_r = api.op("read_field", json!({"handle": ph, "field": "goons"}));
                 if goons_r.ok {
                     if let Some(gh) = handle_of(&goons_r.result) {
                         let count_r = api.op(
@@ -151,10 +145,7 @@ fn compare_responses_type() {
                     }
                 } else {
                     // Try Goons (capitalized)
-                    let goons_r2 = api.op(
-                        "read_field",
-                        json!({"handle": ph, "field": "Goons"}),
-                    );
+                    let goons_r2 = api.op("read_field", json!({"handle": ph, "field": "Goons"}));
                     if goons_r2.ok {
                         if let Some(gh) = handle_of(&goons_r2.result) {
                             let count_r = api.op(
@@ -204,8 +195,7 @@ fn compare_responses_type() {
     );
     if spawn.ok {
         let s = spawn.result.as_str().unwrap_or("");
-        let parsed: serde_json::Value =
-            serde_json::from_str(s).unwrap_or(serde_json::Value::Null);
+        let parsed: serde_json::Value = serde_json::from_str(s).unwrap_or(serde_json::Value::Null);
         if parsed["ok"].as_bool() == Some(true) {
             let idx = parsed["index"].as_i64().unwrap_or(0);
             println!("  spawned custom goon index={idx}");
@@ -263,5 +253,8 @@ fn list_response_class_methods() {
     print_declared_methods(&api, "Il2CppScheduleOne.NPCs.Responses.NPCResponses");
 
     println!("\n=== NPCResponses_Civilian (used by S1API custom NPCs) ===");
-    print_declared_methods(&api, "Il2CppScheduleOne.NPCs.Responses.NPCResponses_Civilian");
+    print_declared_methods(
+        &api,
+        "Il2CppScheduleOne.NPCs.Responses.NPCResponses_Civilian",
+    );
 }

@@ -14,9 +14,7 @@
 //!   MODFORGE_NO_GAME=1      skip launch entirely (no-op exit)
 //!   MODFORGE_STEAM_EXE=...  override steam.exe path
 
-use modforge::harness::{
-    BuildDef, GameHarness, GameDef, HttpProbe, InjectorDef,
-};
+use modforge::harness::{BuildDef, GameDef, GameHarness, HttpProbe, InjectorDef};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 

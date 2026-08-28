@@ -321,7 +321,10 @@ mod tests {
             12.0,
         );
         assert!((away.safety - 70.0).abs() < 1e-3);
-        assert!((home.safety - 90.0).abs() < 1e-3, "three times as fast at home");
+        assert!(
+            (home.safety - 90.0).abs() < 1e-3,
+            "three times as fast at home"
+        );
         home.tick(
             rates,
             Condition {

@@ -42,13 +42,13 @@ pub const HOME_LOC_VTABLE_RVA: usize = 0x30f3d0;
 pub const VTABLE_DROP_COMMIT: usize = 0x78;
 
 /// Location field offsets on the shared Location class.
-pub const LOC_HORSE_VEC_BEGIN: usize = 0x130;   // ptr to first Horse* (= LOC[0x26])
-pub const LOC_HORSE_VEC_END:   usize = 0x138;   // one-past-last (= LOC[0x27])
-pub const LOC_GRABBED_HORSE:   usize = 0x29 * 8; // = 0x148 (LOC[0x29])
-pub const LOC_DRAG_IDX:        usize = 0x2d * 8; // = 0x168 (LOC[0x2d])
-pub const LOC_CURSOR_X:        usize = 0x174;    // float
-pub const LOC_CURSOR_Y:        usize = 0x178;    // float
-pub const LOC_CLICK_STATE:     usize = 0x37 * 8; // = 0x1b8 (LOC[0x37])
+pub const LOC_HORSE_VEC_BEGIN: usize = 0x130; // ptr to first Horse* (= LOC[0x26])
+pub const LOC_HORSE_VEC_END: usize = 0x138; // one-past-last (= LOC[0x27])
+pub const LOC_GRABBED_HORSE: usize = 0x29 * 8; // = 0x148 (LOC[0x29])
+pub const LOC_DRAG_IDX: usize = 0x2d * 8; // = 0x168 (LOC[0x2d])
+pub const LOC_CURSOR_X: usize = 0x174; // float
+pub const LOC_CURSOR_Y: usize = 0x178; // float
+pub const LOC_CLICK_STATE: usize = 0x37 * 8; // = 0x1b8 (LOC[0x37])
 
 /// Click-state value the drop-commit branch keys on. Observed via the
 /// snap2/snap3 drag diff (the game wrote 0 to +0x1b8 after the drop,
@@ -80,7 +80,7 @@ pub fn log_line(s: &str) {
 
 #[derive(Default, Clone, Copy, Debug)]
 pub struct Targets {
-    pub truck:   Option<(f32, f32)>,
+    pub truck: Option<(f32, f32)>,
     pub pasture: Option<(f32, f32)>,
 }
 
@@ -99,7 +99,7 @@ pub fn load_targets() -> Targets {
             let mut s = String::new();
             if f.read_to_string(&mut s).is_ok() {
                 // hand-rolled parser; trivial schema, no serde dependency
-                t.truck   = parse_xy(&s, "truck");
+                t.truck = parse_xy(&s, "truck");
                 t.pasture = parse_xy(&s, "pasture");
             }
         }
@@ -121,7 +121,9 @@ fn parse_xy(s: &str, key: &str) -> Option<(f32, f32)> {
     Some((x, y))
 }
 
-pub fn save_targets_pub(t: Targets) { save_targets(t); }
+pub fn save_targets_pub(t: Targets) {
+    save_targets(t);
+}
 
 fn save_targets(t: Targets) {
     let Some(path) = calib_path() else { return };
@@ -131,13 +133,22 @@ fn save_targets(t: Targets) {
     };
     let s = format!(
         "{{\"truck\": {}, \"pasture\": {}}}\n",
-        fmt_xy(t.truck), fmt_xy(t.pasture)
+        fmt_xy(t.truck),
+        fmt_xy(t.pasture)
     );
-    if let Ok(mut f) = OpenOptions::new().create(true).truncate(true).write(true).open(&path) {
+    if let Ok(mut f) = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&path)
+    {
         let _ = f.write_all(s.as_bytes());
     }
     *TARGETS.lock().unwrap() = Some(t);
-    log_line(&format!("targets saved: truck={:?} pasture={:?}", t.truck, t.pasture));
+    log_line(&format!(
+        "targets saved: truck={:?} pasture={:?}",
+        t.truck, t.pasture
+    ));
 }
 
 /// Read N bytes from `addr` and return as space-separated hex.
@@ -150,7 +161,13 @@ fn dump_hex(addr: usize, n: usize) -> Option<String> {
     }
     // SAFETY: both endpoints checked.
     let slice = unsafe { std::slice::from_raw_parts(addr as *const u8, n) };
-    Some(slice.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" "))
+    Some(
+        slice
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
 }
 
 /// Snapshot the Home Location (0x240 bytes) and a horse (0x498 bytes)
@@ -161,9 +178,10 @@ pub fn snapshot(label: &str, horse_ptr: usize) {
     let loc_s = loc
         .and_then(|p| dump_hex(p, 0x240))
         .unwrap_or_else(|| "(no home loc)".into());
-    let horse_s = dump_hex(horse_ptr, 0x498)
-        .unwrap_or_else(|| "(unreadable horse)".into());
-    let cursor = read_cursor().map(|(x, y)| format!("({x},{y})")).unwrap_or("?".into());
+    let horse_s = dump_hex(horse_ptr, 0x498).unwrap_or_else(|| "(unreadable horse)".into());
+    let cursor = read_cursor()
+        .map(|(x, y)| format!("({x},{y})"))
+        .unwrap_or("?".into());
     let loc_ptr_s = loc.map(|p| format!("0x{p:x}")).unwrap_or("(none)".into());
     log_line(&format!(
         "SNAPSHOT label='{label}' loc_ptr={loc_ptr_s} horse_ptr=0x{horse_ptr:x} cursor={cursor}"
@@ -175,21 +193,31 @@ pub fn snapshot(label: &str, horse_ptr: usize) {
 /// Walk GS+0x438 -> *(arr + 0) (the Home Location object).
 pub fn home_loc_ptr() -> Option<usize> {
     let gs = crate::gamestate::ptr();
-    if gs == 0 { return None; }
-    if !modforge::winproc::is_addr_readable(gs + 0x438) { return None; }
+    if gs == 0 {
+        return None;
+    }
+    if !modforge::winproc::is_addr_readable(gs + 0x438) {
+        return None;
+    }
     // SAFETY: GS+0x438 just checked.
     let arr_ptr = unsafe { *((gs + 0x438) as *const usize) };
-    if !modforge::winproc::is_addr_readable(arr_ptr) { return None; }
+    if !modforge::winproc::is_addr_readable(arr_ptr) {
+        return None;
+    }
     // SAFETY: arr_ptr just checked.
     let loc = unsafe { *(arr_ptr as *const usize) };
-    if loc == 0 || !modforge::winproc::is_addr_readable(loc + 0x300) { return None; }
+    if loc == 0 || !modforge::winproc::is_addr_readable(loc + 0x300) {
+        return None;
+    }
     Some(loc)
 }
 
 /// Read the cursor coords the click-handler watches (`LOC[0x174]/+0x178`).
 pub fn read_cursor() -> Option<(f32, f32)> {
     let loc = home_loc_ptr()?;
-    if !modforge::winproc::is_addr_readable(loc + LOC_CURSOR_Y + 3) { return None; }
+    if !modforge::winproc::is_addr_readable(loc + LOC_CURSOR_Y + 3) {
+        return None;
+    }
     // SAFETY: range just checked.
     let x = unsafe { *((loc + LOC_CURSOR_X) as *const f32) };
     let y = unsafe { *((loc + LOC_CURSOR_Y) as *const f32) };
@@ -201,7 +229,7 @@ pub fn calibrate(which: &str) -> Option<(f32, f32)> {
     let pos = read_cursor()?;
     let mut t = load_targets();
     match which {
-        "truck"   => t.truck   = Some(pos),
+        "truck" => t.truck = Some(pos),
         "pasture" => t.pasture = Some(pos),
         _ => return None,
     }
@@ -222,10 +250,14 @@ pub fn snapshot_here(label: &str, horse_ptr: usize) {
 fn resolve_drop_commit_fn() -> Option<usize> {
     let image_base = crate::targets::image_base();
     let slot = image_base + HOME_LOC_VTABLE_RVA + VTABLE_DROP_COMMIT;
-    if !modforge::winproc::is_addr_readable(slot + 7) { return None; }
+    if !modforge::winproc::is_addr_readable(slot + 7) {
+        return None;
+    }
     // SAFETY: slot+7 just checked; image_base + RVA is in .rdata.
     let fn_addr = unsafe { *(slot as *const usize) };
-    if fn_addr == 0 { return None; }
+    if fn_addr == 0 {
+        return None;
+    }
     Some(fn_addr)
 }
 
@@ -235,7 +267,7 @@ fn resolve_drop_commit_fn() -> Option<usize> {
 pub fn transfer_horse(horse_ptr: usize, dest: &str) -> Option<u8> {
     let t = load_targets();
     let target = match dest {
-        "truck"   => t.truck?,
+        "truck" => t.truck?,
         "pasture" => t.pasture?,
         _ => return None,
     };
@@ -243,13 +275,15 @@ pub fn transfer_horse(horse_ptr: usize, dest: &str) -> Option<u8> {
     let fn_addr = resolve_drop_commit_fn()?;
 
     // Stash all old values for restore on completion.
-    if !modforge::winproc::is_addr_readable(loc + LOC_CLICK_STATE + 3) { return None; }
+    if !modforge::winproc::is_addr_readable(loc + LOC_CLICK_STATE + 3) {
+        return None;
+    }
     // SAFETY: range checked.
     let old_grabbed = unsafe { *((loc + LOC_GRABBED_HORSE) as *const usize) };
     let old_drag_idx = unsafe { *((loc + LOC_DRAG_IDX) as *const i32) };
-    let old_click    = unsafe { *((loc + LOC_CLICK_STATE) as *const u32) };
-    let old_cx       = unsafe { *((loc + LOC_CURSOR_X) as *const f32) };
-    let old_cy       = unsafe { *((loc + LOC_CURSOR_Y) as *const f32) };
+    let old_click = unsafe { *((loc + LOC_CLICK_STATE) as *const u32) };
+    let old_cx = unsafe { *((loc + LOC_CURSOR_X) as *const f32) };
+    let old_cy = unsafe { *((loc + LOC_CURSOR_Y) as *const f32) };
 
     // Find the horse's index in LOC[0x130/0x138] vector. The drop-commit
     // function probably dereferences LOC.horses[drag_idx] internally,
@@ -310,7 +344,9 @@ pub fn transfer_horse(horse_ptr: usize, dest: &str) -> Option<u8> {
             Some(result)
         }
         Err(e) => {
-            log_line(&format!("vtable CRASHED but caught: {e}; reverting LOC stage"));
+            log_line(&format!(
+                "vtable CRASHED but caught: {e}; reverting LOC stage"
+            ));
             // SAFETY: same range as the original writes; restoring the
             // pre-call values so the game isn't left half-grabbed.
             unsafe {
@@ -328,15 +364,25 @@ pub fn transfer_horse(horse_ptr: usize, dest: &str) -> Option<u8> {
 /// Walk a `Horse**` vector in `[begin, end)`; return the index of
 /// `horse_ptr` if present.
 fn find_horse_index(horse_ptr: usize, begin: usize, end: usize) -> Option<usize> {
-    if end < begin { return None; }
+    if end < begin {
+        return None;
+    }
     let count = (end - begin) / 8;
-    if count == 0 || count > 0x1000 { return None; }
-    if !modforge::winproc::is_addr_readable(begin) { return None; }
-    if !modforge::winproc::is_addr_readable(end - 1) { return None; }
+    if count == 0 || count > 0x1000 {
+        return None;
+    }
+    if !modforge::winproc::is_addr_readable(begin) {
+        return None;
+    }
+    if !modforge::winproc::is_addr_readable(end - 1) {
+        return None;
+    }
     for i in 0..count {
         // SAFETY: range checked above; each elem is 8 bytes aligned.
         let p = unsafe { *((begin + i * 8) as *const usize) };
-        if p == horse_ptr { return Some(i); }
+        if p == horse_ptr {
+            return Some(i);
+        }
     }
     None
 }

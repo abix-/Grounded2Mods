@@ -105,12 +105,12 @@ impl<T: Copy + PartialEq + Send + 'static> ClassFieldTweak<T> {
             stats.considered += 1;
 
             let key = obj as *const UObject as usize;
-            let cur = unsafe {
-                (obj.field_ptr(self.offset) as *const T).read_unaligned()
-            };
+            let cur = unsafe { (obj.field_ptr(self.offset) as *const T).read_unaligned() };
             let vanilla_val = *van.entry(key).or_insert(cur);
 
-            let Some(target) = transform(vanilla_val) else { continue };
+            let Some(target) = transform(vanilla_val) else {
+                continue;
+            };
             if cur != target {
                 unsafe {
                     (obj.field_ptr(self.offset) as *mut T).write_unaligned(target);

@@ -15,8 +15,8 @@
 //! a test can compare it against the thread a ProcessEvent hook
 //! runs on.
 
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 /// Called every frame from UE4SS's `on_update`.
 pub type FrameFn = fn();

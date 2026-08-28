@@ -148,9 +148,12 @@ impl<B: FallBinder> FallHook<B> {
             self.config.on_landed_fn,
             self.config.player_classes
         );
-        ProcessEventHook::install_many(self.config.player_classes, move |this, function, parms, original| {
-            on_event(self, this, function, parms, original);
-        })
+        ProcessEventHook::install_many(
+            self.config.player_classes,
+            move |this, function, parms, original| {
+                on_event(self, this, function, parms, original);
+            },
+        )
     }
 }
 
@@ -171,7 +174,10 @@ fn on_event<B: FallBinder>(
 
     // Fast path: identity-cached OnLanded check. One atomic
     // load + branch on warm path.
-    if !hook.on_landed_ptr.matches(function, hook.config.on_landed_fn) {
+    if !hook
+        .on_landed_ptr
+        .matches(function, hook.config.on_landed_fn)
+    {
         // SAFETY: see above; pure passthrough to the engine.
         unsafe { original.call(this, function, parms) };
         return;

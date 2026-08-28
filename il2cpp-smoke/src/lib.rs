@@ -66,10 +66,7 @@ fn on_init() {
 }
 
 fn on_shutdown() {
-    unityforge::mono::log(
-        unityforge::mono::LogLevel::Info,
-        "il2cpp-smoke: shutdown",
-    );
+    unityforge::mono::log(unityforge::mono::LogLevel::Info, "il2cpp-smoke: shutdown");
 }
 
 fn register_smoke_ops() {

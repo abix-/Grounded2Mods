@@ -23,7 +23,10 @@ fn factory_call(
     method: &str,
     args: serde_json::Value,
 ) -> Option<serde_json::Value> {
-    let r = api.op("invoke_static", json!({"class": FACTORY, "method": method, "args": args}));
+    let r = api.op(
+        "invoke_static",
+        json!({"class": FACTORY, "method": method, "args": args}),
+    );
     if !r.ok {
         println!("{method}: op failed: {:?}", r.error);
         return None;
@@ -52,7 +55,9 @@ fn factory_call(
 fn spawn_and_configure(
     api: &modforge::client::Api<serde_json::Value>,
     label: &str,
-    x: f64, y: f64, z: f64,
+    x: f64,
+    y: f64,
+    z: f64,
     swap_responses: bool,
     aggression: Option<f32>,
 ) -> Option<i64> {
@@ -83,7 +88,10 @@ fn spawn_and_configure(
     if let Some(c) = cfg {
         println!("  responses_type: {}", c["responses_type"]);
         println!("  aggression: {}", c["aggression"]);
-        println!("  awareness_responses_type: {}", c["awareness_responses_type"]);
+        println!(
+            "  awareness_responses_type: {}",
+            c["awareness_responses_type"]
+        );
     }
 
     Some(idx)
@@ -126,19 +134,29 @@ fn isolate_responses_vs_aggression() {
 
     // Goon A: base NPCResponses, default Aggression (0.1)
     let Some(idx_a) = spawn_and_configure(
-        &api, "GOON A (base responses, aggression 0.1)",
-        px + 4.0, py, pz + 4.0,
-        true,   // swap to base NPCResponses
-        None,   // keep default 0.1
-    ) else { return };
+        &api,
+        "GOON A (base responses, aggression 0.1)",
+        px + 4.0,
+        py,
+        pz + 4.0,
+        true, // swap to base NPCResponses
+        None, // keep default 0.1
+    ) else {
+        return;
+    };
 
     // Goon B: NPCResponses_Civilian (default), Aggression 1.0
     let Some(idx_b) = spawn_and_configure(
-        &api, "GOON B (civilian responses, aggression 1.0)",
-        px - 4.0, py, pz + 4.0,
-        false,  // keep NPCResponses_Civilian
+        &api,
+        "GOON B (civilian responses, aggression 1.0)",
+        px - 4.0,
+        py,
+        pz + 4.0,
+        false, // keep NPCResponses_Civilian
         Some(1.0),
-    ) else { return };
+    ) else {
+        return;
+    };
 
     println!("\n=============================================");
     println!("TWO GOONS READY. PUNCH EACH ONE AND OBSERVE.");

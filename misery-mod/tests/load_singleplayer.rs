@@ -61,7 +61,10 @@ fn load_through_the_singleplayer_object() {
 
     // What is it about to load?
     let before = call(&api, GAME_INSTANCE, "SGK GetSaveGameSlotName", &gi.sel, 16);
-    println!("slot name: {:?}", modforge::client::read_fstring(&api, &before));
+    println!(
+        "slot name: {:?}",
+        modforge::client::read_fstring(&api, &before)
+    );
 
     // Load a save rather than start a new game. LoadLevel is the
     // New Game path too, so this flag is the only thing that
@@ -78,7 +81,10 @@ fn load_through_the_singleplayer_object() {
     assert!(set.ok, "SGK SetLoadSaveGame failed: {:?}", set.error);
     let back = call(&api, GAME_INSTANCE, "SGK GetLoadSaveGame", &gi.sel, 1);
     println!("load flag reads back: {back}");
-    assert_eq!(back, "01", "the load flag did not take; not calling LoadLevel");
+    assert_eq!(
+        back, "01",
+        "the load flag did not take; not calling LoadLevel"
+    );
 
     let go = api.op(
         "call",
@@ -123,7 +129,10 @@ fn transient(api: &common::Api, class: &str, name_part: Option<&str>) -> Option<
             w.full_name.contains("/Engine/Transient")
                 && name_part.map(|p| w.full_name.contains(p)).unwrap_or(true)
         })
-        .map(|w| Live { full_name: w.full_name, sel: w.addr_selector })
+        .map(|w| Live {
+            full_name: w.full_name,
+            sel: w.addr_selector,
+        })
 }
 
 /// Call a getter and return its parm block as hex.
@@ -138,7 +147,10 @@ fn call(api: &common::Api, class: &str, func: &str, sel: &str, bytes: usize) -> 
         }),
     );
     assert!(r.ok, "{func} failed: {:?}", r.error);
-    r.result["parms_hex_after"].as_str().unwrap_or("").to_string()
+    r.result["parms_hex_after"]
+        .as_str()
+        .unwrap_or("")
+        .to_string()
 }
 
 /// Wait for a map square to exist, and return its full name. The
@@ -182,4 +194,3 @@ fn wait_for_world(api: &common::Api) -> Option<String> {
     }
     None
 }
-

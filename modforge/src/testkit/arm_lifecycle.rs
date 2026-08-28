@@ -17,8 +17,8 @@
 
 use crate::harness::RunningGame;
 use crate::testkit::fn_entry;
-use anyhow::{anyhow, Context, Result};
-use serde_json::{json, Value};
+use anyhow::{Context, Result, anyhow};
+use serde_json::{Value, json};
 use std::time::Duration;
 
 /// One subsystem's cmdlet names. The four ops MUST follow the modforge
@@ -105,9 +105,11 @@ pub struct ArmReport {
 /// Run the dryrun/arm/idle/stats/disarm/ping flow.
 pub fn run(game: &RunningGame, cfg: &Config) -> Result<ArmReport> {
     // 1. dryrun: walk every prologue_path
-    let dr = game.op_json(&cfg.ops.dryrun, &json!({}))
+    let dr = game
+        .op_json(&cfg.ops.dryrun, &json!({}))
         .map_err(|e| anyhow!("{} dryrun: {e}", cfg.name))?;
-    let dr_result = dr.get("result")
+    let dr_result = dr
+        .get("result")
         .ok_or_else(|| anyhow!("{} dryrun: missing result", cfg.name))?;
     let mut prologues = Vec::new();
     for path in &cfg.prologue_paths {
@@ -116,65 +118,93 @@ pub fn run(game: &RunningGame, cfg: &Config) -> Result<ArmReport> {
             .ok_or_else(|| anyhow!("{} dryrun: missing {path}", cfg.name))?
             .to_string();
         eprintln!("[PRECHECK] {}.{path}: [{prologue}]", cfg.name);
-        let bytes: Vec<u8> = prologue.split_whitespace()
-            .filter_map(|t| u8::from_str_radix(t, 16).ok()).collect();
+        let bytes: Vec<u8> = prologue
+            .split_whitespace()
+            .filter_map(|t| u8::from_str_radix(t, 16).ok())
+            .collect();
         if bytes.first() == Some(&0xcc) {
             return Err(anyhow!(
-                "{}.{path} dryrun shows INT3 padding; refusing to arm", cfg.name
+                "{}.{path} dryrun shows INT3 padding; refusing to arm",
+                cfg.name
             ));
         }
         if !fn_entry::is_msvc_x64_prologue_loose(&bytes) {
             return Err(anyhow!(
                 "{}.{path} prologue not MSVC-shaped: first 4 = {:02x?}",
-                cfg.name, &bytes[..bytes.len().min(4)]
+                cfg.name,
+                &bytes[..bytes.len().min(4)]
             ));
         }
         prologues.push(prologue);
     }
 
     // 2. arm: assert every armed_path is true
-    let arm = game.op_json(&cfg.ops.arm, &json!({}))
+    let arm = game
+        .op_json(&cfg.ops.arm, &json!({}))
         .map_err(|e| anyhow!("{} arm: {e}", cfg.name))?;
-    let arm_result = arm.get("result")
+    let arm_result = arm
+        .get("result")
         .ok_or_else(|| anyhow!("{} arm: missing result", cfg.name))?;
     for path in &cfg.armed_paths {
-        let armed = walk_path(arm_result, path).and_then(Value::as_bool).unwrap_or(false);
+        let armed = walk_path(arm_result, path)
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         if !armed {
-            return Err(anyhow!("{}.{path} did not report true after arm: {arm}", cfg.name));
+            return Err(anyhow!(
+                "{}.{path} did not report true after arm: {arm}",
+                cfg.name
+            ));
         }
     }
     eprintln!("[ARM] {} armed", cfg.name);
 
     // 3. idle
-    eprintln!("[WAIT] {} idling {}s for incidental fires", cfg.name, cfg.idle.as_secs());
+    eprintln!(
+        "[WAIT] {} idling {}s for incidental fires",
+        cfg.name,
+        cfg.idle.as_secs()
+    );
     std::thread::sleep(cfg.idle);
 
     // 4. stats
-    let stats = game.op_json(&cfg.ops.stats, &json!({}))
+    let stats = game
+        .op_json(&cfg.ops.stats, &json!({}))
         .map_err(|e| anyhow!("{} stats: {e}", cfg.name))?;
-    let s = stats.get("result")
+    let s = stats
+        .get("result")
         .ok_or_else(|| anyhow!("{} stats: missing result", cfg.name))?
         .clone();
     eprintln!("[STATS] {} {s}", cfg.name);
     for bound in &cfg.counter_bounds {
-        let v = walk_path(&s, &bound.key).and_then(Value::as_u64)
+        let v = walk_path(&s, &bound.key)
+            .and_then(Value::as_u64)
             .ok_or_else(|| anyhow!("{} stats: missing counter {}", cfg.name, bound.key))?;
         if v > bound.max {
             return Err(anyhow!(
-                "{} {} = {v} exceeds bound {}", cfg.name, bound.key, bound.max
+                "{} {} = {v} exceeds bound {}",
+                cfg.name,
+                bound.key,
+                bound.max
             ));
         }
     }
 
     // 5. disarm: assert every armed_path is false
-    let disarm = game.op_json(&cfg.ops.disarm, &json!({}))
+    let disarm = game
+        .op_json(&cfg.ops.disarm, &json!({}))
         .map_err(|e| anyhow!("{} disarm: {e}", cfg.name))?;
-    let disarm_result = disarm.get("result")
+    let disarm_result = disarm
+        .get("result")
         .ok_or_else(|| anyhow!("{} disarm: missing result", cfg.name))?;
     for path in &cfg.armed_paths {
-        let armed = walk_path(disarm_result, path).and_then(Value::as_bool).unwrap_or(true);
+        let armed = walk_path(disarm_result, path)
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
         if armed {
-            return Err(anyhow!("{}.{path} still true after disarm: {disarm}", cfg.name));
+            return Err(anyhow!(
+                "{}.{path} still true after disarm: {disarm}",
+                cfg.name
+            ));
         }
     }
     eprintln!("[DISARM] {} disarmed", cfg.name);
@@ -183,5 +213,8 @@ pub fn run(game: &RunningGame, cfg: &Config) -> Result<ArmReport> {
     game.op_json("ping", &json!({}))
         .context("game must still respond to ping after disarm")?;
 
-    Ok(ArmReport { prologue_bytes: prologues, stats: s })
+    Ok(ArmReport {
+        prologue_bytes: prologues,
+        stats: s,
+    })
 }

@@ -25,8 +25,7 @@ const STACK_OFFSET: u64 = 0x48; // FSMaterialData::MaxCanStack
 #[test]
 fn list_material_names_and_stacks() {
     let Some(api) = common::try_api() else { return };
-    let Some((dt_sel, dt_addr)) = client::find_data_table_by_name(&api, "DT_Materials")
-    else {
+    let Some((dt_sel, dt_addr)) = client::find_data_table_by_name(&api, "DT_Materials") else {
         eprintln!("DT_Materials not found");
         return;
     };

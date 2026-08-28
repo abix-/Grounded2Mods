@@ -24,7 +24,7 @@ const VANILLA_GENE_COUNT: usize = 240;
 /// the flat gene index 0..=239 of slot `k` on this chromosome.
 #[derive(Debug, Clone)]
 pub struct Chromosome {
-    pub id:    u8,
+    pub id: u8,
     pub slots: Vec<u8>,
 }
 
@@ -33,7 +33,7 @@ type ReverseMap = [Option<(u8, u8)>; VANILLA_GENE_COUNT];
 
 struct CachedMap {
     chromosomes: Vec<Chromosome>,
-    reverse:     ReverseMap,
+    reverse: ReverseMap,
 }
 
 static CACHE: OnceLock<Option<CachedMap>> = OnceLock::new();
@@ -52,7 +52,9 @@ fn build() -> Option<CachedMap> {
             let off = cid * STRIDE + s * 4;
             // SAFETY: range readability checked above.
             let v = unsafe { *((addr + off) as *const i32) };
-            if v == -1 { break; }
+            if v == -1 {
+                break;
+            }
             if !(0..VANILLA_GENE_COUNT as i32).contains(&v) {
                 modforge::log!(
                     "chromosomes::build: chromo {cid} slot {s} out of range: {v}; aborting"
@@ -61,9 +63,7 @@ fn build() -> Option<CachedMap> {
             }
             let v = v as u8;
             if reverse[v as usize].is_some() {
-                modforge::log!(
-                    "chromosomes::build: duplicate flat idx {v}; aborting"
-                );
+                modforge::log!("chromosomes::build: duplicate flat idx {v}; aborting");
                 return None;
             }
             reverse[v as usize] = Some((cid as u8, slots.len() as u8));
@@ -71,16 +71,20 @@ fn build() -> Option<CachedMap> {
             total += 1;
         }
         if !slots.is_empty() {
-            chromosomes.push(Chromosome { id: cid as u8, slots });
+            chromosomes.push(Chromosome {
+                id: cid as u8,
+                slots,
+            });
         }
     }
     if total != VANILLA_GENE_COUNT {
-        modforge::log!(
-            "chromosomes::build: got {total} slots, expected {VANILLA_GENE_COUNT}"
-        );
+        modforge::log!("chromosomes::build: got {total} slots, expected {VANILLA_GENE_COUNT}");
         return None;
     }
-    Some(CachedMap { chromosomes, reverse })
+    Some(CachedMap {
+        chromosomes,
+        reverse,
+    })
 }
 
 /// Parsed chromosome map (only chromosomes with >=1 gene are

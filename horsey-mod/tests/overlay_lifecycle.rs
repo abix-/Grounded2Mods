@@ -14,7 +14,7 @@
 mod common;
 
 use modforge::harness::GameHarness;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::thread;
 use std::time::{Duration, Instant};
 

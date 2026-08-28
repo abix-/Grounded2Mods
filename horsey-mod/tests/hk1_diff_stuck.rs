@@ -8,11 +8,14 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn read(game: &modforge::harness::RunningGame, abs: u64, n: usize) -> Vec<u8> {
     let v = game
-        .op_json("patterns.read_bytes", &json!({"addr": format!("0x{abs:x}"), "n": n}))
+        .op_json(
+            "patterns.read_bytes",
+            &json!({"addr": format!("0x{abs:x}"), "n": n}),
+        )
         .unwrap_or(Value::Null);
     v.get("result")
         .unwrap_or(&v)
@@ -34,14 +37,22 @@ fn ptr_for_nid(horses: &[Value], nid: u64) -> Option<u64> {
 
 #[test]
 fn diff_stuck_vs_movable() {
-    let Some(game) = common::launch("hk1_diff_stuck") else { return };
+    let Some(game) = common::launch("hk1_diff_stuck") else {
+        return;
+    };
 
     let dl = std::time::Instant::now() + std::time::Duration::from_secs(30);
     let mut horses: Vec<Value> = vec![];
     loop {
-        let v = game.op_json("gamestate.owned_horses", &json!({})).unwrap_or(Value::Null);
+        let v = game
+            .op_json("gamestate.owned_horses", &json!({}))
+            .unwrap_or(Value::Null);
         let r = v.get("result").unwrap_or(&v);
-        horses = r.get("horses").and_then(Value::as_array).cloned().unwrap_or_default();
+        horses = r
+            .get("horses")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
         if (ptr_for_nid(&horses, 251).is_some() && horses.len() >= 2)
             || std::time::Instant::now() >= dl
         {
@@ -58,7 +69,10 @@ fn diff_stuck_vs_movable() {
         .map(|h| {
             let nid = h.get("name_id").and_then(Value::as_u64).unwrap_or(0);
             let p = h.get("ptr").and_then(Value::as_str).unwrap_or("0x0");
-            (nid, u64::from_str_radix(p.trim_start_matches("0x"), 16).unwrap_or(0))
+            (
+                nid,
+                u64::from_str_radix(p.trim_start_matches("0x"), 16).unwrap_or(0),
+            )
         });
     eprintln!("[PTRS] coupe={coupe:?} other={other:?}");
     let (Some(coupe), Some((other_nid, tom))) = (coupe, other) else {
@@ -78,8 +92,16 @@ fn diff_stuck_vs_movable() {
         let av: Vec<u8> = a[off..(off + 4).min(a.len())].to_vec();
         let bv: Vec<u8> = b[off..(off + 4).min(b.len())].to_vec();
         if av != bv {
-            let ah: String = av.iter().map(|x| format!("{x:02x}")).collect::<Vec<_>>().join(" ");
-            let bh: String = bv.iter().map(|x| format!("{x:02x}")).collect::<Vec<_>>().join(" ");
+            let ah: String = av
+                .iter()
+                .map(|x| format!("{x:02x}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            let bh: String = bv
+                .iter()
+                .map(|x| format!("{x:02x}"))
+                .collect::<Vec<_>>()
+                .join(" ");
             eprintln!("  +0x{:03x}: coupe[{ah}]  tomtato[{bh}]", START + off);
         }
     }

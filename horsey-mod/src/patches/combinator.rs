@@ -29,11 +29,9 @@ fn horse_ctx_offset() -> usize {
 }
 
 /// `FUN_1400a2d80` signature: three `longlong` pointers, void return.
-type CombinatorFn =
-    unsafe extern "system" fn(*mut c_void, *mut c_void, *mut c_void);
+type CombinatorFn = unsafe extern "system" fn(*mut c_void, *mut c_void, *mut c_void);
 
-static HOOK_PTR: AtomicPtr<Hook<CombinatorFn>> =
-    AtomicPtr::new(std::ptr::null_mut());
+static HOOK_PTR: AtomicPtr<Hook<CombinatorFn>> = AtomicPtr::new(std::ptr::null_mut());
 
 static CALL_COUNT: AtomicU64 = AtomicU64::new(0);
 static COMBINES_DONE: AtomicU64 = AtomicU64::new(0);
@@ -44,15 +42,15 @@ pub fn is_armed() -> bool {
 }
 
 pub struct Stats {
-    pub call_count:      u64,
-    pub combines_done:   u64,
+    pub call_count: u64,
+    pub combines_done: u64,
     pub vanilla_crashes: u64,
 }
 
 pub fn stats() -> Stats {
     Stats {
-        call_count:      CALL_COUNT.load(Ordering::Relaxed),
-        combines_done:   COMBINES_DONE.load(Ordering::Relaxed),
+        call_count: CALL_COUNT.load(Ordering::Relaxed),
+        combines_done: COMBINES_DONE.load(Ordering::Relaxed),
         vanilla_crashes: VANILLA_CRASHES.load(Ordering::Relaxed),
     }
 }
@@ -147,17 +145,11 @@ pub fn arm() -> anyhow::Result<()> {
     let runtime_addr = crate::targets_registry::resolve::gene_combinator()
         .unwrap_or_else(|| targets::rebase(fn_addr::GENE_COMBINATOR));
 
-    modforge::log!(
-        "combinator: installing GENE_COMBINATOR target=0x{runtime_addr:x}"
-    );
+    modforge::log!("combinator: installing GENE_COMBINATOR target=0x{runtime_addr:x}");
     // SAFETY: runtime_addr is the true entry of FUN_1400a2d80;
     // CombinatorFn matches the decomp prototype.
     let hook = unsafe {
-        Hook::<CombinatorFn>::install(
-            "GENE_COMBINATOR",
-            runtime_addr,
-            combinator_handler,
-        )
+        Hook::<CombinatorFn>::install("GENE_COMBINATOR", runtime_addr, combinator_handler)
     }?;
     let leaked = Box::into_raw(Box::new(hook));
     HOOK_PTR.store(leaked, Ordering::Release);

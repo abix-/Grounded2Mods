@@ -337,12 +337,7 @@ mod tests {
 
     #[test]
     fn handle_stop_flips_flag() {
-        let h = SlotPoller::spawn(
-            Duration::from_millis(10),
-            || None,
-            |_| {},
-            || {},
-        );
+        let h = SlotPoller::spawn(Duration::from_millis(10), || None, |_| {}, || {});
         std::thread::sleep(Duration::from_millis(50));
         h.stop();
         assert!(h.inner.stop.load(Ordering::Acquire));
@@ -353,12 +348,7 @@ mod tests {
         // Long interval; without condvar wake this test would
         // block for the full duration. With it, stop should
         // return in ~10ms.
-        let h = SlotPoller::spawn(
-            Duration::from_secs(60),
-            || None,
-            |_| {},
-            || {},
-        );
+        let h = SlotPoller::spawn(Duration::from_secs(60), || None, |_| {}, || {});
         std::thread::sleep(Duration::from_millis(50));
         let t0 = std::time::Instant::now();
         h.stop();
@@ -389,18 +379,15 @@ mod tests {
         h.stop();
         assert!(h.panic_count() >= 1, "panics={}", h.panic_count());
         assert!(h.last_panic().is_some());
-        assert!(counter.load(Ordering::Relaxed) >= 2,
-            "thread should have kept running after panic");
+        assert!(
+            counter.load(Ordering::Relaxed) >= 2,
+            "thread should have kept running after panic"
+        );
     }
 
     #[test]
     fn no_panics_means_clean_handle() {
-        let h = SlotPoller::spawn(
-            Duration::from_millis(10),
-            || None,
-            |_| {},
-            || {},
-        );
+        let h = SlotPoller::spawn(Duration::from_millis(10), || None, |_| {}, || {});
         std::thread::sleep(Duration::from_millis(50));
         h.stop();
         assert_eq!(h.panic_count(), 0);

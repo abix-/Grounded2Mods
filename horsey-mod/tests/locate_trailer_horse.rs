@@ -9,7 +9,7 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn hex(v: Option<&Value>) -> u64 {
     v.and_then(Value::as_str)
@@ -19,13 +19,21 @@ fn hex(v: Option<&Value>) -> u64 {
 
 #[test]
 fn locate_trailer_horse() {
-    let Some(game) = common::launch("locate_trailer_horse") else { return };
+    let Some(game) = common::launch("locate_trailer_horse") else {
+        return;
+    };
 
     eprintln!("active_scene_id = {:?}", common::active_scene_id(&game));
 
-    let scan = game.op_json("gamestate.scan_438_slots", &json!({})).expect("scan op");
+    let scan = game
+        .op_json("gamestate.scan_438_slots", &json!({}))
+        .expect("scan op");
     let r = scan.get("result").unwrap_or(&scan).clone();
-    eprintln!("gs_ptr = {:?}, arr_ptr = {:?}", r.get("gs_ptr"), r.get("arr_ptr"));
+    eprintln!(
+        "gs_ptr = {:?}, arr_ptr = {:?}",
+        r.get("gs_ptr"),
+        r.get("arr_ptr")
+    );
     let slots = r
         .get("slots_with_horse_vec")
         .and_then(Value::as_array)
@@ -37,7 +45,11 @@ fn locate_trailer_horse() {
     let mut found_345: Vec<String> = vec![];
 
     for s in &slots {
-        let slot = s.get("slot").and_then(Value::as_str).unwrap_or("?").to_string();
+        let slot = s
+            .get("slot")
+            .and_then(Value::as_str)
+            .unwrap_or("?")
+            .to_string();
         let begin = hex(s.get("begin"));
         let end = hex(s.get("end"));
         if begin == 0 || end <= begin {
@@ -46,13 +58,20 @@ fn locate_trailer_horse() {
         let n = ((end - begin) / 8).min(64);
         let mut ids: Vec<String> = vec![];
         for i in 0..n {
-            let pv = game.op_json("mem.peek", &json!({ "addr": begin + i * 8, "kind": "u64" })).ok();
-            let hp = pv.as_ref().map(|v| hex(v.get("result").unwrap_or(v).get("value"))).unwrap_or(0);
+            let pv = game
+                .op_json("mem.peek", &json!({ "addr": begin + i * 8, "kind": "u64" }))
+                .ok();
+            let hp = pv
+                .as_ref()
+                .map(|v| hex(v.get("result").unwrap_or(v).get("value")))
+                .unwrap_or(0);
             if hp <= 0x10000 {
                 ids.push("null".into());
                 continue;
             }
-            let hr = game.op_json("horse.read", &json!({ "addr": format!("0x{hp:x}") })).ok();
+            let hr = game
+                .op_json("horse.read", &json!({ "addr": format!("0x{hp:x}") }))
+                .ok();
             let (nid, age) = hr
                 .as_ref()
                 .map(|v| {

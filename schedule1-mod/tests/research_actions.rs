@@ -28,7 +28,10 @@ fn get_full_type(api: &modforge::client::Api<serde_json::Value>, handle: i64) ->
         return format!("? (result: {})", type_r.result);
     };
     for method in ["get_FullName", "get_Name", "ToString"] {
-        let r = api.op("invoke_method", json!({"handle": th, "method": method, "args": []}));
+        let r = api.op(
+            "invoke_method",
+            json!({"handle": th, "method": method, "args": []}),
+        );
         if r.ok {
             if let Some(s) = r.result.as_str() {
                 api.op("release_handle", json!({"handle": th}));
@@ -130,10 +133,7 @@ fn compare_components() {
             // Get the S1NPC handle to read fields directly
             // Use GetS1NpcHandle shim method if available, or walk NPCs
             // For now, walk all NPCs and find the newest one
-            let npcs = api.op(
-                "walk_class",
-                json!({"class": "Il2CppScheduleOne.NPCs.NPC"}),
-            );
+            let npcs = api.op("walk_class", json!({"class": "Il2CppScheduleOne.NPCs.NPC"}));
             if npcs.ok {
                 let list = npcs.result.as_array().cloned().unwrap_or_default();
                 println!("  {} total NPCs in world", list.len());

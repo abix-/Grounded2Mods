@@ -91,36 +91,18 @@ impl Axis {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PlayerCommand {
-    Axis {
-        axis: Axis,
-        value: f32,
-        delta_time: f32,
-    },
-    Key {
-        key: Key,
-        down: bool,
-    },
+    MouseDelta { dx: i32, dy: i32 },
+    Key { key: Key, down: bool },
 }
 
 impl PlayerCommand {
-    pub const fn axis(axis: Axis, value: f32, delta_time: f32) -> Self {
-        Self::Axis {
-            axis,
-            value,
-            delta_time,
-        }
+    pub const fn mouse_delta(dx: i32, dy: i32) -> Self {
+        Self::MouseDelta { dx, dy }
     }
 
     pub const fn key(key: Key, down: bool) -> Self {
         Self::Key { key, down }
     }
-}
-
-/// One observed player pose for closed-loop movement.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub struct PlayerPose {
-    pub position: [f64; 3],
-    pub yaw_deg: f64,
 }
 
 impl Button {
@@ -223,11 +205,20 @@ pub trait InputSurface: Send + Sync {
     fn name(&self) -> &'static str;
     fn click(&self, button: Button, x: i32, y: i32) -> Result<(), String>;
     fn move_abs(&self, x: i32, y: i32) -> Result<(), String>;
+    fn move_rel(&self, dx: i32, dy: i32) -> Result<(), String>;
     fn key(&self, key: Key, down: bool) -> Result<(), String>;
-    fn axis(&self, axis: Axis, value: f32, delta_time: f32) -> Result<(), String>;
+    fn axis(&self, axis: Axis, _value: f32, _delta_time: f32) -> Result<(), String> {
+        Err(format!(
+            "{} input surface does not expose axis {axis:?}",
+            self.name()
+        ))
+    }
 
-    fn pose(&self) -> Result<PlayerPose, String> {
-        Err(format!("{} input surface does not expose player pose", self.name()))
+    fn observe_player(&self) -> Result<crate::route::PlayerObservation, String> {
+        Err(format!(
+            "{} input surface does not expose player pose",
+            self.name()
+        ))
     }
 
     /// Apply one ordered command batch. Engine adapters override this when
@@ -236,11 +227,7 @@ pub trait InputSurface: Send + Sync {
     fn commands(&self, commands: &[PlayerCommand]) -> Result<(), String> {
         for command in commands {
             match *command {
-                PlayerCommand::Axis {
-                    axis,
-                    value,
-                    delta_time,
-                } => self.axis(axis, value, delta_time)?,
+                PlayerCommand::MouseDelta { dx, dy } => self.move_rel(dx, dy)?,
                 PlayerCommand::Key { key, down } => self.key(key, down)?,
             }
         }

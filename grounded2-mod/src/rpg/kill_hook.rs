@@ -20,9 +20,9 @@ use std::sync::OnceLock;
 use ueforge::damage::{DamageBinder, DamageEvent, DamageHook, DamageHookConfig};
 use ueforge::hook::ProcessEventHook;
 use ueforge::rpg::TriggerCtx;
+use ueforge::ue::UObject;
 use ueforge::ue::actor::{class_chain_contains, controller_pawn};
 use ueforge::ue::damage_info::DamageInfoLayout;
-use ueforge::ue::UObject;
 
 /// Maine `FDamageInfo` layout. `last_damage_info_offset` is
 /// `UHealthComponent.LastDamageInfo` at `0x03B0`; the four field
@@ -123,7 +123,9 @@ impl DamageBinder for G2DamageBinder {
         // it only reads `event.damage`. Calling once per
         // player-instigator event is the doctrine.
         if event.attacker_is_player {
-            crate::rpg::tracker::TRACKER.fire(&TriggerCtx::Engine(ueforge::rpg::UeEvent::DamageDealt(event)));
+            crate::rpg::tracker::TRACKER.fire(&TriggerCtx::Engine(
+                ueforge::rpg::UeEvent::DamageDealt(event),
+            ));
         }
 
         // Live-damage pre-mutation slots (Critical multiplier,
@@ -139,7 +141,9 @@ impl DamageBinder for G2DamageBinder {
         // Resistance subscribes here (env-damage reversal on
         // HC.CurrentDamage runs after the engine wrote it).
         if event.victim_is_player {
-            crate::rpg::tracker::TRACKER.fire(&TriggerCtx::Engine(ueforge::rpg::UeEvent::DamageTaken(event)));
+            crate::rpg::tracker::TRACKER.fire(&TriggerCtx::Engine(
+                ueforge::rpg::UeEvent::DamageTaken(event),
+            ));
         }
 
         // Kill credit on killing-blow events targeting creatures.
@@ -159,9 +163,7 @@ impl DamageBinder for G2DamageBinder {
         let Some(actor_class) = victim.class() else {
             return;
         };
-        let creature_uclass = unsafe {
-            &*(creature_addr as *const ueforge::ue::UClass)
-        };
+        let creature_uclass = unsafe { &*(creature_addr as *const ueforge::ue::UClass) };
         if !victim.is_a(creature_uclass) {
             if cfg!(debug_assertions) {
                 ueforge::log!(
@@ -177,7 +179,7 @@ impl DamageBinder for G2DamageBinder {
         let kind = classify(event.attacker.map(|a| a as &UObject));
         let killer_label = describe_instigator(event.attacker.map(|a| a as &UObject));
 
-        use crate::rpg::tracker::{record_kill, KillSource};
+        use crate::rpg::tracker::{KillSource, record_kill};
         let (label, source) = match kind {
             KillerKind::Player => ("PLAYER", Some(KillSource::Player)),
             KillerKind::Buggy => ("BUGGY", Some(KillSource::Buggy)),
@@ -233,8 +235,6 @@ pub fn install() -> Result<ProcessEventHook, &'static str> {
     let creature_class = ueforge::ue::ClassRef::new("SurvivalCreature")
         .get()
         .ok_or("SurvivalCreature class not loaded")?;
-    let _ = CREATURE_CLASS.set(
-        creature_class as *const ueforge::ue::UClass as usize,
-    );
+    let _ = CREATURE_CLASS.set(creature_class as *const ueforge::ue::UClass as usize);
     HOOK.install(G2DamageBinder)
 }

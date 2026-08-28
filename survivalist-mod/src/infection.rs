@@ -39,7 +39,12 @@ use unityforge::mono::{self, LogLevel};
 /// Install the game hooks that activate this system.
 /// Stays here because it patches Survivalist's exact Injury infection field and method.
 pub fn install() {
-    match hook::patch_prefix_ctx("Character", "AddInjury", HookCtx::Args0, zero_injury_infection) {
+    match hook::patch_prefix_ctx(
+        "Character",
+        "AddInjury",
+        HookCtx::Args0,
+        zero_injury_infection,
+    ) {
         Ok(h) => {
             HOOK_REGISTRY.register(h);
             mono::log(

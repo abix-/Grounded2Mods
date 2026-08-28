@@ -93,9 +93,7 @@ impl ViewportBinder for G2Binder {
         if self.kismet_cdo == 0 || self.kismet_pointer_event_get_wheel_delta == 0 {
             return None;
         }
-        let func = unsafe {
-            &*(self.kismet_pointer_event_get_wheel_delta as *const UFunction)
-        };
+        let func = unsafe { &*(self.kismet_pointer_event_get_wheel_delta as *const UFunction) };
         // PointerEvent_GetWheelDelta is a Final|Native BlueprintCallable
         // helper. Setting FUNC_NATIVE is the path the engine takes
         // when invoking it from BP, and matches what worked pre-extraction.
@@ -127,9 +125,7 @@ impl ViewportBinder for G2Binder {
         // Resolve the item at the absolute index from the cached
         // items list using the BPF helper (it knows how to handle
         // out-of-bounds gracefully. Returns null Item).
-        let bpf_func = unsafe {
-            &*(self.bpf_get_item_in_item_list_slot as *const UFunction)
-        };
+        let bpf_func = unsafe { &*(self.bpf_get_item_in_item_list_slot as *const UFunction) };
         let mut bpf_parms = GetItemInItemListSlotParms {
             item_list: ue::TArray {
                 data: ctx.items.data,
@@ -147,18 +143,13 @@ impl ViewportBinder for G2Binder {
         }
 
         // Bind the visible slot to the resolved item.
-        let init_func = unsafe {
-            &*(self.inv_initialize_item_slot as *const UFunction)
-        };
+        let init_func = unsafe { &*(self.inv_initialize_item_slot as *const UFunction) };
         let mut init_parms = InitializeItemSlotParms {
             item_slot: slot as *const UObject as *mut UObject,
             item: bpf_parms.item,
         };
         unsafe {
-            widget.process_event(
-                init_func,
-                &mut init_parms as *mut _ as *mut c_void,
-            );
+            widget.process_event(init_func, &mut init_parms as *mut _ as *mut c_void);
         }
     }
 
@@ -189,20 +180,19 @@ pub fn install(slot_count: i32) -> Result<ProcessEventHook, &'static str> {
         as usize;
     let inv_initialize_item_slot = inv_class
         .get_function("WBP_InventoryInterface_C", "InitializeItemSlot")
-        .ok_or("InitializeItemSlot not found")? as *const UFunction
-        as usize;
+        .ok_or("InitializeItemSlot not found")?
+        as *const UFunction as usize;
     let bpf_cdo = bpf_class
         .class_default_object()
-        .ok_or("BPF_InventoryFunctions_C CDO missing")?
-        as *const UObject as usize;
+        .ok_or("BPF_InventoryFunctions_C CDO missing")? as *const UObject
+        as usize;
     let bpf_get_item_in_item_list_slot = bpf_class
         .get_function("BPF_InventoryFunctions_C", "GetItemInItemListSlot")
         .ok_or("GetItemInItemListSlot not found")?
         as *const UFunction as usize;
     let kismet_cdo = kismet_class
         .class_default_object()
-        .ok_or("KismetInputLibrary CDO missing")?
-        as *const UObject as usize;
+        .ok_or("KismetInputLibrary CDO missing")? as *const UObject as usize;
     let kismet_pointer_event_get_wheel_delta = kismet_class
         .get_function("KismetInputLibrary", "PointerEvent_GetWheelDelta")
         .ok_or("PointerEvent_GetWheelDelta not found")?

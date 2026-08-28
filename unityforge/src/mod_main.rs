@@ -84,8 +84,7 @@ macro_rules! unityforge_mod {
 
         #[unsafe(no_mangle)]
         pub extern "C" fn unityforge_tick(now: f32) {
-            $crate::main_thread_queue::MAIN_QUEUE
-                .drain($crate::mod_main::DEFAULT_TICK_BUDGET);
+            $crate::main_thread_queue::MAIN_QUEUE.drain($crate::mod_main::DEFAULT_TICK_BUDGET);
             if let Some(cb) = $mod_info.on_tick {
                 let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cb(now)));
             }

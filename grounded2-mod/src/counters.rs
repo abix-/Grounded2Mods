@@ -63,19 +63,28 @@ pub fn snapshot_json() -> serde_json::Value {
     };
     if let Some(o) = obj.as_object_mut() {
         // PE queue (GameThread owns its counters):
-        o.insert("drain_pending_calls".into(),
-            crate::debug::PE_QUEUE.drain_calls().into());
-        o.insert("drain_pending_drained_cmds".into(),
-            crate::debug::PE_QUEUE.drained_cmds().into());
-        o.insert("pe_queue_peak".into(),
-            crate::debug::PE_QUEUE.peak().into());
-        o.insert("time_ns_drain_pending".into(),
-            crate::debug::PE_QUEUE.time_ns().into());
+        o.insert(
+            "drain_pending_calls".into(),
+            crate::debug::PE_QUEUE.drain_calls().into(),
+        );
+        o.insert(
+            "drain_pending_drained_cmds".into(),
+            crate::debug::PE_QUEUE.drained_cmds().into(),
+        );
+        o.insert("pe_queue_peak".into(), crate::debug::PE_QUEUE.peak().into());
+        o.insert(
+            "time_ns_drain_pending".into(),
+            crate::debug::PE_QUEUE.time_ns().into(),
+        );
         // Damage ring (EventRing owns its counters):
-        o.insert("damage_ring_pushes".into(),
-            crate::debug::damage_ring_pushes().into());
-        o.insert("damage_ring_peak".into(),
-            crate::debug::damage_ring_peak().into());
+        o.insert(
+            "damage_ring_pushes".into(),
+            crate::debug::damage_ring_pushes().into(),
+        );
+        o.insert(
+            "damage_ring_peak".into(),
+            crate::debug::damage_ring_peak().into(),
+        );
     }
     obj
 }

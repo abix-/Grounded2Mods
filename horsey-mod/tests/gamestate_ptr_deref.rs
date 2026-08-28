@@ -81,15 +81,10 @@ fn ptr_is_null_or_heap_shaped() {
         return;
     };
     let d = diag(&game);
-    game.log()
-        .event("DIAG", &format!("gamestate.diag = {d:#}"));
+    game.log().event("DIAG", &format!("gamestate.diag = {d:#}"));
 
     let p = ptr_value(&d);
-    assert_ne!(
-        p,
-        u64::MAX,
-        "diag.ptr missing or unparseable; diag = {d:#}"
-    );
+    assert_ne!(p, u64::MAX, "diag.ptr missing or unparseable; diag = {d:#}");
 
     if p == 0 {
         // Null is the canonical "no save loaded" state. verdict

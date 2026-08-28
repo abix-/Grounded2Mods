@@ -27,18 +27,18 @@ fn read_gameplay_settings_live() {
     let addr = inst.addr;
 
     let fields: &[(&str, u64, &str)] = &[
-        ("ShiningsTimer",           0x218 + 0x00, "f64"),
-        ("HungerSpeed",             0x218 + 0x28, "f64"),
-        ("ThirstSpeed",             0x218 + 0x30, "f64"),
-        ("StaminaDrainRate",        0x218 + 0x38, "f64"),
+        ("ShiningsTimer", 0x218 + 0x00, "f64"),
+        ("HungerSpeed", 0x218 + 0x28, "f64"),
+        ("ThirstSpeed", 0x218 + 0x30, "f64"),
+        ("StaminaDrainRate", 0x218 + 0x38, "f64"),
         ("HeadshotDamageMultiplier", 0x218 + 0x40, "f64"),
-        ("DamageMultiplier",        0x218 + 0x48, "f64"),
-        ("EnemySpawnRate",          0x218 + 0x68, "f64"),
-        ("EnemyDamageToPlayer",     0x218 + 0x70, "f64"),
-        ("EnemySpeed",              0x218 + 0x78, "f64"),
+        ("DamageMultiplier", 0x218 + 0x48, "f64"),
+        ("EnemySpawnRate", 0x218 + 0x68, "f64"),
+        ("EnemyDamageToPlayer", 0x218 + 0x70, "f64"),
+        ("EnemySpeed", 0x218 + 0x78, "f64"),
         ("RespawnHealthMultiplier", 0x218 + 0xA8, "f64"),
-        ("WeightLimitMultiplier",   0x218 + 0xB0, "f64"),
-        ("RespawnOnEmission",       0x218 + 0xBB, "bool"),
+        ("WeightLimitMultiplier", 0x218 + 0xB0, "f64"),
+        ("RespawnOnEmission", 0x218 + 0xBB, "bool"),
     ];
     for (name, offset, ty) in fields {
         match *ty {

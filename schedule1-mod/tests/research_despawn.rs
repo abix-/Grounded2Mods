@@ -24,7 +24,10 @@ fn factory_call(
     method: &str,
     args: serde_json::Value,
 ) -> Option<serde_json::Value> {
-    let r = api.op("invoke_static", json!({"class": FACTORY, "method": method, "args": args}));
+    let r = api.op(
+        "invoke_static",
+        json!({"class": FACTORY, "method": method, "args": args}),
+    );
     if !r.ok {
         println!("{method}: op failed: {:?}", r.error);
         return None;
@@ -75,7 +78,10 @@ fn kill_npc_programmatic() {
     // check state before kill
     let before = factory_call(&api, "GetBehaviourState", json!([idx]));
     match &before {
-        Some(v) => println!("before kill: active={} enabled={}", v["active_type"], v["enabled_count"]),
+        Some(v) => println!(
+            "before kill: active={} enabled={}",
+            v["active_type"], v["enabled_count"]
+        ),
         None => println!("GetBehaviourState failed before kill"),
     }
 
@@ -147,7 +153,10 @@ fn despawn_npc_clean() {
     // verify NPC exists
     let before = factory_call(&api, "GetBehaviourState", json!([idx]));
     match &before {
-        Some(v) => println!("before despawn: active={} enabled={}", v["active_type"], v["enabled_count"]),
+        Some(v) => println!(
+            "before despawn: active={} enabled={}",
+            v["active_type"], v["enabled_count"]
+        ),
         None => {
             println!("GetBehaviourState failed before despawn (NPC never fully spawned)");
             return;

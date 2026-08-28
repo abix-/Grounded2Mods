@@ -30,20 +30,32 @@ fn scan_section_for_bytes() {
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(256);
 
-    let Some(game) = common::launch("research_scan_section") else { return; };
+    let Some(game) = common::launch("research_scan_section") else {
+        return;
+    };
 
     let (op, args) = match section.as_str() {
         "rdata" => ("mem.scan_rdata", json!({"sig": sig, "max_hits": max_hits})),
-        "data" => ("mem.scan_data", json!({"kind": "bytes", "bytes": sig, "max_hits": max_hits})),
-        "text" => ("patterns.sleuth.scan_all", json!({
-            "sig": sig, "disp32_offset": 0u32, "instr_len": 4u32, "context_bytes": 16u32, "max_hits": max_hits,
-        })),
+        "data" => (
+            "mem.scan_data",
+            json!({"kind": "bytes", "bytes": sig, "max_hits": max_hits}),
+        ),
+        "text" => (
+            "patterns.sleuth.scan_all",
+            json!({
+                "sig": sig, "disp32_offset": 0u32, "instr_len": 4u32, "context_bytes": 16u32, "max_hits": max_hits,
+            }),
+        ),
         other => panic!("MODFORGE_SECTION must be text|data|rdata, got {other:?}"),
     };
 
     let resp = game.op_json(op, &args).expect("op must succeed");
     let result = resp.get("result").expect("result");
-    let hits = result.get("hits").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let hits = result
+        .get("hits")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
     game.log().event(
         "SCAN",
         &format!("section={section} sig={sig:?} hits={}", hits.len()),

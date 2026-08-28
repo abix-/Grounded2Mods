@@ -45,14 +45,14 @@ struct AddHealthParms {
 }
 
 fn call_add_health(api: &common::Api, amount: f32) -> Result<common::Snapshot, String> {
-    let parms = AddHealthParms { amount, _pad: [0; 4], causer: 0 };
+    let parms = AddHealthParms {
+        amount,
+        _pad: [0; 4],
+        causer: 0,
+    };
     let bytes = common::parms_as_bytes(&parms);
-    let (_after, state) = api.call_ufunction(
-        "HealthComponent",
-        "AddHealth",
-        "live_player_hc",
-        bytes,
-    )?;
+    let (_after, state) =
+        api.call_ufunction("HealthComponent", "AddHealth", "live_player_hc", bytes)?;
     Ok(state)
 }
 
@@ -64,9 +64,13 @@ fn addhealth_with_mask_on_vs_off() {
     if baseline.live_player.is_none() {
         panic!("no live player; load a save and spawn into the world");
     }
-    if baseline.live_hc().max_health - baseline.live_hc().current_damage > baseline.live_hc().max_health - 25.0 {
-        eprintln!("WARNING: player near full HP (current_damage={}); take some damage first to leave headroom for the heal to be observable",
-            baseline.live_hc().current_damage);
+    if baseline.live_hc().max_health - baseline.live_hc().current_damage
+        > baseline.live_hc().max_health - 25.0
+    {
+        eprintln!(
+            "WARNING: player near full HP (current_damage={}); take some damage first to leave headroom for the heal to be observable",
+            baseline.live_hc().current_damage
+        );
     }
 
     eprintln!("\n========================================");
@@ -81,11 +85,19 @@ fn addhealth_with_mask_on_vs_off() {
     let cd_off_post = post_off.live_hc().current_damage;
     let delta_off = cd_off_pre - cd_off_post;
     eprintln!("  mask:           {}", mask_off);
-    eprintln!("  CurrentDamage:  {} -> {}  (delta = {} healed)", cd_off_pre, cd_off_post, delta_off);
-    eprintln!("  damage_ring entries during call: {}", post_off.damage_ring.len() - pre_off.damage_ring.len());
+    eprintln!(
+        "  CurrentDamage:  {} -> {}  (delta = {} healed)",
+        cd_off_pre, cd_off_post, delta_off
+    );
+    eprintln!(
+        "  damage_ring entries during call: {}",
+        post_off.damage_ring.len() - pre_off.damage_ring.len()
+    );
     for ev in &post_off.damage_ring[pre_off.damage_ring.len()..] {
-        eprintln!("    fn={} damage={} flags=0x{:08x} type_flags=0x{:08x}",
-            ev.function, ev.damage, ev.damage_flags, ev.type_flags);
+        eprintln!(
+            "    fn={} damage={} flags=0x{:08x} type_flags=0x{:08x}",
+            ev.function, ev.damage, ev.damage_flags, ev.type_flags
+        );
     }
 
     eprintln!("\n========================================");
@@ -100,11 +112,19 @@ fn addhealth_with_mask_on_vs_off() {
     let cd_on_post = post_on.live_hc().current_damage;
     let delta_on = cd_on_pre - cd_on_post;
     eprintln!("  mask:           {}", mask_on);
-    eprintln!("  CurrentDamage:  {} -> {}  (delta = {} healed)", cd_on_pre, cd_on_post, delta_on);
-    eprintln!("  damage_ring entries during call: {}", post_on.damage_ring.len() - pre_on.damage_ring.len());
+    eprintln!(
+        "  CurrentDamage:  {} -> {}  (delta = {} healed)",
+        cd_on_pre, cd_on_post, delta_on
+    );
+    eprintln!(
+        "  damage_ring entries during call: {}",
+        post_on.damage_ring.len() - pre_on.damage_ring.len()
+    );
     for ev in &post_on.damage_ring[pre_on.damage_ring.len()..] {
-        eprintln!("    fn={} damage={} flags=0x{:08x} type_flags=0x{:08x}",
-            ev.function, ev.damage, ev.damage_flags, ev.type_flags);
+        eprintln!(
+            "    fn={} damage={} flags=0x{:08x} type_flags=0x{:08x}",
+            ev.function, ev.damage, ev.damage_flags, ev.type_flags
+        );
     }
 
     eprintln!("\n========================================");
@@ -130,8 +150,11 @@ fn addhealth_with_mask_on_vs_off() {
 
     // Hard assertion: regardless of HOW the off path behaves, with
     // mask off AddHealth(20) should heal noticeably (not zero).
-    assert!(delta_off > 1.0,
-        "AddHealth with mask OFF did not heal; expected delta > 1.0, got {}", delta_off);
+    assert!(
+        delta_off > 1.0,
+        "AddHealth with mask OFF did not heal; expected delta > 1.0, got {}",
+        delta_off
+    );
 }
 
 /// Watch for what bandages actually fire on the player HC.
@@ -145,13 +168,31 @@ fn observe_bandage_path() {
     let api = common::Api::require();
     let s = api.snapshot();
     let hc = s.live_hc();
-    eprintln!("HP: {:.2} / {:.2}  mask: {}  ring entries: {}",
-        hc.max_health - hc.current_damage, hc.max_health,
-        hc.required_damage_type_flags, s.damage_ring.len());
+    eprintln!(
+        "HP: {:.2} / {:.2}  mask: {}  ring entries: {}",
+        hc.max_health - hc.current_damage,
+        hc.max_health,
+        hc.required_damage_type_flags,
+        s.damage_ring.len()
+    );
     eprintln!("\nLast 30 entries in damage_ring:");
-    for ev in s.damage_ring.iter().rev().take(30).collect::<Vec<_>>().iter().rev() {
-        eprintln!("  t={}  fn={}  dmg={}  flags=0x{:08x}  tflags=0x{:08x}  cd_before={:?}",
-            ev.at_secs, ev.function, ev.damage, ev.damage_flags, ev.type_flags,
-            ev.current_damage_before);
+    for ev in s
+        .damage_ring
+        .iter()
+        .rev()
+        .take(30)
+        .collect::<Vec<_>>()
+        .iter()
+        .rev()
+    {
+        eprintln!(
+            "  t={}  fn={}  dmg={}  flags=0x{:08x}  tflags=0x{:08x}  cd_before={:?}",
+            ev.at_secs,
+            ev.function,
+            ev.damage,
+            ev.damage_flags,
+            ev.type_flags,
+            ev.current_damage_before
+        );
     }
 }

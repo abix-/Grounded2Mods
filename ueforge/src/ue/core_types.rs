@@ -103,9 +103,7 @@ impl FWeakObjectPtr {
             return None;
         }
         let rt = super::try_runtime()?;
-        let view = unsafe {
-            super::GObjectsView::from_image(rt.image_base, rt.platform_offsets)
-        };
+        let view = unsafe { super::GObjectsView::from_image(rt.image_base, rt.platform_offsets) };
         view.get(self.object_index)
             .map(|o| unsafe { &*(o as *const super::UObject) })
     }

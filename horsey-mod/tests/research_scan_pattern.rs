@@ -21,24 +21,21 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn need(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|s| !s.is_empty())
 }
 
 fn parse_u32(s: &str) -> u32 {
-    s.parse().unwrap_or_else(|_| {
-        u32::from_str_radix(s.trim_start_matches("0x"), 16).unwrap_or(0)
-    })
+    s.parse()
+        .unwrap_or_else(|_| u32::from_str_radix(s.trim_start_matches("0x"), 16).unwrap_or(0))
 }
 
 #[test]
 fn scan_and_decode_pattern() {
     let Some(sig) = need("MODFORGE_SIG") else {
-        eprintln!(
-            "skipping: set MODFORGE_SIG + MODFORGE_DISP32_OFF + MODFORGE_INSTR_LEN to use"
-        );
+        eprintln!("skipping: set MODFORGE_SIG + MODFORGE_DISP32_OFF + MODFORGE_INSTR_LEN to use");
         return;
     };
     let disp_off = need("MODFORGE_DISP32_OFF")
@@ -47,12 +44,16 @@ fn scan_and_decode_pattern() {
     let instr_len = need("MODFORGE_INSTR_LEN")
         .map(|s| parse_u32(&s))
         .expect("MODFORGE_INSTR_LEN required");
-    let max_hits = need("MODFORGE_MAX_HITS").map(|s| parse_u32(&s)).unwrap_or(256);
+    let max_hits = need("MODFORGE_MAX_HITS")
+        .map(|s| parse_u32(&s))
+        .unwrap_or(256);
     let context = need("MODFORGE_CONTEXT_BYTES")
         .map(|s| parse_u32(&s))
         .unwrap_or(16);
 
-    let Some(game) = common::launch("forensic_scan_pattern") else { return; };
+    let Some(game) = common::launch("forensic_scan_pattern") else {
+        return;
+    };
     let resp = game
         .op_json(
             "patterns.sleuth.scan_all",
@@ -73,7 +74,10 @@ fn scan_and_decode_pattern() {
         .unwrap_or_default();
     game.log().event(
         "SCAN",
-        &format!("sig={sig:?} disp_off={disp_off} instr_len={instr_len} hits={}", hits.len()),
+        &format!(
+            "sig={sig:?} disp_off={disp_off} instr_len={instr_len} hits={}",
+            hits.len()
+        ),
     );
     for h in &hits {
         game.log().event(
@@ -81,7 +85,9 @@ fn scan_and_decode_pattern() {
             &format!(
                 "instr@{} target={} disp32={} ctx={}",
                 h.get("instr_addr").and_then(|v| v.as_str()).unwrap_or("?"),
-                h.get("decoded_target").and_then(|v| v.as_str()).unwrap_or("?"),
+                h.get("decoded_target")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("?"),
                 h.get("disp32").and_then(|v| v.as_str()).unwrap_or("?"),
                 h.get("context_hex").and_then(|v| v.as_str()).unwrap_or("?"),
             ),

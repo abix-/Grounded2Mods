@@ -226,10 +226,7 @@ pub fn apply_one(entry: &DynamicTweak) -> Result<usize, String> {
 /// Most recent per-entry status from [`apply_all`]. Used by the
 /// shared ImGui widget; the game crate can read it too.
 pub fn last_status() -> Vec<TweakStatus> {
-    LAST_STATUS
-        .lock()
-        .expect("LAST_STATUS poisoned")
-        .clone()
+    LAST_STATUS.lock().expect("LAST_STATUS poisoned").clone()
 }
 
 pub fn apply_count() -> usize {

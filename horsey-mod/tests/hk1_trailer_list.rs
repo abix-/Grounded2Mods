@@ -7,15 +7,19 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 #[test]
 fn trailer_list_reads() {
-    let Some(game) = common::launch("hk1_trailer_list") else { return };
+    let Some(game) = common::launch("hk1_trailer_list") else {
+        return;
+    };
 
     // Poll horse.trailer until MapState loads (map_state != 0x0), then read.
     let dl = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    let mut v = game.op_json("horse.trailer", &json!({})).expect("horse.trailer op");
+    let mut v = game
+        .op_json("horse.trailer", &json!({}))
+        .expect("horse.trailer op");
     loop {
         let ms = v
             .get("result")
@@ -27,7 +31,9 @@ fn trailer_list_reads() {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(250));
-        v = game.op_json("horse.trailer", &json!({})).expect("horse.trailer op");
+        v = game
+            .op_json("horse.trailer", &json!({}))
+            .expect("horse.trailer op");
     }
     let r = v.get("result").unwrap_or(&v);
     eprintln!("[TRAILER] {}", serde_json::to_string_pretty(r).unwrap());
@@ -40,10 +46,17 @@ fn trailer_list_reads() {
     let ms = r.get("map_state").and_then(Value::as_str).unwrap_or("0x0");
     assert_ne!(ms, "0x0", "MapState pointer is null");
 
-    let owned = r.get("owned").and_then(Value::as_array).cloned().unwrap_or_default();
+    let owned = r
+        .get("owned")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
     let in_trailer = owned
         .iter()
         .filter(|o| o.get("container").and_then(Value::as_str) == Some("trailer"))
         .count();
-    eprintln!("[TRAILER] {in_trailer} of {} owned horse(s) read as in the trailer", owned.len());
+    eprintln!(
+        "[TRAILER] {in_trailer} of {} owned horse(s) read as in the trailer",
+        owned.len()
+    );
 }

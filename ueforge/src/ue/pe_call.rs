@@ -118,9 +118,9 @@ pub unsafe fn call_ufunction<P>(
     function_name: &str,
     parms: &mut P,
 ) -> Result<(), String> {
-    let func = class.find_function(function_name).ok_or_else(|| {
-        format!("{}::{} UFunction not found", class.name(), function_name)
-    })?;
+    let func = class
+        .find_function(function_name)
+        .ok_or_else(|| format!("{}::{} UFunction not found", class.name(), function_name))?;
     unsafe {
         target.process_event(func, parms as *mut P as *mut c_void);
     }

@@ -102,8 +102,12 @@ pub fn patch_prefix_ctx(
     let bridge = bridge::try_get()?;
     let c_class = CString::new(class_name).map_err(|e| format!("bad class: {e}"))?;
     let c_method = CString::new(method_name).map_err(|e| format!("bad method: {e}"))?;
-    let handle =
-        (bridge.harmony_patch_prefix_ctx)(c_class.as_ptr(), c_method.as_ptr(), ctx as i32, prefix_fn);
+    let handle = (bridge.harmony_patch_prefix_ctx)(
+        c_class.as_ptr(),
+        c_method.as_ptr(),
+        ctx as i32,
+        prefix_fn,
+    );
     if handle.0 == 0 {
         return Err(format!(
             "harmony_patch_prefix_ctx({class_name}, {method_name}, {ctx:?}) failed"
@@ -163,7 +167,10 @@ impl HookRegistry {
         let n = self.entries.lock().len();
         self.entries.lock().clear();
         if n > 0 {
-            crate::mono::log(crate::mono::LogLevel::Info, &format!("unityforge: dropped {n} hook(s)"));
+            crate::mono::log(
+                crate::mono::LogLevel::Info,
+                &format!("unityforge: dropped {n} hook(s)"),
+            );
         }
     }
 

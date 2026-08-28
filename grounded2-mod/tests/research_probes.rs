@@ -104,12 +104,9 @@ fn probe_status_effect_values() {
     let api = common::Api::require();
     let player = client::find_live_instance(api.inner(), PLAYER_CLASS)
         .expect("no live player; load a save and spawn");
-    let sec_addr = client::read_component_ptr(
-        api.inner(),
-        player.addr,
-        ASC_STATUS_EFFECT_COMPONENT,
-    )
-    .expect("StatusEffectComponent ptr is null");
+    let sec_addr =
+        client::read_component_ptr(api.inner(), player.addr, ASC_STATUS_EFFECT_COMPONENT)
+            .expect("StatusEffectComponent ptr is null");
     let sec_sel = format!("addr:0x{sec_addr:X}");
 
     eprintln!("rpg/sfx-probe (test-side):");
@@ -128,7 +125,10 @@ fn probe_status_effect_values() {
             parms,
         ) {
             Ok((after, _state)) => {
-                summary.push_str(&format!(" {}({})={:.3}", name, stat_type, after.return_value));
+                summary.push_str(&format!(
+                    " {}({})={:.3}",
+                    name, stat_type, after.return_value
+                ));
             }
             Err(e) => {
                 summary.push_str(&format!(" {}({})=ERR({})", name, stat_type, e));
@@ -163,14 +163,10 @@ fn probe_player_current_damage() {
 #[ignore]
 fn probe_player_velocity_z() {
     let api = common::Api::require();
-    let player = client::find_live_instance(api.inner(), PLAYER_CLASS)
-        .expect("no live player");
-    let cmc_addr = client::read_component_ptr(
-        api.inner(),
-        player.addr,
-        ASC_CHAR_MOVEMENT_COMPONENT,
-    )
-    .expect("CMC ptr is null");
+    let player = client::find_live_instance(api.inner(), PLAYER_CLASS).expect("no live player");
+    let cmc_addr =
+        client::read_component_ptr(api.inner(), player.addr, ASC_CHAR_MOVEMENT_COMPONENT)
+            .expect("CMC ptr is null");
     let vz = client::read_f32(api.inner(), cmc_addr, CMC_VELOCITY_Z);
     eprintln!("player Velocity.Z = {:.2}", vz);
 }

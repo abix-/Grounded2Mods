@@ -87,8 +87,7 @@ pub fn register_ops(kit: Kit) {
                     move || {
                         let z = super::trace::ground_at(x, y, kit.trace_up, kit.trace_down)
                             .ok_or("no ground there")?;
-                        let world =
-                            super::actor::any_world_actor().ok_or("no level loaded")?;
+                        let world = super::actor::any_world_actor().ok_or("no level loaded")?;
                         // SAFETY: world came from the search just
                         // above, on the game thread.
                         let out = unsafe {

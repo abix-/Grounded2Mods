@@ -23,23 +23,23 @@
 use crate::gamestate;
 use crate::targets;
 
-const TRUCK_PTR_OFF: usize    = 0x300;   // GameState + 0x300 -> Truck*
-const TRUCK_POS_X_OFF: usize  = 0x28;    // float, tile units * DAT_140303fb4
-const TRUCK_POS_Y_OFF: usize  = 0x2c;
-const TRUCK_VEL_X_OFF: usize  = 0x30;
-const TRUCK_VEL_Y_OFF: usize  = 0x34;
+const TRUCK_PTR_OFF: usize = 0x300; // GameState + 0x300 -> Truck*
+const TRUCK_POS_X_OFF: usize = 0x28; // float, tile units * DAT_140303fb4
+const TRUCK_POS_Y_OFF: usize = 0x2c;
+const TRUCK_VEL_X_OFF: usize = 0x30;
+const TRUCK_VEL_Y_OFF: usize = 0x34;
 
-const MS_CAMERA_X_OFF: usize  = 0x254;   // MapState +0x254 = camera_x (float, world pixels)
-const MS_CAMERA_Y_OFF: usize  = 0x258;
-const MS_MAP_ACTIVE_OFF: usize = 0x262;  // bool: buildings loaded / map active
+const MS_CAMERA_X_OFF: usize = 0x254; // MapState +0x254 = camera_x (float, world pixels)
+const MS_CAMERA_Y_OFF: usize = 0x258;
+const MS_MAP_ACTIVE_OFF: usize = 0x262; // bool: buildings loaded / map active
 
-const SCENE_TABLE_OFF: usize  = 0x438;   // GameState + 0x438 -> scene table base
+const SCENE_TABLE_OFF: usize = 0x438; // GameState + 0x438 -> scene table base
 
-const SH_SCENE_ID_OFF: usize  = 0x08;    // scene_handler + 0x08 (i32 scene_id)
+const SH_SCENE_ID_OFF: usize = 0x08; // scene_handler + 0x08 (i32 scene_id)
 const SH_DISPLAY_NAME_OFF: usize = 0x18; // scene_handler + 0x18 (std::string display)
-const SH_INTERNAL_NAME_OFF: usize = 0x38;// scene_handler + 0x38 (std::string internal)
-const SH_SELECTED_ENT_OFF: usize = 0x148;// scene_handler + 0x148 (Entity*)
-const SH_MODAL_OFF: usize     = 0x270;   // scene_handler + 0x270 (bool modal visible)
+const SH_INTERNAL_NAME_OFF: usize = 0x38; // scene_handler + 0x38 (std::string internal)
+const SH_SELECTED_ENT_OFF: usize = 0x148; // scene_handler + 0x148 (Entity*)
+const SH_MODAL_OFF: usize = 0x270; // scene_handler + 0x270 (bool modal visible)
 
 // ---------------------------------------------------------------------------
 // Singletons
@@ -68,7 +68,11 @@ pub fn tile_scale() -> Option<f32> {
     }
     // SAFETY: 4-byte readability checked.
     let v = unsafe { *(addr as *const f32) };
-    if v.is_finite() && v > 0.0 && v < 10.0 { Some(v) } else { None }
+    if v.is_finite() && v > 0.0 && v < 10.0 {
+        Some(v)
+    } else {
+        None
+    }
 }
 
 /// Convert raw actor position floats to tile coords via `tile_scale()`.
@@ -103,7 +107,9 @@ pub fn truck_ptr() -> usize {
 /// the truck pointer is dead.
 pub fn truck_pos() -> Option<(f32, f32)> {
     let t = truck_ptr();
-    if t == 0 { return None; }
+    if t == 0 {
+        return None;
+    }
     // SAFETY: truck_ptr ensures +0x34 is readable; +0x28/+0x2c are earlier.
     let x = unsafe { *((t + TRUCK_POS_X_OFF) as *const f32) };
     let y = unsafe { *((t + TRUCK_POS_Y_OFF) as *const f32) };
@@ -113,7 +119,9 @@ pub fn truck_pos() -> Option<(f32, f32)> {
 /// Truck velocity floats.
 pub fn truck_vel() -> Option<(f32, f32)> {
     let t = truck_ptr();
-    if t == 0 { return None; }
+    if t == 0 {
+        return None;
+    }
     let x = unsafe { *((t + TRUCK_VEL_X_OFF) as *const f32) };
     let y = unsafe { *((t + TRUCK_VEL_Y_OFF) as *const f32) };
     Some((x, y))
@@ -126,7 +134,9 @@ pub fn truck_vel() -> Option<(f32, f32)> {
 /// Camera (world-pixel coords) from MapState +0x254 / +0x258.
 pub fn camera() -> Option<(f32, f32)> {
     let ms = mapstate_ptr();
-    if ms == 0 { return None; }
+    if ms == 0 {
+        return None;
+    }
     if !modforge::winproc::is_addr_readable(ms + MS_CAMERA_Y_OFF + 4) {
         return None;
     }
@@ -138,7 +148,9 @@ pub fn camera() -> Option<(f32, f32)> {
 /// Map-active / buildings-loaded bool at MapState +0x262.
 pub fn map_active() -> Option<bool> {
     let ms = mapstate_ptr();
-    if ms == 0 { return None; }
+    if ms == 0 {
+        return None;
+    }
     if !modforge::winproc::is_addr_readable(ms + MS_MAP_ACTIVE_OFF) {
         return None;
     }
@@ -158,7 +170,9 @@ pub fn active_scene_handler() -> usize {
         _ => return 0,
     };
     let gs = gamestate::ptr();
-    if gs == 0 { return 0; }
+    if gs == 0 {
+        return 0;
+    }
     let table_slot = gs + SCENE_TABLE_OFF;
     if !modforge::winproc::is_addr_readable(table_slot) {
         return 0;
@@ -181,14 +195,18 @@ pub fn active_scene_handler() -> usize {
 
 /// Read the scene-handler's self-reported scene_id (`+0x08`).
 pub fn scene_handler_self_id(sh: usize) -> Option<i32> {
-    if sh == 0 { return None; }
+    if sh == 0 {
+        return None;
+    }
     Some(unsafe { *((sh + SH_SCENE_ID_OFF) as *const i32) })
 }
 
 /// Read an MSVC `std::string` at `base + off`. Returns "" if SSO empty,
 /// the inline bytes if SSO, or the heap string when capacity > 15.
 fn read_msvc_string(base: usize, off: usize) -> Option<String> {
-    if base == 0 { return None; }
+    if base == 0 {
+        return None;
+    }
     let entry = base + off;
     if !modforge::winproc::is_addr_readable(entry + 0x20) {
         return None;
@@ -231,7 +249,9 @@ pub fn scene_internal_name(sh: usize) -> Option<String> {
 /// Currently selected / "relevant" entity for this scene (often a horse or
 /// NPC). Read from `scene_handler + 0x148`.
 pub fn scene_selected_entity(sh: usize) -> Option<usize> {
-    if sh == 0 { return None; }
+    if sh == 0 {
+        return None;
+    }
     if !modforge::winproc::is_addr_readable(sh + SH_SELECTED_ENT_OFF) {
         return None;
     }
@@ -241,7 +261,9 @@ pub fn scene_selected_entity(sh: usize) -> Option<usize> {
 
 /// Modal / dialog visible bool from `scene_handler + 0x270`.
 pub fn scene_modal_visible(sh: usize) -> Option<bool> {
-    if sh == 0 { return None; }
+    if sh == 0 {
+        return None;
+    }
     if !modforge::winproc::is_addr_readable(sh + SH_MODAL_OFF) {
         return None;
     }
@@ -257,7 +279,9 @@ pub fn scene_modal_visible(sh: usize) -> Option<bool> {
 pub fn scene_id_label(id: i32) -> Option<&'static str> {
     match id {
         -1 => Some("Overworld (driving the world map)"),
-        0 => Some("PLAYER HOME (stable / pasture / breeding) -- scene-table slot 0; confirmed 2026-05-17 live"),
+        0 => Some(
+            "PLAYER HOME (stable / pasture / breeding) -- scene-table slot 0; confirmed 2026-05-17 live",
+        ),
         1..=7 => Some("Race lane (slot 1..7 = race lanes 0..6)"),
         13 => Some("Race Track"),
         14 => Some("Paddock (broke variant of Race Track)"),
@@ -267,7 +291,9 @@ pub fn scene_id_label(id: i32) -> Option<&'static str> {
         18 => Some("Clide's Rides"),
         19 => Some("(scene 19 -- unknown; FUN_1400bfa90)"),
         20 => Some("Lasso-Mart (confirmed 2026-05-17 live)"),
-        21 => Some("(scene 21 -- unknown; was suspected player home but home is scene 0; possibly an NPC stable)"),
+        21 => Some(
+            "(scene 21 -- unknown; was suspected player home but home is scene 0; possibly an NPC stable)",
+        ),
         22 => Some("Bubber's Hutch"),
         23 => Some("The Circus"),
         24 => Some("The Secret Zoo"),

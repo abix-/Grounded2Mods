@@ -13,8 +13,8 @@ pub type Tracker = modforge::rpg::Tracker<crate::rpg::UeEngine>;
 mod tests {
     use super::*;
     use crate::rpg::{
-        trigger, Curve, Effect, EffectDef, FallEvent, KillEvent, SkillDef, SkillRegistry,
-        TriggerCtx,
+        Curve, Effect, EffectDef, FallEvent, KillEvent, SkillDef, SkillRegistry, TriggerCtx,
+        trigger,
     };
     use std::sync::atomic::{AtomicU32, Ordering};
 

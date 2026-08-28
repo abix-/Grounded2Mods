@@ -9,7 +9,7 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn parse_hex(v: &Value) -> Option<u64> {
     v.as_str()
@@ -18,7 +18,9 @@ fn parse_hex(v: &Value) -> Option<u64> {
 
 #[test]
 fn all_field_offsets_resolved_match_hardcoded() {
-    let Some(game) = common::launch("r4_field_offsets") else { return; };
+    let Some(game) = common::launch("r4_field_offsets") else {
+        return;
+    };
 
     let resp = game
         .op_json("targets.resolve.field_offsets", &json!({}))

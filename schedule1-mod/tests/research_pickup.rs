@@ -50,7 +50,11 @@ fn print_loot_methods(api: &modforge::client::Api<Value>, class: &str) -> usize 
             name,
             m["params"].as_i64().unwrap_or(-1),
             m["return"].as_str().unwrap_or("?"),
-            if m["static"].as_bool() == Some(true) { " [static]" } else { "" },
+            if m["static"].as_bool() == Some(true) {
+                " [static]"
+            } else {
+                ""
+            },
         );
     }
     hits
@@ -69,31 +73,47 @@ fn diag_cash_pickups() {
         return;
     };
     for i in &all {
-        let Some(h) = i["handle"].as_i64() else { continue };
+        let Some(h) = i["handle"].as_i64() else {
+            continue;
+        };
         let name = i["name"].as_str().unwrap_or("?");
         let pos = api
             .op("read_field", json!({"handle": h, "field": "transform"}))
             .result;
         let pos = match handle_of(&pos) {
             Some(th) => {
-                let p = api.op("invoke_method", json!({"handle": th, "method": "get_position", "args": []}));
+                let p = api.op(
+                    "invoke_method",
+                    json!({"handle": th, "method": "get_position", "args": []}),
+                );
                 common::parse_vec3(&p.result)
             }
             None => None,
         };
-        let go = api.op("invoke_method", json!({"handle": h, "method": "get_gameObject", "args": []}));
+        let go = api.op(
+            "invoke_method",
+            json!({"handle": h, "method": "get_gameObject", "args": []}),
+        );
         let (mut active_self, mut active_hier) = (None, None);
         if let Some(gh) = handle_of(&go.result) {
             active_self = api
-                .op("invoke_method", json!({"handle": gh, "method": "get_activeSelf", "args": []}))
+                .op(
+                    "invoke_method",
+                    json!({"handle": gh, "method": "get_activeSelf", "args": []}),
+                )
                 .result
                 .as_bool();
             active_hier = api
-                .op("invoke_method", json!({"handle": gh, "method": "get_activeInHierarchy", "args": []}))
+                .op(
+                    "invoke_method",
+                    json!({"handle": gh, "method": "get_activeInHierarchy", "args": []}),
+                )
                 .result
                 .as_bool();
         }
-        let value = api.op("read_field", json!({"handle": h, "field": "Value"})).result;
+        let value = api
+            .op("read_field", json!({"handle": h, "field": "Value"}))
+            .result;
         println!(
             "{name}: pos={pos:?} activeSelf={active_self:?} activeInHierarchy={active_hier:?} value={value}"
         );
@@ -108,7 +128,10 @@ fn diag_spawn_signatures() {
     if ping_or_skip(&api).is_none() {
         return;
     }
-    let r = api.op("list_methods", json!({"class": "Il2CppFishNet.Managing.Server.ServerManager"}));
+    let r = api.op(
+        "list_methods",
+        json!({"class": "Il2CppFishNet.Managing.Server.ServerManager"}),
+    );
     if !r.ok {
         println!("list_methods failed: {:?}", r.error);
         return;
@@ -207,7 +230,10 @@ fn find_pickup_creation_call() {
     for class in &classes {
         total += print_loot_methods(&api, class);
     }
-    println!("{total} loot-shaped declared method(s) across {} classes", classes.len());
+    println!(
+        "{total} loot-shaped declared method(s) across {} classes",
+        classes.len()
+    );
 
     // A live CashPickup, if any, shows how ground cash is shaped.
     if let Some(h) = first_handle(&api, "ScheduleOne.ItemFramework.CashPickup") {
@@ -292,7 +318,10 @@ fn clone_cash_pickup_at_player() {
         // The clone came from an INACTIVE prefab template ("$10
         // Pickup" / "Dynamic Amount Cash Pickup" live parked in a
         // hidden container): activate it explicitly.
-        let go = api.op("invoke_method", json!({"handle": ch, "method": "get_gameObject", "args": []}));
+        let go = api.op(
+            "invoke_method",
+            json!({"handle": ch, "method": "get_gameObject", "args": []}),
+        );
         let mut active_ok = false;
         if let Some(gh) = handle_of(&go.result) {
             let act = api.op(
@@ -306,7 +335,10 @@ fn clone_cash_pickup_at_player() {
         // from the earlier runs vanished from the walk), so
         // ServerManager.Spawn is mandatory. The manager comes from
         // FishNet's InstanceFinder static.
-        let nob = api.op("invoke_method", json!({"handle": ch, "method": "get_NetworkObject", "args": []}));
+        let nob = api.op(
+            "invoke_method",
+            json!({"handle": ch, "method": "get_NetworkObject", "args": []}),
+        );
         let sm = api.op(
             "invoke_static",
             json!({"class": "Il2CppFishNet.InstanceFinder", "method": "get_ServerManager", "args": []}),
@@ -339,8 +371,14 @@ fn clone_cash_pickup_at_player() {
             }
         };
 
-        let val = api.op("write_field", json!({"handle": ch, "field": "Value", "value": 100.0}));
-        let vis = api.op("invoke_method", json!({"handle": ch, "method": "UpdateCashStackVisuals", "args": []}));
+        let val = api.op(
+            "write_field",
+            json!({"handle": ch, "field": "Value", "value": 100.0}),
+        );
+        let vis = api.op(
+            "invoke_method",
+            json!({"handle": ch, "method": "UpdateCashStackVisuals", "args": []}),
+        );
         let renamed = api.op(
             "invoke_method",
             json!({"handle": ch, "method": "set_name",
@@ -348,7 +386,12 @@ fn clone_cash_pickup_at_player() {
         );
         println!(
             "drop {n}: placed at ({:.1}, {:.1}, {:.1}) active_ok={active_ok} spawn_ok={spawn_ok} value_ok={} visuals_ok={} rename_ok={}",
-            px + dx, py, pz + dz, val.ok, vis.ok, renamed.ok,
+            px + dx,
+            py,
+            pz + dz,
+            val.ok,
+            vis.ok,
+            renamed.ok,
         );
     }
     println!("OPERATOR CHECK: {drops} stacks of $100 around you? Can you pick them up?");

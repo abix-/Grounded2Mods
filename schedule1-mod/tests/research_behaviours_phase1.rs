@@ -19,7 +19,10 @@ fn factory_call(
     method: &str,
     args: serde_json::Value,
 ) -> Option<serde_json::Value> {
-    let r = api.op("invoke_static", json!({"class": FACTORY, "method": method, "args": args}));
+    let r = api.op(
+        "invoke_static",
+        json!({"class": FACTORY, "method": method, "args": args}),
+    );
     if !r.ok {
         println!("{method}: op failed: {:?}", r.error);
         return None;
@@ -83,18 +86,12 @@ fn behaviour_state_and_idle_enable() {
     let b = before.unwrap();
     let a = after.unwrap();
     println!("\n=== COMPARISON ===");
-    println!(
-        "active_type: {} -> {}",
-        b["active_type"], a["active_type"]
-    );
+    println!("active_type: {} -> {}", b["active_type"], a["active_type"]);
     println!(
         "idle_enabled: {} -> {}",
         b["idle_enabled"], a["idle_enabled"]
     );
-    println!(
-        "idle_active: {} -> {}",
-        b["idle_active"], a["idle_active"]
-    );
+    println!("idle_active: {} -> {}", b["idle_active"], a["idle_active"]);
     println!(
         "enabled_count: {} -> {}",
         b["enabled_count"], a["enabled_count"]
@@ -143,10 +140,7 @@ fn set_idle_point_holds_position() {
     // set idle point 15m away from spawn
     let hold_x = px + 20.0;
     let hold_z = pz + 5.0;
-    println!(
-        "\n=== SetIdlePoint to ({}, {}, {}) ===",
-        hold_x, py, hold_z
-    );
+    println!("\n=== SetIdlePoint to ({}, {}, {}) ===", hold_x, py, hold_z);
     let set = factory_call(&api, "SetIdlePoint", json!([idx, hold_x, py, hold_z]));
     match &set {
         Some(v) => {

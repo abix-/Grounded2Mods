@@ -21,14 +21,14 @@
 //! hardcodes a game's data layout.
 
 pub mod arm_lifecycle;
+pub mod assets;
+pub mod build_info;
 pub mod fn_entry;
 pub mod json;
-pub mod registry;
 pub mod msvc;
 pub mod op;
-pub mod build_info;
-pub mod xrefs;
-pub mod assets;
-pub mod watch;
-pub mod snapshot;
 pub mod recipes;
+pub mod registry;
+pub mod snapshot;
+pub mod watch;
+pub mod xrefs;

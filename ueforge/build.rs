@@ -35,7 +35,10 @@ fn main() {
     }
 
     println!("cargo:rerun-if-changed={}", cpp.display());
-    println!("cargo:rerun-if-changed={}", ue4ss.join("UE4SS.lib").display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        ue4ss.join("UE4SS.lib").display()
+    );
 
     // UE4SS.lib symbol-presence check. The two C++ exports
     // ueforge_shim.cpp imports from UE4SS.lib are the bridge
@@ -61,9 +64,7 @@ fn main() {
                 let mut missing: Vec<&str> = Vec::new();
                 for sym in REQUIRED_SYMBOLS {
                     let needle = sym.as_bytes();
-                    let found = bytes
-                        .windows(needle.len())
-                        .any(|w| w == needle);
+                    let found = bytes.windows(needle.len()).any(|w| w == needle);
                     if !found {
                         missing.push(sym);
                     }

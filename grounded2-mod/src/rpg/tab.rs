@@ -3,7 +3,7 @@
 // (which route into g2rpg's `apply` module's process-global
 // disabled-skills set).
 
-use ueforge::rpg::tab::{render as render_rpg_tab, ToggleFns};
+use ueforge::rpg::tab::{ToggleFns, render as render_rpg_tab};
 
 use crate::rpg::{apply, tracker};
 

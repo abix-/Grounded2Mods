@@ -9,7 +9,9 @@ mod common;
 
 #[test]
 fn wait_for_horse() {
-    let Some(game) = common::launch("wait_for_horse") else { return };
+    let Some(game) = common::launch("wait_for_horse") else {
+        return;
+    };
     let h = common::wait_for_target_horse(&game, std::time::Duration::from_secs(120));
     eprintln!("[READY] horse '{}' at {} (id {})", h.name, h.ptr_s, h.id);
 }

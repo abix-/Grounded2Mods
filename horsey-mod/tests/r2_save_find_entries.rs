@@ -82,8 +82,7 @@ fn probe_save_entries() {
         return;
     }
     let spec = common::spec();
-    let game = GameHarness::launch(&spec, "r2_save_find_entries")
-        .expect("harness launch failed");
+    let game = GameHarness::launch(&spec, "r2_save_find_entries").expect("harness launch failed");
 
     let image_base = fetch_image_base(&game);
     let preferred_base = 0x140000000u64;
@@ -97,9 +96,7 @@ fn probe_save_entries() {
         let stale_runtime = stale_rva.wrapping_add(delta);
         game.log().event(
             name,
-            &format!(
-                "stale RVA=0x{stale_rva:x} runtime=0x{stale_runtime:x}"
-            ),
+            &format!("stale RVA=0x{stale_rva:x} runtime=0x{stale_runtime:x}"),
         );
 
         // Read a big window in <=4096-byte chunks (the read_bytes op
@@ -154,9 +151,7 @@ fn probe_save_entries() {
             for (abs, rel, prefix) in sorted.iter().take(8) {
                 game.log().event(
                     name,
-                    &format!(
-                        "  offset={rel:+5}  abs=0x{abs:x}  [{prefix}]"
-                    ),
+                    &format!("  offset={rel:+5}  abs=0x{abs:x}  [{prefix}]"),
                 );
             }
         }

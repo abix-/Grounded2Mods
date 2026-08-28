@@ -115,8 +115,7 @@ pub struct BridgeTable {
     ) -> i32,
 
     /// Dump an object's fields + property values as JSON.
-    pub inspect_object:
-        extern "C" fn(obj: MonoHandle, out_json_utf8: *mut c_char, cap: i32) -> i32,
+    pub inspect_object: extern "C" fn(obj: MonoHandle, out_json_utf8: *mut c_char, cap: i32) -> i32,
 
     /// Read a typed field by name. The result kind is encoded
     /// in the JSON. Returns -1 on field-not-found.
@@ -176,8 +175,7 @@ pub struct BridgeTable {
     /// Update on the Unity main thread when the key is first
     /// pressed each frame. Returns a binding handle (0 on
     /// failure; idempotent for the same callback).
-    pub register_key_binding:
-        extern "C" fn(keycode: i32, callback: extern "C" fn()) -> i32,
+    pub register_key_binding: extern "C" fn(keycode: i32, callback: extern "C" fn()) -> i32,
 
     /// Remove a key binding. Idempotent.
     pub unregister_key_binding: extern "C" fn(binding: i32),
@@ -190,11 +188,8 @@ pub struct BridgeTable {
     /// JSON `{ "type": str, "methods": [{name, declared_on,
     /// params, static, return}] }`. Returns bytes written, or -1
     /// on cap-too-small.
-    pub list_methods: extern "C" fn(
-        type_name_utf8: *const c_char,
-        out_json_utf8: *mut c_char,
-        cap: i32,
-    ) -> i32,
+    pub list_methods:
+        extern "C" fn(type_name_utf8: *const c_char, out_json_utf8: *mut c_char, cap: i32) -> i32,
 
     // ---- harmony (v5+) ----------------------------------------------------
     /// Prefix patch whose callback receives a context object as a
@@ -290,5 +285,7 @@ pub fn try_get() -> Result<&'static BridgeTable, String> {
 
 /// Active runtime backend. None before the shim has installed.
 pub fn runtime_kind() -> Option<RuntimeKind> {
-    BRIDGE.get().and_then(|b| RuntimeKind::from_u32(b.runtime_kind))
+    BRIDGE
+        .get()
+        .and_then(|b| RuntimeKind::from_u32(b.runtime_kind))
 }

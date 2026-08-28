@@ -86,12 +86,42 @@ enum Val {
 impl Val {
     fn from_json(v: &Json, ty: Ty) -> Result<Self, String> {
         let bits = match ty {
-            Ty::U8 => v.as_u64().ok_or("expected u8")?.try_into().map(|x: u8| x as u64).map_err(|_| "u8 out of range")?,
-            Ty::I8 => v.as_i64().ok_or("expected i8")?.try_into().map(|x: i8| (x as u8) as u64).map_err(|_| "i8 out of range")?,
-            Ty::U16 => v.as_u64().ok_or("expected u16")?.try_into().map(|x: u16| x as u64).map_err(|_| "u16 out of range")?,
-            Ty::I16 => v.as_i64().ok_or("expected i16")?.try_into().map(|x: i16| (x as u16) as u64).map_err(|_| "i16 out of range")?,
-            Ty::U32 => v.as_u64().ok_or("expected u32")?.try_into().map(|x: u32| x as u64).map_err(|_| "u32 out of range")?,
-            Ty::I32 => v.as_i64().ok_or("expected i32")?.try_into().map(|x: i32| (x as u32) as u64).map_err(|_| "i32 out of range")?,
+            Ty::U8 => v
+                .as_u64()
+                .ok_or("expected u8")?
+                .try_into()
+                .map(|x: u8| x as u64)
+                .map_err(|_| "u8 out of range")?,
+            Ty::I8 => v
+                .as_i64()
+                .ok_or("expected i8")?
+                .try_into()
+                .map(|x: i8| (x as u8) as u64)
+                .map_err(|_| "i8 out of range")?,
+            Ty::U16 => v
+                .as_u64()
+                .ok_or("expected u16")?
+                .try_into()
+                .map(|x: u16| x as u64)
+                .map_err(|_| "u16 out of range")?,
+            Ty::I16 => v
+                .as_i64()
+                .ok_or("expected i16")?
+                .try_into()
+                .map(|x: i16| (x as u16) as u64)
+                .map_err(|_| "i16 out of range")?,
+            Ty::U32 => v
+                .as_u64()
+                .ok_or("expected u32")?
+                .try_into()
+                .map(|x: u32| x as u64)
+                .map_err(|_| "u32 out of range")?,
+            Ty::I32 => v
+                .as_i64()
+                .ok_or("expected i32")?
+                .try_into()
+                .map(|x: i32| (x as u32) as u64)
+                .map_err(|_| "i32 out of range")?,
             Ty::U64 => v.as_u64().ok_or("expected u64")?,
             Ty::I64 => v.as_i64().ok_or("expected i64")? as u64,
             Ty::F32 => (v.as_f64().ok_or("expected f32")? as f32).to_bits() as u64,
@@ -159,9 +189,7 @@ fn safe_read_bits(addr: usize, ty: Ty) -> Option<u64> {
     Some(match ty {
         Ty::U8 | Ty::I8 => buf[0] as u64,
         Ty::U16 | Ty::I16 => u16::from_le_bytes([buf[0], buf[1]]) as u64,
-        Ty::U32 | Ty::I32 | Ty::F32 => {
-            u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]) as u64
-        }
+        Ty::U32 | Ty::I32 | Ty::F32 => u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]) as u64,
         Ty::U64 | Ty::I64 | Ty::F64 => u64::from_le_bytes([
             buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7],
         ]),
@@ -269,8 +297,7 @@ fn iter_private_rw_regions() -> Vec<Region> {
         }
         if info.State == MEM_COMMIT
             && info.Type == MEM_PRIVATE
-            && (info.Protect & 0xFF == PAGE_READWRITE
-                || info.Protect & 0xFF == PAGE_WRITECOPY)
+            && (info.Protect & 0xFF == PAGE_READWRITE || info.Protect & 0xFF == PAGE_WRITECOPY)
         {
             out.push(Region {
                 base: info.BaseAddress as usize,
@@ -443,11 +470,7 @@ fn sweeper_loop(stop: Arc<AtomicBool>) {
                     // Bytes are owned and outlive the copy.
                     unsafe {
                         let dst = job.addr as *mut u8;
-                        std::ptr::copy_nonoverlapping(
-                            job.bytes.as_ptr(),
-                            dst,
-                            job.bytes.len(),
-                        );
+                        std::ptr::copy_nonoverlapping(job.bytes.as_ptr(), dst, job.bytes.len());
                     }
                     job.failures = 0;
                     job.next_due = now + job.interval;
@@ -589,8 +612,7 @@ pub fn scan_memory(args: &Json) -> Result<Json, String> {
 /// by [`scan_cancel`]; the scan loops check it at every
 /// 64 KiB chunk boundary and bail with whatever survivors they
 /// have so far.
-static SCAN_CANCEL: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+static SCAN_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Abort the in-flight `scan_memory` / `scan_rescan` (if any).
 /// Returns the snapshot of the flag prior to setting. The scan
@@ -605,15 +627,20 @@ pub fn scan_rescan(args: &Json) -> Result<Json, String> {
     let id = arg_u64(args, "session_id", None)?;
     let mode = arg_str(args, "mode")?;
     let mut s = sessions().lock();
-    let sess = s.get_mut(&id).ok_or_else(|| format!("session {id} not found"))?;
+    let sess = s
+        .get_mut(&id)
+        .ok_or_else(|| format!("session {id} not found"))?;
     let ty = sess.ty;
 
     // Read current value at every survivor. `safe_read_bits` uses
     // ReadProcessMemory so a freed page returns None instead of
     // crashing the process; survivors that no longer read are
     // dropped from the session.
-    let cur: Vec<Option<u64>> =
-        sess.addresses.iter().map(|&a| safe_read_bits(a, ty)).collect();
+    let cur: Vec<Option<u64>> = sess
+        .addresses
+        .iter()
+        .map(|&a| safe_read_bits(a, ty))
+        .collect();
 
     let new: Vec<usize> = match mode {
         "exact" => {
@@ -635,9 +662,9 @@ pub fn scan_rescan(args: &Json) -> Result<Json, String> {
             // reference (e.g. the value that was true before the
             // in-game action). Cheat-Engine has true diff-mode
             // that stashes per-addr prev internally; future work.
-            let v = args.get("value").ok_or(
-                format!("'{mode}' needs 'value' = the previous reference value"),
-            )?;
+            let v = args.get("value").ok_or(format!(
+                "'{mode}' needs 'value' = the previous reference value"
+            ))?;
             let Val::U64Bits(prev, _) = Val::from_json(v, ty)?;
             use std::cmp::Ordering as O;
             sess.addresses
@@ -657,9 +684,9 @@ pub fn scan_rescan(args: &Json) -> Result<Json, String> {
                 .collect()
         }
         "decreased_by" | "increased_by" => {
-            let v = args.get("value").ok_or(
-                format!("'{mode}' needs 'value' = the previous reference value"),
-            )?;
+            let v = args.get("value").ok_or(format!(
+                "'{mode}' needs 'value' = the previous reference value"
+            ))?;
             let Val::U64Bits(prev, _) = Val::from_json(v, ty)?;
             let delta_v = args.get("delta").ok_or(format!("'{mode}' needs 'delta'"))?;
             let Val::U64Bits(delta_bits, _) = Val::from_json(delta_v, ty)?;
@@ -693,7 +720,9 @@ pub fn scan_session(args: &Json) -> Result<Json, String> {
     let max = arg_u64(args, "max", Some(200))? as usize;
     let offset = arg_u64(args, "offset", Some(0))? as usize;
     let s = sessions().lock();
-    let sess = s.get(&id).ok_or_else(|| format!("session {id} not found"))?;
+    let sess = s
+        .get(&id)
+        .ok_or_else(|| format!("session {id} not found"))?;
     let total = sess.addresses.len();
     let end = (offset + max).min(total);
     let slice: Vec<String> = sess.addresses[offset.min(total)..end]

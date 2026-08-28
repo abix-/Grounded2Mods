@@ -57,8 +57,8 @@
 //! ```
 
 use std::ffi::c_void;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use parking_lot::Mutex;
 
@@ -198,10 +198,7 @@ impl<B: ViewportBinder> ViewportHook<B> {
     ///     |h| h.class_name(),
     /// );
     /// ```
-    pub fn install(
-        &'static self,
-        binder: B,
-    ) -> Result<ProcessEventHook, &'static str> {
+    pub fn install(&'static self, binder: B) -> Result<ProcessEventHook, &'static str> {
         let widget_class = ClassRef::new_dynamic(self.config.widget_class)
             .get()
             .ok_or("ViewportHook: widget class not loaded")?;
@@ -275,9 +272,7 @@ fn lookup_fn(class: &crate::ue::UClass, name: &str) -> Result<usize, &'static st
 // class is the supported pattern.
 static DISPATCH_TABLE: Mutex<Vec<(&'static str, usize)>> = Mutex::new(Vec::new());
 
-fn register_hook_callback<B: ViewportBinder>(
-    hook: &'static ViewportHook<B>,
-) {
+fn register_hook_callback<B: ViewportBinder>(hook: &'static ViewportHook<B>) {
     let mut t = DISPATCH_TABLE.lock();
     let class = hook.config.widget_class;
     let addr = hook as *const ViewportHook<B> as usize;
@@ -354,9 +349,7 @@ fn on_event<B: ViewportBinder>(
 
     if fn_id == state.fn_on_mouse_wheel {
         handle_mouse_wheel(hook, state, this, parms);
-    } else if state.fn_refresh.iter().any(|&f| f == fn_id)
-        && get_viewport_start(state, this) != 0
-    {
+    } else if state.fn_refresh.iter().any(|&f| f == fn_id) && get_viewport_start(state, this) != 0 {
         let cur = get_viewport_start(state, this);
         let _ = rebind(hook, state, this, cur, "post-refresh");
     }
@@ -382,9 +375,17 @@ fn handle_mouse_wheel<B: ViewportBinder>(
     };
     let cur = get_viewport_start(state, widget);
     let next = if delta > 0.001 {
-        clamp_start(cur - hook.config.scroll_step, capacity, hook.config.page_size)
+        clamp_start(
+            cur - hook.config.scroll_step,
+            capacity,
+            hook.config.page_size,
+        )
     } else if delta < -0.001 {
-        clamp_start(cur + hook.config.scroll_step, capacity, hook.config.page_size)
+        clamp_start(
+            cur + hook.config.scroll_step,
+            capacity,
+            hook.config.page_size,
+        )
     } else {
         cur
     };

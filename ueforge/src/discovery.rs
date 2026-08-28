@@ -74,9 +74,7 @@ const TRACE_TO: usize = 30_000;
 #[inline]
 fn trace_step(scanned: usize, addr: usize, step: &str) {
     if TRACE_ENABLED && scanned >= TRACE_FROM && scanned < TRACE_TO {
-        crate::log::log(format_args!(
-            "dscv[{scanned}] addr=0x{addr:x} step={step}"
-        ));
+        crate::log::log(format_args!("dscv[{scanned}] addr=0x{addr:x} step={step}"));
     }
 }
 
@@ -363,9 +361,7 @@ pub fn struct_detail_json(struct_name: &str) -> Json {
     let Some(rt) = crate::ue::try_runtime() else {
         return json!({"error": "ueforge: ue runtime not initialized"});
     };
-    let view = unsafe {
-        crate::ue::GObjectsView::from_image(rt.image_base, rt.platform_offsets)
-    };
+    let view = unsafe { crate::ue::GObjectsView::from_image(rt.image_base, rt.platform_offsets) };
     if !view.is_valid() {
         return json!({"error": "gobjects view invalid"});
     }

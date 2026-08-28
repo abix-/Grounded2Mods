@@ -11,8 +11,8 @@ const DEFAULT_STEAM_EXE: &str = r"C:\Games\Steam\steam.exe";
 /// first, else uses `DEFAULT_STEAM_EXE`. Returns `Some(path)` only
 /// if the file exists.
 pub fn resolve_steam_exe() -> Option<PathBuf> {
-    let candidate = std::env::var("MODFORGE_STEAM_EXE")
-        .unwrap_or_else(|_| DEFAULT_STEAM_EXE.to_string());
+    let candidate =
+        std::env::var("MODFORGE_STEAM_EXE").unwrap_or_else(|_| DEFAULT_STEAM_EXE.to_string());
     let p = PathBuf::from(&candidate);
     if p.is_file() { Some(p) } else { None }
 }
@@ -22,7 +22,9 @@ pub fn resolve_steam_exe() -> Option<PathBuf> {
 /// `process::wait_for_start`.
 pub fn launch(app_id: u32) -> anyhow::Result<()> {
     if let Some(exe) = resolve_steam_exe() {
-        Command::new(exe).args(["-applaunch", &app_id.to_string()]).spawn()?;
+        Command::new(exe)
+            .args(["-applaunch", &app_id.to_string()])
+            .spawn()?;
         return Ok(());
     }
     // Fallback: protocol handler via `start steam://rungameid/<id>`.

@@ -29,8 +29,11 @@ fn find_dt_materials(api: &common::Api) -> Option<String> {
         "walk_class",
         json!({"class": "DataTable", "max": 10000, "include_cdo": false}),
     );
-    if !r.ok { return None; }
-    r.result["instances"].as_array()?
+    if !r.ok {
+        return None;
+    }
+    r.result["instances"]
+        .as_array()?
         .iter()
         .find(|i| i["name"].as_str() == Some("DT_Materials"))
         .and_then(|i| i["addr_selector"].as_str().map(|s| s.to_string()))
@@ -57,8 +60,8 @@ fn read_row_map_slots(api: &common::Api, dt: &str) -> Vec<(u64, u64)> {
     (0..data_num)
         .map(|i| {
             let off = i * 24;
-            let k = u64::from_le_bytes(slot_bytes[off..off+8].try_into().unwrap());
-            let v = u64::from_le_bytes(slot_bytes[off+8..off+16].try_into().unwrap());
+            let k = u64::from_le_bytes(slot_bytes[off..off + 8].try_into().unwrap());
+            let v = u64::from_le_bytes(slot_bytes[off + 8..off + 16].try_into().unwrap());
             (k, v)
         })
         .filter(|(_, v)| *v != 0)
@@ -74,7 +77,9 @@ fn read_stack(api: &common::Api, row_addr: u64) -> Option<i32> {
             "length": 4,
         }),
     );
-    if !r.ok { return None; }
+    if !r.ok {
+        return None;
+    }
     let b = hex_decode(r.result["bytes_hex"].as_str().unwrap());
     Some(i32::from_le_bytes(b[0..4].try_into().unwrap()))
 }
@@ -106,7 +111,9 @@ fn bump_all_stacks_4x() {
 
     let mut changed = 0;
     for (key, row_addr) in &rows {
-        let Some(cur) = read_stack(&api, *row_addr) else { continue };
+        let Some(cur) = read_stack(&api, *row_addr) else {
+            continue;
+        };
         if cur <= 1 {
             // Equipment / unique items. Skip to avoid scrambling
             // gameplay assumptions.
@@ -117,9 +124,7 @@ fn bump_all_stacks_4x() {
             // Verify
             let after = read_stack(&api, *row_addr).unwrap_or(-1);
             if after != new_value {
-                eprintln!(
-                    "  WARN fname=0x{key:016X}: wrote {new_value}, read back {after}"
-                );
+                eprintln!("  WARN fname=0x{key:016X}: wrote {new_value}, read back {after}");
                 continue;
             }
             changed += 1;
@@ -134,13 +139,19 @@ fn restore_all_stacks() {
     // bump ran first in the same game session and you want to
     // round-trip back without quitting.
     let Some(api) = common::try_api() else { return };
-    let Some(dt) = find_dt_materials(&api) else { return };
+    let Some(dt) = find_dt_materials(&api) else {
+        return;
+    };
 
     let rows = read_row_map_slots(&api, &dt);
     let mut restored = 0;
     for (_key, row_addr) in &rows {
-        let Some(cur) = read_stack(&api, *row_addr) else { continue };
-        if cur <= 4 { continue; } // skip equipment + tiny stacks
+        let Some(cur) = read_stack(&api, *row_addr) else {
+            continue;
+        };
+        if cur <= 4 {
+            continue;
+        } // skip equipment + tiny stacks
         let new_value = cur / 4;
         if write_stack(&api, *row_addr, new_value) {
             restored += 1;
@@ -152,6 +163,6 @@ fn restore_all_stacks() {
 fn hex_decode(s: &str) -> Vec<u8> {
     (0..s.len())
         .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i+2], 16).unwrap())
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
         .collect()
 }

@@ -15,8 +15,8 @@
 
 use serde::Serialize;
 use serde_json::Value as Json;
-use ueforge::debug::{CatalogEntry, DamageRing, PlayerStateView, ProcessSnapshot};
 pub use ueforge::debug::DamageEvent;
+use ueforge::debug::{CatalogEntry, DamageRing, PlayerStateView, ProcessSnapshot};
 use ueforge::envelope::handle_request;
 use ueforge::ops::{OP_REGISTRY, OpDef};
 use ueforge::pe_queue::GameThread;
@@ -66,8 +66,7 @@ pub(crate) fn damage_ring_peak() -> usize {
     DAMAGE_RING.peak()
 }
 
-const PE_TIMEOUT_HINT: &str =
-    "Is the UEngine::Tick hook installed? (ueforge::game_thread::status)";
+const PE_TIMEOUT_HINT: &str = "Is the UEngine::Tick hook installed? (ueforge::game_thread::status)";
 
 /// Register every g2rpg op + selector into the workspace
 /// registries. Called once from `worker()` at init, BEFORE the
@@ -94,11 +93,7 @@ fn register_ops() {
 
     ueforge::ops::register_builtins();
     ueforge::ops::register_with_resolver(ueforge::selector::resolve);
-    ueforge::debug::register_pe_call(
-        &PE_QUEUE,
-        PE_TIMEOUT_HINT,
-        ueforge::selector::resolve,
-    );
+    ueforge::debug::register_pe_call(&PE_QUEUE, PE_TIMEOUT_HINT, ueforge::selector::resolve);
     ueforge::rpg::ops::register(&tracker::TRACKER);
     // Lift: simulate_add_health + simulate_set_current_health
     // are framework-shipped. g2rpg only declares the binding;
@@ -122,15 +117,14 @@ fn register_ops() {
 /// HC binding consumed by `ueforge::rpg::health::register`.
 /// Offsets verified against Maine SDK
 /// (`SDK/HealthComponent_classes.hpp`).
-static HEALTH_BINDING: ueforge::rpg::health::HealthBinding =
-    ueforge::rpg::health::HealthBinding {
-        hc_class: &HEALTH_CLASS,
-        hc_selector: "live_player_hc",
-        current_damage_offset: 0x032C,
-        max_health_offset: 0x0328,
-        add_health_function: Some("AddHealth"),
-        set_current_health_function: Some("SetCurrentHealth"),
-    };
+static HEALTH_BINDING: ueforge::rpg::health::HealthBinding = ueforge::rpg::health::HealthBinding {
+    hc_class: &HEALTH_CLASS,
+    hc_selector: "live_player_hc",
+    current_damage_offset: 0x032C,
+    max_health_offset: 0x0328,
+    add_health_function: Some("AddHealth"),
+    set_current_health_function: Some("SetCurrentHealth"),
+};
 
 /// Starts Grounded 2's opt-in local debug endpoint.
 /// Stays here because this mod chooses its endpoint, operations, snapshot, and counters;
@@ -170,15 +164,13 @@ fn op_simulate_apply_damage(_args: &Json) -> Result<Json, String> {
     // the API surface (so tests can detect-and-skip cleanly) but
     // refuses with an explanation until the safe drain site
     // lands. See `../../docs/todo.md` "Endpoint parity gap".
-    Err(
-        "simulate_apply_damage temporarily disabled: \
+    Err("simulate_apply_damage temporarily disabled: \
          calling ApplyDamageFromInfo from inside a PE trampoline \
          crashes the game (replication re-entry). \
          Use simulate_add_health / simulate_set_current_health for \
          healing tests, or watch state.damage_ring while a real \
          bandage is used in-game."
-            .to_string(),
-    )
+        .to_string())
 }
 
 // ---- generic call primitive ----
@@ -199,10 +191,7 @@ fn try_live_player(s: &str) -> Option<Result<&'static UObject, String>> {
     if s != "live_player" {
         return None;
     }
-    Some(
-        unsafe { apply::PLAYER.first_live_static() }
-            .ok_or_else(|| "no live player".to_string()),
-    )
+    Some(unsafe { apply::PLAYER.first_live_static() }.ok_or_else(|| "no live player".to_string()))
 }
 
 /// Resolves the live Grounded 2 player's health component for a matching debug selector.
@@ -224,8 +213,8 @@ fn live_player_hc() -> Result<&'static UObject, String> {
     // SAFETY: we're on the game thread (inside the kill-hook PE
     // drain). The pawn + its HC live for the duration of the
     // closure that consumes them.
-    let pawn = unsafe { apply::PLAYER.first_live_static() }
-        .ok_or_else(|| "no live player".to_string())?;
+    let pawn =
+        unsafe { apply::PLAYER.first_live_static() }.ok_or_else(|| "no live player".to_string())?;
     let hc = apply::read_component_ptr(pawn, apply::ASC_HEALTH_COMPONENT)
         .ok_or_else(|| "no live player HealthComponent".to_string())?;
     Ok(unsafe { std::mem::transmute::<&UObject, &'static UObject>(hc) })
@@ -264,7 +253,8 @@ fn exec_apply_damage(amount: f32, type_flags: u32) -> Result<Json, String> {
         // Damage value (input lives inside FDamageInfo.OriginDamageData.Damage).
         let damage_in_ptr = parms
             .as_mut_ptr()
-            .add(DAMAGE_INFO_OFFSET + ORIGIN_DAMAGE_DATA_REL) as *mut f32;
+            .add(DAMAGE_INFO_OFFSET + ORIGIN_DAMAGE_DATA_REL)
+            as *mut f32;
         damage_in_ptr.write_unaligned(amount);
 
         // DamageFlags (the int32 the gate reads).
@@ -281,9 +271,8 @@ fn exec_apply_damage(amount: f32, type_flags: u32) -> Result<Json, String> {
         hc.process_event(func, parms.as_mut_ptr() as *mut c_void);
     }
 
-    let damage_out: f32 = unsafe {
-        (parms.as_ptr().add(DAMAGE_OUT_OFFSET) as *const f32).read_unaligned()
-    };
+    let damage_out: f32 =
+        unsafe { (parms.as_ptr().add(DAMAGE_OUT_OFFSET) as *const f32).read_unaligned() };
     let cd_after = apply::read_f32(hc, 0x032C);
 
     Ok(serde_json::json!({
@@ -591,9 +580,7 @@ fn read_asc_fields(asc: &UObject) -> AscFields {
     use crate::rpg::skills::*;
     AscFields {
         custom_damage_multiplier: apply::read_f32(asc, ASC_CUSTOM_DAMAGE_MULTIPLIER),
-        take_fall_damage: unsafe {
-            (asc.field_ptr(ASC_TAKE_FALL_DAMAGE) as *const u8).read() != 0
-        },
+        take_fall_damage: unsafe { (asc.field_ptr(ASC_TAKE_FALL_DAMAGE) as *const u8).read() != 0 },
         minimum_fall_damage_velocity: apply::read_f32(asc, ASC_MINIMUM_FALL_DAMAGE_VELOCITY),
         fall_damage_ratio: apply::read_f32(asc, ASC_FALL_DAMAGE_RATIO),
     }

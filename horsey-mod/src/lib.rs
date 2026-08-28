@@ -139,9 +139,7 @@ fn worker_main() {
         Ok(()) => {
             // Now we can safely enable the game's own no_tire.
             gamestate::set_no_tire(true);
-            modforge::log!(
-                "horsey-mod: sleep_safe_no_tire patched + game no_tire enabled"
-            );
+            modforge::log!("horsey-mod: sleep_safe_no_tire patched + game no_tire enabled");
         }
         Err(e) => {
             modforge::log!(
@@ -247,9 +245,7 @@ unsafe extern "system" fn seh_logger(
              kind={kind} bad_addr=0x{bad_addr:x} at rip=0x{fault_rip:x}"
         );
     } else {
-        modforge::log!(
-            "SEH thread={thread:?} code=0x{code_u:08x} at rip=0x{fault_rip:x}"
-        );
+        modforge::log!("SEH thread={thread:?} code=0x{code_u:08x} at rip=0x{fault_rip:x}");
     }
     // Best-effort: log the runtime image base so we can compute the
     // RVA inside our DLL by subtracting.
@@ -301,10 +297,11 @@ fn install_panic_hook() {
             .name()
             .unwrap_or("<unnamed>")
             .to_string();
+        modforge::log!("PANIC thread={thread:?} at {location}: {payload}");
         modforge::log!(
-            "PANIC thread={thread:?} at {location}: {payload}"
+            "PANIC backtrace:\n{}",
+            std::backtrace::Backtrace::force_capture()
         );
-        modforge::log!("PANIC backtrace:\n{}", std::backtrace::Backtrace::force_capture());
     }));
 }
 

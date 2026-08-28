@@ -68,21 +68,15 @@ mod tests {
 
     #[test]
     fn snapshot_ok_response() {
-        let r: OpResponse<serde_json::Value> = OpResponse::ok(
-            "snapshot",
-            json!({"foo": 42}),
-            json!({"alive": true}),
-        );
+        let r: OpResponse<serde_json::Value> =
+            OpResponse::ok("snapshot", json!({"foo": 42}), json!({"alive": true}));
         insta::assert_json_snapshot!(r);
     }
 
     #[test]
     fn snapshot_err_response() {
-        let r: OpResponse<serde_json::Value> = OpResponse::err(
-            "snapshot",
-            "no slot active",
-            json!({"alive": false}),
-        );
+        let r: OpResponse<serde_json::Value> =
+            OpResponse::err("snapshot", "no slot active", json!({"alive": false}));
         insta::assert_json_snapshot!(r);
     }
 

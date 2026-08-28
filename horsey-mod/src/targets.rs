@@ -154,7 +154,12 @@ pub mod gs_offset {
         static CACHE: OnceLock<usize> = OnceLock::new();
         *CACHE.get_or_init(|| {
             match modforge::research::in_process_decode_field_offset_via_string(
-                PAUSE_YEAR_ONLY_HEX, 0, "44 8b", 3, 4, 64,
+                PAUSE_YEAR_ONLY_HEX,
+                0,
+                "44 8b",
+                3,
+                4,
+                64,
             ) {
                 Ok(hist) => modforge::research::histogram_top(&hist)
                     .map(|v| v as usize)
@@ -185,7 +190,12 @@ pub mod gs_offset {
             // Easier: just scan `44 8b` and let the histogram find
             // the right disp via the YEAR vs SLEEPS frequency split.
             match modforge::research::in_process_decode_field_offset_via_string(
-                PAUSE_DEBUG_HEX, 0, "44 8b", 3, 4, 64,
+                PAUSE_DEBUG_HEX,
+                0,
+                "44 8b",
+                3,
+                4,
+                64,
             ) {
                 Ok(hist) => {
                     // Build a sorted view, pick the largest disp
@@ -195,7 +205,8 @@ pub mod gs_offset {
                     let mut sorted: Vec<(i64, usize)> = hist.into_iter().collect();
                     sorted.sort_by(|a, b| b.1.cmp(&a.1));
                     // Find the most-frequent disp that's NOT year.
-                    sorted.iter()
+                    sorted
+                        .iter()
                         .find(|(d, _)| *d != year_off && *d > 0)
                         .map(|(d, _)| *d as usize)
                         .unwrap_or(SLEEPS)
@@ -234,11 +245,16 @@ pub mod gs_offset {
         // >= 0x200 (live-horses pair is below 0x200).
         let hist = modforge::research::in_process_decode_disp_pair_with_delta(
             "48 8b ?? ?? ?? ?? ?? 48 8b ?? ?? ?? ?? ??",
-            3, 10, 4, 8,
-        ).ok()?;
+            3,
+            10,
+            4,
+            8,
+        )
+        .ok()?;
         // Constrain to [0x200, 0x300]: above the live-horses pair
         // (0x130), below other GameState pointer pairs (e.g. 0x4a0).
-        let mut top: Vec<(i64, usize)> = hist.into_iter()
+        let mut top: Vec<(i64, usize)> = hist
+            .into_iter()
             .filter(|(v, _)| *v >= 0x200 && *v < 0x300)
             .collect();
         top.sort_by(|a, b| b.1.cmp(&a.1));
@@ -250,9 +266,14 @@ pub mod gs_offset {
         // (HLT labels these `kOffSimHorsesBegin/End` 0x260/0x268).
         let hist = modforge::research::in_process_decode_disp_pair_with_delta(
             "48 8b ?? ?? ?? ?? ?? 48 8b ?? ?? ?? ?? ??",
-            3, 10, 4, 8,
-        ).ok()?;
-        let mut top: Vec<(i64, usize)> = hist.into_iter()
+            3,
+            10,
+            4,
+            8,
+        )
+        .ok()?;
+        let mut top: Vec<(i64, usize)> = hist
+            .into_iter()
             .filter(|(v, _)| *v >= 0x250 && *v < 0x270)
             .collect();
         top.sort_by(|a, b| b.1.cmp(&a.1));
@@ -279,9 +300,14 @@ pub mod gs_offset {
         // (< 0x200).
         let hist = modforge::research::in_process_decode_disp_pair_with_delta(
             "48 8b ?? ?? ?? ?? ?? 48 8b ?? ?? ?? ?? ??",
-            3, 10, 4, 8,
-        ).ok()?;
-        let mut top: Vec<(i64, usize)> = hist.into_iter()
+            3,
+            10,
+            4,
+            8,
+        )
+        .ok()?;
+        let mut top: Vec<(i64, usize)> = hist
+            .into_iter()
             .filter(|(v, _)| *v >= 0x100 && *v < 0x200)
             .collect();
         top.sort_by(|a, b| b.1.cmp(&a.1));
@@ -323,9 +349,14 @@ pub mod gs_offset {
         // and disp1 in the trailing-GameState band [0x270, 0x290].
         let hist = modforge::research::in_process_decode_disp_pair_with_delta(
             "8b ?? ?? ?? ?? ?? 8b ?? ?? ?? ?? ??",
-            2, 8, 4, 4,
-        ).ok()?;
-        let mut top: Vec<(i64, usize)> = hist.into_iter()
+            2,
+            8,
+            4,
+            4,
+        )
+        .ok()?;
+        let mut top: Vec<(i64, usize)> = hist
+            .into_iter()
             .filter(|(v, _)| *v >= 0x270 && *v < 0x290)
             .collect();
         top.sort_by(|a, b| b.1.cmp(&a.1));
@@ -375,14 +406,11 @@ pub mod gs_offset {
             return None;
         }
         const LOOKBACK: usize = 128;
-        let mut hist: std::collections::BTreeMap<i64, usize> =
-            std::collections::BTreeMap::new();
+        let mut hist: std::collections::BTreeMap<i64, usize> = std::collections::BTreeMap::new();
         for call_addr in call_sites {
             let start = call_addr.saturating_sub(LOOKBACK);
             // SAFETY: start..call_addr is inside .text, mapped.
-            let bytes: &[u8] = unsafe {
-                std::slice::from_raw_parts(start as *const u8, LOOKBACK)
-            };
+            let bytes: &[u8] = unsafe { std::slice::from_raw_parts(start as *const u8, LOOKBACK) };
             for i in 0..bytes.len().saturating_sub(3) {
                 if bytes[i] == 0x6b {
                     let imm8 = bytes[i + 2] as i8 as i64;
@@ -420,8 +448,7 @@ pub mod gs_offset {
         // `mov [rip+disp32], reg` for any of the 8 common destination
         // regs. The disp32 must rip-rel to `gs_ptr`.
         const STORE_PREFIXES: &[&str] = &[
-            "48 89 05", "48 89 0d", "48 89 15", "48 89 1d",
-            "48 89 2d", "48 89 35", "48 89 3d",
+            "48 89 05", "48 89 0d", "48 89 15", "48 89 1d", "48 89 2d", "48 89 35", "48 89 3d",
         ];
         let mut anchor: Option<usize> = None;
         for prefix in STORE_PREFIXES {
@@ -437,16 +464,13 @@ pub mod gs_offset {
         const LOOKBACK: usize = 256;
         let start = anchor.saturating_sub(LOOKBACK);
         // SAFETY: start..anchor is inside .text, mapped.
-        let bytes: &[u8] = unsafe {
-            std::slice::from_raw_parts(start as *const u8, LOOKBACK)
-        };
-        let mut hist: std::collections::BTreeMap<i64, usize> =
-            std::collections::BTreeMap::new();
+        let bytes: &[u8] = unsafe { std::slice::from_raw_parts(start as *const u8, LOOKBACK) };
+        let mut hist: std::collections::BTreeMap<i64, usize> = std::collections::BTreeMap::new();
         for i in 0..bytes.len().saturating_sub(5) {
             if bytes[i] == 0xb9 {
-                let imm = i32::from_le_bytes([
-                    bytes[i + 1], bytes[i + 2], bytes[i + 3], bytes[i + 4],
-                ]) as i64;
+                let imm =
+                    i32::from_le_bytes([bytes[i + 1], bytes[i + 2], bytes[i + 3], bytes[i + 4]])
+                        as i64;
                 if (0x100..0x10000).contains(&imm) {
                     *hist.entry(imm).or_insert(0) += 1;
                 }
@@ -493,8 +517,7 @@ pub mod horse_offset {
     }
 
     fn resolve_type_or_species() -> Option<usize> {
-        let mut hist: std::collections::BTreeMap<i64, usize> =
-            std::collections::BTreeMap::new();
+        let mut hist: std::collections::BTreeMap<i64, usize> = std::collections::BTreeMap::new();
         for imm in &[1u8, 2, 4, 6] {
             let sig = format!("83 ?? ?? {imm:02x}");
             let hits = match modforge::patterns::sleuth::scan_all_matches(&sig) {
@@ -503,9 +526,7 @@ pub mod horse_offset {
             };
             for addr in hits {
                 // SAFETY: addr matched in .text, 4 bytes mapped.
-                let bytes: &[u8] = unsafe {
-                    std::slice::from_raw_parts(addr as *const u8, 4)
-                };
+                let bytes: &[u8] = unsafe { std::slice::from_raw_parts(addr as *const u8, 4) };
                 let modrm = bytes[1];
                 // mod=01 (disp8) + reg=111 (cmp /7) = 0x78..0x7F.
                 let is_cmp7 = (modrm & 0xC0) == 0x40 && (modrm & 0x38) == 0x38;
@@ -561,18 +582,24 @@ pub mod horse_offset {
     // Retire handler format string: `"%s retired %s (bails) age %d ch %d"`.
     // Unique in .rdata. horse.age is the 4th printf arg, loaded into
     // r9d via `44 8b 8? <disp32>` right after the lea-to-string.
-    const BAILS_AGE_HEX: &str =
-        "25 73 20 72 65 74 69 72 65 64 20 25 73 20 28 62 61 69 6c 73 29 20 61 67 65 20 25 64 20 63 68 20 25 64";
+    const BAILS_AGE_HEX: &str = "25 73 20 72 65 74 69 72 65 64 20 25 73 20 28 62 61 69 6c 73 29 20 61 67 65 20 25 64 20 63 68 20 25 64";
 
     fn resolve_age() -> Option<usize> {
         let hist = modforge::research::in_process_decode_field_offset_via_string(
-            BAILS_AGE_HEX, 0, "44 8b", 3, 4, 128,
-        ).ok()?;
+            BAILS_AGE_HEX,
+            0,
+            "44 8b",
+            3,
+            4,
+            128,
+        )
+        .ok()?;
         // Filter to plausible horse-struct field range and pick the
         // most-frequent disp. AGE is loaded for the printf arg; the
         // window may also contain the horse.name pointer load
         // (different opcode, not 44 8b) or other r8d/r9d field loads.
-        let mut sorted: Vec<(i64, usize)> = hist.into_iter()
+        let mut sorted: Vec<(i64, usize)> = hist
+            .into_iter()
             .filter(|(v, _)| *v >= 0x100 && *v < 0x300)
             .collect();
         sorted.sort_by(|a, b| b.1.cmp(&a.1));
@@ -612,13 +639,21 @@ pub mod horse_offset {
         static CACHE: OnceLock<usize> = OnceLock::new();
         *CACHE.get_or_init(|| {
             let hist = match modforge::research::in_process_decode_field_offset_via_string(
-                BAILS_AGE_HEX, 0, "8b", 2, 4, 128,
+                BAILS_AGE_HEX,
+                0,
+                "8b",
+                2,
+                4,
+                128,
             ) {
                 Ok(h) => h,
                 Err(_) => return NAME_ID,
             };
-            let mut top: Vec<(i64, usize)> = hist.into_iter()
-                .filter(|(v, _)| *v >= 0x1d0 && *v < 0x210 && *v != age() as i64 && *v != max_age() as i64)
+            let mut top: Vec<(i64, usize)> = hist
+                .into_iter()
+                .filter(|(v, _)| {
+                    *v >= 0x1d0 && *v < 0x210 && *v != age() as i64 && *v != max_age() as i64
+                })
                 .collect();
             top.sort_by(|a, b| b.1.cmp(&a.1));
             top.first().map(|&(d, _)| d as usize).unwrap_or(NAME_ID)
@@ -648,17 +683,13 @@ pub mod horse_offset {
     fn find_no_tire_pair() -> Option<(usize, usize, usize)> {
         static CACHE: OnceLock<Option<(usize, usize, usize)>> = OnceLock::new();
         *CACHE.get_or_init(|| {
-            let hits = modforge::patterns::sleuth::scan_all_matches(
-                "c6 ?? ?? ?? ?? ?? 00",
-            ).ok()?;
+            let hits = modforge::patterns::sleuth::scan_all_matches("c6 ?? ?? ?? ?? ?? 00").ok()?;
             // Read disp32 from each candidate store and keep those
             // whose disp falls in the horse-struct flag region.
             let mut stores: Vec<(usize, i32)> = Vec::with_capacity(hits.len());
             for addr in hits {
                 // SAFETY: addr matched in .text, 7 bytes mapped.
-                let bytes: &[u8] = unsafe {
-                    std::slice::from_raw_parts(addr as *const u8, 7)
-                };
+                let bytes: &[u8] = unsafe { std::slice::from_raw_parts(addr as *const u8, 7) };
                 let disp = i32::from_le_bytes([bytes[2], bytes[3], bytes[4], bytes[5]]);
                 if (0x100..0x500).contains(&disp) {
                     stores.push((addr, disp));
@@ -777,8 +808,7 @@ pub mod horse_offset {
     // gate on the (useless) branch (`*(int*)(horse + skill) <
     // (mode != 4 ? 2 : 1)`), loaded ~50-200 bytes BEFORE the
     // (useless) lea. Wider window than BAILS_AGE_HEX.
-    const USELESS_AGE_HEX: &str =
-        "25 73 20 72 65 74 69 72 65 64 20 25 73 20 28 75 73 65 6c 65 73 73 29 20 61 67 65 20 25 64 20 63 68 20 25 64";
+    const USELESS_AGE_HEX: &str = "25 73 20 72 65 74 69 72 65 64 20 25 73 20 28 75 73 65 6c 65 73 73 29 20 61 67 65 20 25 64 20 63 68 20 25 64";
 
     /// Pattern-resolved skill offset. Anchors on the (useless)
     /// retire-handler format string with a 256-byte ±window and
@@ -792,12 +822,18 @@ pub mod horse_offset {
         static CACHE: OnceLock<usize> = OnceLock::new();
         *CACHE.get_or_init(|| {
             let hist = match modforge::research::in_process_decode_field_offset_via_string(
-                USELESS_AGE_HEX, 0, "8b", 2, 4, 256,
+                USELESS_AGE_HEX,
+                0,
+                "8b",
+                2,
+                4,
+                256,
             ) {
                 Ok(h) => h,
                 Err(_) => return SKILL,
             };
-            let mut top: Vec<(i64, usize)> = hist.into_iter()
+            let mut top: Vec<(i64, usize)> = hist
+                .into_iter()
                 .filter(|(v, _)| *v >= 0x210 && *v < 0x240)
                 .collect();
             top.sort_by(|a, b| b.1.cmp(&a.1));
@@ -826,10 +862,11 @@ pub mod horse_offset {
 
     fn resolve_litter_size_stat() -> Option<usize> {
         let entry = crate::targets_registry::resolve::breeding()?;
-        let hist = modforge::research::in_process_decode_imm_in_window(
-            "8b", 2, 4, entry as u64, 8192,
-        ).ok()?;
-        let mut top: Vec<(i64, usize)> = hist.into_iter()
+        let hist =
+            modforge::research::in_process_decode_imm_in_window("8b", 2, 4, entry as u64, 8192)
+                .ok()?;
+        let mut top: Vec<(i64, usize)> = hist
+            .into_iter()
             .filter(|(v, _)| *v >= 0x240 && *v < 0x270)
             .collect();
         top.sort_by(|a, b| b.1.cmp(&a.1));
@@ -858,7 +895,11 @@ pub mod horse_offset {
             // Scan within the first 256 bytes of HORSE_SAVE_LOADER
             // for `48 81 c1 ?? ?? ?? ??` (add rcx, imm32).
             let hist = match modforge::research::in_process_decode_imm_in_window(
-                "48 81 c1", 3, 4, loader as u64, 256,
+                "48 81 c1",
+                3,
+                4,
+                loader as u64,
+                256,
             ) {
                 Ok(h) => h,
                 Err(_) => return HORSE_CTX_OFFSET,
@@ -898,18 +939,18 @@ pub mod horse_offset {
             return None;
         }
         const LOOKBACK: usize = 32;
-        let mut hist: std::collections::BTreeMap<i64, usize> =
-            std::collections::BTreeMap::new();
+        let mut hist: std::collections::BTreeMap<i64, usize> = std::collections::BTreeMap::new();
         for call_addr in call_sites {
             let start = call_addr.saturating_sub(LOOKBACK);
             // SAFETY: start..call_addr is inside .text, mapped.
-            let bytes: &[u8] = unsafe {
-                std::slice::from_raw_parts(start as *const u8, LOOKBACK)
-            };
+            let bytes: &[u8] = unsafe { std::slice::from_raw_parts(start as *const u8, LOOKBACK) };
             for i in 0..bytes.len().saturating_sub(5) {
                 if bytes[i] == 0xb9 {
                     let imm = i32::from_le_bytes([
-                        bytes[i + 1], bytes[i + 2], bytes[i + 3], bytes[i + 4],
+                        bytes[i + 1],
+                        bytes[i + 2],
+                        bytes[i + 3],
+                        bytes[i + 4],
                     ]) as i64;
                     if (0x100..0x10000).contains(&imm) {
                         *hist.entry(imm).or_insert(0) += 1;
@@ -1190,9 +1231,8 @@ pub fn find_function_bounds_via_int3(
 ) -> Option<(usize, usize)> {
     let back_start = addr_inside.saturating_sub(lookback);
     let back_len = addr_inside - back_start;
-    let back_bytes: &[u8] = unsafe {
-        std::slice::from_raw_parts(back_start as *const u8, back_len)
-    };
+    let back_bytes: &[u8] =
+        unsafe { std::slice::from_raw_parts(back_start as *const u8, back_len) };
     let mut start: Option<usize> = None;
     for p in (1..back_bytes.len()).rev() {
         if back_bytes[p] == 0xcc && back_bytes[p - 1] == 0xcc {
@@ -1202,9 +1242,8 @@ pub fn find_function_bounds_via_int3(
     }
     let start = start?;
 
-    let fwd_bytes: &[u8] = unsafe {
-        std::slice::from_raw_parts(addr_inside as *const u8, lookahead)
-    };
+    let fwd_bytes: &[u8] =
+        unsafe { std::slice::from_raw_parts(addr_inside as *const u8, lookahead) };
     let mut end: Option<usize> = None;
     for p in 0..fwd_bytes.len().saturating_sub(1) {
         if fwd_bytes[p] == 0xcc && fwd_bytes[p + 1] == 0xcc {
@@ -1255,12 +1294,14 @@ pub fn image_text_sha256() -> String {
             };
             // SAFETY: text_addr / text_size point at the loaded image's
             // .text bytes; readable for the lifetime of the process.
-            let bytes =
-                unsafe { std::slice::from_raw_parts(text_addr as *const u8, text_size) };
+            let bytes = unsafe { std::slice::from_raw_parts(text_addr as *const u8, text_size) };
             let mut hasher = Sha256::new();
             hasher.update(bytes);
             let digest = hasher.finalize();
-            digest.iter().map(|b| format!("{b:02x}")).collect::<String>()
+            digest
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>()
         })
         .clone()
 }

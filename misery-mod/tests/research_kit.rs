@@ -38,13 +38,16 @@ fn dump(api: &Api, prefix: &str) -> usize {
         let name = m["name"].as_str().unwrap_or("?");
         let s = m["size"].as_array().cloned().unwrap_or_default();
         let p = m["pivot_offset"].as_array().cloned().unwrap_or_default();
-        let f = |v: &Vec<serde_json::Value>, i: usize| {
-            v.get(i).and_then(|x| x.as_f64()).unwrap_or(0.0)
-        };
+        let f =
+            |v: &Vec<serde_json::Value>, i: usize| v.get(i).and_then(|x| x.as_f64()).unwrap_or(0.0);
         println!(
             "  {name:<34} size {:>6.0} x {:>5.0} x {:>6.0}   pivot {:>6.0} {:>5.0} {:>6.0}",
-            f(&s, 0), f(&s, 1), f(&s, 2),
-            f(&p, 0), f(&p, 1), f(&p, 2),
+            f(&s, 0),
+            f(&s, 1),
+            f(&s, 2),
+            f(&p, 0),
+            f(&p, 1),
+            f(&p, 2),
         );
     }
     meshes.len()
@@ -85,11 +88,16 @@ fn wall_pivot_rule_holds() {
     for m in &meshes {
         let name = m["name"].as_str().unwrap_or("");
         // Only the dimension-named ones make the promise.
-        let Some(dims) = name.strip_prefix("SM_Wall_") else { continue };
-        let Some((w, h)) = dims.split_once('x') else { continue };
+        let Some(dims) = name.strip_prefix("SM_Wall_") else {
+            continue;
+        };
+        let Some((w, h)) = dims.split_once('x') else {
+            continue;
+        };
         let (Ok(w), Ok(h)) = (
             w.parse::<f64>(),
-            h.trim_end_matches(|c: char| !c.is_ascii_digit()).parse::<f64>(),
+            h.trim_end_matches(|c: char| !c.is_ascii_digit())
+                .parse::<f64>(),
         ) else {
             continue;
         };

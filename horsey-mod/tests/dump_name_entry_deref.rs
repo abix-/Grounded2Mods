@@ -15,39 +15,59 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 #[test]
 fn dump_name_entry_deref() {
-    let Some(game) = common::launch("dump_name_entry_deref") else { return };
+    let Some(game) = common::launch("dump_name_entry_deref") else {
+        return;
+    };
     let name_id: u64 = common::env_or("HORSEY_NAME_ID", 250u64);
     let n: u64 = common::env_or("HORSEY_NAME_BYTES", 64u64);
 
-    let r = game.op_json("horse.name_diag", &json!({"name_id": name_id})).unwrap();
+    let r = game
+        .op_json("horse.name_diag", &json!({"name_id": name_id}))
+        .unwrap();
     let result = r.get("result").unwrap_or(&r);
-    let first = result.get("first_qword").and_then(Value::as_str).unwrap_or("0x0");
+    let first = result
+        .get("first_qword")
+        .and_then(Value::as_str)
+        .unwrap_or("0x0");
     let entry_addr = result.get("entry").and_then(Value::as_str).unwrap_or("0x0");
     eprintln!("name_id={name_id} entry={entry_addr} first_qword={first}");
 
-    let bytes_r = game.op_json("patterns.read_bytes", &json!({"addr": first, "n": n})).unwrap();
-    let hex = bytes_r.get("result").and_then(|x| x.get("bytes")).and_then(Value::as_str)
+    let bytes_r = game
+        .op_json("patterns.read_bytes", &json!({"addr": first, "n": n}))
+        .unwrap();
+    let hex = bytes_r
+        .get("result")
+        .and_then(|x| x.get("bytes"))
+        .and_then(Value::as_str)
         .expect("no bytes field");
     eprintln!("bytes @ first_qword:\n  {hex}");
 
-    let bytes: Vec<u8> = hex.split_whitespace()
+    let bytes: Vec<u8> = hex
+        .split_whitespace()
         .map(|s| u8::from_str_radix(s, 16).unwrap_or(0))
         .collect();
     assert!(!bytes.is_empty(), "no bytes read");
 
-    let printable_run: String = bytes.iter()
+    let printable_run: String = bytes
+        .iter()
         .take_while(|&&b| b >= 0x20 && b < 0x7f)
         .map(|&b| b as char)
         .collect();
-    eprintln!("printable prefix: {:?} (len {})", printable_run, printable_run.len());
+    eprintln!(
+        "printable prefix: {:?} (len {})",
+        printable_run,
+        printable_run.len()
+    );
 
     let first_byte = bytes[0];
-    assert!(first_byte >= 0x20 && first_byte < 0x7f,
-        "first byte 0x{first_byte:02x} not printable ASCII; entry doesn't look string-shaped");
+    assert!(
+        first_byte >= 0x20 && first_byte < 0x7f,
+        "first byte 0x{first_byte:02x} not printable ASCII; entry doesn't look string-shaped"
+    );
 
     if let Ok(want) = std::env::var("HORSEY_EXPECT_NAME") {
         assert!(

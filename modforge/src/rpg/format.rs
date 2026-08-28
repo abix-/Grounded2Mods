@@ -82,12 +82,7 @@ pub fn format_pct(
 /// "+N% word (Xx)". Multiplier-style write for skills whose
 /// effective multiplier is `1 + max_bonus * progress` (the shape
 /// `PlayerMovementMult` and `GlobalDataMult` use).
-pub fn format_multiplier(
-    max_bonus: f32,
-    level: u32,
-    max_level: u32,
-    word: &str,
-) -> String {
+pub fn format_multiplier(max_bonus: f32, level: u32, max_level: u32, word: &str) -> String {
     let bonus = skill_bonus(max_bonus, level, max_level);
     let mult = 1.0 + bonus;
     let pct = (bonus * 100.0).round() as i32;
@@ -95,12 +90,7 @@ pub fn format_multiplier(
 }
 
 /// "+N word". Raw additive count for things like "+460 slots".
-pub fn format_additive_int(
-    max_bonus: i32,
-    level: u32,
-    max_level: u32,
-    word: &str,
-) -> String {
+pub fn format_additive_int(max_bonus: i32, level: u32, max_level: u32, word: &str) -> String {
     let bonus = (max_bonus as f32 * sqrt_progress(level, max_level)).round() as i32;
     format!("+{bonus} {word}")
 }
@@ -152,7 +142,9 @@ mod tests {
             1.0,
             25,
             100,
-            &PercentFormat::MinusPercent { word: "damage taken" },
+            &PercentFormat::MinusPercent {
+                word: "damage taken",
+            },
         );
         assert_eq!(s, "-50% damage taken");
     }

@@ -15,7 +15,104 @@
 //! unityforge::input::register_key_press(KeyCode::Space, on_space);
 //! ```
 
+use std::time::Duration;
+
+use modforge::input::{Axis, Button, InputSurface, Key, PlayerCommand};
+use modforge::route::PlayerObservation;
+
 use crate::bridge;
+use crate::main_thread_queue::{MAIN_QUEUE, MainThreadQueue};
+
+const INPUT_TIMEOUT: Duration = Duration::from_secs(3);
+
+type PlayerInput = dyn Fn(&[PlayerCommand]) -> Result<(), String> + Send + Sync;
+type ObservePlayer = dyn Fn() -> Result<PlayerObservation, String> + Send + Sync;
+
+pub struct UnityInputSurface {
+    name: &'static str,
+    queue: &'static MainThreadQueue,
+    player_input: Box<PlayerInput>,
+    observe_player: Box<ObservePlayer>,
+}
+
+impl UnityInputSurface {
+    pub fn new(
+        name: &'static str,
+        queue: &'static MainThreadQueue,
+        player_input: impl Fn(&[PlayerCommand]) -> Result<(), String> + Send + Sync + 'static,
+        observe_player: impl Fn() -> Result<PlayerObservation, String> + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            name,
+            queue,
+            player_input: Box::new(player_input),
+            observe_player: Box::new(observe_player),
+        }
+    }
+}
+
+impl InputSurface for &'static UnityInputSurface {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn click(&self, _button: Button, _x: i32, _y: i32) -> Result<(), String> {
+        Err("absolute UI clicks are not implemented by Unity player input".into())
+    }
+
+    fn move_abs(&self, _x: i32, _y: i32) -> Result<(), String> {
+        Err("absolute cursor movement is not implemented by Unity player input".into())
+    }
+
+    fn move_rel(&self, dx: i32, dy: i32) -> Result<(), String> {
+        self.commands(&[PlayerCommand::mouse_delta(dx, dy)])
+    }
+
+    fn key(&self, key: Key, down: bool) -> Result<(), String> {
+        self.commands(&[PlayerCommand::key(key, down)])
+    }
+
+    fn axis(&self, axis: Axis, value: f32, _delta_time: f32) -> Result<(), String> {
+        match axis {
+            Axis::MouseX => self.move_rel(value.round() as i32, 0),
+            Axis::MouseY => self.move_rel(0, value.round() as i32),
+            Axis::MoveForward | Axis::MoveRight => Err(format!(
+                "Unity bot movement requires virtual keys, not axis {axis:?}"
+            )),
+        }
+    }
+
+    fn commands(&self, commands: &[PlayerCommand]) -> Result<(), String> {
+        let surface = *self;
+        let commands = commands.to_vec();
+        self.queue
+            .run_result("Unity player input", INPUT_TIMEOUT, move || {
+                (surface.player_input)(&commands)
+            })
+    }
+
+    fn observe_player(&self) -> Result<PlayerObservation, String> {
+        let surface = *self;
+        self.queue
+            .run_result("Unity player observation", INPUT_TIMEOUT, move || {
+                (surface.observe_player)()
+            })
+    }
+}
+
+pub fn register_player_input(
+    name: &'static str,
+    player_input: impl Fn(&[PlayerCommand]) -> Result<(), String> + Send + Sync + 'static,
+    observe_player: impl Fn() -> Result<PlayerObservation, String> + Send + Sync + 'static,
+) {
+    let surface: &'static UnityInputSurface = Box::leak(Box::new(UnityInputSurface::new(
+        name,
+        &MAIN_QUEUE,
+        player_input,
+        observe_player,
+    )));
+    modforge::input::set_input_surface(surface);
+}
 
 /// Unity `KeyCode` integer values. Subset; add more as needed.
 /// Full enum: https://docs.unity3d.com/ScriptReference/KeyCode.html

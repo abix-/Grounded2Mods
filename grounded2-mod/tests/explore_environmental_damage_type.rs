@@ -58,27 +58,58 @@ fn read_environmental_damage_cdo() {
     let b_can_incapacitate = bytes[13];
 
     eprintln!("\n=== BP_EnvironmentalDamage_C CDO fields ===");
-    eprintln!("  DamageTypeFlags                          = 0x{:08x}", damage_type_flags);
+    eprintln!(
+        "  DamageTypeFlags                          = 0x{:08x}",
+        damage_type_flags
+    );
     eprintln!("    (bits set: {:?})", flags_set(damage_type_flags));
-    eprintln!("  bCanBlock                                = {}", b_can_block != 0);
-    eprintln!("  bCanBlockWithWeapon                      = {}", b_can_block_with_weapon != 0);
-    eprintln!("  bCanApplyDamageReductionFromEquipment    = {}", b_can_apply_dr_equipment != 0);
-    eprintln!("  bCanApplyDamageReductionFromStatusEffect = {}", b_can_apply_dr_status_effect != 0);
-    eprintln!("  bCanPlayHitReaction                      = {}", b_can_play_hit_react != 0);
-    eprintln!("  bDamageDurability                        = {}", b_damage_durability != 0);
-    eprintln!("  bCanKill                                 = {}", b_can_kill != 0);
-    eprintln!("  bCanRepair                               = {}", b_can_repair != 0);
-    eprintln!("  bAppliesEffectsOnDamageOverTime          = {}", b_applies_effects_dot != 0);
-    eprintln!("  bCanIncapacitate                         = {}", b_can_incapacitate != 0);
+    eprintln!(
+        "  bCanBlock                                = {}",
+        b_can_block != 0
+    );
+    eprintln!(
+        "  bCanBlockWithWeapon                      = {}",
+        b_can_block_with_weapon != 0
+    );
+    eprintln!(
+        "  bCanApplyDamageReductionFromEquipment    = {}",
+        b_can_apply_dr_equipment != 0
+    );
+    eprintln!(
+        "  bCanApplyDamageReductionFromStatusEffect = {}",
+        b_can_apply_dr_status_effect != 0
+    );
+    eprintln!(
+        "  bCanPlayHitReaction                      = {}",
+        b_can_play_hit_react != 0
+    );
+    eprintln!(
+        "  bDamageDurability                        = {}",
+        b_damage_durability != 0
+    );
+    eprintln!(
+        "  bCanKill                                 = {}",
+        b_can_kill != 0
+    );
+    eprintln!(
+        "  bCanRepair                               = {}",
+        b_can_repair != 0
+    );
+    eprintln!(
+        "  bAppliesEffectsOnDamageOverTime          = {}",
+        b_applies_effects_dot != 0
+    );
+    eprintln!(
+        "  bCanIncapacitate                         = {}",
+        b_can_incapacitate != 0
+    );
 
     eprintln!("\n=== Implications ===");
     if b_can_apply_dr_status_effect != 0 {
         eprintln!(
             "  bCanApplyDamageReductionFromStatusEffect = TRUE: a status effect with matching"
         );
-        eprintln!(
-            "  DamageTypeFlags would reduce environmental damage. The proper fix is to add"
-        );
+        eprintln!("  DamageTypeFlags would reduce environmental damage. The proper fix is to add");
         eprintln!(
             "  a Type=DamageReduction (29) or Type=DamageReductionMultiplier (30) status effect"
         );
@@ -87,18 +118,10 @@ fn read_environmental_damage_cdo() {
             damage_type_flags
         );
     } else {
-        eprintln!(
-            "  bCanApplyDamageReductionFromStatusEffect = FALSE: status-effect reduction"
-        );
-        eprintln!(
-            "  is bypassed for this damage type. We cannot use a status effect to mitigate."
-        );
-        eprintln!(
-            "  Fall back to: post-application reversal in the multicast trampoline OR a"
-        );
-        eprintln!(
-            "  native detour on whatever C++ function actually writes CurrentDamage."
-        );
+        eprintln!("  bCanApplyDamageReductionFromStatusEffect = FALSE: status-effect reduction");
+        eprintln!("  is bypassed for this damage type. We cannot use a status effect to mitigate.");
+        eprintln!("  Fall back to: post-application reversal in the multicast trampoline OR a");
+        eprintln!("  native detour on whatever C++ function actually writes CurrentDamage.");
     }
 }
 

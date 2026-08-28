@@ -62,9 +62,7 @@ pub fn host_exe_name() -> Option<String> {
 /// Match the host exe's basename against a list of
 /// `(substring, offsets)` pairs. Returns the first matching
 /// `&PlatformOffsets`. Caller falls back to a default on `None`.
-pub fn detect<'a>(
-    table: &[(&str, &'a PlatformOffsets)],
-) -> Option<&'a PlatformOffsets> {
+pub fn detect<'a>(table: &[(&str, &'a PlatformOffsets)]) -> Option<&'a PlatformOffsets> {
     let exe = host_exe_name()?;
     table
         .iter()
@@ -85,9 +83,7 @@ pub fn detect<'a>(
 /// ];
 /// let _rt = ueforge::ue::platform::detect_and_init(PLATFORMS);
 /// ```
-pub fn detect_and_init(
-    table: &[(&str, &'static PlatformOffsets)],
-) -> &'static crate::ue::Runtime {
+pub fn detect_and_init(table: &[(&str, &'static PlatformOffsets)]) -> &'static crate::ue::Runtime {
     let image_base = host_image_base();
     let offsets = detect(table).unwrap_or_else(|| {
         let exe = host_exe_name().unwrap_or_default();

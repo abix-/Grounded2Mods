@@ -109,9 +109,7 @@ impl<K: Copy + Eq, const N: usize> RecentRing<K, N> {
     pub fn recent(&self, key: K, window: Duration) -> bool {
         let now = Instant::now();
         self.inner.lock().entries.iter().any(|entry| {
-            entry.is_some_and(|(recorded, at)| {
-                recorded == key && now.duration_since(at) < window
-            })
+            entry.is_some_and(|(recorded, at)| recorded == key && now.duration_since(at) < window)
         })
     }
 }

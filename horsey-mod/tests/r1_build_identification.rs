@@ -23,7 +23,9 @@ use modforge::harness::GameHarness;
 use serde_json::json;
 
 fn is_lowercase_hex_64(s: &str) -> bool {
-    s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit() && !c.is_uppercase())
+    s.len() == 64
+        && s.chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase())
 }
 
 #[test]
@@ -33,8 +35,7 @@ fn build_info_returns_image_sha256() {
         return;
     }
     let spec = common::spec();
-    let game = GameHarness::launch(&spec, "r1_build_info_shape")
-        .expect("harness launch failed");
+    let game = GameHarness::launch(&spec, "r1_build_info_shape").expect("harness launch failed");
 
     let resp = game
         .op_json("game.build_info", &json!({}))
@@ -82,8 +83,7 @@ fn build_info_sha_is_stable_within_session() {
         return;
     }
     let spec = common::spec();
-    let game = GameHarness::launch(&spec, "r1_build_info_stable")
-        .expect("harness launch failed");
+    let game = GameHarness::launch(&spec, "r1_build_info_stable").expect("harness launch failed");
 
     let a = game
         .op_json("game.build_info", &json!({}))

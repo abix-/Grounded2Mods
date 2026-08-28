@@ -102,7 +102,10 @@ pub struct CreatureRegistry {
 
 impl CreatureRegistry {
     pub const fn new(entries: &'static [CreatureDef], default_xp: u32) -> Self {
-        Self { entries, default_xp }
+        Self {
+            entries,
+            default_xp,
+        }
     }
 
     /// Canonical `<subject>_def` lookup. Returns the full row
@@ -115,10 +118,11 @@ impl CreatureRegistry {
     /// XP for `class_name`. Case-sensitive exact match; falls back
     /// to `default_xp` for unknown classes.
     pub fn lookup(&self, class_name: &str) -> u32 {
-        self.def(class_name).map(|e| e.base_xp).unwrap_or(self.default_xp)
+        self.def(class_name)
+            .map(|e| e.base_xp)
+            .unwrap_or(self.default_xp)
     }
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -27,9 +27,7 @@
 //! - missing `<render>` child means no render mapping (the gene's
 //!   value is computed but not visually applied).
 
-use crate::genes::{
-    self, ExtGene, RenderMapping, RenderMode, EXT_GENE_COUNT,
-};
+use crate::genes::{self, EXT_GENE_COUNT, ExtGene, RenderMapping, RenderMode};
 use regex::Regex;
 use std::path::Path;
 use std::sync::OnceLock;
@@ -74,9 +72,7 @@ fn find_close(xml: &str, start: usize) -> Option<usize> {
 
 fn render_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| {
-        Regex::new(r#"<render\s+([^>/]*?)\s*/?>"#).expect("static regex")
-    })
+    R.get_or_init(|| Regex::new(r#"<render\s+([^>/]*?)\s*/?>"#).expect("static regex"))
 }
 
 fn attr_re() -> &'static Regex {
@@ -177,10 +173,7 @@ pub fn load_from_string(xml: &str) -> LoadStats {
                 stats.skipped_conflict += 1;
                 stats.errors.push((
                     name.clone(),
-                    format!(
-                        "ext_idx {ext_idx} already occupied by '{}'",
-                        existing.name
-                    ),
+                    format!("ext_idx {ext_idx} already occupied by '{}'", existing.name),
                 ));
                 continue;
             }
@@ -193,10 +186,18 @@ pub fn load_from_string(xml: &str) -> LoadStats {
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(genes::DEFAULT_SCALE);
         let alleles = [
-            attr_get(&attrs, "g0").and_then(|s| s.parse::<u32>().ok()).unwrap_or(0),
-            attr_get(&attrs, "g1").and_then(|s| s.parse::<u32>().ok()).unwrap_or(0),
-            attr_get(&attrs, "g2").and_then(|s| s.parse::<u32>().ok()).unwrap_or(0),
-            attr_get(&attrs, "g3").and_then(|s| s.parse::<u32>().ok()).unwrap_or(0),
+            attr_get(&attrs, "g0")
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(0),
+            attr_get(&attrs, "g1")
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(0),
+            attr_get(&attrs, "g2")
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(0),
+            attr_get(&attrs, "g3")
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(0),
         ];
 
         // Optional <render> child.
@@ -240,7 +241,7 @@ pub fn load_from_file(path: &Path) -> Result<LoadStats, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::genes::{reset_all_for_tests, TEST_LOCK};
+    use crate::genes::{TEST_LOCK, reset_all_for_tests};
 
     fn fresh_test_xml() -> &'static str {
         r#"

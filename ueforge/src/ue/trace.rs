@@ -98,7 +98,8 @@ pub unsafe fn line_trace(
         return None;
     }
     let at = offsets::OUT_HIT + offsets::IMPACT_POINT;
-    let read = |p: &[u8], at: usize| f64::from_le_bytes(p[at..at + 8].try_into().unwrap_or_default());
+    let read =
+        |p: &[u8], at: usize| f64::from_le_bytes(p[at..at + 8].try_into().unwrap_or_default());
     Some(Hit {
         x: read(&parms, at),
         y: read(&parms, at + 8),
@@ -142,6 +143,5 @@ pub unsafe fn ground_z(
     down: f64,
 ) -> Option<f64> {
     // SAFETY: forwarded from the caller's guarantee.
-    unsafe { line_trace(world_context, (x, y, up), (x, y, -down), CHANNEL_VISIBILITY) }
-        .map(|h| h.z)
+    unsafe { line_trace(world_context, (x, y, up), (x, y, -down), CHANNEL_VISIBILITY) }.map(|h| h.z)
 }

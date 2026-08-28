@@ -5,7 +5,7 @@
 use crate::patterns::sleuth::{Resolver, TargetKind};
 use crate::vanilla::dispatch::{decode_return, dispatch_raw};
 use crate::vanilla::sig::{ArgValue, RetValue, Signature};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 /// A bound `(name, addr, sig)` triple ready to invoke. Returned
 /// by `Invoker::bind`.
@@ -31,10 +31,13 @@ impl std::fmt::Display for VanillaError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NotRegistered(n) => write!(f, "target '{n}' not registered"),
-            Self::NoSignature(n)   => write!(f, "target '{n}' has no signature (registered for hook/detour, not invocation)"),
-            Self::Unresolved(n)    => write!(f, "target '{n}' did not resolve to an address"),
-            Self::Dispatch(s)      => write!(f, "dispatch failed: {s}"),
-            Self::Faulted(s)       => write!(f, "vanilla call faulted: {s}"),
+            Self::NoSignature(n) => write!(
+                f,
+                "target '{n}' has no signature (registered for hook/detour, not invocation)"
+            ),
+            Self::Unresolved(n) => write!(f, "target '{n}' did not resolve to an address"),
+            Self::Dispatch(s) => write!(f, "dispatch failed: {s}"),
+            Self::Faulted(s) => write!(f, "vanilla call faulted: {s}"),
         }
     }
 }
@@ -54,7 +57,10 @@ impl<'r> Invoker<'r> {
     /// the target is registered, has a signature, and resolved
     /// to a non-null address.
     pub fn bind(&self, name: &str) -> Result<VanillaFn, VanillaError> {
-        let def = self.resolver.registry().def(name)
+        let def = self
+            .resolver
+            .registry()
+            .def(name)
             .ok_or_else(|| VanillaError::NotRegistered(name.into()))?;
         let sig = match def.kind {
             TargetKind::FunctionEntry { signature: Some(s) } => s,
@@ -63,20 +69,22 @@ impl<'r> Invoker<'r> {
             }
             _ => return Err(VanillaError::NoSignature(name.into())),
         };
-        let addr = self.resolver.resolve(name)
+        let addr = self
+            .resolver
+            .resolve(name)
             .ok_or_else(|| VanillaError::Unresolved(name.into()))?;
-        Ok(VanillaFn { name: def.name, addr, sig })
+        Ok(VanillaFn {
+            name: def.name,
+            addr,
+            sig,
+        })
     }
 
     /// One-shot bind + call. Default behavior: SEH-wrapped so a
     /// fault in vanilla becomes `Err(Faulted)` instead of a
     /// process crash. Use `call_unsafe` for hot-path call sites
     /// that have proven safe.
-    pub fn call(
-        &self,
-        name: &str,
-        args: &[ArgValue],
-    ) -> Result<RetValue, VanillaError> {
+    pub fn call(&self, name: &str, args: &[ArgValue]) -> Result<RetValue, VanillaError> {
         let bound = self.bind(name)?;
         let sig = bound.sig;
         let addr = bound.addr;
@@ -133,13 +141,16 @@ fn pre_validate(sig: &Signature, args: &[ArgValue]) -> Result<()> {
     if args.len() != sig.args.len() {
         return Err(anyhow!(
             "arg count {} mismatches signature ({})",
-            args.len(), sig.args.len()
+            args.len(),
+            sig.args.len()
         ));
     }
     for (i, (kind, val)) in sig.args.iter().zip(args.iter()).enumerate() {
         if *kind != val.kind() {
             return Err(anyhow!(
-                "arg[{i}] kind mismatch: sig says {:?}, got {:?}", kind, val.kind()
+                "arg[{i}] kind mismatch: sig says {:?}, got {:?}",
+                kind,
+                val.kind()
             ));
         }
     }

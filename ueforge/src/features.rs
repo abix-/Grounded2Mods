@@ -40,7 +40,9 @@ pub struct Features {
 }
 
 pub fn features() -> Features {
-    Features { triggers: Vec::new() }
+    Features {
+        triggers: Vec::new(),
+    }
 }
 
 impl Features {
@@ -105,14 +107,22 @@ impl Features {
                     action();
                     crate::log::log(format_args!("feature {label}: done"));
                 }
-                Trigger::EachLoad { label, poll, finder, on_load } => {
+                Trigger::EachLoad {
+                    label,
+                    poll,
+                    finder,
+                    on_load,
+                } => {
                     crate::log::log(format_args!("feature {label}: watching"));
                     crate::ue::actor::on_each_load(label, poll, finder, on_load);
                 }
-                Trigger::FirstTable { label, table, timeout, on_ready } => {
-                    crate::log::log(format_args!(
-                        "feature {label}: waiting for table {table}"
-                    ));
+                Trigger::FirstTable {
+                    label,
+                    table,
+                    timeout,
+                    on_ready,
+                } => {
+                    crate::log::log(format_args!("feature {label}: waiting for table {table}"));
                     crate::ue::datatable::on_first_sight(table, timeout, move |dt| {
                         crate::log::log(format_args!("feature {label}: table ready"));
                         on_ready(dt);

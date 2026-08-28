@@ -27,10 +27,7 @@ use serde_json::{Value, json};
 /// `patterns.read_bytes` op.
 fn fetch_signature_at(game: &RunningGame, addr: &str, n: u32) -> String {
     let resp = game
-        .op_json(
-            "patterns.read_bytes",
-            &json!({"addr": addr, "n": n}),
-        )
+        .op_json("patterns.read_bytes", &json!({"addr": addr, "n": n}))
         .expect("read_bytes op should succeed");
     let bytes = resp
         .get("result")
@@ -58,9 +55,9 @@ fn fetch_dryrun_target_addr(game: &RunningGame, op: &str, path: &[&str]) -> Stri
         .expect("dryrun op should succeed");
     let mut cur: &Value = resp.get("result").expect("result");
     for k in path {
-        cur = cur.get(*k).unwrap_or_else(|| {
-            panic!("dryrun {op} missing path segment {k} (full resp: {resp})")
-        });
+        cur = cur
+            .get(*k)
+            .unwrap_or_else(|| panic!("dryrun {op} missing path segment {k} (full resp: {resp})"));
     }
     cur.as_str()
         .expect("runtime_addr must be a string")
@@ -74,18 +71,16 @@ fn scan_finds_combinator_via_self_derived_signature() {
         return;
     }
     let spec = common::spec();
-    let game = GameHarness::launch(&spec, "pattern_scan_combinator")
-        .expect("harness launch failed");
+    let game =
+        GameHarness::launch(&spec, "pattern_scan_combinator").expect("harness launch failed");
 
     // 1. Get combinator's known runtime address from the dryrun.
-    let expected = fetch_dryrun_target_addr(
-        &game,
-        "genes.ext.combinator.dryrun",
-        &["runtime_addr"],
-    );
+    let expected =
+        fetch_dryrun_target_addr(&game, "genes.ext.combinator.dryrun", &["runtime_addr"]);
     // 2. Read 32 bytes at that address (in the game process).
     let sig = fetch_signature_at(&game, &expected, 32);
-    game.log().event("SCAN", &format!("expected={expected} sig=[{sig}]"));
+    game.log()
+        .event("SCAN", &format!("expected={expected} sig=[{sig}]"));
 
     // 3. Scan the .text section for the signature; assert the
     //    match address equals what we read from.
@@ -106,18 +101,14 @@ fn scan_finds_apply_gene_to_horse_via_self_derived_signature() {
         return;
     }
     let spec = common::spec();
-    let game = GameHarness::launch(&spec, "pattern_scan_apply")
-        .expect("harness launch failed");
+    let game = GameHarness::launch(&spec, "pattern_scan_apply").expect("harness launch failed");
 
     // D5 render-trampoline dryrun returns the target directly in
     // `result.runtime_addr` (no nested `name` object).
-    let expected = fetch_dryrun_target_addr(
-        &game,
-        "genes.ext.render.dryrun",
-        &["runtime_addr"],
-    );
+    let expected = fetch_dryrun_target_addr(&game, "genes.ext.render.dryrun", &["runtime_addr"]);
     let sig = fetch_signature_at(&game, &expected, 32);
-    game.log().event("SCAN", &format!("expected={expected} sig=[{sig}]"));
+    game.log()
+        .event("SCAN", &format!("expected={expected} sig=[{sig}]"));
 
     let found = scan(&game, &sig);
     game.log().event("SCAN", &format!("found={found:?}"));
@@ -136,13 +127,15 @@ fn scan_returns_none_for_missing_pattern() {
         return;
     }
     let spec = common::spec();
-    let game = GameHarness::launch(&spec, "pattern_scan_missing")
-        .expect("harness launch failed");
+    let game = GameHarness::launch(&spec, "pattern_scan_missing").expect("harness launch failed");
 
-    let absent_sig =
-        "ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff";
+    let absent_sig = "ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff";
     let found = scan(&game, absent_sig);
-    game.log().event("SCAN", &format!("absent-sig result {found:?}"));
-    assert!(found.is_none(), "absent signature must return None, got {found:?}");
+    game.log()
+        .event("SCAN", &format!("absent-sig result {found:?}"));
+    assert!(
+        found.is_none(),
+        "absent signature must return None, got {found:?}"
+    );
     game.pass("missing signature -> None");
 }

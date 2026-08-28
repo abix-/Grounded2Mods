@@ -34,7 +34,9 @@ fn read_movement_speeds_map() {
     }
 
     let instances = client::walk_class_instances(&api, "BP_CharacterComponent_C", 100);
-    let cc = instances.iter().find(|i| i.full_name.contains("PersistentLevel"));
+    let cc = instances
+        .iter()
+        .find(|i| i.full_name.contains("PersistentLevel"));
     let Some(cc) = cc else {
         println!("no live BP_CharacterComponent_C");
         return;
@@ -76,7 +78,9 @@ fn read_movement_speeds_map() {
 
     for slot in 0..num as usize {
         let base = slot * 24;
-        if base + 24 > data.len() { break; }
+        if base + 24 > data.len() {
+            break;
+        }
 
         let key = data[base];
         let value = client::from_le_f64(&data, base + 8);
@@ -88,7 +92,9 @@ fn read_movement_speeds_map() {
     println!("\nRaw slots:");
     for slot in 0..num as usize {
         let base = slot * 24;
-        if base + 24 > data.len() { break; }
-        println!("  slot {slot}: {}", hex::encode(&data[base..base+24]));
+        if base + 24 > data.len() {
+            break;
+        }
+        println!("  slot {slot}: {}", hex::encode(&data[base..base + 24]));
     }
 }

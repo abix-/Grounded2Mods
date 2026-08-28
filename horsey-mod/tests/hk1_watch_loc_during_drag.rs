@@ -12,7 +12,7 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
@@ -20,7 +20,9 @@ const LOC_DUMP_LEN: usize = 0x240;
 
 #[test]
 fn watch_loc_during_drag() {
-    let Some(game) = common::launch("hk1_watch_loc_during_drag") else { return };
+    let Some(game) = common::launch("hk1_watch_loc_during_drag") else {
+        return;
+    };
     let _ = common::wait_for_target_horse(&game, Duration::from_secs(30));
 
     let secs: u64 = common::env_or("HK1_WATCH_SECS", 30u64);
@@ -50,7 +52,10 @@ fn watch_loc_during_drag() {
 
     let final_state = prev;
 
-    eprintln!("\n=== summary: {} offsets changed during {secs}s window ===", all_transitions.len());
+    eprintln!(
+        "\n=== summary: {} offsets changed during {secs}s window ===",
+        all_transitions.len()
+    );
 
     // Group consecutive offsets into runs for readability.
     let offsets: Vec<usize> = all_transitions.keys().copied().collect();
@@ -84,22 +89,40 @@ fn watch_loc_during_drag() {
 
     eprintln!("\nper-offset transition trace (interesting offsets only, max 20 transitions each):");
     for (off, trans) in &all_transitions {
-        if trans.len() <= 1 { continue; }
+        if trans.len() <= 1 {
+            continue;
+        }
         let n = trans.len().min(20);
-        let trace: String = trans.iter().take(n).map(|(t, b, a)|
-            format!("@{t}ms 0x{b:02x}->0x{a:02x}")
-        ).collect::<Vec<_>>().join(", ");
+        let trace: String = trans
+            .iter()
+            .take(n)
+            .map(|(t, b, a)| format!("@{t}ms 0x{b:02x}->0x{a:02x}"))
+            .collect::<Vec<_>>()
+            .join(", ");
         eprintln!("  +0x{off:03x}  ({} hits): {trace}", trans.len());
     }
 
-    game.pass(&format!("captured {} changed offsets in {secs}s", all_transitions.len()));
+    game.pass(&format!(
+        "captured {} changed offsets in {secs}s",
+        all_transitions.len()
+    ));
     std::process::exit(0);
 }
 
 fn dump_loc(game: &modforge::harness::RunningGame) -> Vec<u8> {
-    let r = game.op_json("hk1.loc_bytes", &json!({ "offset": 0, "n": LOC_DUMP_LEN as u64 }))
+    let r = game
+        .op_json(
+            "hk1.loc_bytes",
+            &json!({ "offset": 0, "n": LOC_DUMP_LEN as u64 }),
+        )
         .expect("hk1.loc_bytes");
-    let hex = r.get("result").and_then(|x| x.get("bytes")).and_then(Value::as_str)
-        .expect("no bytes").to_string();
-    hex.split_whitespace().map(|s| u8::from_str_radix(s, 16).unwrap_or(0)).collect()
+    let hex = r
+        .get("result")
+        .and_then(|x| x.get("bytes"))
+        .and_then(Value::as_str)
+        .expect("no bytes")
+        .to_string();
+    hex.split_whitespace()
+        .map(|s| u8::from_str_radix(s, 16).unwrap_or(0))
+        .collect()
 }

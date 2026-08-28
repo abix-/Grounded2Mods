@@ -69,9 +69,14 @@ impl<F: Function> Hook<F> {
         let detour = unsafe { GenericDetour::new(target, replacement) }
             .map_err(|e| anyhow::anyhow!("retour::new for '{name}' at 0x{target_addr:x}: {e}"))?;
         // SAFETY: enables the detour we just constructed.
-        unsafe { detour.enable() }
-            .map_err(|e| anyhow::anyhow!("retour::enable for '{name}' at 0x{target_addr:x}: {e}"))?;
-        let h = Hook { detour, name, target_addr };
+        unsafe { detour.enable() }.map_err(|e| {
+            anyhow::anyhow!("retour::enable for '{name}' at 0x{target_addr:x}: {e}")
+        })?;
+        let h = Hook {
+            detour,
+            name,
+            target_addr,
+        };
         REGISTRY.lock().unwrap().push(HookInfo {
             name,
             target_addr,

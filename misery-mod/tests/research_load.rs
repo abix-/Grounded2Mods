@@ -40,7 +40,10 @@ fn menu_class_functions() {
             println!("\n{class}: {:?}", r.error);
             continue;
         }
-        let fns = r.result["functions"].as_array().cloned().unwrap_or_default();
+        let fns = r.result["functions"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
         println!("\n{class} ({} functions)", fns.len());
         println!("  {}", r.result["full_name"].as_str().unwrap_or("?"));
         for f in &fns {
@@ -64,15 +67,25 @@ fn menu_class_functions() {
 #[test]
 fn load_menu_state() {
     let Some(api) = api_or_skip() else { return };
-    for class in ["BP_LoadGameMenu_C", "BP_LoadGameMenuPanel_C", "BP_SGKGameInstance_C"] {
+    for class in [
+        "BP_LoadGameMenu_C",
+        "BP_LoadGameMenuPanel_C",
+        "BP_SGKGameInstance_C",
+    ] {
         let live = modforge::client::walk_class_chain_instances(&api, class, 8);
         println!("\n=== {class}: {} live instance(s)", live.len());
         for w in &live {
             println!("\n-- {}", w.full_name);
             // inspect_address takes hex text, not the u64.
-            let r = api.op("inspect_address", json!({"addr": format!("0x{:X}", w.addr)}));
+            let r = api.op(
+                "inspect_address",
+                json!({"addr": format!("0x{:X}", w.addr)}),
+            );
             if r.ok {
-                println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&r.result).unwrap_or_default()
+                );
             } else {
                 println!("inspect failed: {:?}", r.error);
             }
@@ -97,7 +110,10 @@ fn save_panel_fields() {
             println!("walk_class failed: {:?}", r.error);
             continue;
         }
-        println!("{}", serde_json::to_string_pretty(&r.result).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&r.result).unwrap_or_default()
+        );
     }
 }
 
@@ -113,7 +129,6 @@ fn game_instance_selector(api: &common::Api) -> String {
         .expect("no live game instance");
     inst.addr_selector.clone()
 }
-
 
 /// What does the game currently think it should load? Read-only,
 /// and the first proof that a Blueprint call actually executes
@@ -176,8 +191,14 @@ fn find_existing_save_layout() {
         }),
     );
     assert!(name.ok, "SGK GetSaveGameSlotName failed: {:?}", name.error);
-    let slot_fstring = name.result["parms_hex_after"].as_str().unwrap_or("").to_string();
-    println!("slot {:?} -> FString {slot_fstring}", modforge::client::read_fstring(&api, &slot_fstring));
+    let slot_fstring = name.result["parms_hex_after"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    println!(
+        "slot {:?} -> FString {slot_fstring}",
+        modforge::client::read_fstring(&api, &slot_fstring)
+    );
 
     let hosts = modforge::client::walk_class_chain_instances(&api, "BP_HostNewGameServer_C", 8);
     let host = hosts
@@ -208,7 +229,10 @@ fn find_existing_save_layout() {
             println!("{label}: FAILED {:?}", r.error);
             continue;
         }
-        println!("{label}: {}", r.result["parms_hex_after"].as_str().unwrap_or(""));
+        println!(
+            "{label}: {}",
+            r.result["parms_hex_after"].as_str().unwrap_or("")
+        );
     }
 }
 
@@ -241,7 +265,8 @@ fn load_current_slot() {
         }),
     );
     assert!(name.ok, "SGK GetSaveGameSlotName failed: {:?}", name.error);
-    let slot = modforge::client::read_fstring(&api, name.result["parms_hex_after"].as_str().unwrap_or(""));
+    let slot =
+        modforge::client::read_fstring(&api, name.result["parms_hex_after"].as_str().unwrap_or(""));
     println!("slot to load: {slot:?}");
     assert!(!slot.is_empty(), "no slot name set; refusing to load");
 
@@ -309,9 +334,15 @@ fn load_current_slot() {
 #[test]
 fn menu_widget_tree() {
     let Some(api) = api_or_skip() else { return };
-    let r = api.op("walk_class_chain", json!({"needle": "UserWidget", "max": 400}));
+    let r = api.op(
+        "walk_class_chain",
+        json!({"needle": "UserWidget", "max": 400}),
+    );
     assert!(r.ok, "walk failed: {:?}", r.error);
-    let all = r.result["instances"].as_array().cloned().unwrap_or_default();
+    let all = r.result["instances"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     let mut live: Vec<&str> = all
         .iter()
         .filter_map(|w| w["full_name"].as_str())

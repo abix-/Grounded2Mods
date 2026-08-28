@@ -80,7 +80,13 @@ static PROCESS_EVENT: TargetDef = TargetDef {
 
 pub static GROUNDED2_TARGETS: TargetRegistry = TargetRegistry::new(
     "grounded2-mod",
-    &[&G_OBJECTS, &G_NAMES, &G_WORLD, &APPEND_STRING, &PROCESS_EVENT],
+    &[
+        &G_OBJECTS,
+        &G_NAMES,
+        &G_WORLD,
+        &APPEND_STRING,
+        &PROCESS_EVENT,
+    ],
 );
 
 /// Per-process Resolver singleton bound to `GROUNDED2_TARGETS`.
@@ -94,7 +100,13 @@ mod tests {
     /// Stays here because the expected target names describe this game's executable.
     #[test]
     fn registry_declares_five_ue5_globals() {
-        for name in ["G_OBJECTS", "G_NAMES", "G_WORLD", "APPEND_STRING", "PROCESS_EVENT"] {
+        for name in [
+            "G_OBJECTS",
+            "G_NAMES",
+            "G_WORLD",
+            "APPEND_STRING",
+            "PROCESS_EVENT",
+        ] {
             assert!(
                 GROUNDED2_TARGETS.def(name).is_some(),
                 "GROUNDED2_TARGETS missing {name}"

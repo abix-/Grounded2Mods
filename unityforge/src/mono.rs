@@ -233,11 +233,7 @@ impl MonoObject {
     pub fn dump(&self) -> Result<Json, String> {
         let bridge = bridge::try_get()?;
         let mut buf = vec![0u8; 32 * 1024];
-        let n = (bridge.inspect_object)(
-            self.handle,
-            buf.as_mut_ptr() as *mut _,
-            buf.len() as i32,
-        );
+        let n = (bridge.inspect_object)(self.handle, buf.as_mut_ptr() as *mut _, buf.len() as i32);
         if n < 0 {
             return Err("inspect_object: buffer too small".into());
         }
@@ -331,7 +327,8 @@ pub fn invoke_static(class: &str, method: &str, args: &Json) -> Result<Json, Str
         });
     };
     let end = len.min(buf.len());
-    let s = std::str::from_utf8(&buf[..end]).map_err(|e| format!("invoke_static: bad utf-8: {e}"))?;
+    let s =
+        std::str::from_utf8(&buf[..end]).map_err(|e| format!("invoke_static: bad utf-8: {e}"))?;
     serde_json::from_str(s).map_err(|e| format!("invoke_static: bad json: {e}"))
 }
 

@@ -29,31 +29,34 @@
 mod common;
 
 use modforge::testkit::json::u64_at_key as u64_of;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-fn validate(
-    game: &modforge::harness::RunningGame,
-    name: &str,
-    entry: &Value,
-) -> bool {
+fn validate(game: &modforge::harness::RunningGame, name: &str, entry: &Value) -> bool {
     let resolved = u64_of(entry, "address").unwrap_or(0);
     let hardcoded = u64_of(entry, "hardcoded").unwrap_or(0);
     if resolved == 0 {
-        game.log()
-            .event("R3-CHEATS", &format!("{name}: sig did not match, leaving hardcoded ({hardcoded:#x})"));
+        game.log().event(
+            "R3-CHEATS",
+            &format!("{name}: sig did not match, leaving hardcoded ({hardcoded:#x})"),
+        );
         return false;
     }
     if resolved == hardcoded {
-        game.log()
-            .event("R3-CHEATS", &format!("{name}: resolved == hardcoded ({resolved:#x}), trivially aliased"));
+        game.log().event(
+            "R3-CHEATS",
+            &format!("{name}: resolved == hardcoded ({resolved:#x}), trivially aliased"),
+        );
         return true;
     }
     // Different addresses; run the aliasing probe.
     let resp = game
-        .op_json("mem.alias_check", &json!({
-            "addr_a": hardcoded,
-            "addr_b": resolved,
-        }))
+        .op_json(
+            "mem.alias_check",
+            &json!({
+                "addr_a": hardcoded,
+                "addr_b": resolved,
+            }),
+        )
         .expect("mem.alias_check must succeed");
     let probe = resp.get("result").expect("result");
     let same = probe
@@ -81,9 +84,7 @@ fn cheat_globals_resolve_and_alias_hardcoded() {
     let resp = game
         .op_json("targets.resolve.cheat_globals", &json!({}))
         .expect("targets.resolve.cheat_globals must succeed");
-    let result = resp
-        .get("result")
-        .expect("op response must include result");
+    let result = resp.get("result").expect("op response must include result");
     game.log()
         .event("R3-CHEATS", &format!("resolve = {result:#}"));
 

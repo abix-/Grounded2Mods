@@ -57,7 +57,9 @@ pub struct Cached<T> {
 
 impl<T: Clone> Cached<T> {
     pub const fn new() -> Self {
-        Self { inner: parking_lot::Mutex::new(None) }
+        Self {
+            inner: parking_lot::Mutex::new(None),
+        }
     }
 
     /// The value, re-read if the last one is older than
@@ -111,7 +113,7 @@ mod cached_tests {
     fn re_reads_once_it_is_old_enough() {
         let reads = AtomicU32::new(0);
         let c: Cached<u32> = Cached::new();
-        let mut go = || {
+        let go = || {
             c.get(Duration::from_millis(10), || {
                 reads.fetch_add(1, Ordering::Relaxed);
                 1

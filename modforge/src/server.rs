@@ -176,8 +176,7 @@ fn run<H>(
     endpoint: &'static str,
     handler: Arc<H>,
     auth_token: Option<&'static str>,
-)
-where
+) where
     H: Fn(&str) -> Vec<u8> + Send + Sync + 'static,
 {
     for mut req in server.incoming_requests() {
@@ -200,9 +199,7 @@ where
                 None => false,
             };
             if !ok {
-                let _ = req.respond(
-                    Response::from_string("unauthorized").with_status_code(401),
-                );
+                let _ = req.respond(Response::from_string("unauthorized").with_status_code(401));
                 continue;
             }
         }
@@ -219,16 +216,13 @@ where
             continue;
         }
         if buf.len() as u64 > MAX_BODY_BYTES {
-            let _ = req.respond(
-                Response::from_string("payload too large").with_status_code(413),
-            );
+            let _ = req.respond(Response::from_string("payload too large").with_status_code(413));
             continue;
         }
         let body = match String::from_utf8(buf) {
             Ok(s) => s,
             Err(_) => {
-                let _ = req
-                    .respond(Response::from_string("bad body").with_status_code(400));
+                let _ = req.respond(Response::from_string("bad body").with_status_code(400));
                 continue;
             }
         };

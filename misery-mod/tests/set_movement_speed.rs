@@ -28,7 +28,9 @@ fn set_movement_speed() {
         .unwrap_or(800.0);
 
     let instances = client::walk_class_instances(&api, CHAR_COMP, 100);
-    let inst = instances.iter().find(|i| i.full_name.contains("PersistentLevel"));
+    let inst = instances
+        .iter()
+        .find(|i| i.full_name.contains("PersistentLevel"));
     let Some(inst) = inst else {
         println!("no live player {CHAR_COMP} found");
         return;

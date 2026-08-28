@@ -8,9 +8,9 @@ use serde_json::Value;
 /// Read `v[key]` as a hex string and parse to u64. None if the key is
 /// missing, the value isn't a string, or the string isn't valid hex.
 pub fn u64_at_key(v: &Value, key: &str) -> Option<u64> {
-    v.get(key)
-        .and_then(Value::as_str)
-        .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x").trim_start_matches("0X"), 16).ok())
+    v.get(key).and_then(Value::as_str).and_then(|s| {
+        u64::from_str_radix(s.trim_start_matches("0x").trim_start_matches("0X"), 16).ok()
+    })
 }
 
 /// Parse a hex string (`0x...`) or decimal string to u64. Tolerates

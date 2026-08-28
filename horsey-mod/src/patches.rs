@@ -24,7 +24,7 @@ pub mod save_sidecar;
 
 use parking_lot::Mutex;
 use windows_sys::Win32::System::Memory::{
-    PAGE_EXECUTE_READWRITE, VirtualProtect, PAGE_PROTECTION_FLAGS,
+    PAGE_EXECUTE_READWRITE, PAGE_PROTECTION_FLAGS, VirtualProtect,
 };
 
 /// Record of one applied patch.

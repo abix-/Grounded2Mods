@@ -14,7 +14,7 @@
 
 mod common;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 #[test]
 fn dump_slot_horse_counts() {
@@ -42,8 +42,13 @@ fn dump_slot_horse_counts() {
         eprintln!("  {s}");
     }
 
-    let plausible: Vec<&Value> = slots.iter()
-        .filter(|s| s.get("count").and_then(Value::as_u64).is_some_and(|c| c <= 50))
+    let plausible: Vec<&Value> = slots
+        .iter()
+        .filter(|s| {
+            s.get("count")
+                .and_then(Value::as_u64)
+                .is_some_and(|c| c <= 50)
+        })
         .collect();
     assert!(
         !plausible.is_empty(),
@@ -51,7 +56,8 @@ fn dump_slot_horse_counts() {
     );
 
     if let Some(want) = expected_owned {
-        let matches: Vec<&&Value> = plausible.iter()
+        let matches: Vec<&&Value> = plausible
+            .iter()
             .filter(|s| s.get("count").and_then(Value::as_u64) == Some(want))
             .collect();
         assert!(
@@ -71,5 +77,9 @@ fn dump_slot_horse_counts() {
         }
     }
 
-    game.pass(&format!("scanned {} slots, {} plausible", slots.len(), plausible.len()));
+    game.pass(&format!(
+        "scanned {} slots, {} plausible",
+        slots.len(),
+        plausible.len()
+    ));
 }

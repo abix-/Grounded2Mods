@@ -49,16 +49,22 @@ fn build() -> Option<Vec<String>> {
         if let Some(m) = name_re().captures(attrs) {
             names.push(m[1].to_string());
         }
-        if names.len() == VANILLA_GENE_COUNT { break; }
+        if names.len() == VANILLA_GENE_COUNT {
+            break;
+        }
     }
     if names.len() != VANILLA_GENE_COUNT {
         modforge::log!(
             "gene_names: parsed {} from {}; expected {VANILLA_GENE_COUNT}",
-            names.len(), path.display()
+            names.len(),
+            path.display()
         );
         return None;
     }
-    modforge::log!("gene_names: loaded {VANILLA_GENE_COUNT} from {}", path.display());
+    modforge::log!(
+        "gene_names: loaded {VANILLA_GENE_COUNT} from {}",
+        path.display()
+    );
     Some(names)
 }
 

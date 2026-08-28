@@ -1,43 +1,38 @@
-//! Unreal implementation of Modforge's player input surface.
-//!
-//! Unreal calculates navigation paths, but it does not execute bot travel.
-//! This adapter sends movement and look axes through standard player and
-//! controller UFunctions on the game thread. A consumer supplies only its
-//! retained player and game-specific key action handler.
+//! Unreal connection for Modforge player input and player observation.
 
-use std::ffi::c_void;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use modforge::input::{Axis, Button, InputSurface, Key, PlayerCommand, PlayerPose};
+use modforge::input::{Axis, Button, InputSurface, Key, PlayerCommand};
+use modforge::route::{PlayerObservation, Position};
 use serde_json::Value as Json;
 
+use crate::ue::UObject;
 use crate::ue::actor::LiveActor;
 use crate::ue::uobject::NativeProperty;
-use crate::ue::{UFunction, UObject};
 
 const INPUT_TIMEOUT: Duration = Duration::from_secs(3);
 static PAWN_CONTROLLER_OFFSET: OnceLock<Result<usize, String>> = OnceLock::new();
+static CONTROL_ROTATION_OFFSET: OnceLock<Result<usize, String>> = OnceLock::new();
 
-type KeyHandler = dyn Fn(&UObject, Key, bool) -> Result<(), String> + Send + Sync;
+type PlayerInput = dyn Fn(&[PlayerCommand]) -> Result<(), String> + Send + Sync;
 
-/// Player input routed through Unreal's standard movement and look functions.
 pub struct UnrealInputSurface {
     name: &'static str,
     player: &'static LiveActor,
-    key_handler: Box<KeyHandler>,
+    player_input: Box<PlayerInput>,
 }
 
 impl UnrealInputSurface {
     pub fn new(
         name: &'static str,
         player: &'static LiveActor,
-        key_handler: impl Fn(&UObject, Key, bool) -> Result<(), String> + Send + Sync + 'static,
+        player_input: impl Fn(&[PlayerCommand]) -> Result<(), String> + Send + Sync + 'static,
     ) -> Self {
         Self {
             name,
             player,
-            key_handler: Box::new(key_handler),
+            player_input: Box::new(player_input),
         }
     }
 
@@ -68,125 +63,82 @@ impl InputSurface for &'static UnrealInputSurface {
     }
 
     fn click(&self, _button: Button, _x: i32, _y: i32) -> Result<(), String> {
-        Err("absolute UI clicks are not implemented by UnrealInputSurface".into())
+        Err("absolute UI clicks are not implemented by Unreal input".into())
     }
 
     fn move_abs(&self, _x: i32, _y: i32) -> Result<(), String> {
-        Err("absolute cursor movement is not implemented by UnrealInputSurface".into())
+        Err("absolute cursor movement is not implemented by Unreal input".into())
+    }
+
+    fn move_rel(&self, dx: i32, dy: i32) -> Result<(), String> {
+        self.commands(&[PlayerCommand::mouse_delta(dx, dy)])
     }
 
     fn key(&self, key: Key, down: bool) -> Result<(), String> {
         self.commands(&[PlayerCommand::key(key, down)])
     }
 
-    fn axis(&self, axis: Axis, value: f32, delta_time: f32) -> Result<(), String> {
-        self.commands(&[PlayerCommand::axis(axis, value, delta_time)])
+    fn axis(&self, axis: Axis, value: f32, _delta_time: f32) -> Result<(), String> {
+        match axis {
+            Axis::MouseX => self.move_rel(value.round() as i32, 0),
+            Axis::MouseY => self.move_rel(0, value.round() as i32),
+            Axis::MoveForward | Axis::MoveRight => Err(format!(
+                "Unreal bot movement requires virtual keys, not axis {axis:?}"
+            )),
+        }
     }
 
-    fn pose(&self) -> Result<PlayerPose, String> {
+    fn observe_player(&self) -> Result<PlayerObservation, String> {
         let surface = *self;
         let value = crate::game_thread::run(
             move || {
                 let player = surface.player()?;
                 let position =
+                    // SAFETY: the retained player is live for this game-thread job.
                     unsafe { crate::ue::transform::world_location(player.as_ptr() as *const u8) }
                         .ok_or("could not read the retained player's world location")?;
-                let yaw_deg = unsafe { read_control_yaw(player)? };
-                serde_json::to_value(PlayerPose {
-                    position: [position.0, position.1, position.2],
+                // SAFETY: the retained player and reflected fields are read on the game thread.
+                let (pitch_deg, yaw_deg) = unsafe { read_control_rotation(player)? };
+                serde_json::to_value(PlayerObservation {
+                    position: Position::new(position.0, position.1, position.2),
                     yaw_deg,
+                    pitch_deg,
                 })
-                .map_err(|error| format!("serialize player pose: {error}"))
+                .map_err(|error| format!("serialize player observation: {error}"))
             },
             INPUT_TIMEOUT,
         )?;
-        serde_json::from_value(value).map_err(|error| format!("decode player pose: {error}"))
+        serde_json::from_value(value).map_err(|error| format!("decode player observation: {error}"))
     }
 
     fn commands(&self, commands: &[PlayerCommand]) -> Result<(), String> {
         let surface = *self;
         let commands = commands.to_vec();
         surface.on_game_thread(move |surface| {
-            let player = surface.player()?;
-            let mut controller = None;
-            let mut control_yaw = None;
-            for command in commands {
-                match command {
-                    PlayerCommand::Key { key, down } => {
-                        (surface.key_handler)(player, key, down)?;
-                    }
-                    PlayerCommand::Axis {
-                        axis,
-                        value,
-                        delta_time: _,
-                    } => match axis {
-                        Axis::MouseX | Axis::MouseY => {
-                            let controller = match controller {
-                                Some(controller) => controller,
-                                None => {
-                                    let found = unsafe { pawn_controller(player)? };
-                                    controller = Some(found);
-                                    found
-                                }
-                            };
-                            let function_name = match axis {
-                                Axis::MouseX => "AddYawInput",
-                                Axis::MouseY => "AddPitchInput",
-                                _ => unreachable!(),
-                            };
-                            unsafe {
-                                call_f32(
-                                    controller,
-                                    "PlayerController",
-                                    function_name,
-                                    "Val",
-                                    value,
-                                )?
-                            }
-                        }
-                        Axis::MoveForward | Axis::MoveRight => {
-                            let yaw = match control_yaw {
-                                Some(yaw) => yaw,
-                                None => {
-                                    let found = unsafe { read_control_yaw(player)? };
-                                    control_yaw = Some(found);
-                                    found
-                                }
-                            };
-                            let (forward, right) = match axis {
-                                Axis::MoveForward => (value as f64, 0.0),
-                                Axis::MoveRight => (0.0, value as f64),
-                                _ => unreachable!(),
-                            };
-                            let direction = movement_direction(yaw, forward, right);
-                            unsafe { add_movement_input(player, direction, value.abs())? };
-                        }
-                    },
-                }
-            }
-            Ok(())
+            surface.player()?;
+            forward_player_commands(surface.player_input.as_ref(), &commands)
         })
     }
 }
 
-/// Leak and register an Unreal input surface in Modforge's process-wide slot.
 pub fn register(
     name: &'static str,
     player: &'static LiveActor,
-    key_handler: impl Fn(&UObject, Key, bool) -> Result<(), String> + Send + Sync + 'static,
+    player_input: impl Fn(&[PlayerCommand]) -> Result<(), String> + Send + Sync + 'static,
 ) {
-    let surface: &'static UnrealInputSurface =
-        Box::leak(Box::new(UnrealInputSurface::new(name, player, key_handler)));
+    let surface: &'static UnrealInputSurface = Box::leak(Box::new(UnrealInputSurface::new(
+        name,
+        player,
+        player_input,
+    )));
     modforge::input::set_input_surface(surface);
 }
 
-fn movement_direction(yaw_deg: f64, forward: f64, right: f64) -> (f64, f64, f64) {
-    let (sin, cos) = yaw_deg.to_radians().sin_cos();
-    (
-        cos * forward - sin * right,
-        sin * forward + cos * right,
-        0.0,
-    )
+fn forward_player_commands(
+    player_input: &PlayerInput,
+    commands: &[PlayerCommand],
+) -> Result<(), String> {
+    player_input(commands)
 }
 
 unsafe fn pawn_controller(player: &UObject) -> Result<&'static UObject, String> {
@@ -196,11 +148,31 @@ unsafe fn pawn_controller(player: &UObject) -> Result<&'static UObject, String> 
         Ok(offset) => *offset,
         Err(error) => return Err(error.clone()),
     };
+    // SAFETY: the reflected property is at least pointer-sized and belongs to the live player.
     let address = unsafe { (player.field_ptr(offset) as *const usize).read_unaligned() };
     if address == 0 {
         return Err("local player has no controller".into());
     }
+    // SAFETY: Unreal owns the non-null controller pointer for the retained player.
     Ok(unsafe { &*(address as *const UObject) })
+}
+
+unsafe fn read_control_rotation(player: &UObject) -> Result<(f64, f64), String> {
+    // SAFETY: caller provides the retained player on the game thread.
+    let controller = unsafe { pawn_controller(player)? };
+    let offset = match CONTROL_ROTATION_OFFSET
+        .get_or_init(|| class_property_offset(controller, "ControlRotation", 24))
+    {
+        Ok(offset) => *offset,
+        Err(error) => return Err(error.clone()),
+    };
+    // SAFETY: the reflected rotation field belongs to the live controller.
+    let rotation = unsafe { controller.field_ptr(offset) };
+    // SAFETY: the reflected rotation field is at least 24 bytes and contains pitch then yaw.
+    let pitch = unsafe { (rotation as *const f64).read_unaligned() };
+    // SAFETY: the reflected rotation field is at least 24 bytes.
+    let yaw = unsafe { (rotation.add(8) as *const f64).read_unaligned() };
+    Ok((pitch, yaw))
 }
 
 fn class_property_offset(object: &UObject, name: &str, minimum_size: u32) -> Result<usize, String> {
@@ -239,154 +211,58 @@ fn reflected_property_offset(
     Ok(Some(property.offset as usize))
 }
 
-unsafe fn read_control_yaw(player: &UObject) -> Result<f64, String> {
-    let function = function(player, "Pawn", "GetControlRotation")?;
-    let properties = function.iter_parameters();
-    let return_value = property(&properties, "ReturnValue", 24)?;
-    let mut parms = vec![0u8; function.parms_size().max(1) as usize];
-    unsafe { player.process_event(function, parms.as_mut_ptr() as *mut c_void) };
-    read_f64(&parms, return_value.offset as usize + 8)
-}
-
-unsafe fn call_f32(
-    target: &UObject,
-    owner: &str,
-    function_name: &str,
-    parameter_name: &str,
-    value: f32,
-) -> Result<(), String> {
-    let function = function(target, owner, function_name)?;
-    let properties = function.iter_parameters();
-    let parameter = property(&properties, parameter_name, 4)?;
-    let mut parms = vec![0u8; function.parms_size().max(1) as usize];
-    write_bytes(&mut parms, parameter.offset as usize, &value.to_le_bytes())?;
-    unsafe { target.process_event(function, parms.as_mut_ptr() as *mut c_void) };
-    Ok(())
-}
-
-unsafe fn add_movement_input(
-    player: &UObject,
-    direction: (f64, f64, f64),
-    scale: f32,
-) -> Result<(), String> {
-    let function = function(player, "Pawn", "AddMovementInput")?;
-    let properties = function.iter_parameters();
-    let world_direction = property(&properties, "WorldDirection", 24)?;
-    let scale_value = property(&properties, "ScaleValue", 4)?;
-    let mut parms = vec![0u8; function.parms_size().max(1) as usize];
-    for (index, value) in [direction.0, direction.1, direction.2]
-        .into_iter()
-        .enumerate()
-    {
-        write_bytes(
-            &mut parms,
-            world_direction.offset as usize + index * 8,
-            &value.to_le_bytes(),
-        )?;
-    }
-    write_bytes(
-        &mut parms,
-        scale_value.offset as usize,
-        &scale.to_le_bytes(),
-    )?;
-    unsafe { player.process_event(function, parms.as_mut_ptr() as *mut c_void) };
-    Ok(())
-}
-
-fn function<'a>(target: &'a UObject, owner: &str, name: &str) -> Result<&'a UFunction, String> {
-    target
-        .class()
-        .and_then(|class| class.get_function(owner, name))
-        .ok_or_else(|| format!("{owner} has no {name}"))
-}
-
-fn property<'a>(
-    properties: &'a [NativeProperty],
-    name: &str,
-    minimum_size: u32,
-) -> Result<&'a NativeProperty, String> {
-    let property = properties
-        .iter()
-        .find(|property| property.name == name)
-        .ok_or_else(|| format!("input UFunction has no {name} parameter"))?;
-    if property.element_size < minimum_size {
-        return Err(format!(
-            "input UFunction parameter {name} is {} bytes, expected at least {minimum_size}",
-            property.element_size
-        ));
-    }
-    Ok(property)
-}
-
-fn write_bytes(buffer: &mut [u8], offset: usize, bytes: &[u8]) -> Result<(), String> {
-    let destination = buffer
-        .get_mut(offset..offset + bytes.len())
-        .ok_or_else(|| "input UFunction parameter is outside ParmsSize".to_string())?;
-    destination.copy_from_slice(bytes);
-    Ok(())
-}
-
-fn read_u64(buffer: &[u8], offset: usize) -> Result<u64, String> {
-    let bytes: [u8; 8] = buffer
-        .get(offset..offset + 8)
-        .ok_or_else(|| "input UFunction return value is outside ParmsSize".to_string())?
-        .try_into()
-        .expect("checked eight-byte return slice");
-    Ok(u64::from_le_bytes(bytes))
-}
-
-fn read_f64(buffer: &[u8], offset: usize) -> Result<f64, String> {
-    Ok(f64::from_bits(read_u64(buffer, offset)?))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{movement_direction, reflected_property_offset};
+    use std::sync::{Arc, Mutex};
+
+    use modforge::input::{Key, PlayerCommand};
+
+    use super::{forward_player_commands, reflected_property_offset};
     use crate::ue::uobject::NativeProperty;
 
     #[test]
-    fn controller_comes_from_the_reflected_pawn_field() {
+    fn player_observation_uses_reflected_controller_and_rotation_fields() {
         let source = include_str!("input.rs");
-        let unavailable_function = ["Get", "Controller"].concat();
-        assert!(!source.contains(&format!("\"{unavailable_function}\"")));
         assert!(source.contains("\"Controller\""));
-    }
-
-    #[test]
-    fn reflected_controller_field_resolves_by_name_and_size() {
-        let properties = [NativeProperty {
-            name: "Controller".into(),
-            offset: 0x2A0,
-            element_size: 8,
-        }];
-
-        assert_eq!(
-            reflected_property_offset(&properties, "Controller", 8),
-            Ok(Some(0x2A0))
-        );
-        assert_eq!(
-            reflected_property_offset(&properties, "Missing", 8),
-            Ok(None)
-        );
-        assert!(reflected_property_offset(&properties, "Controller", 16).is_err());
-    }
-
-    #[test]
-    fn control_yaw_comes_from_the_reflected_controller_field() {
-        let source = include_str!("input.rs");
-        let unavailable_function = ["GetControl", "Rotation"].concat();
-        assert!(!source.contains(&format!("\"{unavailable_function}\"")));
         assert!(source.contains("\"ControlRotation\""));
+        let unavailable = ["GetControl", "Rotation"].concat();
+        assert!(!source.contains(&unavailable));
     }
 
     #[test]
-    fn movement_axes_follow_control_yaw() {
-        let forward = movement_direction(90.0, 1.0, 0.0);
-        assert!(forward.0.abs() < 1.0e-12);
-        assert!((forward.1 - 1.0).abs() < 1.0e-12);
+    fn reflected_field_requires_the_expected_size() {
+        let properties = [NativeProperty {
+            name: "ControlRotation".into(),
+            offset: 0x320,
+            element_size: 24,
+        }];
+        assert_eq!(
+            reflected_property_offset(&properties, "ControlRotation", 24).unwrap(),
+            Some(0x320)
+        );
+        assert!(reflected_property_offset(&properties, "ControlRotation", 32).is_err());
+    }
 
-        let left = movement_direction(0.0, 0.0, -1.0);
-        assert!(left.0.abs() < 1.0e-12);
-        assert!((left.1 + 1.0).abs() < 1.0e-12);
+    #[test]
+    fn unreal_input_forwards_the_shared_command_batch_unchanged() {
+        let received = Arc::new(Mutex::new(Vec::new()));
+        let recorded = received.clone();
+        let commands = [
+            PlayerCommand::key(Key(0x57), true),
+            PlayerCommand::mouse_delta(5, -2),
+            PlayerCommand::key(Key(0x45), true),
+            PlayerCommand::key(Key(0x45), false),
+        ];
+
+        forward_player_commands(
+            &move |batch| {
+                recorded.lock().unwrap().extend_from_slice(batch);
+                Ok(())
+            },
+            &commands,
+        )
+        .unwrap();
+
+        assert_eq!(*received.lock().unwrap(), commands);
     }
 }

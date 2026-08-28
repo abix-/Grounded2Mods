@@ -6,8 +6,8 @@
 //! `mem.peek` wrapper.
 
 use crate::harness::RunningGame;
-use anyhow::{anyhow, Context, Result};
-use serde_json::{json, Value};
+use anyhow::{Context, Result, anyhow};
+use serde_json::{Value, json};
 
 /// Parsed MSVC `std::string` SSO header. Layout for the build we
 /// reverse-engineered against:
@@ -36,7 +36,11 @@ impl MsvcStdString {
         inline.copy_from_slice(&bytes[0..16]);
         let size = u64::from_le_bytes(bytes[16..24].try_into().ok()?);
         let capacity = u64::from_le_bytes(bytes[24..32].try_into().ok()?);
-        Some(Self { inline, size, capacity })
+        Some(Self {
+            inline,
+            size,
+            capacity,
+        })
     }
 
     /// True if the string fits in the 16-byte inline area (SSO).
@@ -51,7 +55,13 @@ impl MsvcStdString {
         self.inline[..len]
             .iter()
             .take_while(|&&b| b != 0)
-            .map(|&b| if (0x20..0x7f).contains(&b) { b as char } else { '.' })
+            .map(|&b| {
+                if (0x20..0x7f).contains(&b) {
+                    b as char
+                } else {
+                    '.'
+                }
+            })
             .collect()
     }
 
@@ -74,9 +84,11 @@ pub fn is_vtable_at_image_rva(
     image_base: u64,
     expected_rva: u64,
 ) -> Result<bool> {
-    let resp = game.op_json("mem.peek", &json!({"addr": obj_ptr, "kind": "u64"}))
+    let resp = game
+        .op_json("mem.peek", &json!({"addr": obj_ptr, "kind": "u64"}))
         .map_err(|e| anyhow!("mem.peek: {e}"))?;
-    let s = resp.get("result")
+    let s = resp
+        .get("result")
         .and_then(|r| r.get("value"))
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("mem.peek u64 returned no string value"))?;

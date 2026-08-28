@@ -213,7 +213,9 @@ fn resolve_payoff(payoff: Payoff, now: f32) {
                 );
             }
             Err(e) if e.contains("pre-v6") => {
-                crate::chronicle::post("armed men gather beyond the ridge, but do not come; not yet");
+                crate::chronicle::post(
+                    "armed men gather beyond the ridge, but do not come; not yet",
+                );
                 mono::log(
                     LogLevel::Info,
                     "survivalist-mod: incursion -- raiders held back (a game restart arms the spawner)",
@@ -246,7 +248,9 @@ fn resolve_payoff(payoff: Payoff, now: f32) {
                 );
             }
             Err(e) if e.contains("pre-v6") => {
-                crate::chronicle::post("something moves in formation past the ridge, but does not come; not yet");
+                crate::chronicle::post(
+                    "something moves in formation past the ridge, but does not come; not yet",
+                );
                 mono::log(
                     LogLevel::Info,
                     "survivalist-mod: incursion -- military held back (a game restart arms the spawner)",
@@ -353,7 +357,9 @@ fn resolve_payoff(payoff: Payoff, now: f32) {
                 );
             }
             Err(e) if e.contains("pre-v6") => {
-                crate::chronicle::post("something vast stirs at the edge, but does not come; not yet");
+                crate::chronicle::post(
+                    "something vast stirs at the edge, but does not come; not yet",
+                );
                 mono::log(
                     LogLevel::Info,
                     "survivalist-mod: incursion -- mega-horde held back (a game restart arms the spawner)",
@@ -368,7 +374,6 @@ fn resolve_payoff(payoff: Payoff, now: f32) {
         },
     }
 }
-
 
 /// The centroid of all settlements and the spread (max distance
 /// from the centroid to any of them): the populated heart of the
@@ -479,7 +484,11 @@ fn spawn_edge_band(now: f32, kind: &str, hostile_all: bool) -> Result<Option<Str
     for_each_community(|com| {
         let t = ctype(&com);
         if (t == "Normal" || t == "Looter" || t == "Player")
-            && com.invoke("GetLivingNonZombieMemberCount", &json!([]))?.as_i64().unwrap_or(0) > 0
+            && com
+                .invoke("GetLivingNonZombieMemberCount", &json!([]))?
+                .as_i64()
+                .unwrap_or(0)
+                > 0
             && let Some(c) = base_centre(&com)
         {
             camps.push((com.handle().0, c, display_name(&com)));
@@ -511,7 +520,10 @@ fn spawn_edge_band(now: f32, kind: &str, hostile_all: bool) -> Result<Option<Str
     let target_h = camps[best].0;
     let target_name = camps[best].2.clone();
     let _ = with(band_h, |g| {
-        g.invoke("SetInvasionTarget", &json!([{ "handle": target_h }, 7.0, false]))
+        g.invoke(
+            "SetInvasionTarget",
+            &json!([{ "handle": target_h }, 7.0, false]),
+        )
     });
 
     drop(own(band_h));

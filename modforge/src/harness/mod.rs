@@ -56,11 +56,7 @@ pub struct GameDef {
 }
 
 impl GameDef {
-    pub fn defaults(
-        app_id: u32,
-        process_name: &'static str,
-        http: HttpProbe,
-    ) -> Self {
+    pub fn defaults(app_id: u32, process_name: &'static str, http: HttpProbe) -> Self {
         Self {
             app_id,
             process_name,
@@ -144,7 +140,10 @@ pub struct BuildDef {
 /// `MODFORGE_NO_GAME` from the environment. Tests should call this
 /// at the top and return cleanly if it returns true.
 pub fn should_skip() -> bool {
-    matches!(std::env::var("MODFORGE_NO_GAME").as_deref(), Ok("1") | Ok("true"))
+    matches!(
+        std::env::var("MODFORGE_NO_GAME").as_deref(),
+        Ok("1") | Ok("true")
+    )
 }
 
 /// Should the build step be skipped? Reads `MODFORGE_SKIP_BUILD`.

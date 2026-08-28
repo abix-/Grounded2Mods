@@ -27,12 +27,18 @@ fn goon_attacks_player() {
         println!("no Player instance; not in a save?");
         return;
     };
-    let transform = api.op("read_field", json!({"handle": player, "field": "transform"}));
+    let transform = api.op(
+        "read_field",
+        json!({"handle": player, "field": "transform"}),
+    );
     let Some(th) = handle_of(&transform.result) else {
         println!("player transform carried no handle: {}", transform.result);
         return;
     };
-    let pos = api.op("invoke_method", json!({"handle": th, "method": "get_position", "args": []}));
+    let pos = api.op(
+        "invoke_method",
+        json!({"handle": th, "method": "get_position", "args": []}),
+    );
     let Some((px, py, pz)) = parse_vec3(&pos.result) else {
         println!("could not parse player position: {}", pos.result);
         return;
@@ -48,7 +54,10 @@ fn goon_attacks_player() {
                "args": [{"x": px + 5.0, "y": py, "z": pz}]}),
     );
     let Some(goon) = handle_of(&spawn.result) else {
-        println!("SpawnGoon failed or carried no handle: {:?} {}", spawn.error, spawn.result);
+        println!(
+            "SpawnGoon failed or carried no handle: {:?} {}",
+            spawn.error, spawn.result
+        );
         return;
     };
     println!("goon spawned: {}", spawn.result);

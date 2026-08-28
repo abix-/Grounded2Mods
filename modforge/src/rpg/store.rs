@@ -346,10 +346,8 @@ mod tests {
 
     #[test]
     fn save_load_round_trip() {
-        let tmp = std::env::temp_dir().join(format!(
-            "ueforge_slotstore_test_{}",
-            std::process::id()
-        ));
+        let tmp =
+            std::env::temp_dir().join(format!("ueforge_slotstore_test_{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         // Force the store to write under our temp dir by setting
         // the dll_dir override. But dll_dir is a static; we
@@ -371,10 +369,8 @@ mod tests {
 
     #[test]
     fn save_atomic_creates_parent() {
-        let tmp = std::env::temp_dir().join(format!(
-            "ueforge_slotstore_parent_{}",
-            std::process::id()
-        ));
+        let tmp =
+            std::env::temp_dir().join(format!("ueforge_slotstore_parent_{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         let path = tmp.join("nested").join("dir").join("save.json");
         let state = State::default();
@@ -460,7 +456,10 @@ mod tests {
         fs::write(path.join("inner"), "x").expect("inner");
 
         let store: SlotStore<State> = SlotStore::new("__test__");
-        let state = State { a: 7, b: "hi".into() };
+        let state = State {
+            a: 7,
+            b: "hi".into(),
+        };
         let r = store.save_to_path(&path, &state);
         assert!(r.is_err());
         let msg = store.last_error().expect("last_error populated");
@@ -511,7 +510,10 @@ mod tests {
         let s = Scratch::new("preserve");
         let good_path = s.path.join("good.json");
         let store: SlotStore<State> = SlotStore::new("__test__");
-        let original = State { a: 1, b: "original".into() };
+        let original = State {
+            a: 1,
+            b: "original".into(),
+        };
         store
             .save_to_path(&good_path, &original)
             .expect("initial save");
@@ -520,7 +522,10 @@ mod tests {
         let blocker = s.path.join("blocker");
         fs::write(&blocker, "x").expect("blocker");
         let bad_target = blocker.join("save.json");
-        let updated = State { a: 2, b: "updated".into() };
+        let updated = State {
+            a: 2,
+            b: "updated".into(),
+        };
         let r = store.save_to_path(&bad_target, &updated);
         assert!(r.is_err());
 
@@ -564,11 +569,16 @@ mod tests {
         let s = Scratch::new("vers_current");
         let path = s.path.join("v.json");
         // Hand-write an envelope at schema_version 2 (current).
-        let json =
-            r#"{"schema_version":2,"payload":{"n":42,"name":"alice"}}"#;
+        let json = r#"{"schema_version":2,"payload":{"n":42,"name":"alice"}}"#;
         fs::write(&path, json).expect("write");
         let loaded: V2 = load_versioned_with_migrate(&path);
-        assert_eq!(loaded, V2 { n: 42, name: "alice".into() });
+        assert_eq!(
+            loaded,
+            V2 {
+                n: 42,
+                name: "alice".into()
+            }
+        );
     }
 
     #[test]
@@ -605,7 +615,13 @@ mod tests {
         let json = r#"{"n":13,"name":"legacy"}"#;
         fs::write(&path, json).expect("write");
         let loaded: V2 = load_versioned_with_migrate(&path);
-        assert_eq!(loaded, V2 { n: 13, name: "legacy".into() });
+        assert_eq!(
+            loaded,
+            V2 {
+                n: 13,
+                name: "legacy".into()
+            }
+        );
     }
 
     #[test]
@@ -621,14 +637,26 @@ mod tests {
         let s = Scratch::new("vers_save");
         let store: SlotStore<Versioned<V2>> = SlotStore::new("__test__");
         let path = s.path.join("v.json");
-        let v = V2 { n: 1, name: "bob".into() };
+        let v = V2 {
+            n: 1,
+            name: "bob".into(),
+        };
         store
-            .save_to_path(&path, &Versioned { schema_version: V2::CURRENT_VERSION, payload: v.clone() })
+            .save_to_path(
+                &path,
+                &Versioned {
+                    schema_version: V2::CURRENT_VERSION,
+                    payload: v.clone(),
+                },
+            )
             .expect("save");
         // On-disk shape: { schema_version: 2, payload: {...} }.
         let raw = fs::read_to_string(&path).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
-        assert_eq!(parsed.get("schema_version").and_then(|v| v.as_u64()), Some(2));
+        assert_eq!(
+            parsed.get("schema_version").and_then(|v| v.as_u64()),
+            Some(2)
+        );
         assert!(parsed.get("payload").is_some());
         // Round-trip through the migration loader.
         let loaded: V2 = load_versioned_with_migrate(&path);

@@ -100,7 +100,6 @@ fn npc_info(health_h: i32) -> Option<(i64, Option<(f64, f64, f64)>, f32)> {
     Some((ptr, pos, max_health))
 }
 
-
 /// Inert until the loaded game settles (crash guard: never touch
 /// half-initialized instances during a save load). The ctx
 /// handle must still be released or the table leaks.
@@ -171,19 +170,27 @@ extern "C" fn on_down(ctx: *const c_void) -> i32 {
     if let Some((x, y, z)) = pos {
         mono::log(
             LogLevel::Info,
-            &format!("schedule1-mod [kill]: dropping loot at ({x:.0},{y:.0},{z:.0}) max_health={max_health:.0} loot_mult={loot_mult:.2}"),
+            &format!(
+                "schedule1-mod [kill]: dropping loot at ({x:.0},{y:.0},{z:.0}) max_health={max_health:.0} loot_mult={loot_mult:.2}"
+            ),
         );
         crate::loot::drop_cash_at(x, y, z, max_health * loot_mult);
     }
     if let Some(r) = TRACKER.record_xp((XP_PER_DOWN as f32 * xp_mult) as u64) {
         let lvl = if r.new_level > r.old_level {
-            format!(" LEVEL UP -> {} (+{} point(s))", r.new_level, r.points_gained)
+            format!(
+                " LEVEL UP -> {} (+{} point(s))",
+                r.new_level, r.points_gained
+            )
         } else {
             String::new()
         };
         mono::log(
             LogLevel::Info,
-            &format!("schedule1-mod: +{} XP for the kill (total {}){lvl}", r.awarded, r.total_xp),
+            &format!(
+                "schedule1-mod: +{} XP for the kill (total {}){lvl}",
+                r.awarded, r.total_xp
+            ),
         );
         if r.points_gained > 0 {
             crate::skills::auto_spend(r.points_gained);

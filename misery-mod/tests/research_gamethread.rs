@@ -75,7 +75,10 @@ fn find_engine() {
 fn engine_vtable() {
     let Some(api) = api_or_skip() else { return };
     let live = modforge::client::walk_class_chain_instances(&api, "GameEngine", 8);
-    let Some(engine) = live.iter().find(|o| o.full_name.contains("/Engine/Transient")) else {
+    let Some(engine) = live
+        .iter()
+        .find(|o| o.full_name.contains("/Engine/Transient"))
+    else {
         println!("no live engine object under /Engine/Transient");
         for o in &live {
             println!("  saw: {}", o.full_name);

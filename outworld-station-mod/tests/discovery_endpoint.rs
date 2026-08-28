@@ -21,10 +21,7 @@ fn list_ops_includes_discovery_and_data_table_ops() {
     let ops = r.result["ops"]
         .as_array()
         .expect("list_ops result should carry 'ops' array");
-    let names: Vec<&str> = ops
-        .iter()
-        .filter_map(|o| o["name"].as_str())
-        .collect();
+    let names: Vec<&str> = ops.iter().filter_map(|o| o["name"].as_str()).collect();
 
     for required in &[
         "discover_data_tables",
@@ -51,9 +48,15 @@ fn discover_data_tables_returns_envelope() {
     let r = api.op("discover_data_tables", json!({}));
     assert!(r.ok, "discover_data_tables failed: {:?}", r.error);
 
-    assert!(r.result["data_tables"].is_array(), "missing data_tables array");
+    assert!(
+        r.result["data_tables"].is_array(),
+        "missing data_tables array"
+    );
     assert!(r.result["tables_found"].is_u64(), "missing tables_found");
-    assert!(r.result["scanned_objects"].is_u64(), "missing scanned_objects");
+    assert!(
+        r.result["scanned_objects"].is_u64(),
+        "missing scanned_objects"
+    );
 }
 
 #[test]
@@ -69,17 +72,17 @@ fn discover_data_tables_refresh_picks_up_late_tables() {
     let n2 = r2.result["tables_found"].as_u64().unwrap_or(0);
     eprintln!("data_tables: cached={n1}, refreshed={n2}");
     // Refresh should never lose tables once content has streamed in.
-    assert!(n2 >= n1, "refresh dropped tables: cached={n1} refreshed={n2}");
+    assert!(
+        n2 >= n1,
+        "refresh dropped tables: cached={n1} refreshed={n2}"
+    );
 }
 
 #[test]
 fn discover_data_tables_name_filter_isolates_dt_materials() {
     let Some(api) = common::try_api() else { return };
     let _ = api.op("discover_data_tables", json!({ "refresh": true }));
-    let r = api.op(
-        "discover_data_tables",
-        json!({ "name": "DT_Materials" }),
-    );
+    let r = api.op("discover_data_tables", json!({ "name": "DT_Materials" }));
     assert!(r.ok);
     assert_eq!(r.result["filter"], json!("DT_Materials"));
     if r.result["match"].is_null() {
@@ -132,7 +135,10 @@ fn discover_class_detail_for_object() {
     assert!(r.result["fields"].is_array());
     assert!(r.result["functions"].is_array());
     let psize = r.result["properties_size"].as_u64().unwrap_or(0);
-    assert!(psize >= 0x28, "Object properties_size unexpectedly small: 0x{psize:x}");
+    assert!(
+        psize >= 0x28,
+        "Object properties_size unexpectedly small: 0x{psize:x}"
+    );
 }
 
 #[test]
@@ -175,17 +181,16 @@ fn discover_struct_detail_for_vector() {
     }
     assert!(r.result["fields"].is_array());
     let fields = r.result["fields"].as_array().unwrap();
-    let names: Vec<&str> = fields
-        .iter()
-        .filter_map(|f| f["name"].as_str())
-        .collect();
+    let names: Vec<&str> = fields.iter().filter_map(|f| f["name"].as_str()).collect();
     // Skip if schema walk on this build produced garbage names.
     // the framework should still not have crashed.
-    let looks_corrupt = names.iter().any(|n| {
-        n.contains('\0') || n.starts_with('<') || n.is_empty() || n.len() > 64
-    });
+    let looks_corrupt = names
+        .iter()
+        .any(|n| n.contains('\0') || n.starts_with('<') || n.is_empty() || n.len() > 64);
     if looks_corrupt {
-        eprintln!("FVector schema walk returned non-name fields: {names:?} -- skipping XYZ assertion");
+        eprintln!(
+            "FVector schema walk returned non-name fields: {names:?} -- skipping XYZ assertion"
+        );
         return;
     }
     // FVector in UE5 has X / Y / Z.
@@ -211,7 +216,10 @@ fn dump_data_table_for_dt_materials() {
     let total = r.result["rows_total"].as_u64().unwrap_or(0);
     let returned = r.result["rows_returned"].as_u64().unwrap_or(0);
     assert!(total > 0, "DT_Materials should have rows");
-    assert!(returned <= 5, "max_rows=5 not honoured: returned={returned}");
+    assert!(
+        returned <= 5,
+        "max_rows=5 not honoured: returned={returned}"
+    );
 
     let rows = r.result["rows"].as_array().expect("rows array missing");
     if let Some(first) = rows.first() {
@@ -228,12 +236,9 @@ fn dump_data_table_for_dt_materials() {
         // about; field-name regressions surface in the next
         // green-schema run.
         let keys: Vec<&String> = fields.keys().collect();
-        let looks_corrupt = keys.iter().any(|k| {
-            k.contains('\0')
-                || k.starts_with('<')
-                || k.is_empty()
-                || k.len() > 64
-        });
+        let looks_corrupt = keys
+            .iter()
+            .any(|k| k.contains('\0') || k.starts_with('<') || k.is_empty() || k.len() > 64);
         if looks_corrupt {
             eprintln!(
                 "DT_Materials schema walk returned non-name keys: {keys:?} -- skipping MaxCanStack assertion"
@@ -273,10 +278,7 @@ fn cached_data_tables_have_consistent_shape() {
 
     let arr = r.result["data_tables"].as_array().unwrap();
     for (i, t) in arr.iter().enumerate() {
-        assert!(
-            t["table_name"].is_string(),
-            "entry #{i} missing table_name"
-        );
+        assert!(t["table_name"].is_string(), "entry #{i} missing table_name");
         // row_struct may be null when RowStruct pointer is unreadable;
         // but if present must have name + fields.
         if !t["row_struct"].is_null() {

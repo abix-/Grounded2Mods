@@ -80,7 +80,11 @@ fn bot_reads_path_and_returns_only_player_input() {
 
     let first = bot.tick(observation(0.0, 0.0, 0.0), 0);
     assert_eq!(first.status, BotStatus::Travelling { path_index: 0 });
-    assert!(first.commands.contains(&PlayerCommand::key(Key(0x57), true)));
+    assert!(
+        first
+            .commands
+            .contains(&PlayerCommand::key(Key(0x57), true))
+    );
 
     let turn = bot.tick(observation(100.0, 0.0, 0.0), 100);
     assert_eq!(turn.status, BotStatus::Travelling { path_index: 1 });
@@ -89,7 +93,10 @@ fn bot_reads_path_and_returns_only_player_input() {
             .iter()
             .any(|command| matches!(command, PlayerCommand::MouseDelta { dx, dy: 0 } if *dx > 0))
     );
-    assert!(turn.commands.contains(&PlayerCommand::key(Key(0x57), false)));
+    assert!(
+        turn.commands
+            .contains(&PlayerCommand::key(Key(0x57), false))
+    );
 
     let arrived = bot.tick(observation(100.0, 100.0, 90.0), 200);
     assert_eq!(arrived.status, BotStatus::Arrived);
@@ -99,12 +106,15 @@ fn bot_reads_path_and_returns_only_player_input() {
 #[test]
 fn identical_unreal_and_unity_inputs_receive_identical_commands() {
     let path = Path::new(vec![PathPoint::new(position(100.0, 0.0, 0.0))]).unwrap();
-    let mut bot = Bot::new(path, 5.0, SteeringConfig::default(), 1.0, 1_000).unwrap();
-    let output = bot.tick(observation(0.0, 0.0, 0.0), 0);
+    let mut unreal_bot =
+        Bot::new(path.clone(), 5.0, SteeringConfig::default(), 1.0, 1_000).unwrap();
+    let mut unity_bot = Bot::new(path, 5.0, SteeringConfig::default(), 1.0, 1_000).unwrap();
+    let player = observation(0.0, 0.0, 0.0);
 
-    let unreal_commands = output.commands.clone();
-    let unity_commands = output.commands.clone();
-    assert_eq!(unreal_commands, unity_commands);
+    assert_eq!(
+        unreal_bot.tick(player, 0).commands,
+        unity_bot.tick(player, 0).commands
+    );
 }
 
 #[test]
@@ -118,8 +128,7 @@ fn bot_releases_every_movement_key_when_stuck_or_cancelled() {
     assert_eq!(stuck.status, BotStatus::Stuck);
     assert_all_movement_released(&stuck.commands);
 
-    let mut cancelled_bot =
-        Bot::new(path, 5.0, SteeringConfig::default(), 1.0, 100).unwrap();
+    let mut cancelled_bot = Bot::new(path, 5.0, SteeringConfig::default(), 1.0, 100).unwrap();
     let cancelled = cancelled_bot.cancel();
     assert_eq!(cancelled.status, BotStatus::Cancelled);
     assert_all_movement_released(&cancelled.commands);

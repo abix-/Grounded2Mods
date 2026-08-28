@@ -17,5 +17,5 @@
 //! obj.write_field("_maxCapacity", &json!(100.0))?;
 //! ```
 
-pub use crate::mono::{MonoObject as Object, MonoType as Type, LogLevel, log};
 pub use crate::bridge::{RuntimeKind, runtime_kind};
+pub use crate::mono::{LogLevel, MonoObject as Object, MonoType as Type, log};

@@ -11,7 +11,7 @@
 //! ```
 
 mod common;
-use common::{api, handle_of, ping_or_skip, walk, print_declared_methods};
+use common::{api, handle_of, ping_or_skip, print_declared_methods, walk};
 use serde_json::json;
 
 const BEHAVIOUR_CLASSES: &[&str] = &[
@@ -58,30 +58,18 @@ fn behaviour_inventory() {
                 // Inspect the first instance to see fields
                 if let Some(first) = list.first() {
                     if let Some(fh) = first["handle"].as_i64() {
-                        let inspect = api.op(
-                            "inspect_object",
-                            json!({"handle": fh}),
-                        );
+                        let inspect = api.op("inspect_object", json!({"handle": fh}));
                         println!(
                             "  inspect[0]:\n{}",
-                            serde_json::to_string_pretty(
-                                &inspect.result
-                            )
-                            .unwrap_or_default()
+                            serde_json::to_string_pretty(&inspect.result).unwrap_or_default()
                         );
-                        api.op(
-                            "release_handle",
-                            json!({"handle": fh}),
-                        );
+                        api.op("release_handle", json!({"handle": fh}));
                     }
                 }
                 // Release remaining handles
                 for inst in list.iter().skip(1) {
                     if let Some(h) = inst["handle"].as_i64() {
-                        api.op(
-                            "release_handle",
-                            json!({"handle": h}),
-                        );
+                        api.op("release_handle", json!({"handle": h}));
                     }
                 }
             }
@@ -164,15 +152,25 @@ fn behaviour_inventory() {
                                                                 "args": [],
                                                             }),
                                                         );
-                                                        let name = tn.result
+                                                        let name = tn
+                                                            .result
                                                             .as_str()
-                                                            .or_else(|| tn.result.get("str").and_then(|s| s.as_str()))
+                                                            .or_else(|| {
+                                                                tn.result
+                                                                    .get("str")
+                                                                    .and_then(|s| s.as_str())
+                                                            })
                                                             .unwrap_or("?");
                                                         // Filter to only Behaviour components
-                                                        if name.contains("Behaviour") || name.contains("Behavior") {
+                                                        if name.contains("Behaviour")
+                                                            || name.contains("Behavior")
+                                                        {
                                                             println!("  [{i}] {name}");
                                                         }
-                                                        api.op("release_handle", json!({"handle": th}));
+                                                        api.op(
+                                                            "release_handle",
+                                                            json!({"handle": th}),
+                                                        );
                                                     }
                                                 }
                                                 api.op("release_handle", json!({"handle": ih}));
@@ -184,16 +182,10 @@ fn behaviour_inventory() {
                             }
                         } else {
                             // Fallback: just inspect the NPC
-                            let inspect = api.op(
-                                "inspect_object",
-                                json!({"handle": nh}),
-                            );
+                            let inspect = api.op("inspect_object", json!({"handle": nh}));
                             println!(
                                 "  GetComponents failed, inspect:\n{}",
-                                serde_json::to_string_pretty(
-                                    &inspect.result
-                                )
-                                .unwrap_or_default()
+                                serde_json::to_string_pretty(&inspect.result).unwrap_or_default()
                             );
                         }
                         api.op("release_handle", json!({"handle": nh}));
@@ -244,20 +236,12 @@ fn behaviour_deep_inspect() {
         print_declared_methods(&api, class);
 
         println!("\n=== {short}: all methods (incl inherited) ===");
-        let r = api.op(
-            "list_methods",
-            json!({"class": class}),
-        );
+        let r = api.op("list_methods", json!({"class": class}));
         if r.ok {
-            let methods = r.result["methods"]
-                .as_array()
-                .cloned()
-                .unwrap_or_default();
+            let methods = r.result["methods"].as_array().cloned().unwrap_or_default();
             println!("  {} total methods", methods.len());
             for m in &methods {
-                let declared = m["declared_on"]
-                    .as_str()
-                    .unwrap_or("?");
+                let declared = m["declared_on"].as_str().unwrap_or("?");
                 // Skip the NetworkBehaviour boilerplate
                 if declared.contains("FishNet")
                     || declared.contains("UnityEngine")
@@ -290,13 +274,8 @@ fn behaviour_deep_inspect() {
                 println!("  {} instance(s)", list.len());
                 if let Some(first) = list.first() {
                     if let Some(fh) = first["handle"].as_i64() {
-                        let inspect = api.op(
-                            "inspect_object",
-                            json!({"handle": fh}),
-                        );
-                        if let Some(fields) =
-                            inspect.result["fields"].as_object()
-                        {
+                        let inspect = api.op("inspect_object", json!({"handle": fh}));
+                        if let Some(fields) = inspect.result["fields"].as_object() {
                             for (k, v) in fields {
                                 // Skip FishNet/Unity noise
                                 if k.starts_with("_rpc")
@@ -337,10 +316,7 @@ fn behaviour_deep_inspect() {
                                     format!("\"{}\"", v.as_str().unwrap())
                                 } else if v.is_object() {
                                     if let Some(t) = v.get("il2cpp_type") {
-                                        format!(
-                                            "<{}>",
-                                            t.as_str().unwrap_or("?")
-                                        )
+                                        format!("<{}>", t.as_str().unwrap_or("?"))
                                     } else {
                                         v.to_string()
                                     }
@@ -350,18 +326,12 @@ fn behaviour_deep_inspect() {
                                 println!("  {k} = {val_str}");
                             }
                         }
-                        api.op(
-                            "release_handle",
-                            json!({"handle": fh}),
-                        );
+                        api.op("release_handle", json!({"handle": fh}));
                     }
                 }
                 for inst in list.iter().skip(1) {
                     if let Some(h) = inst["handle"].as_i64() {
-                        api.op(
-                            "release_handle",
-                            json!({"handle": h}),
-                        );
+                        api.op("release_handle", json!({"handle": h}));
                     }
                 }
             }

@@ -44,7 +44,12 @@ fn measure_counter_deltas() {
     }
     writeln!(out, "\n=== Top 3 by hot-path CPU time ===").unwrap();
     for t in diff.counters.times.iter().take(3) {
-        writeln!(out, "  {:<40} {} ns ({:.3}% wall)", t.name, t.ns, t.pct_wall).unwrap();
+        writeln!(
+            out,
+            "  {:<40} {} ns ({:.3}% wall)",
+            t.name, t.ns, t.pct_wall
+        )
+        .unwrap();
     }
     if diff.cpu.total_ns > 0 {
         let our_share = (diff.counters.our_total_ns as f64) / (diff.cpu.total_ns as f64) * 100.0;
