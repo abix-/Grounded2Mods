@@ -6,7 +6,7 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 
 ## Design goals
 
-- `docs/bot-navigation.md` owns the route, A*, waypoint, door, loot-target, and player-input design. Input research documents may link to it but do not own bot navigation.
+- `docs/bot-navigation.md` owns one engine-independent bot-navigation system for both Unreal and Unity. Modforge owns routes, waypoints, the shared path and observation formats, player-input decisions, arrival, failure, and release. Ueforge and Unityforge only return engine paths and observations and inject the selected player input.
 - Topside-style fixed-tick journals remain authoritative for simulations Modforge owns.
 - Injected games use the same producer and consumer separation, but replay operation actions through the existing control plane and advance only after observable condition gates.
 - MISERY is the first proof: record a movement-speed write, wait for the live read, assert it, restore the original value, and replay the saved journal.
@@ -60,6 +60,7 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 
 ## Last session summary
 
+- Extended the dedicated bot-navigation design from an Unreal-only MISERY design to one Modforge system for both Unreal and Unity. The shared system owns all bot decisions; Ueforge and Unityforge only connect engine navigation, player observation, and normal player input. Added separate concrete Unity path, input, and live-proof rows to the todo.
 - Moved the bot-navigation design out of the synthetic-input prior-art document into dedicated `docs/bot-navigation.md`. The prior-art document now links to it and retains only input research and implementation history.
 - Corrected the route design after two implementations bypassed the player's input route and one design revision invented a second A* over semantic waypoints. The route selects the next waypoint, Unreal navigation's single A* determines the detailed path from the player to it, the bot chooses virtual W/A/S/D and mouse controls, `InputSurface` injects those controls into normal game input processing, and the game alone performs movement, aiming, and interaction.
 - The exact restarted build retained the player before acceptance and reflected the controller successfully. Live calls then proved MISERY exposes `GetControlRotation` on neither `Controller` nor `Pawn`; Ueforge must read the reflected `AController.ControlRotation` field.
@@ -300,6 +301,10 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 
 ## Next steps
 
+- Define the one shared path and player-observation format used by both Ueforge and Unityforge bot navigation.
+- Make Unityforge return Unity navigation paths and player observations in that shared format.
+- Make Unityforge inject the same virtual W/A/S/D, mouse, and interaction commands through Unity's normal player input.
+- Prove one live Unity waypoint trip through the same Modforge bot-navigation code used by MISERY.
 - Replace Ueforge's direct movement calls with virtual W/A/S/D injected through Unreal's normal player input processing.
 - Replace Ueforge's direct look calls with virtual relative mouse movement injected through Unreal's normal player input processing.
 - Replace MISERY's direct interaction-handler call with virtual `E` press/release injected through Unreal's normal player input processing.
