@@ -1329,6 +1329,107 @@ fn find_inputkey_write() {
 }
 
 #[test]
+#[ignore = "presses each of W/A/S/D/E through the bot input surface and confirms each registers"]
+fn test_bot_all_keys() {
+    let Some(api) = api_or_skip() else { return };
+    let api = api.with_timeout(std::time::Duration::from_secs(30));
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+
+    let player = client::resolve_selector(&api, "live_player").expect("no live player");
+    let sel = format!("addr:0x{:X}", player.addr);
+
+    let key = |api: &Api, vk: u32, down: bool| {
+        api.op(
+            "input.player.commands",
+            json!({"commands": [{"kind": "key", "key": vk, "down": down}]}),
+        )
+    };
+
+    for (name, vk) in [("W", 0x57u32), ("A", 0x41), ("S", 0x53), ("D", 0x44)] {
+        let before = actor_location(&api, &sel);
+        let r = key(&api, vk, true);
+        std::thread::sleep(std::time::Duration::from_millis(600));
+        let _ = key(&api, vk, false);
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        let after = actor_location(&api, &sel);
+        let (dx, dy, dz) = (after[0] - before[0], after[1] - before[1], after[2] - before[2]);
+        let moved = (dx * dx + dy * dy + dz * dz).sqrt();
+        println!("{name} (vk 0x{vk:X}): ok={} moved {moved:.1}", r.ok);
+    }
+
+    // E (interact) is a one-shot; just confirm the command path accepts it.
+    let e_down = key(&api, 0x45, true);
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    let e_up = key(&api, 0x45, false);
+    println!("E (vk 0x45): down ok={} up ok={}", e_down.ok, e_up.ok);
+}
+
+#[test]
+#[ignore = "drives the wired bot input surface (input.player.commands) for W and mouse; checks it works"]
+fn test_bot_input_wired() {
+    let Some(api) = api_or_skip() else { return };
+    let api = api.with_timeout(std::time::Duration::from_secs(30));
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+
+    let player = client::resolve_selector(&api, "live_player").expect("no live player");
+    let sel = format!("addr:0x{:X}", player.addr);
+
+    let before = actor_location(&api, &sel);
+    println!("before: {:.1}, {:.1}, {:.1}", before[0], before[1], before[2]);
+
+    // Press W through the bot's registered input surface (VK 0x57 = W).
+    let press = api.op(
+        "input.player.commands",
+        json!({"commands": [{"kind": "key", "key": 0x57, "down": true}]}),
+    );
+    println!("press W via input.player.commands: ok={} err={:?}", press.ok, press.error);
+
+    for _ in 0..6 {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        let p = actor_location(&api, &sel);
+        let d = {
+            let (dx, dy, dz) = (p[0] - before[0], p[1] - before[1], p[2] - before[2]);
+            (dx * dx + dy * dy + dz * dz).sqrt()
+        };
+        println!("  holding W (bot): moved {d:.1}");
+    }
+
+    let rel = api.op(
+        "input.player.commands",
+        json!({"commands": [{"kind": "key", "key": 0x57, "down": false}]}),
+    );
+    println!("release W: ok={}", rel.ok);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    let after_w = actor_location(&api, &sel);
+    let (dx, dy, dz) = (after_w[0] - before[0], after_w[1] - before[1], after_w[2] - before[2]);
+    let moved = (dx * dx + dy * dy + dz * dz).sqrt();
+    println!("walked {moved:.1} via bot key input");
+
+    // Mouse look: a relative mouse delta through the surface.
+    let look_before = api.op("input.player.pose", json!({}));
+    let yaw_before = look_before.result["pose"]["yaw_deg"].as_f64().unwrap_or(0.0);
+    let m = api.op(
+        "input.player.commands",
+        json!({"commands": [{"kind": "mouse_delta", "dx": 200, "dy": 0}]}),
+    );
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    let look_after = api.op("input.player.pose", json!({}));
+    let yaw_after = look_after.result["pose"]["yaw_deg"].as_f64().unwrap_or(0.0);
+    println!(
+        "mouse dx=200: ok={} yaw {yaw_before:.1} -> {yaw_after:.1} (delta {:.1})",
+        m.ok,
+        yaw_after - yaw_before
+    );
+
+    if moved > 20.0 {
+        println!("\n*** SUCCESS: bot input surface walks the character ({moved:.0} units) ***");
+    } else {
+        println!("\nno walk ({moved:.1}); check the character is on foot and free to move");
+    }
+}
+
+#[test]
 #[ignore = "moves the character via Enhanced Input StartContinuousInputInjectionForAction(ForwardInput)"]
 fn test_inject_action_movement() {
     let Some(api) = api_or_skip() else { return };

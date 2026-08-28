@@ -3,8 +3,23 @@
 use std::ffi::c_void;
 use std::time::Duration;
 
+/// MISERY's Enhanced Input action bindings, from the InputMappingContext
+/// (SGKCharacterInputs) decode in docs/research.md section 31. The bot
+/// drives these actions through Enhanced Input injection.
+const BINDINGS: ueforge::input::ActionBindings = ueforge::input::ActionBindings {
+    keys: &[
+        (0x57, "ForwardInput"),  // W
+        (0x53, "BackwardInput"), // S
+        (0x41, "LeftInput"),     // A
+        (0x44, "RightInput"),    // D
+        (0x45, "InteractInput"), // E
+    ],
+    yaw: "TurnInput",         // MouseX
+    pitch: "LookupDownInput", // MouseY
+};
+
 pub fn register() {
-    ueforge::input::register("misery", &crate::speed::PLAYER);
+    ueforge::input::register("misery", &crate::speed::PLAYER, BINDINGS);
     register_ops();
 }
 

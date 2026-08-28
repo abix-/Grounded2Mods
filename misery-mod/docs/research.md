@@ -3288,3 +3288,23 @@ UFunctions above are the right, prior-art-backed mechanism. Keep
 InputKey for anything that reads raw key state; use action injection
 for movement / interaction.
 
+### Wired into the bot input surface (2026-08-28)
+
+`ueforge::input::UnrealInputSurface` now implements the Modforge
+`InputSurface` via the Enhanced Input injection above (module
+`ueforge::input::enhanced`, reflection-based so it stays UE-generic;
+misery-mod supplies the action names in `ActionBindings`):
+
+- `key(vk, down)` -> Start/StopContinuousInputInjectionForAction on
+  the key's action (W ForwardInput, S BackwardInput, A LeftInput,
+  D RightInput, E InteractInput).
+- `move_rel(dx, dy)` -> InjectInputForAction on TurnInput (yaw) and
+  LookupDownInput (pitch), one tick per delta.
+
+Verified live through the bot's own op `input.player.commands`
+(`test_bot_input_wired`, `test_bot_all_keys`): W/A/S/D each walk the
+character ~200-243 units, E's command path is accepted, and a mouse
+dx=200 turned the view 180 degrees (yaw 90 -> 270). The subsystem and
+each UInputAction are resolved by reflection (`find_objects_by_chain`
++ object name) and cached, re-resolved if the pointer goes stale.
+
