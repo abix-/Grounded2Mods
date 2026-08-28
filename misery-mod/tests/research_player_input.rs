@@ -993,6 +993,696 @@ fn inject_forward_input() {
 }
 
 #[test]
+#[ignore = "watches the address a physical W press writes, records the writer + call chain"]
+fn watch_forward_input_writer() {
+    let Some(api) = api_or_skip() else { return };
+    // The op blocks for the whole watch window; give the client
+    // room past that before it times out.
+    let api = api.with_timeout(std::time::Duration::from_secs(45));
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+
+    let player = client::resolve_selector(&api, "live_player").expect("no live player");
+    let controller = client::read_u64(&api, player.addr, 0x2C8);
+    assert_ne!(controller, 0, "no controller");
+    let epi = client::read_u64(&api, controller, 0x408);
+    assert_ne!(epi, 0, "no EnhancedPlayerInput");
+    println!("EnhancedPlayerInput: 0x{epi:X}");
+
+    // Find the ForwardInput entry in ActionInstanceData (+0x598,
+    // stride 0x70). Its analog value (+0x40) is rewritten every
+    // frame W is held; its trigger byte (+0x10) flips on press.
+    let aid_data = client::read_u64(&api, epi, 0x598);
+    let aid_num = client::read_u64(&api, epi, 0x5A0) as u32 as usize;
+    assert_ne!(aid_data, 0, "no ActionInstanceData");
+    let stride: usize = 0x70;
+    let mut forward_idx: Option<usize> = None;
+    for i in 0..aid_num {
+        let ptr = client::read_u64(&api, aid_data, (i * stride) as u64);
+        if client::object_name(&api, ptr).as_deref() == Some("ForwardInput") {
+            forward_idx = Some(i);
+            break;
+        }
+    }
+    let fi = forward_idx.expect("ForwardInput not found in ActionInstanceData");
+    let entry = aid_data + (fi * stride) as u64;
+    println!("ForwardInput entry: 0x{entry:X}");
+
+    // Candidate write targets. These are written on the key-DOWN
+    // transition, not continuously while held, so the writer is only
+    // caught if W is pressed fresh during the window. We sweep all of
+    // them in one session.
+    let candidates: &[(&str, u64, u8)] = &[
+        ("trigger", entry + 0x10, 1), // trigger state byte, flips on press
+        ("value", entry + 0x40, 8),   // f64 analog value, 0.0 <-> 1.0
+        ("epi5e8", epi + 0x5E8, 8),   // KeyStateMap region (written inside InputKey)
+        ("epi5f0", epi + 0x5F0, 8),
+    ];
+
+    println!("\ncandidate targets:");
+    for (n, a, l) in candidates {
+        println!("  {n:8} 0x{a:X} len={l}");
+    }
+
+    let secs: u64 = std::env::var("WATCH_SECS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10);
+
+    println!(
+        "\n=== TAP W repeatedly now (press and release, over and over) ===\n\
+         Keep tapping for the whole test (~{}s total across {} targets).\n",
+        secs * candidates.len() as u64,
+        candidates.len(),
+    );
+
+    for (name, addr, len) in candidates {
+        println!("\n########## watching {name} at 0x{addr:X} (len {len}) for {secs}s ##########");
+        let r = api.op(
+            "watch_writes",
+            json!({"addr": addr, "len": len, "duration_ms": secs * 1000}),
+        );
+        if !r.ok {
+            println!("watch_writes FAILED: {:?}", r.error);
+            continue;
+        }
+        let res = &r.result;
+        println!(
+            "threads armed={} hit_count={} arm_diag={}",
+            res["threads_armed"], res["hit_count"], res["arm_diag"],
+        );
+
+        let Some(records) = res["records"].as_array() else {
+            println!("  no records array");
+            continue;
+        };
+        if records.is_empty() {
+            println!("  NO WRITES CAUGHT for {name}.");
+            continue;
+        }
+
+        println!("  {} write(s) captured:", records.len());
+        for (i, rec) in records.iter().enumerate() {
+            println!("  --- write #{i} (tid {}) ---", rec["tid"]);
+            println!(
+                "    writing instruction (rip after write): {} = {}+{}",
+                rec["rip_after_write"].as_str().unwrap_or("?"),
+                rec["rip_module"].as_str().unwrap_or("?"),
+                rec["rip_rva"].as_str().unwrap_or("?"),
+            );
+            if let Some(frames) = rec["stack_return_addrs"].as_array() {
+                println!("    call chain (return addresses in exe .text, nearest first):");
+                for f in frames {
+                    println!(
+                        "      {} = {}+{}",
+                        f["addr"].as_str().unwrap_or("?"),
+                        f["module"].as_str().unwrap_or("?"),
+                        f["rva"].as_str().unwrap_or("?"),
+                    );
+                }
+            }
+        }
+    }
+    println!(
+        "\ndone. Map each rip and its nearest return addresses (exe RVA) to \
+         functions to identify InputKey and its callers."
+    );
+}
+
+#[test]
+#[ignore = "names the functions in the captured ForwardInput write call chain"]
+fn identify_forward_input_writers() {
+    let Some(api) = api_or_skip() else { return };
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+
+    // Fetch the exe base from a 1 ms throwaway watch on a valid,
+    // aligned address (the live player's EnhancedPlayerInput).
+    let player = client::resolve_selector(&api, "live_player").expect("no live player");
+    let controller = client::read_u64(&api, player.addr, 0x2C8);
+    let epi = client::read_u64(&api, controller, 0x408);
+    assert_ne!(epi, 0, "no EnhancedPlayerInput");
+    let probe = api.op("watch_writes", json!({"addr": epi, "len": 8, "duration_ms": 1}));
+    let base_str = probe.result["exe_base"].as_str().expect("no exe_base");
+    let base = u64::from_str_radix(base_str.trim_start_matches("0x"), 16).expect("bad exe_base");
+    println!("exe base: 0x{base:X}");
+
+    // RVAs to identify. Default is the ForwardInput trigger-write
+    // chain; override with WATCH_RVAS (comma-separated hex, first is
+    // the writing instruction) to identify any other captured chain.
+    let default_writer: u64 = 0x42f14d2;
+    let default_chain: Vec<u64> =
+        vec![0xf590f8, 0xf4dd41, 0xf6682d, 0x11af012, 0x7bf8140, 0x7be5918, 0x3cb9443];
+    let (writer_rva, chain_owned): (u64, Vec<u64>) = match std::env::var("WATCH_RVAS") {
+        Ok(s) => {
+            let v: Vec<u64> = s
+                .split(',')
+                .filter_map(|t| u64::from_str_radix(t.trim().trim_start_matches("0x"), 16).ok())
+                .collect();
+            (v[0], v[1..].to_vec())
+        }
+        Err(_) => (default_writer, default_chain),
+    };
+    let chain_rvas: &[u64] = &chain_owned;
+
+    // APlayerController::InputKey's prologue, from the earlier scan.
+    let inputkey_sig: [u8; 21] = [
+        0x40, 0x55, 0x57, 0x41, 0x57, 0x48, 0x8d, 0x6c, 0x24, 0xb9, 0x48, 0x81, 0xec, 0xf0, 0x00,
+        0x00, 0x00, 0xf6, 0x41, 0x58, 0x10,
+    ];
+
+    // Read backward from an address to the function entry (the byte
+    // after the preceding run of 0xCC int3 padding). Returns the
+    // entry's absolute address and its first 24 bytes.
+    let fn_entry = |addr: u64| -> Option<(u64, Vec<u8>)> {
+        let window: u64 = 0x1200;
+        let start = addr.saturating_sub(window);
+        let bytes = client::read_bytes(&api, start, 0, addr - start);
+        if bytes.is_empty() {
+            return None;
+        }
+        for i in (1..bytes.len()).rev() {
+            if bytes[i - 1] == 0xCC && bytes[i] != 0xCC {
+                let entry = start + i as u64;
+                let prologue = client::read_bytes(&api, entry, 0, 24);
+                return Some((entry, prologue));
+            }
+        }
+        None
+    };
+
+    let report = |label: &str, addr_rva: u64| {
+        let addr = base + addr_rva;
+        match fn_entry(addr) {
+            Some((entry, prologue)) => {
+                let entry_rva = entry - base;
+                let hex: String = prologue.iter().map(|b| format!("{b:02x} ")).collect();
+                let is_inputkey = prologue.len() >= 21 && prologue[..21] == inputkey_sig;
+                let mark = if is_inputkey { "  <== InputKey prologue MATCH" } else { "" };
+                println!(
+                    "{label:8} rva=+0x{addr_rva:<8x} fn_entry=+0x{entry_rva:<8x} \
+                     prologue: {hex}{mark}"
+                );
+            }
+            None => println!("{label:8} rva=+0x{addr_rva:<8x} fn_entry: not found"),
+        }
+    };
+
+    println!("\n=== function containing each captured address ===");
+    report("writer", writer_rva);
+    for (i, &rva) in chain_rvas.iter().enumerate() {
+        report(&format!("frame{i}"), rva);
+    }
+
+    // Cross-check: what does the prologue scan resolve to this session?
+    println!("\n=== find_inputkey prologue scan (this session) ===");
+    let r = api.op("find_inputkey", json!({}));
+    if let Some(hits) = r.result["prologue_scan"]["hits"].as_array() {
+        for h in hits {
+            if let Some(s) = h["fn_addr"].as_str() {
+                if let Ok(a) = u64::from_str_radix(s.trim_start_matches("0x"), 16) {
+                    println!("  prologue-scan hit 0x{a:X} = +0x{:x}", a.wrapping_sub(base));
+                }
+            }
+        }
+    } else {
+        println!("  no prologue-scan hits");
+    }
+}
+
+/// Find the candidate KeyStateMap-style blocks on the EPI object:
+/// TSet blocks whose entries begin with an FKey (FName + FKeyDetails
+/// pointer) and that contain W. Returns (header_offset, w_entry_addr).
+fn keystatemap_w_entries(api: &Api, epi: u64, w_idx: u32) -> Vec<(u64, u64)> {
+    let obj = client::read_bytes(api, epi, 0x28, 0x800);
+    let heap_lo = 0x1_0000_0000u64;
+    let heap_hi = 0x8000_0000_0000u64;
+    let mut out = Vec::new();
+    for off in (0..obj.len().saturating_sub(16)).step_by(8) {
+        let ptr = u64::from_le_bytes(obj[off..off + 8].try_into().unwrap());
+        let count = u32::from_le_bytes(obj[off + 8..off + 12].try_into().unwrap());
+        let cap = u32::from_le_bytes(obj[off + 12..off + 16].try_into().unwrap());
+        if ptr < heap_lo || ptr >= heap_hi || count == 0 || count > 1000 || cap < count || cap > 8192
+        {
+            continue;
+        }
+        let block = client::read_bytes(api, ptr, 0, ((cap as u64) * 0x80).min(0x8000));
+        let mut b = 0usize;
+        while b + 12 <= block.len() {
+            let v = u32::from_le_bytes(block[b..b + 4].try_into().unwrap());
+            if v == w_idx {
+                // FKey layout: FName(8) then TSharedPtr<FKeyDetails> (a
+                // heap pointer at +0x08). Require it so we skip the
+                // action-mapping blocks whose FKeys have null details.
+                let details = u64::from_le_bytes(block[b + 8..b + 16].try_into().unwrap());
+                if details >= heap_lo && details < heap_hi {
+                    out.push((0x28 + off as u64, ptr + b as u64));
+                }
+            }
+            b += 4;
+        }
+    }
+    out
+}
+
+#[test]
+#[ignore = "write-watches W's FKeyState to capture InputKey (the real writer) and its callers"]
+fn find_inputkey_write() {
+    let Some(api) = api_or_skip() else { return };
+    let api = api.with_timeout(std::time::Duration::from_secs(45));
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+
+    let player = client::resolve_selector(&api, "live_player").expect("no live player");
+    let controller = client::read_u64(&api, player.addr, 0x2C8);
+    let epi = client::read_u64(&api, controller, 0x408);
+    assert_ne!(epi, 0, "no EnhancedPlayerInput");
+
+    let w_idx = api.op("string_to_fname", json!({"text": "W"})).result["fname"]
+        .as_u64()
+        .map(|f| f as u32)
+        .expect("no W FName");
+
+    let candidates = keystatemap_w_entries(&api, epi, w_idx);
+    if candidates.is_empty() {
+        println!("no KeyStateMap-style W entry found; press W once then rerun");
+        return;
+    }
+    println!("W FKeyState candidates (header_off, w_entry):");
+    for (h, e) in &candidates {
+        println!("  EPI+0x{h:X}  entry 0x{e:X}");
+    }
+
+    // FKeyState begins right after the 24-byte FKey. Watch 8 bytes
+    // there; InputKey updates the state on a key-down transition.
+    let woff: u64 = std::env::var("KS_WOFF")
+        .ok()
+        .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
+        .unwrap_or(0x18);
+    let secs = 10u64;
+
+    println!(
+        "\n=== TAP W repeatedly for the whole test (~{}s across {} candidates) ===\n\
+         watching FKeyState+0x{woff:X} of each W entry\n",
+        secs * candidates.len() as u64,
+        candidates.len(),
+    );
+
+    for (hdr, entry) in &candidates {
+        let addr = entry + woff;
+        println!("\n########## EPI+0x{hdr:X}: watch W entry 0x{entry:X} + 0x{woff:X} = 0x{addr:X} ##########");
+        let res = api
+            .op(
+                "watch_writes",
+                json!({"addr": addr, "len": 8, "duration_ms": secs * 1000}),
+            )
+            .result;
+        let hits = res["hit_count"].as_u64().unwrap_or(0);
+        println!("armed={} hit_count={}", res["threads_armed"], hits);
+        let Some(records) = res["records"].as_array() else { continue };
+        if records.is_empty() {
+            println!("  no writes (not KeyStateMap, or wrong FKeyState offset)");
+            continue;
+        }
+        println!("  {} write(s) -- this block IS KeyStateMap; the writer is InputKey:", records.len());
+        // One representative record is enough; they repeat.
+        let rec = &records[0];
+        println!(
+            "  InputKey writing instruction: {} = {}+{}",
+            rec["rip_after_write"].as_str().unwrap_or("?"),
+            rec["rip_module"].as_str().unwrap_or("?"),
+            rec["rip_rva"].as_str().unwrap_or("?"),
+        );
+        if let Some(frames) = rec["stack_return_addrs"].as_array() {
+            println!("  callers (nearest first):");
+            for f in frames {
+                println!(
+                    "    {} = {}+{}",
+                    f["addr"].as_str().unwrap_or("?"),
+                    f["module"].as_str().unwrap_or("?"),
+                    f["rva"].as_str().unwrap_or("?"),
+                );
+            }
+        }
+    }
+    println!(
+        "\ndone. The writing instruction's function is InputKey (or the FKeyState \
+         setter it calls); walk its entry via CC padding to get its RVA."
+    );
+}
+
+#[test]
+#[ignore = "names InputKey by its `this` register and dumps the real FInputKeyParams"]
+fn name_inputkey_by_rcx() {
+    let Some(api) = api_or_skip() else { return };
+    let api = api.with_timeout(std::time::Duration::from_secs(60));
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+
+    let player = client::resolve_selector(&api, "live_player").expect("no live player");
+    let controller = client::read_u64(&api, player.addr, 0x2C8);
+    let epi = client::read_u64(&api, controller, 0x408);
+    assert_ne!(epi, 0, "no EnhancedPlayerInput");
+    println!("controller: 0x{controller:X}");
+    println!("EnhancedPlayerInput: 0x{epi:X}");
+
+    // exe base from a 1 ms throwaway watch.
+    let probe = api.op("watch_writes", json!({"addr": epi, "len": 8, "duration_ms": 1}));
+    let base = u64::from_str_radix(
+        probe.result["exe_base"].as_str().expect("no exe_base").trim_start_matches("0x"),
+        16,
+    )
+    .expect("bad exe_base");
+
+    // The four input-thread functions in the KeyStateMap write chain,
+    // innermost (store) to outermost (entry).
+    let candidates: &[(&str, u64)] = &[
+        ("inner-store", 0x11aee60),
+        ("mid-a", 0x3cb9360),
+        ("mid-b", 0x39f1210),
+        ("outer-entry", 0x3213800),
+    ];
+
+    let secs = 10u64;
+    println!(
+        "\n=== TAP W steadily for ~{}s (arming exec on each candidate, reading `this`) ===\n",
+        secs * candidates.len() as u64,
+    );
+
+    for (label, rva) in candidates {
+        let addr = base + rva;
+        let res = api
+            .op(
+                "watch_writes",
+                json!({"addr": addr, "mode": "exec", "len": 1, "duration_ms": secs * 1000}),
+            )
+            .result;
+        let Some(rec) = res["records"].as_array().and_then(|r| r.first()) else {
+            println!("{label:12} +0x{rva:<8x} did not run");
+            continue;
+        };
+        let rcx = u64::from_str_radix(
+            rec["rcx"].as_str().unwrap_or("0x0").trim_start_matches("0x"),
+            16,
+        )
+        .unwrap_or(0);
+        let rdx = u64::from_str_radix(
+            rec["rdx"].as_str().unwrap_or("0x0").trim_start_matches("0x"),
+            16,
+        )
+        .unwrap_or(0);
+        let this = if rcx == controller {
+            "this=PlayerController -> APlayerController::InputKey".to_string()
+        } else if rcx == epi {
+            "this=EnhancedPlayerInput -> UPlayerInput::InputKey".to_string()
+        } else {
+            let name = client::object_name(&api, rcx).unwrap_or_else(|| "<unknown>".into());
+            format!("this=0x{rcx:X} ({name})")
+        };
+        println!("{label:12} +0x{rva:<8x} rcx=0x{rcx:X} rdx=0x{rdx:X}  {this}");
+
+        // If this is InputKey (this = controller or EPI), rdx is the
+        // FInputKeyParams pointer. Dump it: this is the real, byte-exact
+        // parameter block earlier attempts had to guess.
+        if (rcx == controller || rcx == epi) && rdx > 0x1_0000_0000 {
+            let params = client::read_bytes(&api, rdx, 0, 0x40);
+            println!("  FInputKeyParams at 0x{rdx:X} ({} bytes):", params.len());
+            for row in 0..(params.len() / 16) {
+                let o = row * 16;
+                let hex: Vec<String> =
+                    params[o..o + 16].iter().map(|x| format!("{x:02X}")).collect();
+                println!("    +0x{o:02X}  {}", hex.join(" "));
+            }
+            // FKey FName is the first 4 bytes; resolve it.
+            if params.len() >= 4 {
+                let idx = u32::from_le_bytes(params[0..4].try_into().unwrap());
+                let name = client::fname_to_string(&api, idx as u64)
+                    .unwrap_or_else(|| format!("index {idx}"));
+                println!("    FKey FName = {name}");
+            }
+        }
+    }
+    println!("\ndone.");
+}
+
+#[test]
+#[ignore = "decodes KeyStateMap on EnhancedPlayerInput to find the W FKey entry address"]
+fn decode_keystatemap_find_w() {
+    let Some(api) = api_or_skip() else { return };
+    let api = api.with_timeout(std::time::Duration::from_secs(30));
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+
+    let player = client::resolve_selector(&api, "live_player").expect("no live player");
+    let controller = client::read_u64(&api, player.addr, 0x2C8);
+    let epi = client::read_u64(&api, controller, 0x408);
+    assert_ne!(epi, 0, "no EnhancedPlayerInput");
+    println!("EnhancedPlayerInput: 0x{epi:X}");
+
+    // FName comparison index (low 32 bits of the FName u64) for the
+    // keys we expect to find in KeyStateMap once they have been
+    // pressed. Resolve through the engine's own constructor.
+    let key_index = |name: &str| -> Option<u32> {
+        let r = api.op("string_to_fname", json!({"text": name}));
+        r.result["fname"].as_u64().map(|f| f as u32)
+    };
+    let keys = ["W", "A", "S", "D", "E", "LeftShift", "SpaceBar"];
+    let mut want: Vec<(&str, u32)> = Vec::new();
+    for k in keys {
+        if let Some(idx) = key_index(k) {
+            println!("  FName {k:10} comparison_index = {idx} (0x{idx:X})");
+            want.push((k, idx));
+        }
+    }
+    let w_idx = want
+        .iter()
+        .find(|(n, _)| *n == "W")
+        .map(|(_, i)| *i)
+        .expect("could not resolve FName for W");
+    println!("\nlooking for W (index {w_idx}) in a TSet-shaped block on the EPI object\n");
+
+    // Scan the object for TSparseArray/TSet-shaped headers: a heap
+    // pointer, an element count, and a capacity that is >= count.
+    // KeyStateMap's element array is one of these; its entries begin
+    // with an FKey (FName at +0x00), so a matching key index appears
+    // inside the block the header points at.
+    let obj = client::read_bytes(&api, epi, 0x28, 0x800);
+    let heap_lo = 0x1_0000_0000u64;
+    let heap_hi = 0x8000_0000_0000u64;
+
+    for off in (0..obj.len().saturating_sub(16)).step_by(8) {
+        let ptr = u64::from_le_bytes(obj[off..off + 8].try_into().unwrap());
+        let count = u32::from_le_bytes(obj[off + 8..off + 12].try_into().unwrap());
+        let cap = u32::from_le_bytes(obj[off + 12..off + 16].try_into().unwrap());
+        if ptr < heap_lo || ptr >= heap_hi || count == 0 || count > 1000 || cap < count || cap > 8192
+        {
+            continue;
+        }
+        let hdr_off = 0x28 + off;
+
+        // Read the element block and scan every 4 bytes for any of the
+        // key indices. A block holding several of our keys IS the
+        // KeyStateMap.
+        let block_len = ((cap as u64) * 0x80).min(0x8000);
+        let block = client::read_bytes(&api, ptr, 0, block_len);
+        if block.is_empty() {
+            continue;
+        }
+
+        let mut found: Vec<(&str, usize)> = Vec::new();
+        let mut b = 0usize;
+        while b + 4 <= block.len() {
+            let v = u32::from_le_bytes(block[b..b + 4].try_into().unwrap());
+            if let Some((name, _)) = want.iter().find(|(_, idx)| *idx == v) {
+                found.push((name, b));
+            }
+            b += 4;
+        }
+        if found.is_empty() {
+            continue;
+        }
+
+        println!(
+            "CANDIDATE header at EPI+0x{hdr_off:X}: ptr=0x{ptr:X} count={count} cap={cap}"
+        );
+        for (name, boff) in &found {
+            println!(
+                "  key {name:10} at block+0x{boff:X}  ->  entry FName addr 0x{:X}",
+                ptr + *boff as u64
+            );
+        }
+
+        // Infer the entry stride from the spacing between two distinct
+        // keys, then dump the W entry so we can pick a byte to watch.
+        if let Some((_, w_boff)) = found.iter().find(|(n, _)| *n == "W") {
+            let w_addr = ptr + *w_boff as u64;
+            println!("\n  W entry (FName at 0x{w_addr:X}), first 0x60 bytes:");
+            let entry = client::read_bytes(&api, w_addr, 0, 0x60);
+            for row in 0..(entry.len() / 16) {
+                let o = row * 16;
+                let hex: Vec<String> =
+                    entry[o..o + 16].iter().map(|x| format!("{x:02X}")).collect();
+                println!("    +0x{o:02X}  {}", hex.join(" "));
+            }
+        }
+        println!();
+    }
+
+    println!(
+        "done. The W FKeyState follows its FKey (FName + 24-byte FKey, then the \
+         FKeyState). Pick a byte in the FKeyState that changes on press and \
+         write-watch it to catch InputKey."
+    );
+}
+
+#[test]
+#[ignore = "arms an exec breakpoint on the InputKey candidate; confirms it runs on a physical W press"]
+fn verify_inputkey_candidate_executes() {
+    let Some(api) = api_or_skip() else { return };
+    let api = api.with_timeout(std::time::Duration::from_secs(45));
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+
+    // WATCH_EXEC_RVAS sweeps a comma-separated list of exe-relative
+    // function-entry offsets (hex), arming an exec breakpoint on each
+    // in turn. The one that fires only on the input thread and only on
+    // a key press (a few hits, one tid) is InputKey; hot utilities
+    // fire many times across many tids.
+    if let Ok(list) = std::env::var("WATCH_EXEC_RVAS") {
+        let rvas: Vec<u64> = list
+            .split(',')
+            .filter_map(|t| u64::from_str_radix(t.trim().trim_start_matches("0x"), 16).ok())
+            .collect();
+        // exe base from a 1 ms throwaway watch on the live EPI.
+        let player = client::resolve_selector(&api, "live_player").expect("no live player");
+        let controller = client::read_u64(&api, player.addr, 0x2C8);
+        let epi = client::read_u64(&api, controller, 0x408);
+        let probe = api.op("watch_writes", json!({"addr": epi, "len": 8, "duration_ms": 1}));
+        let base = u64::from_str_radix(
+            probe.result["exe_base"].as_str().expect("no exe_base").trim_start_matches("0x"),
+            16,
+        )
+        .expect("bad exe_base");
+
+        let secs = 8u64;
+        println!(
+            "\n=== TAP W steadily for the whole test (~{}s across {} functions) ===\n",
+            secs * rvas.len() as u64,
+            rvas.len(),
+        );
+        for rva in rvas {
+            let addr = base + rva;
+            let res = api
+                .op(
+                    "watch_writes",
+                    json!({"addr": addr, "mode": "exec", "len": 1, "duration_ms": secs * 1000}),
+                )
+                .result;
+            let hits = res["hit_count"].as_u64().unwrap_or(0);
+            // Count distinct threads that hit.
+            let mut tids = std::collections::BTreeSet::new();
+            if let Some(recs) = res["records"].as_array() {
+                for r in recs {
+                    if let Some(t) = r["tid"].as_u64() {
+                        tids.insert(t);
+                    }
+                }
+            }
+            let verdict = if hits == 0 {
+                "never runs"
+            } else if tids.len() == 1 {
+                "SINGLE THREAD (InputKey-like)"
+            } else {
+                "many threads (hot utility)"
+            };
+            println!("  fn +0x{rva:<8x} hits={hits:<3} distinct_tids={} -> {verdict}", tids.len());
+        }
+        println!("\ndone. The single-thread, few-hits function is InputKey.");
+        return;
+    }
+
+    // WATCH_EXEC_RVA overrides the target with an exe-relative offset
+    // (hex), so a known-good function can be used as a positive
+    // control. Default: the prologue-scan InputKey candidate.
+    let candidate = if let Ok(rva_s) = std::env::var("WATCH_EXEC_RVA") {
+        let rva = u64::from_str_radix(rva_s.trim_start_matches("0x"), 16).expect("bad WATCH_EXEC_RVA");
+        // Fetch base from a 1 ms throwaway watch on the live EPI.
+        let player = client::resolve_selector(&api, "live_player").expect("no live player");
+        let controller = client::read_u64(&api, player.addr, 0x2C8);
+        let epi = client::read_u64(&api, controller, 0x408);
+        let probe = api.op("watch_writes", json!({"addr": epi, "len": 8, "duration_ms": 1}));
+        let base = u64::from_str_radix(
+            probe.result["exe_base"].as_str().expect("no exe_base").trim_start_matches("0x"),
+            16,
+        )
+        .expect("bad exe_base");
+        let addr = base + rva;
+        println!("exec target (override): +0x{rva:x} = 0x{addr:X}");
+        addr
+    } else {
+        let r = api.op("find_inputkey", json!({}));
+        let c = r.result["prologue_scan"]["hits"]
+            .as_array()
+            .and_then(|h| h.first())
+            .and_then(|h| h["fn_addr"].as_str())
+            .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
+            .expect("no prologue-scan InputKey candidate");
+        println!("InputKey candidate: 0x{c:X}");
+        c
+    };
+
+    let secs = 15u64;
+    println!(
+        "\n=== TAP W a few times over the next {secs} seconds ===\n\
+         (arming an EXECUTE breakpoint on the candidate; if it runs on a W\n\
+         press, it is on the real input path and we capture its callers)\n"
+    );
+
+    let res = api
+        .op(
+            "watch_writes",
+            json!({"addr": candidate, "len": 1, "mode": "exec", "duration_ms": secs * 1000}),
+        )
+        .result;
+
+    println!(
+        "mode={} threads armed={} hit_count={} arm_diag={}",
+        res["mode"], res["threads_armed"], res["hit_count"], res["arm_diag"],
+    );
+
+    let Some(records) = res["records"].as_array() else {
+        println!("no records array");
+        return;
+    };
+    if records.is_empty() {
+        println!(
+            "\nCANDIDATE DID NOT RUN on a W press. It is NOT InputKey (or W was \
+             not pressed). The prologue scan found the wrong function."
+        );
+        return;
+    }
+
+    println!(
+        "\nCANDIDATE RAN {} time(s) on physical input. It IS on the input path.",
+        records.len()
+    );
+    for (i, rec) in records.iter().enumerate() {
+        println!("\n--- execution #{i} (tid {}) ---", rec["tid"]);
+        println!(
+            "  entry hit: {} = {}+{}",
+            rec["rip_after_write"].as_str().unwrap_or("?"),
+            rec["rip_module"].as_str().unwrap_or("?"),
+            rec["rip_rva"].as_str().unwrap_or("?"),
+        );
+        if let Some(frames) = rec["stack_return_addrs"].as_array() {
+            println!("  callers (return addresses, nearest first):");
+            for f in frames {
+                println!(
+                    "    {} = {}+{}",
+                    f["addr"].as_str().unwrap_or("?"),
+                    f["module"].as_str().unwrap_or("?"),
+                    f["rva"].as_str().unwrap_or("?"),
+                );
+            }
+        }
+    }
+}
+
+#[test]
 #[ignore = "dump raw bytes from vtable functions to analyze InputKey"]
 fn dump_inputkey_fn_bytes() {
     let Some(api) = api_or_skip() else { return };

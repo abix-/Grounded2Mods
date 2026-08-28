@@ -541,63 +541,15 @@ pub fn sample_thread_modules_json(duration_ms: u32, interval_ms: u32) -> serde_j
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
     };
-    use windows_sys::Win32::System::ProcessStatus::{
-        EnumProcessModulesEx, GetModuleFileNameExW, GetModuleInformation, LIST_MODULES_ALL,
-        MODULEINFO,
-    };
     use windows_sys::Win32::System::Threading::{
-        GetCurrentProcess, GetCurrentProcessId, GetCurrentThreadId, GetThreadDescription,
-        OpenThread, ResumeThread, SuspendThread, THREAD_GET_CONTEXT,
-        THREAD_QUERY_LIMITED_INFORMATION, THREAD_SUSPEND_RESUME,
+        GetCurrentProcessId, GetCurrentThreadId, GetThreadDescription, OpenThread, ResumeThread,
+        SuspendThread, THREAD_GET_CONTEXT, THREAD_QUERY_LIMITED_INFORMATION, THREAD_SUSPEND_RESUME,
     };
 
     // Snapshot the loaded module map once: list of (base, size, short_name).
     // Looking up RIP -> module is a linear scan; with ~100 modules that's
     // fine for 10 Hz sampling.
-    let modules: Vec<(u64, u64, String)> = unsafe {
-        let proc = GetCurrentProcess();
-        let mut h_modules: Vec<*mut std::ffi::c_void> = vec![std::ptr::null_mut(); 1024];
-        let cb_needed = (h_modules.len() * std::mem::size_of::<*mut std::ffi::c_void>()) as u32;
-        let mut written: u32 = 0;
-        let ok = EnumProcessModulesEx(
-            proc,
-            h_modules.as_mut_ptr(),
-            cb_needed,
-            &mut written,
-            LIST_MODULES_ALL,
-        );
-        if ok == 0 {
-            Vec::new()
-        } else {
-            let n = (written as usize) / std::mem::size_of::<*mut std::ffi::c_void>();
-            h_modules.truncate(n);
-            let mut out = Vec::with_capacity(n);
-            for &h in &h_modules {
-                let mut info = std::mem::MaybeUninit::<MODULEINFO>::zeroed();
-                let info_ok = GetModuleInformation(
-                    proc,
-                    h,
-                    info.as_mut_ptr(),
-                    std::mem::size_of::<MODULEINFO>() as u32,
-                );
-                if info_ok == 0 {
-                    continue;
-                }
-                let info = info.assume_init();
-                let mut name_buf = [0u16; 260];
-                let nlen =
-                    GetModuleFileNameExW(proc, h, name_buf.as_mut_ptr(), name_buf.len() as u32);
-                let name = if nlen > 0 {
-                    let s = String::from_utf16_lossy(&name_buf[..nlen as usize]);
-                    s.rsplit(['\\', '/']).next().unwrap_or(&s).to_string()
-                } else {
-                    format!("module_{:p}", h)
-                };
-                out.push((info.lpBaseOfDll as u64, info.SizeOfImage as u64, name));
-            }
-            out
-        }
-    };
+    let modules: Vec<(u64, u64, String)> = loaded_modules();
 
     let module_for = |rip: u64| -> String {
         for (base, size, name) in &modules {
@@ -854,5 +806,448 @@ pub fn process_memory_json() -> serde_json::Value {
         "quota_peak_paged_pool_usage":   info.QuotaPeakPagedPoolUsage as u64,
         "quota_non_paged_pool_usage":    info.QuotaNonPagedPoolUsage  as u64,
         "quota_peak_non_paged_pool_usage": info.QuotaPeakNonPagedPoolUsage as u64,
+    })
+}
+
+/// Enumerate loaded modules as `(base, size, short_name)`. A linear
+/// scan of this list maps a RIP or return address to the module it
+/// lives in. Used by the thread sampler and the write watchpoint.
+pub fn loaded_modules() -> Vec<(u64, u64, String)> {
+    use windows_sys::Win32::System::ProcessStatus::{
+        EnumProcessModulesEx, GetModuleFileNameExW, GetModuleInformation, LIST_MODULES_ALL,
+        MODULEINFO,
+    };
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+    unsafe {
+        let proc = GetCurrentProcess();
+        let mut h_modules: Vec<*mut std::ffi::c_void> = vec![std::ptr::null_mut(); 1024];
+        let cb_needed = (h_modules.len() * std::mem::size_of::<*mut std::ffi::c_void>()) as u32;
+        let mut written: u32 = 0;
+        let ok = EnumProcessModulesEx(
+            proc,
+            h_modules.as_mut_ptr(),
+            cb_needed,
+            &mut written,
+            LIST_MODULES_ALL,
+        );
+        if ok == 0 {
+            return Vec::new();
+        }
+        let n = (written as usize) / std::mem::size_of::<*mut std::ffi::c_void>();
+        h_modules.truncate(n);
+        let mut out = Vec::with_capacity(n);
+        for &h in &h_modules {
+            let mut info = std::mem::MaybeUninit::<MODULEINFO>::zeroed();
+            let info_ok = GetModuleInformation(
+                proc,
+                h,
+                info.as_mut_ptr(),
+                std::mem::size_of::<MODULEINFO>() as u32,
+            );
+            if info_ok == 0 {
+                continue;
+            }
+            let info = info.assume_init();
+            let mut name_buf = [0u16; 260];
+            let nlen = GetModuleFileNameExW(proc, h, name_buf.as_mut_ptr(), name_buf.len() as u32);
+            let name = if nlen > 0 {
+                let s = String::from_utf16_lossy(&name_buf[..nlen as usize]);
+                s.rsplit(['\\', '/']).next().unwrap_or(&s).to_string()
+            } else {
+                format!("module_{:p}", h)
+            };
+            out.push((info.lpBaseOfDll as u64, info.SizeOfImage as u64, name));
+        }
+        out
+    }
+}
+
+// --- hardware write watchpoint --------------------------------------
+//
+// Watch one memory address for writes and record which instruction
+// (and its caller chain) performed each write. This is the "find out
+// what writes to this address" technique: a CPU debug-register data
+// breakpoint plus a vectored exception handler. The game keeps
+// running; when the watched bytes are written, the CPU traps, the
+// handler records the faulting RIP and every code return address on
+// the stack, then lets execution continue.
+//
+// Debug registers are per thread, so the address is armed on every
+// thread in the process. Whichever thread does the write is caught.
+
+use std::cell::UnsafeCell;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+const WATCH_MAX_RECORDS: usize = 24;
+const WATCH_MAX_FRAMES: usize = 40;
+const WATCH_STACK_BYTES: usize = 1024;
+
+#[derive(Clone, Copy)]
+struct WatchRecord {
+    rip: usize,
+    tid: u32,
+    // Integer argument registers at the hit. For an exec breakpoint on
+    // a function entry these are the incoming Windows x64 arguments
+    // (rcx, rdx, r8, r9), which name the `this` pointer and reveal a
+    // function's parameters.
+    rcx: u64,
+    rdx: u64,
+    r8: u64,
+    r9: u64,
+    frame_count: u32,
+    frames: [usize; WATCH_MAX_FRAMES],
+}
+
+struct WatchBuf {
+    slots: [UnsafeCell<WatchRecord>; WATCH_MAX_RECORDS],
+}
+// SAFETY: each slot is written by exactly one thread, the one whose
+// `WATCH_COUNT.fetch_add` returned that index; readers run only after
+// the watchpoint is disarmed and all handler activity has stopped.
+unsafe impl Sync for WatchBuf {}
+
+static WATCH_BUF: WatchBuf = WatchBuf {
+    slots: [const {
+        UnsafeCell::new(WatchRecord {
+            rip: 0,
+            tid: 0,
+            rcx: 0,
+            rdx: 0,
+            r8: 0,
+            r9: 0,
+            frame_count: 0,
+            frames: [0; WATCH_MAX_FRAMES],
+        })
+    }; WATCH_MAX_RECORDS],
+};
+static WATCH_COUNT: AtomicUsize = AtomicUsize::new(0);
+static WATCH_ACTIVE: AtomicBool = AtomicBool::new(false);
+static WATCH_EXE_BASE: AtomicUsize = AtomicUsize::new(0);
+static WATCH_EXE_END: AtomicUsize = AtomicUsize::new(0);
+// An execution breakpoint traps BEFORE the instruction runs (a fault,
+// not a trap), so the handler must clear this thread's breakpoint on
+// every hit or the same instruction re-traps forever.
+static WATCH_MODE_EXEC: AtomicBool = AtomicBool::new(false);
+
+/// Vectored exception handler for the write watchpoint. Fires as a
+/// STATUS_SINGLE_STEP once the armed data breakpoint (DR0) trips.
+unsafe extern "system" fn watch_handler(
+    info: *mut windows_sys::Win32::System::Diagnostics::Debug::EXCEPTION_POINTERS,
+) -> i32 {
+    const EXCEPTION_CONTINUE_SEARCH: i32 = 0;
+    const EXCEPTION_CONTINUE_EXECUTION: i32 = -1;
+    const STATUS_SINGLE_STEP: u32 = 0x8000_0004;
+
+    if !WATCH_ACTIVE.load(Ordering::Acquire) {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+    // SAFETY: Windows guarantees `info` and its records are valid for
+    // the duration of this callback.
+    let rec = unsafe { &*(*info).ExceptionRecord };
+    if rec.ExceptionCode as u32 != STATUS_SINGLE_STEP {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+    // SAFETY: same validity guarantee; we take a mutable view to clear
+    // the debug status and optionally silence the breakpoint.
+    let ctx = unsafe { &mut *(*info).ContextRecord };
+    // DR0 is the only breakpoint we arm; its trip is Dr6 bit 0.
+    if ctx.Dr6 & 0x1 == 0 {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+
+    let idx = WATCH_COUNT.fetch_add(1, Ordering::AcqRel);
+    if idx < WATCH_MAX_RECORDS {
+        let base = WATCH_EXE_BASE.load(Ordering::Relaxed);
+        let end = WATCH_EXE_END.load(Ordering::Relaxed);
+        // SAFETY: `idx` is owned exclusively by this handler invocation.
+        let slot = unsafe { &mut *WATCH_BUF.slots[idx].get() };
+        slot.rip = ctx.Rip as usize;
+        slot.tid = unsafe { windows_sys::Win32::System::Threading::GetCurrentThreadId() };
+        slot.rcx = ctx.Rcx;
+        slot.rdx = ctx.Rdx;
+        slot.r8 = ctx.R8;
+        slot.r9 = ctx.R9;
+        slot.frame_count = 0;
+
+        // Copy a window of the interrupted thread's stack via a
+        // fault-safe read, then keep the qwords that point into the
+        // main exe's code. Those are the return addresses of the call
+        // chain that reached this write.
+        let mut buf = [0u8; WATCH_STACK_BYTES];
+        let mut got: usize = 0;
+        let ok = unsafe {
+            windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory(
+                windows_sys::Win32::System::Threading::GetCurrentProcess(),
+                ctx.Rsp as *const _,
+                buf.as_mut_ptr() as *mut _,
+                buf.len(),
+                &mut got,
+            )
+        };
+        if ok != 0 {
+            let mut fc = 0usize;
+            let mut i = 0usize;
+            while i + 8 <= got && fc < WATCH_MAX_FRAMES {
+                let v = usize::from_le_bytes(buf[i..i + 8].try_into().unwrap());
+                if v >= base && v < end {
+                    slot.frames[fc] = v;
+                    fc += 1;
+                }
+                i += 8;
+            }
+            slot.frame_count = fc as u32;
+        }
+    }
+
+    // Clear the debug status so the trap does not re-report.
+    ctx.Dr6 = 0;
+    // Silence this thread's breakpoint once enough hits are captured,
+    // or on every hit in exec mode (where the fault would otherwise
+    // re-trap the same instruction forever).
+    if WATCH_MODE_EXEC.load(Ordering::Relaxed)
+        || WATCH_COUNT.load(Ordering::Acquire) >= WATCH_MAX_RECORDS
+    {
+        ctx.Dr0 = 0;
+        ctx.Dr7 = 0;
+    }
+    EXCEPTION_CONTINUE_EXECUTION
+}
+
+/// DR7 value that arms DR0 as a local breakpoint. Encoding: L0 enable
+/// (bit 0), R/W0 (bits 16..17): 00 = execute, 01 = write, 11 = read or
+/// write. LEN0 (bits 18..19): 1 byte=00, 2=01, 8=10, 4=11 (execute
+/// requires LEN 00).
+fn dr7_watch(mode_exec: bool, read_write: bool, len: u8) -> u64 {
+    if mode_exec {
+        return 1 << 0; // R/W=00 execute, LEN0=00
+    }
+    let rw: u64 = if read_write { 0b11 } else { 0b01 };
+    let len_bits: u64 = match len {
+        1 => 0b00,
+        2 => 0b01,
+        8 => 0b10,
+        _ => 0b11, // 4 bytes
+    };
+    (1 << 0) | (rw << 16) | (len_bits << 18)
+}
+
+/// Per-stage counts from one `set_dr_all_threads` pass, so a failure
+/// to arm points at the exact syscall that refused.
+#[derive(Default, Clone, Copy)]
+struct DrSetDiag {
+    seen: usize,
+    opened: usize,
+    suspended: usize,
+    got: usize,
+    set: usize,
+    last_err: u32,
+}
+
+/// Write `dr0` / `dr7` into every thread except the caller, so a data
+/// breakpoint is armed (or cleared, with zeros) process-wide.
+fn set_dr_all_threads(dr0: u64, dr7: u64) -> DrSetDiag {
+    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::Debug::{
+        CONTEXT, GetThreadContext, SetThreadContext,
+    };
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
+    };
+    use windows_sys::Win32::System::Threading::{
+        GetCurrentProcessId, GetCurrentThreadId, OpenThread, ResumeThread, SuspendThread,
+        THREAD_GET_CONTEXT, THREAD_SET_CONTEXT, THREAD_SUSPEND_RESUME,
+    };
+
+    // CONTEXT_DEBUG_REGISTERS on x86_64 = CONTEXT_AMD64 | 0x10.
+    const CONTEXT_DEBUG_REGISTERS: u32 = 0x0010_0010;
+
+    let mut diag = DrSetDiag::default();
+    let our_pid = unsafe { GetCurrentProcessId() };
+    let our_tid = unsafe { GetCurrentThreadId() };
+    let snap = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
+    if snap == INVALID_HANDLE_VALUE || snap.is_null() {
+        diag.last_err = unsafe { GetLastError() };
+        return diag;
+    }
+    let mut te: THREADENTRY32 = unsafe { std::mem::zeroed() };
+    te.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
+
+    if unsafe { Thread32First(snap, &mut te) } != 0 {
+        loop {
+            if te.th32OwnerProcessID == our_pid && te.th32ThreadID != our_tid {
+                diag.seen += 1;
+                let h = unsafe {
+                    OpenThread(
+                        THREAD_GET_CONTEXT | THREAD_SET_CONTEXT | THREAD_SUSPEND_RESUME,
+                        0,
+                        te.th32ThreadID,
+                    )
+                };
+                if h.is_null() {
+                    diag.last_err = unsafe { GetLastError() };
+                } else {
+                    diag.opened += 1;
+                    if unsafe { SuspendThread(h) } != u32::MAX {
+                        diag.suspended += 1;
+                        let mut ctx = std::mem::MaybeUninit::<CONTEXT>::zeroed();
+                        // SAFETY: ContextFlags is a transparent u32; we
+                        // request only the debug-register block.
+                        unsafe {
+                            (*ctx.as_mut_ptr()).ContextFlags = CONTEXT_DEBUG_REGISTERS;
+                        }
+                        if unsafe { GetThreadContext(h, ctx.as_mut_ptr()) } != 0 {
+                            diag.got += 1;
+                            // SAFETY: populated by GetThreadContext.
+                            unsafe {
+                                let c = ctx.as_mut_ptr();
+                                (*c).ContextFlags = CONTEXT_DEBUG_REGISTERS;
+                                (*c).Dr0 = dr0;
+                                (*c).Dr6 = 0;
+                                (*c).Dr7 = dr7;
+                            }
+                            if unsafe { SetThreadContext(h, ctx.as_ptr()) } != 0 {
+                                diag.set += 1;
+                            } else {
+                                diag.last_err = unsafe { GetLastError() };
+                            }
+                        } else {
+                            diag.last_err = unsafe { GetLastError() };
+                        }
+                        unsafe { ResumeThread(h) };
+                    } else {
+                        diag.last_err = unsafe { GetLastError() };
+                    }
+                    unsafe { CloseHandle(h) };
+                }
+            }
+            if unsafe { Thread32Next(snap, &mut te) } == 0 {
+                break;
+            }
+        }
+    }
+    unsafe { CloseHandle(snap) };
+    diag
+}
+
+/// Watch `addr` for `mode` access (`"write"`, `"readwrite"`, or
+/// `"exec"`) of `len` bytes (1/2/4/8; execute forces 1) for
+/// `duration_ms`, then report the instruction and stack-return-address
+/// chain of each hit, resolved to module + RVA. This is the
+/// non-guessing way to find which code writes a piece of state, or
+/// whether a candidate function actually runs on a physical action:
+/// arm the address, take the action, read back the exact code.
+pub fn capture_write_watchpoint(
+    addr: usize,
+    len: u8,
+    duration_ms: u32,
+    mode: &str,
+) -> serde_json::Value {
+    use windows_sys::Win32::System::Diagnostics::Debug::{
+        AddVectoredExceptionHandler, RemoveVectoredExceptionHandler,
+    };
+
+    let mode_exec = mode == "exec";
+    let read_write = mode == "readwrite";
+    if !mode_exec && !matches!(len, 1 | 2 | 4 | 8) {
+        return serde_json::json!({"error": "len must be 1, 2, 4, or 8"});
+    }
+    if !mode_exec && addr % len as usize != 0 {
+        return serde_json::json!({
+            "error": format!("addr 0x{addr:x} is not aligned to len {len}"),
+        });
+    }
+    if WATCH_ACTIVE.load(Ordering::Acquire) {
+        return serde_json::json!({"error": "a watchpoint is already active"});
+    }
+
+    let modules = loaded_modules();
+    // The main exe is the first module EnumProcessModules returns.
+    let (exe_base, exe_size, exe_name) = modules
+        .first()
+        .cloned()
+        .unwrap_or((0, 0, String::from("<unknown>")));
+    WATCH_EXE_BASE.store(exe_base as usize, Ordering::Relaxed);
+    WATCH_EXE_END.store((exe_base + exe_size) as usize, Ordering::Relaxed);
+    WATCH_COUNT.store(0, Ordering::Release);
+
+    // SAFETY: the callback signature matches PVECTORED_EXCEPTION_HANDLER.
+    let veh = unsafe { AddVectoredExceptionHandler(1, Some(watch_handler)) };
+    if veh.is_null() {
+        return serde_json::json!({"error": "AddVectoredExceptionHandler returned NULL"});
+    }
+
+    WATCH_MODE_EXEC.store(mode_exec, Ordering::Relaxed);
+    WATCH_ACTIVE.store(true, Ordering::Release);
+    let arm = set_dr_all_threads(addr as u64, dr7_watch(mode_exec, read_write, len));
+
+    std::thread::sleep(std::time::Duration::from_millis(duration_ms as u64));
+
+    let clear = set_dr_all_threads(0, 0);
+    WATCH_ACTIVE.store(false, Ordering::Release);
+    // SAFETY: `veh` is the handle just returned by the matching add.
+    unsafe { RemoveVectoredExceptionHandler(veh) };
+
+    let resolve = |a: u64| -> (String, u64) {
+        for (b, s, name) in &modules {
+            if a >= *b && a < *b + *s {
+                return (name.clone(), a - *b);
+            }
+        }
+        (String::new(), a)
+    };
+
+    let hit_total = WATCH_COUNT.load(Ordering::Acquire);
+    let recorded = hit_total.min(WATCH_MAX_RECORDS);
+    let mut records = Vec::with_capacity(recorded);
+    for i in 0..recorded {
+        // SAFETY: the watchpoint is disarmed; no handler can be writing
+        // this slot now, and indices below `recorded` were populated.
+        let slot = unsafe { *WATCH_BUF.slots[i].get() };
+        let (rip_mod, rip_rva) = resolve(slot.rip as u64);
+        let frames: Vec<serde_json::Value> = (0..slot.frame_count as usize)
+            .map(|f| {
+                let a = slot.frames[f] as u64;
+                let (m, rva) = resolve(a);
+                serde_json::json!({
+                    "addr": format!("0x{a:x}"),
+                    "module": m,
+                    "rva": format!("0x{rva:x}"),
+                })
+            })
+            .collect();
+        records.push(serde_json::json!({
+            "tid": slot.tid,
+            "rip_after_write": format!("0x{:x}", slot.rip),
+            "rip_module": rip_mod,
+            "rip_rva": format!("0x{rip_rva:x}"),
+            "rcx": format!("0x{:x}", slot.rcx),
+            "rdx": format!("0x{:x}", slot.rdx),
+            "r8": format!("0x{:x}", slot.r8),
+            "r9": format!("0x{:x}", slot.r9),
+            "stack_return_addrs": frames,
+        }));
+    }
+
+    serde_json::json!({
+        "watch_addr": format!("0x{addr:x}"),
+        "len": len,
+        "mode": mode,
+        "duration_ms": duration_ms,
+        "exe_name": exe_name,
+        "exe_base": format!("0x{exe_base:x}"),
+        "exe_size": format!("0x{exe_size:x}"),
+        "threads_armed": arm.set,
+        "threads_cleared": clear.set,
+        "arm_diag": {
+            "seen": arm.seen,
+            "opened": arm.opened,
+            "suspended": arm.suspended,
+            "got_context": arm.got,
+            "set_context": arm.set,
+            "last_err": arm.last_err,
+        },
+        "hit_count": hit_total,
+        "records": records,
     })
 }

@@ -216,6 +216,28 @@ pub fn register_builtins() {
                 ))
             },
         ),
+        OpDef::new(
+            "watch_writes",
+            "Arm a hardware breakpoint on an address (mode write/readwrite/exec) \
+             and record which instruction and call chain hits it",
+            "{addr: u64, len?: u64, duration_ms?: u64, mode?: str}",
+            |args| {
+                let addr = arg_u64(args, "addr", None)? as usize;
+                let len = arg_u64(args, "len", Some(8))? as u8;
+                let duration_ms = arg_u64(args, "duration_ms", Some(10_000))? as u32;
+                let mode = args
+                    .get("mode")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("write")
+                    .to_string();
+                Ok(crate::winproc::capture_write_watchpoint(
+                    addr,
+                    len,
+                    duration_ms,
+                    &mode,
+                ))
+            },
+        ),
         // Scanner. Cheat-Engine-style memory search + freezes.
         OpDef::new(
             "scan_memory",

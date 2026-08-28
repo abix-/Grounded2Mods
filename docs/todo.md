@@ -5,7 +5,14 @@ Survivalist extraction means moving existing engine-independent code out of the 
 | Priority | System | Todo | Done when |
 |---:|---|---|---|
 | 1 | MISERY player input | [x] Write the Rust executable-analysis research test for keyboard input | `misery-mod/tests/research_player_input.rs` finds the live player's controller, PlayerInput object, input component, key-to-action mappings, and key state data, and prints them for analysis. Pure discovery, no bot input. |
-| 1 | MISERY player input | [ ] Find the address of APlayerController::InputKey and call it to inject a virtual W press | See failed attempts below. InputKey is a native C++ virtual function (not a UFunction). Its address cannot be found through the reflection system. The function must be located by patternsleuth before it can be called. |
+| 1 | MISERY player input | [ ] Find the address of APlayerController::InputKey and call it to inject a virtual W press | See failed attempts below. InputKey is a native C++ virtual function (not a UFunction). Its address cannot be found through the reflection system. Now being found by the write watchpoint (Path A rows below), not by patternsleuth guessing. |
+| 1 | modforge input research | [x] Build the write/exec hardware watchpoint ("find out what writes/runs at this address") | `modforge::winproc::capture_write_watchpoint` + the `watch_writes` op arm a CPU debug register across all threads and record each hit's instruction and call chain as image-relative offsets. Verified live: arms 123/123 threads, last_err 0. UNCOMMITTED in the tree. |
+| 1 | MISERY player input | [x] Disprove the prologue-scan InputKey candidate | An exec breakpoint on the candidate (RVA + 0x320d680) fired zero times while W was tapped; a control fired 14 times. The candidate is never run on input. Recorded in research.md section 31. |
+| 1 | MISERY player input | [x] Decode the KeyStateMap on EnhancedPlayerInput to find the W FKey entry's address | KeyStateMap is the TSet at EPI + 0x788 (FKey to FKeyState), decided by measurement not layout: `find_inputkey_write` watched each candidate block and only + 0x788's W FKeyState was written on a press. W's FKeyState begins 0x18 past its FName. |
+| 1 | MISERY player input | [x] Write-watch the W KeyStateMap byte to capture InputKey's address and callers | Tapping W caught 24 writes from the game input thread. Store instruction + 0x42f25d0 (a shared setter); input-specific caller functions + 0x11aee60, + 0x3cb9360, + 0x39f1210, + 0x39fc191, + 0xf87b70, + 0x10dc360, + 0x3213800. Recorded in research.md section 31. |
+| 1 | MISERY player input | [x] Confirm and name InputKey by exec breakpoint + `this` register | `name_inputkey_by_rcx` read rcx at each input-thread function: APlayerController::InputKey = RVA + 0x39f1210 (rcx = controller), the PlayerInput-level InputKey = + 0x3cb9360 (rcx = EPI). The + 0x3213800 and + 0x11aee60 guesses were wrong (navmesh and an inner helper). research.md section 31. |
+| 1 | MISERY player input | [ ] Decode the real FInputKeyParams layout from the captured rdx/r8/r9 bytes | The captured rdx at InputKey does not match the assumed 64-byte FName-first struct (first field is a pointer). Decode the actual layout (possibly the pre-5.1 `InputKey(FKey, EInputEvent, float, bool)` signature) from the recorded bytes, not a guess. |
+| 1 | MISERY player input | [ ] Hook InputKey (+ 0x39f1210) to capture a byte-exact real FInputKeyParams from a physical W press | The real parameter block is recorded from a live press, so the bot replays real bytes instead of a guessed struct layout. |
 | 1 | Ueforge input | [ ] Send key press, held state, and release exactly as MISERY sends player keyboard input | The bot uses the same functions and data identified in MISERY's player-input implementation for W/A/S/D/E. |
 | 1 | MISERY input proof | [ ] Run a permanent live test of the exact player W input mechanism | W moves the retained player, release stops movement, and the test records the before, moving, released, and final positions. |
 | 1 | MISERY player input | [ ] Investigate exactly how MISERY handles real player mouse movement | The game's player-input implementation identifies the exact functions and data used from mouse movement entering the game through view movement. |
@@ -157,3 +164,22 @@ The address of `APlayerController::InputKey` must be found definitively, not gue
 - Use RTTI (vtable[-1] has the MSVC Complete Object Locator with the class name) to map the controller vtable to known class hierarchies, then cross-reference with UE5.4 source for the InputKey slot index
 - Hook a candidate function and verify it fires when a real physical W key press happens (requires knowing a candidate address, which we have from the prologue scan)
 - Find what populates KeyStateMap (+0x5E8 on EnhancedPlayerInput) by scanning for instructions that write to offset 0x5E8, then trace the call chain backward to InputKey
+
+### Write watchpoint: the method that works (2026-08-28)
+
+Stop guessing addresses and calling them. Watch the memory a real
+key press changes and read back which instruction wrote it. The
+`watch_writes` op (`modforge::winproc::capture_write_watchpoint`)
+arms a CPU debug register on the address across all threads, and
+records each write's instruction plus stack call chain as
+image-relative offsets. Verified live: arms 123/123 threads.
+
+Tapping W caught 24 writes to the ForwardInput trigger byte
+(ActionInstanceData entry + 0x10) from one instruction and one
+call chain. The value at entry + 0x40 and the + 0x5E8 region
+caught nothing, so those are not the key-press write target.
+Captured writer (RVA into MISERY-Win64-Shipping.exe): instruction
++ 0x42f14d2; callers + 0xf590f8, + 0xf4dd41, + 0xf6682d,
++ 0x11af012, + 0x7bf8140, + 0x7be5918, + 0x3cb9443. Full detail in
+`misery-mod/docs/research.md` section 31. Next: name those
+functions and identify which frame is InputKey.
