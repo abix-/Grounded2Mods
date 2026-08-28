@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use modforge::input::{Axis, Button, InputSurface, Key, PlayerCommand};
 use modforge::route::{PlayerObservation, Position};
-use serde_json::Value as Json;
 
 use crate::ue::UObject;
 use crate::ue::actor::LiveActor;
@@ -14,40 +13,17 @@ use crate::ue::uobject::NativeProperty;
 const INPUT_TIMEOUT: Duration = Duration::from_secs(3);
 static PAWN_CONTROLLER_OFFSET: OnceLock<Result<usize, String>> = OnceLock::new();
 static CONTROL_ROTATION_OFFSET: OnceLock<Result<usize, String>> = OnceLock::new();
-
-type PlayerInput = dyn Fn(&[PlayerCommand]) -> Result<(), String> + Send + Sync;
+const PLAYER_INPUT_UNAVAILABLE: &str =
+    "Unreal player input is unavailable until APlayerController::InputKey is implemented";
 
 pub struct UnrealInputSurface {
     name: &'static str,
     player: &'static LiveActor,
-    player_input: Box<PlayerInput>,
 }
 
 impl UnrealInputSurface {
-    pub fn new(
-        name: &'static str,
-        player: &'static LiveActor,
-        player_input: impl Fn(&[PlayerCommand]) -> Result<(), String> + Send + Sync + 'static,
-    ) -> Self {
-        Self {
-            name,
-            player,
-            player_input: Box::new(player_input),
-        }
-    }
-
-    fn on_game_thread(
-        &'static self,
-        action: impl FnOnce(&Self) -> Result<(), String> + Send + 'static,
-    ) -> Result<(), String> {
-        crate::game_thread::run(
-            move || {
-                action(self)?;
-                Ok(Json::Null)
-            },
-            INPUT_TIMEOUT,
-        )?;
-        Ok(())
+    pub fn new(name: &'static str, player: &'static LiveActor) -> Self {
+        Self { name, player }
     }
 
     fn player(&self) -> Result<&'static UObject, String> {
@@ -112,33 +88,18 @@ impl InputSurface for &'static UnrealInputSurface {
     }
 
     fn commands(&self, commands: &[PlayerCommand]) -> Result<(), String> {
-        let surface = *self;
-        let commands = commands.to_vec();
-        surface.on_game_thread(move |surface| {
-            surface.player()?;
-            forward_player_commands(surface.player_input.as_ref(), &commands)
-        })
+        reject_player_commands(commands)
     }
 }
 
-pub fn register(
-    name: &'static str,
-    player: &'static LiveActor,
-    player_input: impl Fn(&[PlayerCommand]) -> Result<(), String> + Send + Sync + 'static,
-) {
-    let surface: &'static UnrealInputSurface = Box::leak(Box::new(UnrealInputSurface::new(
-        name,
-        player,
-        player_input,
-    )));
+pub fn register(name: &'static str, player: &'static LiveActor) {
+    let surface: &'static UnrealInputSurface =
+        Box::leak(Box::new(UnrealInputSurface::new(name, player)));
     modforge::input::set_input_surface(surface);
 }
 
-fn forward_player_commands(
-    player_input: &PlayerInput,
-    commands: &[PlayerCommand],
-) -> Result<(), String> {
-    player_input(commands)
+fn reject_player_commands(_commands: &[PlayerCommand]) -> Result<(), String> {
+    Err(PLAYER_INPUT_UNAVAILABLE.into())
 }
 
 unsafe fn pawn_controller(player: &UObject) -> Result<&'static UObject, String> {
@@ -213,14 +174,9 @@ fn reflected_property_offset(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
-
     use modforge::input::{Key, PlayerCommand};
 
-    use super::{
-        PlayerInputState, apply_commands, finish_mouse_tick, forward_player_commands,
-        reflected_property_offset,
-    };
+    use super::{PLAYER_INPUT_UNAVAILABLE, reflected_property_offset, reject_player_commands};
     use crate::ue::uobject::NativeProperty;
 
     #[test]
@@ -247,89 +203,12 @@ mod tests {
     }
 
     #[test]
-    fn unreal_input_forwards_the_shared_command_batch_unchanged() {
-        let received = Arc::new(Mutex::new(Vec::new()));
-        let recorded = received.clone();
-        let commands = [
+    fn unreal_player_input_is_explicitly_unavailable() {
+        let error = reject_player_commands(&[
             PlayerCommand::key(Key(0x57), true),
             PlayerCommand::mouse_delta(5, -2),
-            PlayerCommand::key(Key(0x45), true),
-            PlayerCommand::key(Key(0x45), false),
-        ];
-
-        forward_player_commands(
-            &move |batch| {
-                recorded.lock().unwrap().extend_from_slice(batch);
-                Ok(())
-            },
-            &commands,
-        )
-        .unwrap();
-
-        assert_eq!(*received.lock().unwrap(), commands);
-    }
-
-    #[test]
-    fn unreal_player_input_uses_keys_and_one_tick_mouse_values() {
-        let mut state = PlayerInputState::default();
-        let mut sent = Vec::new();
-        apply_commands(
-            &mut state,
-            &[
-                PlayerCommand::key(Key(0x57), true),
-                PlayerCommand::key(Key(0x57), true),
-                PlayerCommand::mouse_delta(5, -2),
-                PlayerCommand::key(Key(0x45), true),
-                PlayerCommand::key(Key(0x45), false),
-            ],
-            |command| {
-                sent.push(String::from_utf16(command).unwrap());
-                Ok(())
-            },
-        )
-        .unwrap();
-
-        assert_eq!(
-            sent,
-            [
-                "Input.+key W",
-                "Input.+key MouseX X=5",
-                "Input.+key MouseY X=-2",
-                "Input.+key E",
-                "Input.-key E",
-            ]
-        );
-
-        let mut released = Vec::new();
-        finish_mouse_tick(&mut state, |command| {
-            released.push(String::from_utf16(command).unwrap());
-            Ok(())
-        })
-        .unwrap();
-        assert_eq!(released, ["Input.-key MouseX", "Input.-key MouseY"]);
-
-        let mut stopped = Vec::new();
-        apply_commands(
-            &mut state,
-            &[PlayerCommand::key(Key(0x57), false)],
-            |command| {
-                stopped.push(String::from_utf16(command).unwrap());
-                Ok(())
-            },
-        )
-        .unwrap();
-        assert_eq!(stopped, ["Input.-key W"]);
-    }
-
-    #[test]
-    fn unreal_player_input_rejects_keys_without_an_unreal_name() {
-        let mut state = PlayerInputState::default();
-        let error = apply_commands(
-            &mut state,
-            &[PlayerCommand::key(Key(0x01), true)],
-            |_| Ok(()),
-        )
+        ])
         .unwrap_err();
-        assert!(error.contains("0x01"));
+        assert_eq!(error, PLAYER_INPUT_UNAVAILABLE);
     }
 }

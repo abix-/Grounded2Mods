@@ -2,7 +2,7 @@
 
 ## Current focus
 
-Connect Ueforge's shared player commands through Unreal 5.4's built-in `Input.+key` and `Input.-key` simulation commands, then make MISERY travel from spawn through both doors and loot one expedition crate without any direct gameplay call. Ueforge will execute the commands on the game thread through `KismetSystemLibrary.ExecuteConsoleCommand`, keep W/A/S/D and `E` active until release, and release each relative mouse value after one Unreal tick.
+Live-verify Ueforge's shared player commands through Unreal 5.4's built-in `Input.+key` and `Input.-key` simulation commands, then make MISERY travel from spawn through both doors and loot one expedition crate without any direct gameplay call.
 
 ## Design goals
 
@@ -60,12 +60,15 @@ Connect Ueforge's shared player commands through Unreal 5.4's built-in `Input.+k
 
 ## Last session summary
 
+- A restarted MISERY test proved the Unreal console-command input experiment did not move the player. The player remained at the same position for ten seconds and the route correctly failed as stuck.
+- Removed the rejected console-command implementation, its held-state code, its per-tick mouse release, and its shutdown handler. Ueforge now returns an explicit unavailable error for player commands until the real `APlayerController::InputKey` path lands.
+- Extended the permanent production-source test to reject all three console-input commands. The test, all 63 Ueforge library tests, and `k3sc cargo-lock check --workspace --all-targets` pass.
 - Replaced the waypoint graph and its second A* with one ordered route. `RouteGraph`, `RouteEdge`, and waypoint-graph path search no longer exist.
 - Added shared path, path-point, and player-observation types. The observation carries position, yaw, and pitch, and path points are no longer represented as waypoints.
 - Replaced bot movement axes and the old path execution code with one shared bot that returns only W/A/S/D key state and relative mouse movement. It releases all movement keys on arrival, stuck detection, and cancellation.
 - Migrated the permanent MISERY navigation test to give Unreal path points and player observations to the shared bot, then send the resulting command batch through the registered input surface.
 - Removed Ueforge's direct movement and look calls and MISERY's direct interaction handler. The permanent production-source test rejects those bypasses.
-- Ueforge now observes the player through reflected position and control rotation and forwards the shared command batch unchanged. MISERY's actual Unreal key and mouse injection is deliberately still disconnected and returns an explicit error until the normal player-input path is implemented.
+- Ueforge observes the player through reflected position and control rotation. Player commands are explicitly unavailable until they enter Unreal through the local player's real input path.
 - Added Unityforge main-thread connections for the same shared path, player-observation, and player-command formats. Tests prove path and observation return plus unchanged ordered command delivery. Actual Unity navigation and input bridge calls remain open.
 - Applied the workspace Rust formatter consistently at the operator's direction.
 - Added permanent red proofs for the shared bot-navigation rewrite. They require one ordered route without waypoint-graph A*, separate path points, player position plus yaw and pitch, bot output containing only virtual keys and mouse movement, identical Unreal and Unity command sequences, release of W/A/S/D on every stop, and source checks against the actual Ueforge and MISERY production files. The focused test build fails on the missing shared types and old axis command API as intended.
@@ -313,9 +316,7 @@ Connect Ueforge's shared player commands through Unreal 5.4's built-in `Input.+k
 - Move the current Unreal navigation call and path decoding into Ueforge so MISERY receives the shared path format directly.
 - Make Unityforge inject the same virtual W/A/S/D, mouse, and interaction commands through Unity's normal player input.
 - Prove one live Unity waypoint trip through the same Modforge bot-navigation code used by MISERY.
-- Connect Ueforge virtual W/A/S/D key state to Unreal's normal player input processing.
-- Connect Ueforge relative mouse movement to Unreal's normal player input processing.
-- Connect virtual `E` press and release through the same Unreal player-input path.
+- Add the permanent live W press-and-release test, then connect Ueforge to the local player's real Unreal input object.
 - Live-verify Unreal A* pathing from the player's current position to each selected waypoint, driven through virtual player input, from spawn through both doors on a restarted local game.
 - Aim at the door's colliding-bounds center from the active camera and gate `E` on interaction range.
 - Complete ranked crate fallback, retained-state opening, UI transfer, and inventory-count evidence.

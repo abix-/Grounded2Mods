@@ -40,6 +40,7 @@ Newest first.
 
 | System | Item | Done when |
 |---|---|---|
+| Ueforge input | [x] Remove the rejected Unreal console-command input implementation | The permanent source test rejects the three console-input commands, Ueforge returns an explicit unavailable error for player commands, all 63 Ueforge library tests pass, and `k3sc cargo-lock check --workspace --all-targets` passes. |
 | Workspace Rust | [x] Apply the current formatter consistently across every workspace crate | `k3sc cargo-lock fmt --all` completes and `k3sc cargo-lock check --workspace --all-targets` passes. |
 | `modforge::route` | [x] Replace the waypoint graph and its second A* with one ordered route | `Route` contains only ordered waypoints and actions; the graph types and waypoint-graph search no longer exist. |
 | `modforge::route` | [x] Separate the shared path, path point, and player observation from waypoints | Tests prove path points are not waypoints and player observations carry position, yaw, and pitch. |

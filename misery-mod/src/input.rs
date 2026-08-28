@@ -1,13 +1,7 @@
 //! MISERY connection to Ueforge player input.
 
-use modforge::input::PlayerCommand;
-
-fn player_input(_commands: &[PlayerCommand]) -> Result<(), String> {
-    Err("MISERY virtual player input is not connected to Unreal player input yet".into())
-}
-
 pub fn register() {
-    ueforge::input::register("misery", &crate::speed::PLAYER, player_input);
+    ueforge::input::register("misery", &crate::speed::PLAYER);
 }
 
 #[cfg(test)]

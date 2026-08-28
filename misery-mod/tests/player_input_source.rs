@@ -6,6 +6,9 @@ fn production_bot_input_has_no_player_route_bypasses() {
     ];
     for (name, source) in sources {
         for forbidden in [
+            "Input.+key",
+            "Input.-key",
+            "KismetSystemLibrary.ExecuteConsoleCommand",
             "SimpleMoveToLocation",
             "AddMovementInput",
             "AddYawInput",
