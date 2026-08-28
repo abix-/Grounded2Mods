@@ -2,7 +2,7 @@
 
 ## Current focus
 
-Live-verify Ueforge's shared player commands through Unreal 5.4's built-in `Input.+key` and `Input.-key` simulation commands, then make MISERY travel from spawn through both doors and loot one expedition crate without any direct gameplay call.
+Resolve and retain the local player's actual Unreal input object on the game thread, then send W through `APlayerController::InputKey` and make the permanent live W test pass.
 
 ## Design goals
 
@@ -60,6 +60,8 @@ Live-verify Ueforge's shared player commands through Unreal 5.4's built-in `Inpu
 
 ## Last session summary
 
+- Added the permanent live W press-and-release test. It records the starting, moving, released, stopped, and final positions, always attempts movement-key release, and fails unless W moves the player and release stops movement.
+- Restarted MISERY with the exact release build and ran only the W test. It recorded the starting position and failed immediately on Ueforge's explicit unavailable error, proving the test is red before the real input implementation.
 - A restarted MISERY test proved the Unreal console-command input experiment did not move the player. The player remained at the same position for ten seconds and the route correctly failed as stuck.
 - Removed the rejected console-command implementation, its held-state code, its per-tick mouse release, and its shutdown handler. Ueforge now returns an explicit unavailable error for player commands until the real `APlayerController::InputKey` path lands.
 - Extended the permanent production-source test to reject all three console-input commands. The test, all 63 Ueforge library tests, and `k3sc cargo-lock check --workspace --all-targets` pass.
@@ -316,7 +318,7 @@ Live-verify Ueforge's shared player commands through Unreal 5.4's built-in `Inpu
 - Move the current Unreal navigation call and path decoding into Ueforge so MISERY receives the shared path format directly.
 - Make Unityforge inject the same virtual W/A/S/D, mouse, and interaction commands through Unity's normal player input.
 - Prove one live Unity waypoint trip through the same Modforge bot-navigation code used by MISERY.
-- Add the permanent live W press-and-release test, then connect Ueforge to the local player's real Unreal input object.
+- Resolve and retain the local player's real Unreal input object on the game thread.
 - Live-verify Unreal A* pathing from the player's current position to each selected waypoint, driven through virtual player input, from spawn through both doors on a restarted local game.
 - Aim at the door's colliding-bounds center from the active camera and gate `E` on interaction range.
 - Complete ranked crate fallback, retained-state opening, UI transfer, and inventory-count evidence.

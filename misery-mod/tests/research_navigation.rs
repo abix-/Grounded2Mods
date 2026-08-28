@@ -962,6 +962,69 @@ fn enter_expedition(
 }
 
 #[test]
+#[ignore = "moves the live MISERY player with W"]
+fn real_player_input_moves_on_w_and_stops_on_release() {
+    let Some(api) = api_or_skip() else { return };
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+
+    let input = ControlPlaneInput { api: &api };
+    let _stop = StopMovement { api: &api };
+    let before = input.observe_player().expect("observe player before W");
+    println!("w_before={:?}", before.position);
+
+    input
+        .key(Key(0x57), true)
+        .expect("press W through player input");
+    let started = Instant::now();
+    let moving = loop {
+        std::thread::sleep(Duration::from_millis(100));
+        let observed = input
+            .observe_player()
+            .expect("observe player while W is held");
+        if before.position.distance(observed.position) >= 25.0 {
+            break observed;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "W did not move the player from {:?}; last position was {:?}",
+            before.position,
+            observed.position
+        );
+    };
+
+    input
+        .key(Key(0x57), false)
+        .expect("release W through player input");
+    let released = input
+        .observe_player()
+        .expect("observe player after W release");
+    std::thread::sleep(Duration::from_millis(500));
+    let stopped = input
+        .observe_player()
+        .expect("observe player after settling");
+    std::thread::sleep(Duration::from_millis(500));
+    let final_observation = input
+        .observe_player()
+        .expect("observe final player position");
+
+    let moved_cm = before.position.distance(moving.position);
+    let post_release_cm = stopped.position.distance(final_observation.position);
+    println!(
+        "w_positions before={:?} moving={:?} released={:?} stopped={:?} final={:?} moved_cm={moved_cm:.1} post_release_cm={post_release_cm:.1}",
+        before.position,
+        moving.position,
+        released.position,
+        stopped.position,
+        final_observation.position,
+    );
+    assert!(moved_cm >= 25.0, "W moved the player only {moved_cm:.1} cm");
+    assert!(
+        post_release_cm <= 10.0,
+        "player kept moving {post_release_cm:.1} cm after W release"
+    );
+}
+
+#[test]
 #[ignore = "reads the live MISERY player's interaction functions"]
 fn player_interaction_surface_is_discoverable() {
     let Some(api) = api_or_skip() else { return };
