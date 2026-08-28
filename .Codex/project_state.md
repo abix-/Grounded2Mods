@@ -59,6 +59,7 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 
 ## Last session summary
 
+- Two restarted acceptance attempts began before autoload retained the player because `restart.ps1` treated the HTTP listener as full readiness. The mod log proved the player was retained five seconds after the early acceptance failed.
 - Live verification resolved `NavigationPath.PathPoints` at `0x38`, found and projected all three route stops, and saved the route. The first follower tick then failed because MISERY does not expose `Pawn::GetController`; Ueforge must read the reflected `APawn.Controller` field instead.
 - The restarted player-input follower verification failed before movement because MISERY does not expose `NavigationPath::GetPathPoints` as a reflected function. Epic's `UNavigationPath` surface exposes `PathPoints` as a reflected field; the native `GetPathPoints` method belongs to `FNavigationPath` and cannot be called through `ProcessEvent`.
 - Added forward and right movement axes plus ordered movement, look, and key dispatch to `modforge::input::InputSurface`.
@@ -295,6 +296,7 @@ Make MISERY enter an expedition, discover the nearest placed loot box, use the b
 
 ## Next steps
 
+- Make `restart.ps1` wait for `live_player` before reporting readiness.
 - Replace the invalid `Pawn::GetController` call with one reflected `APawn.Controller` field read.
 - Replace the invalid `NavigationPath::GetPathPoints` call with one reflected `UNavigationPath.PathPoints` field read.
 - Live-verify the extracted Unreal path points and shared follower from spawn through both doors on a restarted local game.

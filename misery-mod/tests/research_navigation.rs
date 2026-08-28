@@ -1401,6 +1401,13 @@ fn navigation_path_points_use_the_reflected_unavigationpath_field() {
 }
 
 #[test]
+fn restart_waits_for_the_retained_current_world_player() {
+    let source = include_str!("../scripts/restart.ps1");
+    assert!(source.contains("resolve_selector"));
+    assert!(source.contains("live_player"));
+}
+
+#[test]
 fn reflected_navigation_path_field_resolves_by_name() {
     let detail = json!({
         "fields": [
