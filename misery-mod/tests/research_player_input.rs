@@ -1329,6 +1329,158 @@ fn find_inputkey_write() {
 }
 
 #[test]
+#[ignore = "finds the Enhanced Input subsystem and InjectInputForAction parm layout"]
+fn research_inject_action() {
+    let Some(api) = api_or_skip() else { return };
+    let api = api.with_timeout(std::time::Duration::from_secs(30));
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+
+    // Find the EnhancedInputLocalPlayerSubsystem instance.
+    for class in ["EnhancedInputLocalPlayerSubsystem", "EnhancedInputWorldSubsystem"] {
+        let r = api.op("walk_class", json!({"class": class, "max": 4}));
+        println!("walk_class({class}): ok={} -> {}", r.ok, r.result);
+        let r2 = api.op("walk_class_chain", json!({"class": class, "max": 4}));
+        println!("walk_class_chain({class}): ok={} -> {}", r2.ok, r2.result);
+    }
+
+    // List the subsystem's functions containing "inject" or "action".
+    println!("\n=== subsystem functions (inject/action) ===");
+    let r = api.op("class_functions_by_name", json!({"class": "EnhancedInputLocalPlayerSubsystem"}));
+    if let Some(fns) = r.result["functions"].as_array() {
+        for f in fns {
+            let n = f["name"].as_str().unwrap_or("");
+            let l = n.to_ascii_lowercase();
+            if l.contains("inject") || l.contains("action") {
+                println!(
+                    "  {n} ({} parms, {} bytes)",
+                    f["num_parms"].as_u64().unwrap_or(0),
+                    f["parms_size"].as_u64().unwrap_or(0)
+                );
+                print_function_parameters(&api, "EnhancedInputLocalPlayerSubsystem", n);
+            }
+        }
+    } else {
+        println!("  no functions array: {}", r.result);
+    }
+    println!("\n=== FInputActionValue struct ===");
+    for s in ["InputActionValue", "FInputActionValue"] {
+        let r = api.op("discover_struct_detail", json!({"name": s}));
+        println!("{s}: ok={} -> {}", r.ok, r.result);
+    }
+
+    // The ForwardInput UInputAction pointer, from ActionInstanceData.
+    let player = client::resolve_selector(&api, "live_player").expect("no live player");
+    let controller = client::read_u64(&api, player.addr, 0x2C8);
+    let epi = client::read_u64(&api, controller, 0x408);
+    let aid = client::read_u64(&api, epi, 0x598);
+    let aid_num = client::read_u64(&api, epi, 0x5A0) as u32 as usize;
+    for i in 0..aid_num {
+        let ptr = client::read_u64(&api, aid, (i * 0x70) as u64);
+        if client::object_name(&api, ptr).as_deref() == Some("ForwardInput") {
+            println!("\nForwardInput UInputAction: 0x{ptr:X}");
+            break;
+        }
+    }
+}
+
+#[test]
+#[ignore = "presses W via InputKey slot 88 and checks the character actually walks"]
+fn test_inputkey_movement() {
+    let Some(api) = api_or_skip() else { return };
+    let api = api.with_timeout(std::time::Duration::from_secs(30));
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+
+    let player = client::resolve_selector(&api, "live_player").expect("no live player");
+    let sel = format!("addr:0x{:X}", player.addr);
+    let controller = client::read_u64(&api, player.addr, 0x2C8);
+    let epi = client::read_u64(&api, controller, 0x408);
+
+    let w_ci = api.op("string_to_fname", json!({"text": "W"})).result["fname"]
+        .as_u64()
+        .map(|f| f as u32)
+        .expect("no W FName");
+
+    // Real W FKey with a valid FKeyDetails pointer.
+    let fkey: [u8; 24] = keystatemap_w_entries(&api, epi, w_ci)
+        .into_iter()
+        .find_map(|(_, entry)| {
+            let b = client::read_bytes(&api, entry, 0, 24);
+            let details = u64::from_le_bytes(b[8..16].try_into().unwrap());
+            (b.len() == 24 && details > 0x1_0000_0000).then(|| {
+                let mut a = [0u8; 24];
+                a.copy_from_slice(&b);
+                a
+            })
+        })
+        .expect("no W FKey with valid FKeyDetails");
+    let fkey_hex = hex::encode(fkey);
+    let slot = std::env::var("IK_SLOT").ok().and_then(|s| s.parse().ok()).unwrap_or(88u64);
+
+    // ForwardInput entry in ActionInstanceData, to see if the action fires.
+    let aid = client::read_u64(&api, epi, 0x598);
+    let aid_num = client::read_u64(&api, epi, 0x5A0) as u32 as usize;
+    let mut fi = 0u64;
+    for i in 0..aid_num {
+        let ptr = client::read_u64(&api, aid, (i * 0x70) as u64);
+        if client::object_name(&api, ptr).as_deref() == Some("ForwardInput") {
+            fi = aid + (i * 0x70) as u64;
+            break;
+        }
+    }
+
+    let before = actor_location(&api, &sel);
+    println!("before: {:.1}, {:.1}, {:.1}", before[0], before[1], before[2]);
+
+    let press = api.op(
+        "try_inputkey",
+        json!({"slot": slot, "key_name": "W", "pressed": true, "fkey_hex": fkey_hex}),
+    );
+    println!("press slot {slot}: ok={} returned={}", press.ok, press.result["returned"]);
+
+    // Hold ~1.5s, re-asserting the down event, and sample position +
+    // the ForwardInput action state.
+    for _ in 0..6 {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        let _ = api.op(
+            "try_inputkey",
+            json!({"slot": slot, "key_name": "W", "pressed": true, "fkey_hex": fkey_hex}),
+        );
+        let p = actor_location(&api, &sel);
+        let d = {
+            let (dx, dy, dz) = (p[0] - before[0], p[1] - before[1], p[2] - before[2]);
+            (dx * dx + dy * dy + dz * dz).sqrt()
+        };
+        let (trig, val) = if fi != 0 {
+            let t = client::read_bytes(&api, fi, 0x10, 1);
+            let v = client::read_bytes(&api, fi, 0x40, 8);
+            (
+                t.first().copied().unwrap_or(0),
+                if v.len() == 8 { f64::from_le_bytes(v.try_into().unwrap()) } else { 0.0 },
+            )
+        } else {
+            (0, 0.0)
+        };
+        println!("  holding W: moved {d:.1}  ForwardInput trigger={trig} value={val:.2}");
+    }
+
+    let _ = api.op(
+        "try_inputkey",
+        json!({"slot": slot, "key_name": "W", "pressed": false, "fkey_hex": fkey_hex}),
+    );
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let after = actor_location(&api, &sel);
+    let (dx, dy, dz) = (after[0] - before[0], after[1] - before[1], after[2] - before[2]);
+    let moved = (dx * dx + dy * dy + dz * dz).sqrt();
+    println!("after: {:.1}, {:.1}, {:.1}", after[0], after[1], after[2]);
+    println!("total moved: {moved:.1}");
+    if moved > 20.0 {
+        println!("\n*** SUCCESS: InputKey slot {slot} walked the character {moved:.0} units ***");
+    } else {
+        println!("\nplayer did not move much ({moved:.1}); check the character is on foot and free to walk");
+    }
+}
+
+#[test]
 #[ignore = "reads W's real FKey (with FKeyDetails) from the InputMappingContext"]
 fn dump_w_fkey() {
     let Some(api) = api_or_skip() else { return };

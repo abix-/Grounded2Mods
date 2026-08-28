@@ -3224,7 +3224,37 @@ it. Two things were required and are both in `try_inputkey` now:
 are other virtuals, e.g. InputAxis). Slot 88 is the one.
 
 This is verified by KeyStateMap state, not by player movement.
-Confirming end-to-end movement (and mouse/E) still wants a run while
-the character is actively controllable, but the key mechanism is
-proven correct.
+
+### End-to-end test: InputKey injects the key but does NOT move the character (2026-08-28)
+
+`test_inputkey_movement` called slot 88 for W while in active
+gameplay and sampled both the player location and the ForwardInput
+action state:
+
+```
+press slot 88: returned=true
+holding W: moved 0.0  ForwardInput trigger=0 value=0.00   (x6)
+total moved: 0.0
+```
+
+So slot 88 correctly sets the legacy KeyStateMap (IsInputKeyDown =
+true) but the `ForwardInput` Enhanced Input ACTION never fires and
+the character does not move. MISERY's movement is bound through
+Enhanced Input actions, and a raw out-of-band InputKey does not
+drive the action evaluation.
+
+### The right mechanism: InjectInputForAction (Enhanced Input)
+
+Prior art (`Lyall/WukongTweak`, PalWorld/Wukong SDK dumps, found via
+`gh`): the sanctioned way to drive an Enhanced Input action
+programmatically is
+`IEnhancedInputSubsystemInterface::InjectInputForAction(UInputAction*
+Action, FInputActionValue RawValue, TArray<UInputModifier*>
+Modifiers, TArray<UInputTrigger*> Triggers)`, a BlueprintCallable
+UFunction on `UEnhancedInputLocalPlayerSubsystem`. It injects the
+action for one tick, so it is re-called each frame while the input
+is held. This targets the `ForwardInput` (etc.) UInputAction
+directly and is what actually moves the character. InputKey (slot
+88) stays the correct answer for raw key state, but movement runs
+through the action layer, so the bot injects at the action layer.
 
