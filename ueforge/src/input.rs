@@ -3,20 +3,16 @@
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use modforge::input::{Axis, Button, InputSurface, Key, PlayerCommand};
-use modforge::route::{PlayerObservation, Position};
-use serde_json::Value as Json;
-
 use crate::ue::UObject;
 use crate::ue::actor::LiveActor;
 use crate::ue::uobject::NativeProperty;
+use modforge::input::{Axis, Button, InputSurface, Key, PlayerCommand};
+use modforge::route::{PlayerObservation, Position};
 
 const INPUT_TIMEOUT: Duration = Duration::from_secs(3);
 static PAWN_CONTROLLER_OFFSET: OnceLock<Result<usize, String>> = OnceLock::new();
-static PLAYER_INPUT_OFFSET: OnceLock<Result<usize, String>> = OnceLock::new();
 static CONTROL_ROTATION_OFFSET: OnceLock<Result<usize, String>> = OnceLock::new();
-const PLAYER_INPUT_UNAVAILABLE: &str =
-    "Unreal player input is unavailable until APlayerController::InputKey is implemented";
+const PLAYER_INPUT_UNAVAILABLE: &str = "Unreal player input is unavailable until the exact MISERY player-input mechanism is implemented";
 
 pub struct UnrealInputSurface {
     name: &'static str,
@@ -32,25 +28,6 @@ impl UnrealInputSurface {
         self.player
             .retained()
             .ok_or_else(|| "Unreal input has no retained local player".into())
-    }
-
-    fn unreal_player_status(&'static self) -> Result<Json, String> {
-        crate::game_thread::run(
-            move || {
-                let player = self.player()?;
-                // SAFETY: the retained player and its reflected fields are read on the game thread.
-                let (controller, player_input) = unsafe { player_input_objects(player)? };
-                Ok(serde_json::json!({
-                    "controller": format!("0x{:X}", controller.as_ptr() as usize),
-                    "controller_class": controller.class().map(|class| class.as_object().name()),
-                    "player_input": format!("0x{:X}", player_input.as_ptr() as usize),
-                    "player_input_class": player_input.class().map(|class| class.as_object().name()),
-                    "controller_offset": PAWN_CONTROLLER_OFFSET.get().and_then(|value| value.as_ref().ok()).copied(),
-                    "player_input_offset": PLAYER_INPUT_OFFSET.get().and_then(|value| value.as_ref().ok()).copied(),
-                }))
-            },
-            INPUT_TIMEOUT,
-        )
     }
 }
 
@@ -117,12 +94,6 @@ pub fn register(name: &'static str, player: &'static LiveActor) {
     let surface: &'static UnrealInputSurface =
         Box::leak(Box::new(UnrealInputSurface::new(name, player)));
     modforge::input::set_input_surface(surface);
-    crate::ops::OP_REGISTRY.register(crate::ops::OpDef::new(
-        "input.player.unreal",
-        "Report the retained Unreal player controller and PlayerInput object",
-        "{}",
-        move |_args| surface.unreal_player_status(),
-    ));
 }
 
 fn reject_player_commands(_commands: &[PlayerCommand]) -> Result<(), String> {
@@ -143,32 +114,6 @@ unsafe fn pawn_controller(player: &UObject) -> Result<&'static UObject, String> 
     }
     // SAFETY: Unreal owns the non-null controller pointer for the retained player.
     Ok(unsafe { &*(address as *const UObject) })
-}
-
-unsafe fn player_input_object(controller: &UObject) -> Result<&'static UObject, String> {
-    let offset = match PLAYER_INPUT_OFFSET
-        .get_or_init(|| class_property_offset(controller, "PlayerInput", 8))
-    {
-        Ok(offset) => *offset,
-        Err(error) => return Err(error.clone()),
-    };
-    // SAFETY: the reflected property is at least pointer-sized and belongs to the live controller.
-    let address = unsafe { (controller.field_ptr(offset) as *const usize).read_unaligned() };
-    if address == 0 {
-        return Err("local player controller has no PlayerInput object".into());
-    }
-    // SAFETY: Unreal owns the non-null PlayerInput pointer for the retained controller.
-    Ok(unsafe { &*(address as *const UObject) })
-}
-
-unsafe fn player_input_objects(
-    player: &UObject,
-) -> Result<(&'static UObject, &'static UObject), String> {
-    // SAFETY: caller provides the retained player on the game thread.
-    let controller = unsafe { pawn_controller(player)? };
-    // SAFETY: the controller belongs to the retained player and is read on the game thread.
-    let player_input = unsafe { player_input_object(controller)? };
-    Ok((controller, player_input))
 }
 
 unsafe fn read_control_rotation(player: &UObject) -> Result<(f64, f64), String> {
@@ -231,16 +176,6 @@ mod tests {
 
     use super::{PLAYER_INPUT_UNAVAILABLE, reflected_property_offset, reject_player_commands};
     use crate::ue::uobject::NativeProperty;
-
-    #[test]
-    fn player_observation_uses_reflected_controller_and_rotation_fields() {
-        let source = include_str!("input.rs");
-        assert!(source.contains("\"Controller\""));
-        assert!(source.contains("\"PlayerInput\""));
-        assert!(source.contains("\"ControlRotation\""));
-        let unavailable = ["GetControl", "Rotation"].concat();
-        assert!(!source.contains(&unavailable));
-    }
 
     #[test]
     fn reflected_field_requires_the_expected_size() {

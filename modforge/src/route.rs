@@ -5,7 +5,6 @@ use smallvec::{SmallVec, smallvec};
 
 use crate::input::{Key, PlayerCommand};
 
-pub const SCHEMA: &str = "modforge.route@v2";
 const W: Key = Key(0x57);
 const A: Key = Key(0x41);
 const S: Key = Key(0x53);
@@ -35,18 +34,11 @@ impl Position {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum WaypointAction {
-    Interact { key: Key },
-}
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Waypoint {
     pub id: String,
     pub position: Position,
     pub arrival_radius: f64,
-    pub action: Option<WaypointAction>,
 }
 
 impl Waypoint {
@@ -55,19 +47,12 @@ impl Waypoint {
             id: id.into(),
             position,
             arrival_radius,
-            action: None,
         }
-    }
-
-    pub fn with_action(mut self, action: WaypointAction) -> Self {
-        self.action = Some(action);
-        self
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Route {
-    schema: String,
     pub name: String,
     waypoints: Vec<Waypoint>,
 }
@@ -75,7 +60,6 @@ pub struct Route {
 impl Route {
     pub fn new(name: impl Into<String>, waypoints: Vec<Waypoint>) -> Result<Self, String> {
         let route = Self {
-            schema: SCHEMA.to_string(),
             name: name.into(),
             waypoints,
         };
@@ -89,14 +73,6 @@ impl Route {
 
     pub fn waypoint(&self, id: &str) -> Option<&Waypoint> {
         self.waypoints.iter().find(|waypoint| waypoint.id == id)
-    }
-
-    pub fn first_id(&self) -> Option<&str> {
-        self.waypoints.first().map(|waypoint| waypoint.id.as_str())
-    }
-
-    pub fn last_id(&self) -> Option<&str> {
-        self.waypoints.last().map(|waypoint| waypoint.id.as_str())
     }
 
     pub fn waypoints_after(&self, start: &str, goal: &str) -> Result<Vec<Waypoint>, String> {
@@ -113,29 +89,6 @@ impl Route {
         } else {
             Ok(Vec::new())
         }
-    }
-
-    pub fn reversed(&self, name: impl Into<String>) -> Self {
-        let mut waypoints = self.waypoints.clone();
-        waypoints.reverse();
-        Self::new(name, waypoints).expect("reversing a valid route preserves validity")
-    }
-
-    pub fn to_json(&self) -> Result<String, String> {
-        serde_json::to_string_pretty(self).map_err(|error| format!("serialize route: {error}"))
-    }
-
-    pub fn from_json(text: &str) -> Result<Self, String> {
-        let route: Self =
-            serde_json::from_str(text).map_err(|error| format!("parse route: {error}"))?;
-        if route.schema != SCHEMA {
-            return Err(format!(
-                "unsupported route schema '{}' (expected '{SCHEMA}')",
-                route.schema
-            ));
-        }
-        route.validate()?;
-        Ok(route)
     }
 
     fn index(&self, id: &str) -> Result<usize, String> {
@@ -224,53 +177,6 @@ pub struct PlayerObservation {
     pub position: Position,
     pub yaw_deg: f64,
     pub pitch_deg: f64,
-}
-
-pub struct DebugPositionRecorder {
-    spacing: f64,
-    positions: Vec<Position>,
-    last_observed: Option<Position>,
-}
-
-impl DebugPositionRecorder {
-    pub fn new(spacing: f64) -> Result<Self, String> {
-        if !spacing.is_finite() || spacing <= 0.0 {
-            return Err("debug-position spacing must be finite and positive".into());
-        }
-        Ok(Self {
-            spacing,
-            positions: Vec::new(),
-            last_observed: None,
-        })
-    }
-
-    pub fn observe(&mut self, position: Position) -> bool {
-        if !position.is_finite() {
-            return false;
-        }
-        self.last_observed = Some(position);
-        if self
-            .positions
-            .last()
-            .is_some_and(|last| last.distance(position) < self.spacing)
-        {
-            return false;
-        }
-        self.positions.push(position);
-        true
-    }
-
-    pub fn finish(mut self) -> Vec<Position> {
-        if let Some(last) = self.last_observed
-            && self
-                .positions
-                .last()
-                .is_none_or(|position| position.distance(last) > f64::EPSILON)
-        {
-            self.positions.push(last);
-        }
-        self.positions
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

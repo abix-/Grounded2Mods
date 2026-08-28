@@ -27,7 +27,7 @@ End state after the 2026-05-16 session: **all three layers shipped + smoke green
 | I-7: waypoint routes | `d331b31d`, `96242512` | Versioned world-space routes, recorded travel steps, trail reduction, closed-loop steering, relative mouse input, stuck evidence, and journal-owned route actions. Five unit tests and the 9.31-second live MISERY outward-and-return replay are green. The waypoint-graph A* added in this slice is rejected as MISERY's pathfinding authority. |
 | I-8: engine navigation route discovery | `2db361e5` | UFunction layout discovery, live endpoint projection, Unreal player-controller navigation, automatic diagnostic sampling, nearby-door diagnosis, bounded interaction recovery, and a cold MISERY spawn-to-expedition proof. The final cold run saved exactly three stop waypoints and two travel steps, opened the bunker door once, entered the expedition once, and completed in 23.94 seconds. |
 | I-9: live target discovery and looting | in progress | Exact pushed build `b9d41c7f` entered the expedition scan-free, rejected two unreachable crates, selected the lowest-cost reachable `BP_StashMid_C`, and traversed its route. Remaining: aim through player-controller yaw and pitch input when foreground mouse capture is absent, then open and loot the retained crate. |
-| I-10: player-input route execution | replacement open | A restarted MISERY test proved the Unreal console-command experiment did not move the player. That implementation was removed. Ueforge now rejects player commands until the local player's real `APlayerController::InputKey` path is implemented and proven live. |
+| I-10: player-input route execution | replacement open | A restarted MISERY test proved the Unreal console-command experiment did not move the player. That implementation was removed. Ueforge rejects player commands until MISERY's real player-input implementation is identified, used exactly, and proven live. |
 
 **Cmdlets shipped** (14 total under `input.*`):
 
@@ -60,7 +60,7 @@ input.cursor.get    input.foreground.hwnd    input.find_hwnd_by_pid    input.sel
 
 - **L1 (Win32 OS-global):** depend on **`enigo`** (`enigo-rs/enigo`, 1715 stars, MIT, edition 2024, last commit 2026-03-30). Pulls `windows` crate, `SendInput`. Use `default-features = false` (default features include Linux-only `x11rb`). Set `dwExtraInfo` tag so our own hooks can recognize self-sent events.
 - **L2 (Win32 per-window):** hand-rolled `modforge::input::win32_message` over `windows-sys`. ~80 LOC. Mirrors pywinauto's `click()` (vs `click_input()`). Uses `PostMessage`/`SendMessage` to the game HWND.
-- **L3 (game-internal):** per-game `InputSurface` trait. For UE games (Grounded 2), route through `APlayerController::InputKey(FInputKeyParams)` per UnrealCV / Lyra. For Unity, hook `Input.GetKey*` or use `InputSystem.QueueStateEvent`. For raw-Win32 (Horsey), discover and poke the engine-private mouse / key globals.
+- **L3 (game-internal):** per-game `InputSurface` trait. Investigate how the target game handles real player input, then use those same functions and data. UnrealCV, Lyra, Unity input APIs, and raw-Win32 input are research leads, not substitutes for the target game's implementation.
 
 **Why not other crates:** `rdev` carries a listen-side hook we don't need; `autopilot` carries an `image` dep; `winput` is small and clean but 21 stars and inactive; `mouce` is mouse-only; `InputBot` is too opinionated.
 
@@ -124,8 +124,8 @@ _Status: first pass complete (2026-05-16)._
 
 ### Findings
 
-- **Two clear winning architectures:**
-  - **In-engine (L3) for UE:** route through `UPlayerInput::InputKey` / `UEnhancedPlayerInput::InputKey`. Works regardless of focus, regardless of raw-input mode, regardless of fullscreen. UnrealCV proves the HTTP-driven shape end-to-end.
+- **Two clear research directions:**
+  - **In-engine (L3) for UE:** investigate the target game's real input handling. UnrealCV proves that HTTP-driven input can work, but its controller call is not proof of another game's player-input mechanism.
   - **Win32 (L1/L2) for raw-Win32 games like Horsey:** `SendInput` (L1) is universal but steals focus. `PostMessage` (L2) targets one HWND, doesn't steal focus, ignored by games that use raw-input or poll `GetAsyncKeyState`.
 - **L2 viability is per-game.** Test inside the consumer mod, not at the modforge layer. The modforge `Mouse`/`Keyboard` abstraction must let the consumer pick L1 vs L2 vs L3 per call; default per game.
 - **Same-process advantage:** because we're injected, we can call the game's WndProc directly with `SendMessage` (synchronous, returns the LRESULT) instead of `PostMessage` (async, fire-and-forget). Worth A/B'ing for HK1 transfer.
@@ -216,7 +216,7 @@ _Status: first pass complete for UE; other engines pending._
 
 ### Unreal Engine 4/5
 
-**Canonical L3 path:** `APlayerController::InputKey(FInputKeyParams)` (UE 4.26+) or, with Enhanced Input enabled, `UEnhancedPlayerInput::InputKey(FInputKeyParams)`.
+**Prior-art candidate:** Some Unreal games and tools call `APlayerController::InputKey(FInputKeyParams)` or `UEnhancedPlayerInput::InputKey(FInputKeyParams)`. This is not Modforge's authority for a target game. The target game's real player-input implementation must be investigated before choosing where bot input enters.
 
 Two confirmed live consumers:
 
@@ -246,7 +246,7 @@ Two confirmed live consumers:
 
 **Mouse cursor:** UE's mouse position lives on the `FSlateApplication` singleton (`FSlateApplication::Get().GetCursorPos()`). To synthesize a click, the safest L3 path is to route through `FSlateApplication::OnMouseDown` / `OnMouseUp`, which fires the same dispatch as a real click. For PE games where Slate isn't easily reachable, fall back to `PostMessage(hwnd, WM_LBUTTONDOWN, ...)` with a `lParam` carrying client coords; UE's Win32 platform layer translates them.
 
-**Grounded 2 specifics:** UE5 + Enhanced Input. The Enhanced Input subsystem (`UEnhancedInputLocalPlayerSubsystem::GetPlayerInput()`) returns the right object to feed `FInputKeyParams` to. ueforge already exposes UObject-by-name lookup; calling `InputKey` is one more `ProcessEvent`-style invocation away.
+**Grounded 2 specifics:** UE5 + Enhanced Input is a research lead. Its real player-input implementation must be investigated before choosing an input entry point.
 
 ### Other engines (sketch; fill in later)
 
@@ -346,7 +346,7 @@ The closest architectural matches: already-in-process mods that synthesize input
 
 - Repo: `UE4SS-RE/RE-UE4SS`. **2494 stars, MIT, very active (2026-05-16).**
 - `gh search code --owner UE4SS-RE "SendInput OR PostMessage"` returned **empty**. UE4SS routes input through UE's own structures, not Win32, which is exactly what we want for grounded2-mod.
-- UE4SS exposes Lua bindings for `RegisterKeyDownEvent` (listen side) but the canonical "synthesize a key" path inside a UE4SS mod is `APlayerController::InputKey` (same as UnrealCV / Lyra in PR-4).
+- UE4SS exposes Lua bindings for `RegisterKeyDownEvent` on the listen side. UnrealCV and Lyra demonstrate controller input calls, but they do not prove that a target game delivers the player's input through that same entry point.
 
 ### BepInEx / MelonLoader (Unity)
 
@@ -372,7 +372,7 @@ The closest architectural matches: already-in-process mods that synthesize input
 
 ### Verdict (PR-8)
 
-- For UE games: route through `InputKey` per PR-4 (UE4SS confirms).
+- For UE games: investigate and use the target game's real player-input implementation. PR-4 provides leads, not authority.
 - For Unity games: hook `Input.GetKey*` or `InputSystem.QueueStateEvent` (BepInEx + MelonLoader patterns).
 - For raw-Win32 games (Horsey): L2 PostMessage, but **tag with `dwExtraInfo` so our ImGui overlay can recognize and pass-through our own synthesized events.**
 
@@ -472,7 +472,7 @@ All current target games are LOW risk. Document the patterns above so we know wh
 |---|---|---|
 | L1 | `enigo` 0.6.x, `default-features = false`, Windows-only feature set | Most-starred, most-maintained, MIT, edition 2024, clean `windows`-crate FFI. Beats DIY on bug surface; matches our `Mouse`/`Keyboard` shape. |
 | L2 | Hand-rolled `modforge::input::win32_message` over `windows-sys::Win32::UI::WindowsAndMessaging` | No suitable crate exists; ~80 LOC; targeted per HWND; no focus theft. Lets us pick between `PostMessage` (async) and `SendMessage` (sync, since we are in-process). |
-| L3 | Per-consumer `InputSurface` trait | Engine-specific. UE: `APlayerController::InputKey(FInputKeyParams)`. Unity: `Input.GetKey*` hook or `InputSystem.QueueStateEvent`. Raw Win32: per-game poke of engine globals (Horsey I-R). |
+| L3 | Per-consumer `InputSurface` trait | Engine-specific implementation behind one shared command surface. Each consumer uses the exact functions and data its game uses for real player input. |
 
 ### Module shape
 

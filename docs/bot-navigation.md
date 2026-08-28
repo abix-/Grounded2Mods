@@ -57,9 +57,6 @@ current position to the same waypoint. A waypoint is usable only when the game
 engine returns a valid, complete path to it. A straight line never proves that
 a target is reachable.
 
-The bot may record debug positions showing where it actually walked. Debug
-positions are evidence only. They are never used for navigation.
-
 ## Player input
 
 The shared bot code produces virtual W/A/S/D state, relative mouse movement,
@@ -68,11 +65,10 @@ Ueforge or Unityforge, injects those controls into the game's normal input proce
 The game applies its existing bindings and performs movement, aiming, and
 interaction exactly as it does for a player.
 
-On Unreal 5.4, Ueforge must deliver key and mouse events to the local player's
-actual Unreal input path. That is the `APlayerController::InputKey` path into
-the player's `PlayerInput` or `EnhancedPlayerInput`, where Unreal delivers real
-keyboard and mouse events. A key press, held key, key release, and relative
-mouse movement must enter there before MISERY applies its existing bindings.
+On Unreal 5.4, Ueforge must first investigate exactly how the game handles the
+player's real keyboard and mouse input. Bot input must use those same functions
+and data. Calling a later controller, viewport, movement, rotation, or
+interaction function is not an acceptable substitute.
 
 Running text through Unreal's console is not player input. `Input.+key`,
 `Input.-key`, `KismetSystemLibrary.ExecuteConsoleCommand`, and any other debug
@@ -143,7 +139,7 @@ ordered W/A/S/D, mouse, interaction, and input-release commands.
 A restarted MISERY run must:
 
 1. Prove a virtual W press and release changes the live player's position
-   through `APlayerController::InputKey`, with no console command involved.
+   through the exact mechanism MISERY uses for the player's W input.
 2. Prove virtual relative mouse movement changes the live player's view through
    the same Unreal player-input path.
 3. Select the metal-door waypoint.

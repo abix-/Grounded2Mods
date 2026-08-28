@@ -1,7 +1,7 @@
 use modforge::input::{Key, PlayerCommand};
 use modforge::route::{
-    Bot, BotStatus, DebugPositionRecorder, Path, PathPoint, PlayerObservation, Position, Route,
-    SteeringConfig, StuckDetector, Waypoint,
+    Bot, BotStatus, Path, PathPoint, PlayerObservation, Position, Route, SteeringConfig,
+    StuckDetector, Waypoint,
 };
 
 fn position(x: f64, y: f64, z: f64) -> Position {
@@ -36,25 +36,6 @@ fn route_is_an_ordered_list_of_stops_without_pathfinding() {
             .map(|waypoint| waypoint.id.as_str())
             .collect::<Vec<_>>(),
         vec!["metal-door", "expedition-door"]
-    );
-    assert_eq!(Route::from_json(&route.to_json().unwrap()).unwrap(), route);
-}
-
-#[test]
-fn debug_positions_never_become_waypoints_or_path_points() {
-    let mut recorder = DebugPositionRecorder::new(50.0).unwrap();
-    assert!(recorder.observe(position(0.0, 0.0, 0.0)));
-    assert!(!recorder.observe(position(10.0, 0.0, 0.0)));
-    assert!(recorder.observe(position(60.0, 0.0, 0.0)));
-    assert!(!recorder.observe(position(75.0, 0.0, 0.0)));
-
-    assert_eq!(
-        recorder.finish(),
-        vec![
-            position(0.0, 0.0, 0.0),
-            position(60.0, 0.0, 0.0),
-            position(75.0, 0.0, 0.0),
-        ]
     );
 }
 
