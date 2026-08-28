@@ -898,8 +898,8 @@ use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 const WATCH_MAX_RECORDS: usize = 24;
-const WATCH_MAX_FRAMES: usize = 40;
-const WATCH_STACK_BYTES: usize = 1024;
+const WATCH_MAX_FRAMES: usize = 64;
+const WATCH_STACK_BYTES: usize = 4096;
 
 #[derive(Clone, Copy)]
 struct WatchRecord {

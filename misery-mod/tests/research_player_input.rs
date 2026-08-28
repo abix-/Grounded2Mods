@@ -1329,6 +1329,109 @@ fn find_inputkey_write() {
 }
 
 #[test]
+#[ignore = "finds InputKey by which chain frame receives W's FKey as a parameter"]
+fn find_inputkey_by_param() {
+    let Some(api) = api_or_skip() else { return };
+    let api = api.with_timeout(std::time::Duration::from_secs(120));
+    assert!(offsets_live(&api), "MISERY offsets are not live");
+
+    let player = client::resolve_selector(&api, "live_player").expect("no live player");
+    let controller = client::read_u64(&api, player.addr, 0x2C8);
+    let epi = client::read_u64(&api, controller, 0x408);
+
+    let w_idx = api.op("string_to_fname", json!({"text": "W"})).result["fname"]
+        .as_u64()
+        .map(|f| f as u32)
+        .expect("no W FName");
+
+    // W's FKeyDetails pointer from the KeyStateMap W entry: a second,
+    // stronger signal (FKey = FName@0x00 + FKeyDetails@0x08).
+    let w_details = keystatemap_w_entries(&api, epi, w_idx)
+        .into_iter()
+        .find_map(|(_, entry)| {
+            let d = client::read_u64(&api, entry, 0x08);
+            (d > 0x1_0000_0000).then_some(d)
+        })
+        .unwrap_or(0);
+    println!("W FName index = 0x{w_idx:X}, W FKeyDetails ptr = 0x{w_details:X}\n");
+
+    let probe = api.op("watch_writes", json!({"addr": epi, "len": 8, "duration_ms": 1}));
+    let base = u64::from_str_radix(
+        probe.result["exe_base"].as_str().unwrap().trim_start_matches("0x"),
+        16,
+    )
+    .unwrap();
+
+    // Every input-thread function on the KeyStateMap write chain
+    // (hot utilities and the navmesh red herring excluded).
+    let frames: &[u64] = &[
+        0x11aee60, 0x3cb9360, 0x39f1210, 0x10d4790, 0x38b2af0, 0x39ee780, 0x3ce6d90, 0x12cc170,
+        0xf89d50,
+    ];
+
+    let secs = 8u64;
+    println!(
+        "=== TAP W steadily for the whole test (~{}s across {} frames) ===\n",
+        secs * frames.len() as u64,
+        frames.len(),
+    );
+
+    let heap_lo = 0x1_0000_0000u64;
+    let heap_hi = 0x8000_0000_0000u64;
+
+    for &rva in frames {
+        let res = api
+            .op(
+                "watch_writes",
+                json!({"addr": base + rva, "mode": "exec", "len": 1, "duration_ms": secs * 1000}),
+            )
+            .result;
+        let Some(rec) = res["records"].as_array().and_then(|r| r.first()) else {
+            println!("+0x{rva:<8x} did not run");
+            continue;
+        };
+        let reg = |n: &str| {
+            u64::from_str_radix(rec[n].as_str().unwrap_or("0x0").trim_start_matches("0x"), 16)
+                .unwrap_or(0)
+        };
+        let mut found = false;
+        for n in ["rcx", "rdx", "r8", "r9"] {
+            let v = reg(n);
+            if v < heap_lo || v >= heap_hi {
+                continue;
+            }
+            // One guarded read; the guard makes a bad pointer safe.
+            let buf = client::read_bytes(&api, v, 0, 0x40);
+            let mut o = 0usize;
+            while o + 4 <= buf.len() {
+                let iv = u32::from_le_bytes(buf[o..o + 4].try_into().unwrap());
+                if iv == w_idx {
+                    let d = if o + 12 <= buf.len() {
+                        u64::from_le_bytes(buf[o + 4..o + 12].try_into().unwrap())
+                    } else {
+                        0
+                    };
+                    let strong = w_details != 0 && d == w_details;
+                    println!(
+                        "*** +0x{rva:x}: W FName in [{n}]+0x{o:X}{} -> this frame receives W's FKey (InputKey)",
+                        if strong { " with matching FKeyDetails" } else { "" }
+                    );
+                    found = true;
+                }
+                o += 4;
+            }
+        }
+        if !found {
+            println!(
+                "+0x{rva:<8x} ran; args carry no W FKey (rcx=0x{:X} rdx=0x{:X} r8=0x{:X} r9=0x{:X})",
+                reg("rcx"), reg("rdx"), reg("r8"), reg("r9")
+            );
+        }
+    }
+    println!("\ndone. The frame that receives W's FKey is InputKey.");
+}
+
+#[test]
 #[ignore = "proves the read_bytes op rejects bad pointers instead of crashing the game"]
 fn read_op_guards_bad_pointer() {
     let Some(api) = api_or_skip() else { return };

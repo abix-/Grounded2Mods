@@ -3076,262 +3076,89 @@ candidates, in order of how close they are to the real path:
 The next step is decoding the KeyStateMap TMap to find the W
 entry and understand its format.
 
-### Find-out-what-writes: the write watchpoint (2026-08-28)
+### Find-out-what-writes: the write/exec watchpoint (2026-08-28)
 
-Every earlier attempt at InputKey guessed an address (vtable slot
-math, string xref, prologue scan) and then called it, using "did
-the player move" as the only test. That test is worthless: a call
-does nothing for three unrelated reasons (wrong function, wrong
-struct layout, null FKeyDetails), and all three look identical.
-So each failure taught us nothing. See todo.md for the list.
+This section replaces an earlier running log that contained claims
+later disproven. It states only what is backed by pasted live
+output, and marks the rest OPEN. RVAs are image-relative to
+`MISERY-Win64-Shipping.exe` and identical across restarts of the
+same build; absolute addresses (with ASLR) change every launch.
 
-The reliable method reverses the direction: watch the memory a
-real key press changes and let the CPU report which instruction
-wrote it. This is the standard "find out what writes to this
-address" technique (Cheat Engine's, done with a hardware data
-breakpoint). It is now a permanent op.
+The method: instead of guessing an InputKey address and calling it
+(every prior attempt, all failed), watch the memory a real key
+press changes and let the CPU report which instruction wrote it,
+then which code ran. Standard "find out what writes to this
+address" plus an execution breakpoint, via CPU debug registers.
 
-**The tool.** `modforge::winproc::capture_write_watchpoint`,
-exposed as the `watch_writes` op (`{addr, len, duration_ms}`). It
-arms a CPU debug register (DR0) as a data-write breakpoint on the
-address across every thread in the process, installs a vectored
-exception handler, and for each write records the writing
-instruction and the exe-code return addresses on the stack, all
-resolved to image-relative offsets (RVA). The game keeps running.
-Arming was verified live: 123 of 123 threads armed, GetLastError
-0.
+**The tool (PROVEN).** `modforge::winproc::capture_write_watchpoint`,
+exposed as the `watch_writes` op (`{addr, len, duration_ms, mode}`,
+mode = write / readwrite / exec). It arms DR0 across every thread,
+installs a vectored exception handler, and records each hit's
+instruction, argument registers (rcx/rdx/r8/r9), and the exe-code
+return addresses on the stack, as RVAs. Arming verified live every
+run: 123 of 123 threads, GetLastError 0.
 
-**What the watchpoint proved (live).** With the watch on the
-ForwardInput trigger byte (ActionInstanceData entry + 0x10, where
-`entry = ActionInstanceData.data + index * 0x70`), tapping W
-caught 24 writes, every one from the same instruction on the same
-game thread. The other three candidates caught zero writes while
-W was tapped:
+**The read/write ops are guarded (PROVEN).** `read_bytes` and
+`write_bytes` on a raw `addr:` selector previously faulted and
+KILLED the game when handed a stale or code pointer (crashed MISERY
+twice during this work). They now `VirtualQuery`-check every page of
+the range first. Test `read_op_guards_bad_pointer`: reads and writes
+of 0x1, 0xDEAD00000000, 0x7FFFFFFF0000 all return a clean error and
+the game stays alive.
 
-- ForwardInput value at entry + 0x40: no writes. So + 0x40 is NOT
-  written on a key tap; the earlier "value f64 at + 0x40, written
-  each frame" note in section 31 is wrong or the write goes
-  elsewhere.
-- EnhancedPlayerInput + 0x5E8 and + 0x5F0: no writes. So the
-  KeyStateMap write does NOT land on those bytes; the before/after
-  diff that flagged the + 0x5E8 region caught a net change, not
-  the actual write target.
+**Proven about the input path:**
 
-**The captured writer of the ForwardInput trigger byte.** All
-offsets are image-relative to `MISERY-Win64-Shipping.exe` (this
-session's base 0x7ff6a1900000, size 0x83fe000) and are stable
-across restarts:
+1. The ForwardInput TRIGGER byte (ActionInstanceData entry + 0x10,
+   `entry = ActionInstanceData.data + index * 0x70`) is written on a
+   W press by the store instruction at RVA + 0x42f14d2, from one
+   game thread. This is the Enhanced Input trigger-evaluation path,
+   which runs AFTER raw key input, so it is NOT InputKey.
+2. Writing the ForwardInput value at entry + 0x40 does nothing to
+   the player (proven earlier by `inject_forward_input`), and it is
+   not written on a key tap either. It is output.
+3. EnhancedPlayerInput + 0x5E8 / + 0x5F0 catch no writes on a tap;
+   the earlier before/after diff there was a net change, not a
+   store site.
+4. The old prologue-scan InputKey candidate (RVA + 0x320d680) never
+   runs on input: an exec breakpoint on it across 123 threads caught
+   ZERO hits while a control function fired 14 times in the same
+   window. Every past attempt that computed that address and called
+   it was calling code the game does not run for input. Retired.
+5. A per-key `FKey -> FKeyState` TSet lives on EnhancedPlayerInput.
+   In ONE session, the block at object-offset + 0x788 received W's
+   FKeyState write (24 writes on a press) via store RVA + 0x42f25d0;
+   the input-thread call chain to it was captured. CAVEAT: the block
+   is located by a runtime heuristic scan, and a later run found
+   DIFFERENT candidate blocks (+ 0x1D0, + 0x538, + 0x548) and caught
+   no writes. So the + 0x788 object-offset is NOT confirmed stable
+   across sessions; only the store RVA + 0x42f25d0 is stable.
+6. None of the nine input-thread functions on the captured
+   KeyStateMap store chain receives W's FKey in its argument
+   registers (`find_inputkey_by_param`, 73 s sweep, no crash). So
+   InputKey is not among the captured frames; it is higher up the
+   stack than the handler's stack window reached at the time
+   (`WATCH_STACK_BYTES` was 1 KiB; now raised to 4 KiB, not yet
+   re-captured successfully).
 
-```
-writing instruction:  + 0x42f14d2
-call chain (return addresses, nearest first):
-  + 0xf590f8
-  + 0xf4dd41
-  + 0xf6682d
-  + 0x11af012
-  + 0x7bf8140
-  + 0x7be5918
-  + 0x3cb9443
-```
+**OPEN / NOT DETERMINED:**
 
-This chain is the real path that evaluates the ForwardInput
-action from a W press. It is the Enhanced Input trigger side, not
-InputKey (InputKey records raw key state; trigger evaluation runs
-later and writes this byte). The write came only from the single
-game input thread, so this chain is input-specific.
+- Which function is `APlayerController::InputKey`. NOT found.
+- + 0x39f1210 (this = controller) and + 0x3cb9360 (this = EPI) are
+  input-thread controller / EnhancedPlayerInput methods on the store
+  chain, but their captured arguments are NOT an FInputKeyParams
+  (rdx at + 0x39f1210 is a UObject container; W's FName index 0xD08
+  is absent). An earlier revision of this doc named these as
+  InputKey; that naming is RETRACTED. rcx matching the controller /
+  EPI proves only the class of `this`, not that the function is
+  InputKey.
+- The FInputKeyParams layout in this build (not yet read from a
+  confirmed InputKey frame).
 
-### Execute breakpoints: two more verified facts (2026-08-28)
+**What a correct next attempt looks like:** with the deeper stack
+capture, re-run `find_inputkey_write` (needs a real W press held
+during the watched window) to capture the chain up past the store,
+then `find_inputkey_by_param` on the newly revealed higher frames.
+The target is the frame whose argument register points to a struct
+whose first 8 bytes are W's FName (0xD08) and whose next 8 are W's
+FKeyDetails pointer.
 
-The watchpoint op gained an `exec` mode (DR0 as an execution
-breakpoint, R/W bits 00). It arms the same way (123/123 threads,
-verified) and captures the callers of any instruction the moment
-it runs. Two things came out of it:
-
-**The prologue-scan InputKey candidate is the wrong function.**
-An execution breakpoint on the candidate (this session
-0x7FF6A4B0D680, RVA + 0x320d680) armed on all 123 threads while W
-was tapped: zero hits. A control function fired 14 times in the
-same 15 second window, so exec mode works and the W presses
-reached the game. The candidate simply never runs on input. Every
-earlier session that computed that address and called it (failed
-attempts 3 and 4 in todo.md) was calling a function the game does
-not run for input. Retired.
-
-**Write-watchpoint call chains contain generic helpers.** The
-control was the trigger-write chain's frame 0 (RVA + 0xf590c0).
-Its execution breakpoint fired 14 times across 14 different
-threads with unrelated call stacks, so + 0xf590c0 is a hot
-general-purpose utility, not input code. Lesson: only the thread
-that originates a watched write (tid of the write) carries an
-input-specific stack; a frame that also appears deep in the stack
-may be a shared callee. Judge a frame by whether it fires ONLY on
-the input thread and ONLY on the action, not by its presence in
-one stack.
-
-### Finding InputKey next
-
-InputKey writes the raw FKeyState for the W FKey into KeyStateMap.
-The reliable way to catch it is a write watchpoint on that FKey's
-entry, but the + 0x5E8 / + 0x5F0 guesses caught nothing, so the
-entry address is not yet known. The next step is decoding the
-KeyStateMap layout to find the W entry's address, then arming a
-write watchpoint on it: the writer will be InputKey, and its
-callers are the raw-input routing.
-
-### KeyStateMap located and its writer captured (2026-08-28)
-
-`decode_keystatemap_find_w` resolves each key's FName comparison
-index through `string_to_fname`, then scans the EnhancedPlayerInput
-object for TSet blocks (heap pointer + count + capacity) whose
-entries begin with an FKey. Several FKey-keyed blocks exist on the
-object (EnhancedActionMappings at + 0x538 is one). The + 0x5E8
-region is NOT one of them; the earlier before/after diff there was
-a net change, not the actual store.
-
-**KeyStateMap is the TSet at EnhancedPlayerInput + 0x788.**
-`find_inputkey_write` decides this by measurement, not layout: it
-watches the FKeyState (+ 0x18 past the 24-byte FKey) of W's entry
-in every candidate block while W is tapped. Only the + 0x788
-block's W FKeyState is written on a press (24 writes on the game
-input thread); the other blocks caught nothing. So + 0x788 is
-`UPlayerInput::KeyStateMap`, keyed FKey to FKeyState, and the W
-entry's FKeyState begins 0x18 bytes after its FName.
-
-**The write path (image-relative offsets, stable across restarts).**
-The instruction that stores W's FKeyState:
-
-```
-writing instruction:  + 0x42f25d0   (a shared FKeyState setter,
-                                      next to the + 0x42f14d2 store
-                                      that writes ActionInstanceData)
-callers, nearest first (input-specific frames only; the 0x7bxxxxx
-and 0x79xxxxx frames are hot generic utilities, confirmed by the
-exec-breakpoint control that fired on 14 unrelated threads):
-  + 0x11af012   fn + 0x11aee60
-  + 0x3cb9428   fn + 0x3cb9360
-  + 0x39f127d   fn + 0x39f1210
-  + 0x39fc2ca   fn + 0x39fc191
-  + 0xf87b9a    fn + 0xf87b70
-  + 0x10dc4d5   fn + 0x10dc360
-  + 0x321386e   fn + 0x3213800
-```
-
-InputKey is one of these caller functions (the store itself is a
-generic setter, reused for both KeyStateMap and ActionInstanceData).
-None matches the disproven prologue-scan candidate.
-
-### InputKey narrowed to four nested input-thread functions (2026-08-28)
-
-`verify_inputkey_candidate_executes` gained a sweep mode
-(`WATCH_EXEC_RVAS`) that arms an exec breakpoint on each candidate
-function entry in turn. Exec mode self-clears per thread on the
-first hit (so the fault does not re-trap forever), which means the
-signal is per-thread presence, not frequency: `hits=1, tids=1`
-means the function ran on exactly one thread, `hits=0` never ran,
-and `hits=N across N tids` is a hot cross-thread utility.
-
-Sweeping the seven caller-function entries while W was tapped:
-
-```
-+ 0x11aee60   1 hit,  1 tid   input-thread only
-+ 0x3cb9360   1 hit,  1 tid   input-thread only
-+ 0x39f1210   1 hit,  1 tid   input-thread only
-+ 0x3213800   1 hit,  1 tid   input-thread only
-+ 0x39fc191   0 hits          (mis-computed entry: a mid-function
-                               return address, ignore)
-+ 0xf87b70    12 hits, 12 tid  hot utility, excluded
-+ 0x10dc360   9 hits,  9 tid   hot utility, excluded
-```
-
-So InputKey is one of the four input-thread functions
-+ 0x11aee60, + 0x3cb9360, + 0x39f1210, + 0x3213800, nested from the
-KeyStateMap store (+ 0x11aee60, innermost) out to + 0x3213800
-(outermost, the entry where a key event arrives). + 0x3213800 is
-the `APlayerController::InputKey` candidate; the inner three are
-its callees down to the store.
-
-**Remaining step to name it exactly.** `APlayerController::InputKey`
-takes `this = PlayerController` (rcx = controller) and an
-`FInputKeyParams*`; `UPlayerInput::InputKey` takes `this =
-EnhancedPlayerInput` (rcx = EPI). Extend the exec-breakpoint capture
-to record rcx (and rdx) at the hit: the function whose rcx equals
-the controller address is `APlayerController::InputKey`, the one
-whose rcx equals the EPI address is `UPlayerInput::InputKey`. That
-same hook then reads the real `FInputKeyParams` from rdx, giving the
-byte-exact parameter block (including the FKeyDetails shared
-pointer) to replay, which is what defeated every earlier
-call attempt.
-
-### InputKey named by its `this` pointer (2026-08-28)
-
-The watchpoint records now include the integer argument registers
-(rcx, rdx, r8, r9) captured at the hit. For an exec breakpoint on a
-function entry these are the incoming Windows x64 arguments, so rcx
-is `this`. `name_inputkey_by_rcx` armed exec on each of the four
-input-thread functions and read rcx against the live controller and
-EnhancedPlayerInput addresses:
-
-```
-+ 0x39f1210   rcx = controller   ->  APlayerController::InputKey
-+ 0x3cb9360   rcx = EPI          ->  the PlayerInput-level InputKey
-+ 0x11aee60   rcx = other object     inner helper, not InputKey
-+ 0x3213800   rcx = RecastNavMesh-Default   NOT input (red herring)
-```
-
-So, at stable image-relative offsets, these two functions run only
-on the input thread and sit on the KeyStateMap write path:
-
-- + 0x39f1210 has `this = PlayerController`
-- + 0x3cb9360 has `this = EnhancedPlayerInput`
-
-The earlier "outer = entry" and "inner = store" guesses were both
-wrong; the + 0x3213800 candidate was a RecastNavMesh method and
-+ 0x11aee60 an inner helper. Only the rcx measurement ruled those
-out.
-
-### Correction: + 0x39f1210 is NOT InputKey (2026-08-28)
-
-Decoding the parameter (`decode_inputkeyparams`) walked back the
-InputKey naming. It is a CORRECTION to the two lines above: matching
-rcx to the controller proved only that + 0x39f1210 is A controller
-method on the input path, not that it is `APlayerController::InputKey`.
-
-The rdx captured at + 0x39f1210 is not an FInputKeyParams:
-
-```
-rdx first 0x30 bytes:
-  +0x00  80 14 A4 3C F1 01 00 00   heap pointer (-> a TArray of objects)
-  +0x08  02 00 00 00 00 00 00 00   = 2 (a count)
-  +0x10  00 80 84 3C F1 01 00 00   heap pointer (-> a UObject; first
-                                    qword is a 0x7FF6... vtable)
-  +0x20  80 CA 3D 65 F1 01 00 00   heap pointer (-> a UObject)
-```
-
-FInputKeyParams begins with an FKey whose first 8 bytes are an FName
-(two small integers), never a pointer. W's FName index (0xD08) did
-not appear anywhere reachable from rdx. And + 0x39f1210 overwrites
-edx with a global right after entry, so its second argument is not
-even used the way InputKey would use `FInputKeyParams&`. So
-+ 0x39f1210 is some other controller input method (a Tick / process
-step), not InputKey. The same doubt applies to + 0x3cb9360, whose
-captured rdx was a code address, not a parameter pointer.
-
-**What still stands:** KeyStateMap at EPI + 0x788, the store
-instruction + 0x42f25d0, and the input-thread call chain to it are
-all measured and solid. What is NOT settled is which chain frame is
-`APlayerController::InputKey`.
-
-**Blocker found:** the `read_bytes` op faults the game when handed a
-bad or code pointer. The two decode runs each hung or crashed the
-game while chasing pointers out of the captured registers. Before
-more live pointer-walking, the read op needs a `VirtualQuery`
-/is_addr_readable guard on every address so a stale pointer returns
-empty instead of killing the process.
-
-**Better next step than guessing the frame:** find InputKey by its
-parameter, not its position. At each input-thread chain frame, read
-only the incoming argument registers' shallow memory (guarded, no
-deep chase) and look for W's FName index followed by W's known
-FKeyDetails pointer (from the KeyStateMap W entry). The frame whose
-parameter contains W's FKey is InputKey. That identifies it by what
-it receives, not by where it sits.
