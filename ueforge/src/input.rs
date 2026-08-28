@@ -372,10 +372,11 @@ mod tests {
     }
 
     #[test]
-    fn control_yaw_comes_from_the_pawn() {
+    fn control_yaw_comes_from_the_reflected_controller_field() {
         let source = include_str!("input.rs");
-        assert!(source.contains("function(player, \"Pawn\", \"GetControlRotation\")"));
-        assert!(!source.contains("function(controller, \"Controller\", \"GetControlRotation\")"));
+        let unavailable_function = ["GetControl", "Rotation"].concat();
+        assert!(!source.contains(&format!("\"{unavailable_function}\"")));
+        assert!(source.contains("\"ControlRotation\""));
     }
 
     #[test]
