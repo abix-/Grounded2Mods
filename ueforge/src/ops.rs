@@ -614,6 +614,26 @@ fn range_readable(addr: usize, len: usize) -> bool {
     true
 }
 
+/// Like [`range_readable`], but requires every page to be writable.
+/// A `write_bytes` to a stale or read-only pointer would otherwise
+/// fault and kill the game.
+fn range_writable(addr: usize, len: usize) -> bool {
+    if len == 0 {
+        return true;
+    }
+    let Some(end) = addr.checked_add(len) else {
+        return false;
+    };
+    let mut p = addr;
+    while p < end {
+        if !crate::winproc::is_addr_writable(p) {
+            return false;
+        }
+        p = (p & !0xFFF) + 0x1000;
+    }
+    true
+}
+
 /// When the resolved object's class is known, clamp
 /// `offset + length` to `class.properties_size()`. Returns
 /// `Err` if the range falls completely outside the class extent.
@@ -692,8 +712,18 @@ where
     if !is_raw_addr {
         check_object_bounds(obj, offset, bytes.len())?;
     }
+    // SAFETY: `field_ptr` only computes an address; no deref yet.
+    let dst = unsafe { obj.field_ptr(offset) as *mut u8 };
+    if !range_writable(dst as usize, bytes.len()) {
+        return Err(format!(
+            "unwritable range at 0x{:X} + 0x{:X} (stale, unmapped, or read-only pointer)",
+            dst as usize,
+            bytes.len()
+        ));
+    }
+    // SAFETY: every page of the range was just confirmed committed and
+    // writable, so the copy cannot fault.
     unsafe {
-        let dst = obj.field_ptr(offset) as *mut u8;
         std::ptr::copy_nonoverlapping(bytes.as_ptr(), dst, bytes.len());
     }
     Ok(serde_json::json!({

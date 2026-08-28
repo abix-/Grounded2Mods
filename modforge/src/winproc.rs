@@ -88,6 +88,24 @@ pub fn is_addr_readable(addr: usize) -> bool {
     true
 }
 
+/// Cheap "would writing to this address segfault?" check. Like
+/// [`is_addr_readable`], but also requires the page to carry WRITE
+/// protection, so a write to an unmapped or read-only page becomes a
+/// caught error instead of a fault that kills the process.
+pub fn is_addr_writable(addr: usize) -> bool {
+    if addr < 0x1_0000 {
+        return false;
+    }
+    let region = match region::query(addr as *const std::ffi::c_void) {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+    if !region.is_committed() || region.is_guarded() {
+        return false;
+    }
+    region.protection().contains(region::Protection::WRITE)
+}
+
 pub fn process_threads_json() -> serde_json::Value {
     use windows_sys::Win32::Foundation::{CloseHandle, FILETIME, INVALID_HANDLE_VALUE};
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{

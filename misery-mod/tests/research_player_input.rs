@@ -1355,10 +1355,21 @@ fn read_op_guards_bad_pointer() {
         assert!(!r.ok, "read of bad address 0x{a:X} should be rejected, not succeed");
     }
 
+    // write_bytes must reject the same bad pointers (an unmapped or
+    // read-only write would fault the game too).
+    for a in bad_addrs {
+        let r = api.op(
+            "write_bytes",
+            json!({"instance_selector": format!("addr:0x{a:X}"), "bytes_hex": "00"}),
+        );
+        println!("write 0x{a:X}: ok={} error={:?}", r.ok, r.error);
+        assert!(!r.ok, "write to bad address 0x{a:X} should be rejected, not succeed");
+    }
+
     // The decisive proof: the game and its control plane are still
-    // alive after the bad reads (before the guard, they crashed it).
-    // Re-read the valid player object; a response means the process
-    // and its listener survived.
+    // alive after the bad reads and writes (before the guards, they
+    // crashed it). Re-read the valid player object; a response means
+    // the process and its listener survived.
     let after = api.op(
         "read_bytes",
         json!({"instance_selector": format!("addr:0x{:X}", player.addr), "length": 16}),
