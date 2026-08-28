@@ -68,6 +68,18 @@ Ueforge or Unityforge, injects those controls into the game's normal input proce
 The game applies its existing bindings and performs movement, aiming, and
 interaction exactly as it does for a player.
 
+On Unreal 5.4, Ueforge must deliver key and mouse events to the local player's
+actual Unreal input path. That is the `APlayerController::InputKey` path into
+the player's `PlayerInput` or `EnhancedPlayerInput`, where Unreal delivers real
+keyboard and mouse events. A key press, held key, key release, and relative
+mouse movement must enter there before MISERY applies its existing bindings.
+
+Running text through Unreal's console is not player input. `Input.+key`,
+`Input.-key`, `KismetSystemLibrary.ExecuteConsoleCommand`, and any other debug
+or console simulation command are forbidden. A command returning without an
+error is not proof. The live player's position or view must change through the
+game's existing binding before the input implementation is accepted.
+
 | Need | Unreal through Ueforge | Unity through Unityforge |
 |---|---|---|
 | Find a path | Ask Unreal navigation for a complete path and return its path points | Ask Unity navigation for a complete path and return its path corners as path points |
@@ -85,6 +97,8 @@ It does not require the physical mouse, window focus, or OS-wide keyboard input.
 
 The following are forbidden because they bypass the player's input route:
 
+- Unreal console or debug input simulation, including `Input.+key`,
+  `Input.-key`, and `KismetSystemLibrary.ExecuteConsoleCommand`.
 - Unreal `SimpleMoveToLocation`, `AddMovementInput`, `AddYawInput`, or
   `AddPitchInput`.
 - Unity `NavMeshAgent.SetDestination`, `CharacterController.Move`, direct
@@ -128,15 +142,19 @@ ordered W/A/S/D, mouse, interaction, and input-release commands.
 
 A restarted MISERY run must:
 
-1. Select the metal-door waypoint.
-2. Use Unreal A* to find a complete path from the player to the door.
-3. Travel that path using only virtual W/A/S/D and mouse movement.
-4. Open the metal door with virtual `E` only when it is closed.
-5. Repeat the same process for the expedition door and observe entry.
-6. Find a reachable loot box, make it the waypoint, travel to it, open it, and
+1. Prove a virtual W press and release changes the live player's position
+   through `APlayerController::InputKey`, with no console command involved.
+2. Prove virtual relative mouse movement changes the live player's view through
+   the same Unreal player-input path.
+3. Select the metal-door waypoint.
+4. Use Unreal A* to find a complete path from the player to the door.
+5. Travel that path using only virtual W/A/S/D and mouse movement.
+6. Open the metal door with virtual `E` only when it is closed.
+7. Repeat the same process for the expedition door and observe entry.
+8. Find a reachable loot box, make it the waypoint, travel to it, open it, and
    loot it through player input.
-7. Release all input on arrival and failure.
-8. Meet the limits in [the MISERY performance design](../misery-mod/docs/performance.md).
+9. Release all input on arrival and failure.
+10. Meet the limits in [the MISERY performance design](../misery-mod/docs/performance.md).
 
 ### Unity proof
 
