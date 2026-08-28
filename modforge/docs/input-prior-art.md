@@ -24,10 +24,10 @@ End state after the 2026-05-16 session: **all three layers shipped + smoke green
 | I-4: L3 surface + HorseyInputSurface | `6796b7bc` | `Backend::L3` + `set_input_surface`/`input_surface` slot + per-cmdlet `l3_or_fallback`. `HorseyInputSurface` v1 writes `LOC+0x174`/`+0x178` cursor floats directly. Graceful degrade when no save loaded. |
 | Unit tests | `054053d3` | 8 parser tests (`Backend`/`Button`/`Key`). |
 | I-6: live action journal | `d18f3726` | Versioned operation actions, observed-value waits, and assertions in `modforge::client::live_journal`; recorded, saved, loaded, replayed, and restored live against MISERY movement speed. |
-| I-7: waypoint routes | `d331b31d`, `96242512` | Versioned world-space routes, recorded traversable edges, A*, trail reduction, closed-loop steering, relative mouse input, stuck evidence, and journal-owned semantic route actions. Five unit tests and the 9.31-second live MISERY outward-and-return replay are green. |
-| I-8: engine navigation route discovery | `2db361e5` | UFunction layout discovery, live endpoint projection, Unreal player-controller navigation, automatic diagnostic sampling, nearby-door diagnosis, bounded interaction recovery, and a cold MISERY spawn-to-expedition proof. The final cold run saved exactly three stop waypoints and two edges, opened the bunker door once, entered the expedition once, and completed in 23.94 seconds. |
-| I-9: live target discovery and looting | in progress | Exact pushed build `b9d41c7f` entered the expedition scan-free, rejected two unreachable crates, selected the lowest-cost reachable `BP_StashMid_C`, and traversed its one A* edge. Remaining: aim through player-controller yaw and pitch input when foreground mouse capture is absent, then open and loot the retained crate. |
-| I-10: shared player-input route execution | design corrected; implementation pending | `InputSurface` must inject virtual W/A/S/D state, relative mouse movement, and `E` press/release into the game's normal player input processing. The current Ueforge adapter is not acceptable because it calls movement, look, and interaction functions directly. A* still chooses the stop-to-stop route, Unreal navigation still supplies detailed path points, and the shared follower still decides which player controls to send. |
+| I-7: waypoint routes | `d331b31d`, `96242512` | Versioned world-space routes, recorded travel steps, trail reduction, closed-loop steering, relative mouse input, stuck evidence, and journal-owned route actions. Five unit tests and the 9.31-second live MISERY outward-and-return replay are green. The waypoint-graph A* added in this slice is rejected as MISERY's pathfinding authority. |
+| I-8: engine navigation route discovery | `2db361e5` | UFunction layout discovery, live endpoint projection, Unreal player-controller navigation, automatic diagnostic sampling, nearby-door diagnosis, bounded interaction recovery, and a cold MISERY spawn-to-expedition proof. The final cold run saved exactly three stop waypoints and two travel steps, opened the bunker door once, entered the expedition once, and completed in 23.94 seconds. |
+| I-9: live target discovery and looting | in progress | Exact pushed build `b9d41c7f` entered the expedition scan-free, rejected two unreachable crates, selected the lowest-cost reachable `BP_StashMid_C`, and traversed its route. Remaining: aim through player-controller yaw and pitch input when foreground mouse capture is absent, then open and loot the retained crate. |
+| I-10: player-input route execution | design corrected; implementation pending | `InputSurface` must inject virtual W/A/S/D state, relative mouse movement, and `E` press/release into the game's normal player input processing. The current Ueforge adapter is not acceptable because it calls movement, look, and interaction functions directly. Unreal navigation's A* determines the detailed walkable route from the current position to the selected waypoint. The bot reads that path and decides which player controls to send. |
 
 **Cmdlets shipped** (14 total under `input.*`):
 
@@ -49,7 +49,7 @@ input.cursor.get    input.foreground.hwnd    input.find_hwnd_by_pid    input.sel
 
 **Open items for future sessions:**
 
-- Discover and loot the nearest placed MISERY expedition box with the box itself as the target waypoint. Then add an alternate stop-to-stop edge for a measured high-level A* reroute proof.
+- Discover and loot the nearest placed MISERY expedition box with the box itself as the target waypoint.
 - HorseyInputSurface v2: direct mouse-state struct writes + direct keyboard buffer writes (per the engine-internal findings above).
 - HK1 Shift+Click transfer migration. Now unblocked by L3; pending an in-save smoke run.
 - Cross-game proof: grounded2-mod or schedule1 ships its own `InputSurface` impl.
@@ -68,9 +68,9 @@ input.cursor.get    input.foreground.hwnd    input.find_hwnd_by_pid    input.sel
 
 **Live action journal:** injected games are not deterministic simulations owned by Modforge. Their journal records semantic control-plane operations, then waits for observable conditions and asserts the resulting values. Raw timed input remains one operation type, not the authority for progress.
 
-**3D route replay:** store meaningful stops as world-space waypoints, not every sampled position and not one long timed keyboard and mouse stream. An edge means travel between two stops. Modforge A* selects stop-to-stop edges. The host navigation system calculates detailed path points within an edge, and Modforge's shared follower executes those points through the registered `InputSurface`. Dense position samples are diagnostic breadcrumbs only.
+**3D route replay:** store meaningful stops as world-space waypoints, not every sampled position and not one long timed keyboard and mouse stream. The route or current action selects the next waypoint. Unreal navigation's A* calculates the detailed walkable path from the player's current position to that waypoint. The bot reads those path points and sends player input through the registered `InputSurface`. Dense position samples are diagnostic breadcrumbs only.
 
-**Live target discovery:** a discovered world target such as a loot box is itself a semantic waypoint. The game adapter finds live actors, projects their positions onto the navigation surface, and rejects invalid or partial paths. Straight-line proximity does not prove reachability. It does not author intermediate graph nodes. Modforge A* selects an available stop-to-target edge by the host's measured complete-path cost, the host navigation system resolves the detailed path, and completion requires an observed gameplay result after player-like interaction.
+**Live target discovery:** a discovered world target such as a loot box is itself a semantic waypoint. The game adapter finds live actors, projects their positions onto the navigation surface, and asks Unreal navigation for a path to each candidate. It rejects invalid or partial paths and may choose the reachable target with the lowest returned path cost. Straight-line proximity does not prove reachability. Unreal navigation's A* then determines the detailed path to the selected target, and completion requires an observed gameplay result after player-like interaction.
 
 **Injected-game command boundary:** a bot command is delivered inside the game process through `InputSurface`. For MISERY, the only allowed control outputs are virtual W/A/S/D state, relative mouse movement, and `E` press/release injected into Unreal's normal player input processing. The game then applies its existing bindings and performs movement, camera rotation, and interaction exactly as it does for a human player. The bot does not call those gameplay operations itself. Bot execution must not focus a window, capture or move the physical cursor, or send OS-global keyboard input. L1 `SendInput` remains available for desktop-level operations such as UE4SS hot reload and explicit input smoke tests, but it is not a MISERY bot backend.
 
@@ -437,29 +437,28 @@ Properties:
 
 A long first-person route is not authoritative as raw timed input. One collision, frame hitch, loading pause, or changed enemy position can invalidate every later mouse delta. The durable recording is a graph of meaningful places and proven travel between them.
 
-The route model uses three distinct terms:
+The route model uses two distinct location terms:
 
-- A **waypoint** is a meaningful place where travel stops so the controller can observe arrival, perform an action, or choose another edge. It records a stable route-local ID, world position, arrival radius, and optional arrival condition or action.
-- An **edge** is a proven movement request between two waypoints. It may record distance, observed traversal time, danger, failures, or temporary blockage.
+- A **waypoint** is a meaningful place where the bot stops to observe arrival, perform an action, or start travelling to the next goal. It records a stable route-local ID, world position, arrival radius, and optional arrival condition or action.
 - A **breadcrumb** is a transient position sample retained for diagnostics, visualization, stuck evidence, or later route analysis. Breadcrumbs are never durable waypoints and never become A* nodes merely because the player passed through them.
 
-There are two pathfinding levels. When the waypoint graph contains alternatives, Modforge's A* chooses the sequence of stops. Between the current stop and the next stop, Unreal navigation's A* determines the detailed walkable route and returns its path points. Neither A* implementation moves the player. The shared follower works through the chosen path points and controls the player with virtual keys and mouse movement. The follower never chooses or changes the route. Games without a usable navigation surface still use the shared follower, but must supply another route planner. The durable graph always contains stops rather than fixed-distance samples.
+There is one pathfinding level. The route or current action selects the next meaningful waypoint. Unreal navigation's A* searches the navigation mesh from the player's current position to that waypoint and returns the detailed walkable path. A* does not move the player. The bot works through the returned path points using virtual keys and mouse movement. The bot does not choose or change the path. Games without a usable navigation surface must supply another A* implementation over their walkable geometry. Durable waypoints remain stops and goals. They are not the nodes searched by A*.
 
 Manual recording may capture player position, camera rotation, key transitions, mouse-button transitions, and relative look axes on every game tick. That dense stream is evidence. Distillation promotes only meaningful stops, actions, and branch points into the durable graph.
 
-Only the shared follower may decide player controls while an edge is active. The complete route is:
+Only the bot may decide player controls while travelling to a waypoint. The complete route is:
 
 ```text
-A* selects the stop sequence when alternatives exist
-  -> Unreal navigation's A* determines the walkable route to the next stop
-  -> Unreal returns detailed path points for that route
-  -> the follower compares those points with observed player position and view
+the route or current action selects the next waypoint
+  -> Unreal navigation's A* searches from the player to that waypoint
+  -> Unreal returns the detailed path points
+  -> the bot compares those points with observed player position and view
   -> InputSurface injects virtual W/A/S/D and relative mouse movement
   -> the game's normal input bindings move and aim the player
   -> the bot observes the result and chooses the next controls
 ```
 
-The follower advances through path points, marks arrival inside the destination radius, and releases every held key on arrival, cancellation, or stuck detection. `InputSurface` only injects virtual player input. It does not move, rotate, interact, or decide the route.
+The bot advances through path points, marks arrival inside the destination radius, and releases every held key on arrival, cancellation, or stuck detection. `InputSurface` only injects virtual player input. It does not move, rotate, interact, or decide the route.
 
 The following are forbidden bot execution paths because they bypass the player's input route:
 
@@ -471,7 +470,7 @@ The following are forbidden bot execution paths because they bypass the player's
 
 Reading player position, view rotation, door state, interaction range, and completion state is observation, not control. Those observations may guide the next virtual player input but may never replace it.
 
-A door interaction is a waypoint action, not another movement sample. At the bunker metal door, the follower stops, aims the player with virtual mouse movement, observes whether the interaction point is in range, and injects one virtual `E` press/release only when the door is closed. It starts the next edge only after passage is observed. At the expedition door, the same player route aims and presses `E`, and succeeds only when the game observes that the expedition was entered. Combat similarly pauses or replaces edge travel and returns control only after combat completion is observed.
+A door interaction is a waypoint action, not another movement sample. At the bunker metal door, the bot stops, aims the player with virtual mouse movement, observes whether the interaction point is in range, and injects one virtual `E` press/release only when the door is closed. It starts travelling to the next waypoint only after passage is observed. At the expedition door, the bot aims and presses `E`, and succeeds only when the game observes that the expedition was entered. Combat similarly pauses travel and resumes it only after combat completion is observed.
 
 For the first MISERY route, the durable graph is exactly:
 
@@ -481,22 +480,22 @@ spawn
   -> expedition-door [stop; interact and observe expedition entered]
 ```
 
-That is three waypoints and two edges. The bunker-door action is conditional because an open door needs no input. The expedition-door action is required because reaching its position is not the journey's completion condition; entering the expedition is. There is no after-door waypoint unless live evidence establishes a distinct stop, action, or branch there. Modforge A* sees these three nodes and chooses among alternate stop sequences when they exist. Unreal navigation's A* determines the detailed walkable route between each pair of stops. The shared follower turns those chosen path points into virtual W/A/S/D and mouse input through the same bindings used by the player.
+That is three waypoints and two travel steps. The bunker-door action is conditional because an open door needs no input. The expedition-door action is required because reaching its position is not the journey's completion condition; entering the expedition is. There is no after-door waypoint unless live evidence establishes a distinct stop or action there. The route explicitly selects the metal door, then the expedition door. For each selected waypoint, Unreal navigation's A* determines the detailed walkable path from the player's current position. The bot turns those path points into virtual W/A/S/D and mouse input through the same bindings used by the player.
 
-A* chooses the lowest-cost known route between waypoint IDs when the graph has alternate edges. An edge enters the graph only after the host navigation system supplies it or a recording proves it traversable. A separate observer determines whether the edge is currently usable. An unobserved straight line between two positions is never assumed walkable.
+A selected waypoint is usable only when Unreal navigation returns a valid, complete path to it. An unobserved straight line between two positions is never assumed walkable. If the path becomes blocked, the bot asks Unreal navigation's A* for a new path from the player's current position to the same waypoint.
 
 The live action journal coordinates the route without becoming the pathing loop:
 
 ```text
-start route follower: spawn -> expedition
+start bot travel: spawn -> expedition
 wait until expedition waypoint is reached
 start combat controller for the selected live enemy
 wait until that enemy is dead
-start route follower: expedition -> spawn
+start bot travel: expedition -> spawn
 wait until spawn waypoint is reached
 ```
 
-The first measured proof reads the live MISERY player and placed expedition-door positions, projects both onto Unreal navigation, and lets the player-controller path follower walk without teleporting. It reached the expedition entrance from a cold start in 53.72 seconds, retained 72 one-meter diagnostic breadcrumbs, detected the blocking metal door, and continued after three bounded interaction attempts. Those 72 samples are evidence, not a durable route. The permanent flow now saves the exact three-waypoint graph above and retains dense samples separately as breadcrumbs. With the player already at the expedition-door stop from the earlier proof, it sent the same `E` keypress as the player and observed the transition into the expedition in 0.65 seconds. A cold combined run remains before I-8 is complete. The higher-level A* proof follows when the graph contains a fork: block or reject one known stop-to-stop edge and verify that replay reaches the goal through an alternate proven edge.
+The first measured proof reads the live MISERY player and placed expedition-door positions, projects both onto Unreal navigation, and makes the bot walk without teleporting. It reached the expedition entrance from a cold start in 53.72 seconds, retained 72 one-meter diagnostic breadcrumbs, detected the blocking metal door, and continued after three bounded interaction attempts. Those 72 samples are evidence, not durable waypoints. The permanent flow now saves the exact three-waypoint route above and retains dense samples separately as breadcrumbs. With the player already at the expedition-door stop from the earlier proof, it sent the same `E` keypress as the player and observed the transition into the expedition in 0.65 seconds. A cold combined run remains before I-8 is complete.
 
 ---
 
