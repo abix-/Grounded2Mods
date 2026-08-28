@@ -18,26 +18,22 @@ fn observation(x: f64, y: f64, yaw_deg: f64) -> PlayerObservation {
 
 #[test]
 fn route_is_an_ordered_list_of_stops_without_pathfinding() {
-    let route = Route::new(
-        "spawn to expedition",
-        vec![
-            Waypoint::new("spawn", position(0.0, 0.0, 0.0), 20.0),
-            Waypoint::new("metal-door", position(100.0, 0.0, 0.0), 20.0),
-            Waypoint::new("expedition-door", position(200.0, 0.0, 0.0), 20.0),
-        ],
-    )
+    let route = Route::new(vec![
+        Waypoint::new("spawn", position(0.0, 0.0, 0.0), 20.0),
+        Waypoint::new("metal-door", position(100.0, 0.0, 0.0), 20.0),
+        Waypoint::new("expedition-door", position(200.0, 0.0, 0.0), 20.0),
+    ])
     .unwrap();
 
     assert_eq!(
         route
-            .waypoints_after("spawn", "expedition-door")
-            .unwrap()
+            .waypoints()
             .iter()
+            .skip(1)
             .map(|waypoint| waypoint.id.as_str())
             .collect::<Vec<_>>(),
         vec!["metal-door", "expedition-door"]
     );
-    assert!(route.waypoints_after("expedition-door", "spawn").is_err());
 }
 
 #[test]
@@ -48,7 +44,6 @@ fn path_points_are_separate_from_the_goal_waypoint() {
     ])
     .unwrap();
     assert_eq!(path.points().len(), 2);
-    assert_eq!(path.cost(), 50.0);
 }
 
 #[test]

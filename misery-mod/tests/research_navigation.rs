@@ -21,11 +21,9 @@ use modforge::route::{
 };
 use serde_json::{Value, json};
 
-const PLAYER_CLASS: &str = "BP_SGKMasterCharacter_C";
 const METAL_DOOR_CLASS: &str = "BP_MetalDoor_C";
 const EXPEDITION_DOOR_CLASS: &str = "BP_ExpeditionDoor_C";
 const STORAGE_CLASS: &str = "BP_MasterStorageBuildPart_C";
-const CONTAINER_WINDOW_CLASS: &str = "BP_ContainerWindow_C";
 const LOOT_BOX_CLASSES: [&str; 7] = [
     "BP_BigCrate_C",
     "BP_MidCrate_C",
@@ -312,25 +310,19 @@ fn spawn_to_expedition_route(
     metal_door: [f64; 3],
     expedition_door: [f64; 3],
 ) -> Route {
-    Route::new(
-        "misery spawn to expedition",
-        vec![
-            Waypoint::new("spawn", position(spawn), ARRIVAL_CM),
-            Waypoint::new("metal-door", position(metal_door), ARRIVAL_CM),
-            Waypoint::new("expedition-door", position(expedition_door), ARRIVAL_CM),
-        ],
-    )
+    Route::new(vec![
+        Waypoint::new("spawn", position(spawn), ARRIVAL_CM),
+        Waypoint::new("metal-door", position(metal_door), ARRIVAL_CM),
+        Waypoint::new("expedition-door", position(expedition_door), ARRIVAL_CM),
+    ])
     .unwrap()
 }
 
 fn expedition_to_loot_route(start: [f64; 3], loot_box: [f64; 3]) -> Route {
-    Route::new(
-        "misery expedition to loot box",
-        vec![
-            Waypoint::new("expedition-entry", position(start), ARRIVAL_CM),
-            Waypoint::new("loot-box", position(loot_box), ARRIVAL_CM),
-        ],
-    )
+    Route::new(vec![
+        Waypoint::new("expedition-entry", position(start), ARRIVAL_CM),
+        Waypoint::new("loot-box", position(loot_box), ARRIVAL_CM),
+    ])
     .unwrap()
 }
 
@@ -413,24 +405,6 @@ fn aim_at(api: &Api, player_selector: &str, target: [f64; 3]) {
             unchanged_steps = 0;
         }
     }
-}
-
-fn matching_functions(api: &Api, class: &str, needles: &[&str]) -> Value {
-    let response = api.op("class_functions_by_name", json!({"class": class}));
-    if !response.ok {
-        return json!({"class": class, "error": response.error});
-    }
-    let functions = response.result["functions"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter(|function| {
-            let name = function["name"].as_str().unwrap_or_default();
-            needles.iter().any(|needle| name.contains(needle))
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    json!({"class": class, "functions": functions})
 }
 
 fn put_u64(bytes: &mut [u8], offset: usize, value: u64) {
@@ -789,6 +763,28 @@ fn open_loot_box(
     panic!("E was pressed at the loot box, but its inventory did not gain a using player")
 }
 
+fn open_bunker_door_at_stop(
+    api: &Api,
+    calls: &NavigationCalls,
+    player_selector: &str,
+    door: &ClassInstance,
+) -> Result<bool, String> {
+    if !interaction_allowed(api, door) {
+        return Ok(false);
+    }
+    let (interaction_point, extent) = actor_bounds(api, &door.addr_selector);
+    aim_at(api, player_selector, interaction_point);
+    let view = pawn_view_location(api, player_selector);
+    if !interaction_in_range(view, interaction_point, extent) {
+        return Err(format!(
+            "door interaction is out of range: view={view:?} point={interaction_point:?} extent={extent:?}"
+        ));
+    }
+    interact(api, calls, player_selector);
+    std::thread::sleep(Duration::from_secs(1));
+    Ok(true)
+}
+
 fn walk_to_waypoint(
     api: &Api,
     calls: &NavigationCalls,
@@ -796,11 +792,9 @@ fn walk_to_waypoint(
     pathfinding_context: u64,
     player_selector: &str,
     waypoint: &Waypoint,
-    bunker_door: Option<&ClassInstance>,
-) -> Result<usize, String> {
+) -> Result<(), String> {
     let started = Instant::now();
     let mut last_report = 0;
-    let mut interactions = 0;
     let surface = ControlPlaneInput { api };
     'replan: loop {
         let current = actor_location(api, player_selector);
@@ -843,7 +837,7 @@ fn walk_to_waypoint(
             let output = bot.tick(observed, started.elapsed().as_millis() as u64);
             surface.commands(&output.commands)?;
             match output.status {
-                BotStatus::Arrived => return Ok(interactions),
+                BotStatus::Arrived => return Ok(()),
                 BotStatus::Travelling { .. } => {}
                 BotStatus::Cancelled => {
                     return Err(format!(
@@ -852,42 +846,10 @@ fn walk_to_waypoint(
                     ));
                 }
                 BotStatus::Stuck => {
-                    let blocking_door = bunker_door.filter(|door| {
-                        distance(current, actor_location(api, &door.addr_selector)) <= 1_000.0
-                            && interactions < 3
-                    });
-                    let Some(blocking_door) = blocking_door else {
-                        return Err(format!(
-                            "player-input navigation stuck at {current:?}, {remaining:.1} cm from '{}'",
-                            waypoint.id
-                        ));
-                    };
-                    interactions += 1;
-                    println!("bunker_door_interact attempt={interactions} location={current:?}");
-                    let (interaction_point, extent) =
-                        actor_bounds(api, &blocking_door.addr_selector);
-                    aim_at(api, player_selector, interaction_point);
-                    let view = pawn_view_location(api, player_selector);
-                    let in_range = interaction_in_range(view, interaction_point, extent);
-                    let allowed = interaction_allowed(api, blocking_door);
                     println!(
-                        "bunker_door_state target={} point={interaction_point:?} extent={extent:?} view={view:?} in_range={in_range} allowed={allowed}",
-                        blocking_door.full_name
+                        "navigation_replan waypoint={} location={current:?} remaining_cm={remaining:.1}",
+                        waypoint.id
                     );
-                    if !in_range {
-                        return Err(format!(
-                            "door interaction is out of range: view={view:?} point={interaction_point:?} extent={extent:?}"
-                        ));
-                    }
-                    if !allowed {
-                        return Err("door does not currently allow interaction".into());
-                    }
-                    interact(api, calls, player_selector);
-                    println!(
-                        "bunker_door_interaction_sent target={}",
-                        blocking_door.full_name
-                    );
-                    std::thread::sleep(Duration::from_secs(1));
                     continue 'replan;
                 }
             }
@@ -991,98 +953,6 @@ fn real_player_input_moves_on_w_and_stops_on_release() {
 }
 
 #[test]
-#[ignore = "reads the live MISERY player's interaction functions"]
-fn player_interaction_surface_is_discoverable() {
-    let Some(api) = api_or_skip() else { return };
-    assert!(offsets_live(&api), "MISERY offsets are not live");
-    let surface = matching_functions(&api, PLAYER_CLASS, &["Interact", "InpActEvt_E", "Use"]);
-    println!("player_interaction_surface={surface}");
-    println!(
-        "player_view_surface={}",
-        matching_functions(&api, PLAYER_CLASS, &["View", "Eye", "Camera"])
-    );
-    assert!(
-        surface["functions"]
-            .as_array()
-            .is_some_and(|functions| !functions.is_empty()),
-        "the live player exposes no interaction function"
-    );
-    println!(
-        "actor_components_layout={}",
-        function_layout(&api, "Actor", "K2_GetComponentsByClass")
-    );
-    println!(
-        "actor_bounds_layout={}",
-        function_layout(&api, "Actor", "GetActorBounds")
-    );
-    let player = retained_player(&api);
-    let player_location = actor_location(&api, &player.addr_selector);
-    let cameras = api.op(
-        "components_of_class",
-        json!({"actor": player.addr, "class": "CameraComponent"}),
-    );
-    assert!(
-        cameras.ok,
-        "player camera discovery failed: {:?}",
-        cameras.error
-    );
-    println!("player_camera_components={}", cameras.result);
-    let door = client::actors_of_class(&api, player.addr, METAL_DOOR_CLASS)
-        .into_iter()
-        .min_by(|left, right| {
-            distance(player_location, actor_location(&api, &left.addr_selector)).total_cmp(
-                &distance(player_location, actor_location(&api, &right.addr_selector)),
-            )
-        })
-        .expect("live metal door exists");
-    let components = api.op(
-        "components_of_class",
-        json!({"actor": door.addr, "class": "SceneComponent"}),
-    );
-    assert!(
-        components.ok,
-        "door component discovery failed: {:?}",
-        components.error
-    );
-    println!("door_interaction_components={}", components.result);
-    let (allow_interaction, _) = api
-        .call_ufunction(
-            METAL_DOOR_CLASS,
-            "SGK AllowInteraction",
-            &door.addr_selector,
-            &[0],
-        )
-        .expect("door SGK AllowInteraction failed");
-    println!(
-        "door_allow_interaction_at_distance={} distance={:.1}",
-        allow_interaction[0],
-        distance(player_location, actor_location(&api, &door.addr_selector))
-    );
-    for component in components.result["components"]
-        .as_array()
-        .into_iter()
-        .flatten()
-    {
-        let selector = component["addr_selector"]
-            .as_str()
-            .expect("component selector is a string");
-        println!(
-            "door_component={} location={:?}",
-            component["name"].as_str().unwrap_or_default(),
-            scene_component_location(&api, selector)
-        );
-    }
-    println!(
-        "door_interaction_surface={}",
-        matching_functions(
-            &api,
-            METAL_DOOR_CLASS,
-            &["Interact", "Point", "Range", "Distance", "Allow", "Can"]
-        )
-    );
-}
-
-#[test]
 #[ignore = "discovers placed loot boxes in a live MISERY expedition"]
 fn nearby_expedition_loot_box_is_discoverable() {
     let Some(api) = api_or_skip() else { return };
@@ -1090,23 +960,6 @@ fn nearby_expedition_loot_box_is_discoverable() {
     let player = retained_player(&api);
     let player_location = actor_location(&api, &player.addr_selector);
     nearest_loot_box(&api, player.addr, player_location);
-}
-
-#[test]
-#[ignore = "inspects the live MISERY loot interaction surface"]
-fn loot_interaction_surface_is_discoverable() {
-    let Some(api) = api_or_skip() else { return };
-    assert!(offsets_live(&api), "MISERY offsets are not live");
-    for class in ["BP_BigCrate_C", "BP_MasterStorageBuildPart_C"] {
-        println!(
-            "loot_actor_surface={}",
-            matching_functions(
-                &api,
-                class,
-                &["Interact", "Open", "Use", "Inventory", "Container", "Loot"]
-            )
-        );
-    }
 }
 
 #[test]
@@ -1128,12 +981,6 @@ fn unreal_navigation_opens_nearest_expedition_loot_box() {
         let current = actor_location(&api, &player.addr_selector);
         let projected_start = wait_for_navigation(&api, &calls, player.addr, current);
         let route = expedition_to_loot_route(projected_start, target.target);
-        assert_eq!(
-            route
-                .waypoints_after("expedition-entry", "loot-box")
-                .unwrap(),
-            [route.waypoint("loot-box").unwrap().clone()]
-        );
         match walk_to_waypoint(
             &api,
             &calls,
@@ -1141,9 +988,8 @@ fn unreal_navigation_opens_nearest_expedition_loot_box() {
             player.addr,
             &player.addr_selector,
             route.waypoint("loot-box").unwrap(),
-            None,
         ) {
-            Ok(_) => {
+            Ok(()) => {
                 selected = Some((target, route));
                 break;
             }
@@ -1171,14 +1017,6 @@ fn unreal_navigation_opens_nearest_expedition_loot_box() {
         route.waypoints().len(),
     );
     println!("loot_performance={timing_report}");
-    println!(
-        "container_loot_surface={}",
-        matching_functions(
-            &api,
-            CONTAINER_WINDOW_CLASS,
-            &["Take", "Transfer", "Loot", "Item", "Inventory", "Click"]
-        )
-    );
 }
 
 #[test]
@@ -1242,23 +1080,6 @@ fn unreal_navigation_enters_expedition_through_three_stops() {
         "route endpoint contains a non-finite coordinate"
     );
 
-    for (class, needles) in [
-        (
-            "NavigationSystemV1",
-            &["Path", "ProjectPoint", "NavigationSystem"][..],
-        ),
-        (
-            "NavigationPath",
-            &["Path", "Valid", "Partial", "Cost", "Length"][..],
-        ),
-        (PLAYER_CLASS, &["Interact", "InpActEvt_E", "Use"][..]),
-    ] {
-        println!(
-            "navigation_surface={}",
-            matching_functions(&api, class, needles)
-        );
-    }
-
     let projected_start = wait_for_navigation(&api, &calls, player.addr, start);
     let projected_metal_door = wait_for_navigation(&api, &calls, player.addr, metal_door.2);
     let metal_door_stop = wait_for_navigation(
@@ -1274,42 +1095,35 @@ fn unreal_navigation_enters_expedition_through_three_stops() {
 
     let route = spawn_to_expedition_route(projected_start, metal_door_stop, projected_goal);
     assert_eq!(route.waypoints().len(), 3);
-    assert_eq!(
-        route.waypoints_after("spawn", "expedition-door").unwrap(),
-        [
-            route.waypoint("metal-door").unwrap().clone(),
-            route.waypoint("expedition-door").unwrap().clone()
-        ]
-    );
     let _stop = StopMovement { api: &api };
     let started = Instant::now();
     let metal_door_waypoint = route.waypoint("metal-door").unwrap();
     let expedition_door_waypoint = route.waypoint("expedition-door").unwrap();
-    let first_travel_interactions = walk_to_waypoint(
+    walk_to_waypoint(
         &api,
         &calls,
         player.addr,
         player.addr,
         &player.addr_selector,
         metal_door_waypoint,
-        None,
     )
     .expect("spawn to metal door traversal failed");
-    assert_eq!(first_travel_interactions, 0);
-    let bunker_door_interactions = walk_to_waypoint(
+    let bunker_door_opened =
+        open_bunker_door_at_stop(&api, &calls, &player.addr_selector, &metal_door.1)
+            .expect("bunker door interaction failed");
+    walk_to_waypoint(
         &api,
         &calls,
         player.addr,
         player.addr,
         &player.addr_selector,
         expedition_door_waypoint,
-        Some(&metal_door.1),
     )
     .expect("metal door to expedition door traversal failed");
     let (entered_location, expedition_door_interactions) =
         enter_expedition(&api, &calls, &player.addr_selector, projected_goal);
     println!(
-        "expedition_entered elapsed_s={:.2} location={entered_location:?} waypoints={} bunker_door_interactions={bunker_door_interactions} expedition_door_interactions={expedition_door_interactions}",
+        "expedition_entered elapsed_s={:.2} location={entered_location:?} waypoints={} bunker_door_opened={bunker_door_opened} expedition_door_interactions={expedition_door_interactions}",
         started.elapsed().as_secs_f64(),
         route.waypoints().len(),
     );

@@ -2,7 +2,7 @@
 
 ## Current focus
 
-Send W press, held state, and release through `APlayerController::InputKey`, then make the permanent live W test pass.
+Investigate exactly how MISERY handles real player keyboard input, use that same mechanism for W press and release, then make the permanent live W test pass.
 
 ## Design goals
 
@@ -10,7 +10,7 @@ Send W press, held state, and release through `APlayerController::InputKey`, the
 - Topside-style fixed-tick journals remain authoritative for simulations Modforge owns.
 - Injected games use the same producer and consumer separation, but replay operation actions through the existing control plane and advance only after observable condition gates.
 - MISERY is the first proof: record a movement-speed write, wait for the live read, assert it, restore the original value, and replay the saved journal.
-- A waypoint is a meaningful stop for arrival, observation, action, or branch selection. Dense position samples are debug positions only and are never used for navigation.
+- A waypoint is a meaningful stop for arrival, observation, action, or branch selection. Navigation does not record the positions walked between waypoints.
 - The first MISERY route is exactly `spawn -> metal-door -> expedition-door`. The metal-door waypoint opens the bunker door only when closed; the expedition-door waypoint interacts and waits until expedition entry is observed.
 - There is one pathfinding level. The route or current action selects the next meaningful waypoint. Unreal navigation's A* searches the navigation mesh from the player's current position to that waypoint and returns the detailed path points. Durable waypoints are stops and goals, not A* search nodes.
 - A waypoint is usable only when Unreal navigation returns a valid, complete path to it. An unobserved straight line through the 3D world is never assumed walkable.
@@ -60,6 +60,10 @@ Send W press, held state, and release through `APlayerController::InputKey`, the
 
 ## Last session summary
 
+- Removed navigation scope creep: generated loot-box approach points, route persistence, walked-position recording, reverse routes, unused route metadata and cost calculation, source-text checks, and live function-discovery probes.
+- Loot boxes remain the waypoint while Unreal projection happens only inside the A* request. Bunker-door interaction now happens once at the metal-door stop when interaction is allowed, instead of after movement gets stuck.
+- Preserved `modforge::client::live_journal` and its MISERY action-journal proof unchanged.
+- Verified all 6 shared waypoint-route tests pass and the MISERY navigation test target compiles with only the existing `STACK_TWEAK` warning.
 - Added `input.player.unreal`, which reads the retained player's reflected `Controller` and the controller's reflected `PlayerInput` field on the game thread. Both property offsets are cached after their first lookup.
 - Restarted MISERY and proved the operation returns `BP_SGKController_C` and `EnhancedPlayerInput`. Two consecutive calls returned identical non-null object addresses and offsets. All 63 Ueforge tests and the workspace check pass.
 - Added the permanent live W press-and-release test. It records the starting, moving, released, stopped, and final positions, always attempts movement-key release, and fails unless W moves the player and release stops movement.
@@ -320,7 +324,7 @@ Send W press, held state, and release through `APlayerController::InputKey`, the
 - Move the current Unreal navigation call and path decoding into Ueforge so MISERY receives the shared path format directly.
 - Make Unityforge inject the same virtual W/A/S/D, mouse, and interaction commands through Unity's normal player input.
 - Prove one live Unity waypoint trip through the same Modforge bot-navigation code used by MISERY.
-- Send W press, held state, and release through `APlayerController::InputKey`.
+- Investigate MISERY's real player keyboard-input implementation, then send W press and release through that exact mechanism.
 - Live-verify Unreal A* pathing from the player's current position to each selected waypoint, driven through virtual player input, from spawn through both doors on a restarted local game.
 - Aim at the door's colliding-bounds center from the active camera and gate `E` on interaction range.
 - Complete ranked crate fallback, retained-state opening, UI transfer, and inventory-count evidence.

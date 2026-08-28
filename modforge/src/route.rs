@@ -53,16 +53,12 @@ impl Waypoint {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Route {
-    pub name: String,
     waypoints: Vec<Waypoint>,
 }
 
 impl Route {
-    pub fn new(name: impl Into<String>, waypoints: Vec<Waypoint>) -> Result<Self, String> {
-        let route = Self {
-            name: name.into(),
-            waypoints,
-        };
+    pub fn new(waypoints: Vec<Waypoint>) -> Result<Self, String> {
+        let route = Self { waypoints };
         route.validate()?;
         Ok(route)
     }
@@ -73,25 +69,6 @@ impl Route {
 
     pub fn waypoint(&self, id: &str) -> Option<&Waypoint> {
         self.waypoints.iter().find(|waypoint| waypoint.id == id)
-    }
-
-    pub fn waypoints_after(&self, start: &str, goal: &str) -> Result<Vec<Waypoint>, String> {
-        let start_index = self.index(start)?;
-        let goal_index = self.index(goal)?;
-        if start_index < goal_index {
-            Ok(self.waypoints[start_index + 1..=goal_index].to_vec())
-        } else if start_index == goal_index {
-            Ok(Vec::new())
-        } else {
-            Err(format!("route waypoint '{goal}' comes before '{start}'"))
-        }
-    }
-
-    fn index(&self, id: &str) -> Result<usize, String> {
-        self.waypoints
-            .iter()
-            .position(|waypoint| waypoint.id == id)
-            .ok_or_else(|| format!("route waypoint '{id}' does not exist"))
     }
 
     fn validate(&self) -> Result<(), String> {
@@ -154,13 +131,6 @@ impl Path {
 
     pub fn points(&self) -> &[PathPoint] {
         &self.points
-    }
-
-    pub fn cost(&self) -> f64 {
-        self.points
-            .windows(2)
-            .map(|pair| pair[0].position.distance(pair[1].position))
-            .sum()
     }
 }
 
