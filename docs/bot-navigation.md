@@ -2,7 +2,7 @@
 
 > **Authoritative on:** how a Modforge bot selects a waypoint, finds a
 > walkable path to it, and travels that path using the same input as a player.
-> Approved words come from [the repository terminology](../../docs/terminology.md).
+> Approved words come from [the repository terminology](terminology.md).
 
 ## Goal
 
@@ -100,5 +100,4 @@ A restarted MISERY run must:
 6. Find a reachable loot box, make it the waypoint, travel to it, open it, and
    loot it through player input.
 7. Release all input on arrival and failure.
-8. Meet the limits in [the MISERY performance design](../../misery-mod/docs/performance.md).
-
+8. Meet the limits in [the MISERY performance design](../misery-mod/docs/performance.md).

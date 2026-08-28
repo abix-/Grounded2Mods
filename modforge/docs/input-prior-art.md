@@ -68,7 +68,7 @@ input.cursor.get    input.foreground.hwnd    input.find_hwnd_by_pid    input.sel
 
 **Live action journal:** injected games are not deterministic simulations owned by Modforge. Their journal records semantic control-plane operations, then waits for observable conditions and asserts the resulting values. Raw timed input remains one operation type, not the authority for progress.
 
-**Bot navigation:** the route, A*, waypoint, door, loot-target, and player-input design is owned by [bot-navigation.md](bot-navigation.md). This document owns input mechanism research only.
+**Bot navigation:** the route, A*, waypoint, door, loot-target, and player-input design is owned by [bot-navigation.md](../../docs/bot-navigation.md). This document owns input mechanism research only.
 
 **Anti-cheat:** all current targets are LOW risk. Tag `dwExtraInfo` and restore foreground anyway (cheap insurance).
 
@@ -432,7 +432,7 @@ Properties:
 ### Bot navigation
 
 The authoritative route, A*, waypoint, door, loot-target, and player-input
-design moved to [bot-navigation.md](bot-navigation.md). This prior-art document
+design moved to [bot-navigation.md](../../docs/bot-navigation.md). This prior-art document
 retains only the input research and implementation history that led to it.
 
 ---
