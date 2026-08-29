@@ -44,12 +44,28 @@ static BUFF: Mutex<Option<Buff>> = Mutex::new(None);
 /// idle second costs one atomic load and no main-thread hop.
 static BUFF_ACTIVE: AtomicBool = AtomicBool::new(false);
 
+/// The 1 Hz ticker, spawned ONCE at install and kept for the
+/// mod's lifetime (shutdown_all stops it at DLL unload). It is
+/// deliberately never stopped from inside its own tick: doing
+/// that froze the game on 2026-08-29. Taking the handle in the
+/// tick held the POLLER lock through the handle's drop, the drop
+/// joins the poller's own thread (self-join, hangs forever), and
+/// the next meal's main-thread hook then blocked on that lock.
 static POLLER: Mutex<Option<modforge::rpg::poller::PollerHandle>> = Mutex::new(None);
 
 pub fn install() {
     match patch_prefix_instance_args("FastFoodItemData", "ApplyEffects", apply_effects_prefix) {
         Ok(hook) => {
             HOOK_REGISTRY.register(hook);
+            *POLLER.lock() = Some(modforge::rpg::poller::spawn_interval(
+                "food_regen",
+                Duration::from_secs(1),
+                || {
+                    if BUFF_ACTIVE.load(Ordering::Acquire) {
+                        MAIN_QUEUE.push(tick);
+                    }
+                },
+            ));
             mono::log(
                 LogLevel::Info,
                 "bossgangsters-mod: food regen armed (ApplyEffects patched)",
@@ -107,7 +123,6 @@ fn grant_regen(instance: *const c_void, args_json: *const c_char) -> Result<(), 
         total
     };
     BUFF_ACTIVE.store(true, Ordering::Release);
-    ensure_poller();
     mono::log(
         LogLevel::Info,
         &format!(
@@ -115,27 +130,6 @@ fn grant_regen(instance: *const c_void, args_json: *const c_char) -> Result<(), 
         ),
     );
     Ok(())
-}
-
-fn ensure_poller() {
-    let mut poller = POLLER.lock();
-    if poller.is_some() {
-        return;
-    }
-    *poller = Some(modforge::rpg::poller::spawn_interval(
-        "food_regen",
-        Duration::from_secs(1),
-        || {
-            if !BUFF_ACTIVE.load(Ordering::Acquire) {
-                // Buff over: this job is finished; end itself.
-                if let Some(h) = POLLER.lock().take() {
-                    h.stop_soon();
-                }
-                return;
-            }
-            MAIN_QUEUE.push(tick);
-        },
-    ));
 }
 
 /// One regen second, on the main thread.
