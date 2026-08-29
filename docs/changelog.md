@@ -4,6 +4,7 @@
 
 | Area | Shipped | Verification |
 |---|---|---|
+| `bossgangsters-mod` | [x] Player, money, and game-manager classes identified and confirmed live | `research_managers` passed against the running game: `ClubPlayer.playerBot` is the player (`PlayerBot(Clone)`), `MoneyManager.money = 500`, `GameManager` instance live. Decompile and findings recorded in `bossgangsters-mod/docs/research.md`. |
 | `bossgangsters-mod` | [x] New game crate for The Boss Gangsters Nightlife (Unity 6000.3.13f1, Mono) with BepInEx 5.4.23.5 install, deploy and restart scripts, and a live control plane on port 17176 | BepInEx log shows `bossgangsters-mod: ready (ops + selectors installed)` and `listening on 127.0.0.1:17176/op`. `research_ping` passed against the live game. BepInEx 5.4.23.2 crashed this Unity build on launch; the 5.4.23.5 loader set from How to Fish fixed it. |
 
 ## 2026-08-27
