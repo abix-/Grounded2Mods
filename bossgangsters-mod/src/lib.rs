@@ -18,6 +18,8 @@
 //! - Unity 6000.3.13f1, Mono scripting backend.
 //! - No shipped mod loader; BepInEx 5.x x64 Mono installed by hand.
 
+mod skill_cap;
+
 use unityforge::ModDef;
 
 static MOD_INFO: ModDef = ModDef {
@@ -40,6 +42,9 @@ fn on_init() {
     // Selector resolvers (singleton:, static_instance:, class:,
     // first_class:, handle:).
     unityforge::selector::register_builtins();
+
+    // Raise the skill level cap from 10 to 100.
+    skill_cap::install();
 
     unityforge::mono::log(
         unityforge::mono::LogLevel::Info,

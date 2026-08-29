@@ -121,6 +121,42 @@ pub fn patch_prefix_ctx(
     })
 }
 
+/// Install a prefix patch whose callback receives BOTH the
+/// patched method's `__instance` (a FRESH handle in the first
+/// parameter, same ownership contract as `patch_prefix_ctx`;
+/// 0 for a static method) and the call's arguments serialized
+/// to JSON UTF-8 in the second (Harmony's `__args`: primitives,
+/// enums as numbers, strings by value; other objects as
+/// `{"handle": n}` handles the callback also owns). The JSON
+/// pointer is only valid for the duration of the callback.
+/// Returning non-zero skips the original method. Needs a v7+
+/// shim.
+pub fn patch_prefix_instance_args(
+    class_name: &str,
+    method_name: &str,
+    prefix_fn: extern "C" fn(*const c_void, *const std::os::raw::c_char) -> i32,
+) -> Result<Hook, String> {
+    let bridge = bridge::try_get()?;
+    let patch = bridge.harmony_patch_prefix_instance_args.ok_or_else(|| {
+        "harmony_patch_prefix_instance_args: shim is pre-v7; rebuild and redeploy the C# shim"
+            .to_string()
+    })?;
+    let c_class = CString::new(class_name).map_err(|e| format!("bad class: {e}"))?;
+    let c_method = CString::new(method_name).map_err(|e| format!("bad method: {e}"))?;
+    let handle = patch(c_class.as_ptr(), c_method.as_ptr(), prefix_fn);
+    if handle.0 == 0 {
+        return Err(format!(
+            "harmony_patch_prefix_instance_args({class_name}, {method_name}) failed"
+        ));
+    }
+    Ok(Hook {
+        handle,
+        class_name: class_name.to_string(),
+        method_name: method_name.to_string(),
+        when: HookWhen::Prefix,
+    })
+}
+
 /// Install a postfix patch. The trampoline must be an `extern
 /// "C" fn(*const c_void)`.
 pub fn patch_postfix(

@@ -4,6 +4,8 @@
 
 | Area | Shipped | Verification |
 |---|---|---|
+| `bossgangsters-mod` | [x] Skill level cap raised from 10 to 100 | One Harmony prefix on `FighterHandler.AddSkillXp` reimplements it with the cap at 100 (vanilla fallback on any failure). Live proof in `research_skill_cap`: Lockpicking at level 10 given 600 XP went to level 11 progress 50, then the test restored the original values. The other two clamps (`EmployeeBase.CurrentAbilityValue` worker stations, `SetTemporaryVisionSkillLevel`) only see values <= 10 and were left alone. |
+| `unityforge` | [x] Bridge v7: `harmony_patch_prefix_instance_args`, a prefix that hands the Rust callback the instance handle plus all arguments as JSON | `harmony_probe` confirmed all three cap targets patchable live. The cap patch uses the new shape in the running game. Append-only table extended both sides; a v6 shim still installs with the new tail None. unityforge lib tests 6/6. |
 | `bossgangsters-mod` | [x] Player, money, and game-manager classes identified and confirmed live | `research_managers` passed against the running game: `ClubPlayer.playerBot` is the player (`PlayerBot(Clone)`), `MoneyManager.money = 500`, `GameManager` instance live. Decompile and findings recorded in `bossgangsters-mod/docs/research.md`. |
 | `bossgangsters-mod` | [x] New game crate for The Boss Gangsters Nightlife (Unity 6000.3.13f1, Mono) with BepInEx 5.4.23.5 install, deploy and restart scripts, and a live control plane on port 17176 | BepInEx log shows `bossgangsters-mod: ready (ops + selectors installed)` and `listening on 127.0.0.1:17176/op`. `research_ping` passed against the live game. BepInEx 5.4.23.2 crashed this Unity build on launch; the 5.4.23.5 loader set from How to Fish fixed it. |
 

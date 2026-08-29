@@ -112,7 +112,7 @@ Effects found so far:
 The rest of the reads are spread one or two per skill across
 their activities; not yet cataloged.
 
-For gangsters working stations, `EmployeeBase.GetAbilityLevel`
+For gangsters working stations, `EmployeeBase.CurrentAbilityValue`
 clamps `abilityValue + abilityDebuffValue` to 1..10, so an
 unhappy worker can perform below their trained level
 (Tycoon/EmployeeBase.cs).

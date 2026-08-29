@@ -17,7 +17,7 @@ namespace Unityforge.Shim
     public static class BridgeConstants
     {
         public const uint Magic = 0x52424655u; // "UFBR"
-        public const uint Version = 6u;        // bumped: added InvokeStatic
+        public const uint Version = 7u;        // bumped: added HarmonyPatchPrefixInstanceArgs
     }
 
     public enum RuntimeKind : uint
@@ -65,6 +65,11 @@ namespace Unityforge.Shim
 
         // ---- v6 ----------------------------------------------------
         public IntPtr InvokeStatic;
+
+        // ---- v7 ----------------------------------------------------
+        // Prefix that passes __instance (handle) plus all
+        // arguments serialized to JSON to the Rust callback.
+        public IntPtr HarmonyPatchPrefixInstanceArgs;
     }
 
     /// <summary>
@@ -122,6 +127,8 @@ namespace Unityforge.Shim
                 HarmonyPatchPrefixCtx = Marshal.GetFunctionPointerForDelegate(HarmonyBridge.PatchPrefixCtxDelegate),
 
                 InvokeStatic = backend.InvokeStatic,
+
+                HarmonyPatchPrefixInstanceArgs = Marshal.GetFunctionPointerForDelegate(HarmonyBridge.PatchPrefixInstanceArgsDelegate),
             };
         }
     }

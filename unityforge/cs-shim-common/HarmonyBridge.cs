@@ -64,15 +64,18 @@ namespace Unityforge.Shim
         // delegate signatures matching the Rust extern "C" fns
         private delegate int RustPrefixDelegate(IntPtr ctx);
         private delegate void RustPostfixDelegate(IntPtr ctx);
+        private delegate int RustPrefixInstanceArgsDelegate(IntPtr instance, IntPtr argsJsonUtf8);
 
         public delegate int PatchPrefixFn(IntPtr typeNameUtf8, IntPtr methodNameUtf8, IntPtr rustFnPtr);
         public delegate int PatchPostfixFn(IntPtr typeNameUtf8, IntPtr methodNameUtf8, IntPtr rustFnPtr);
         public delegate int PatchPrefixCtxFn(IntPtr typeNameUtf8, IntPtr methodNameUtf8, int ctxKind, IntPtr rustFnPtr);
+        public delegate int PatchPrefixInstanceArgsFn(IntPtr typeNameUtf8, IntPtr methodNameUtf8, IntPtr rustFnPtr);
         public delegate void UnpatchFn(int handle);
 
         public static readonly PatchPrefixFn PatchPrefixDelegate = PatchPrefix;
         public static readonly PatchPostfixFn PatchPostfixDelegate = PatchPostfix;
         public static readonly PatchPrefixCtxFn PatchPrefixCtxDelegate = PatchPrefixCtx;
+        public static readonly PatchPrefixInstanceArgsFn PatchPrefixInstanceArgsDelegate = PatchPrefixInstanceArgs;
         public static readonly UnpatchFn UnpatchDelegate = Unpatch;
 
         /// <summary>
@@ -125,6 +128,13 @@ namespace Unityforge.Shim
             // (live-verified 2026-07-04: Injury is a struct, the
             // AddInjury infection zeroing did nothing in play).
             PrefixArgs0Ctx,
+            // __instance plus ALL arguments serialized to JSON
+            // (bridge v7). Same __args requirement as
+            // PrefixArgs0Ctx: Harmony 2.1+ / HarmonyX only.
+            // Read-only view of the arguments; use it when a
+            // Rust prefix needs the values to reimplement the
+            // original, not to mutate them.
+            PrefixInstanceArgs,
         }
 
         private class PatchEntry
@@ -144,6 +154,7 @@ namespace Unityforge.Shim
         private static readonly RustPrefixDelegate[] _prefixInstanceSlots = new RustPrefixDelegate[SlotsPerKind];
         private static readonly RustPrefixDelegate[] _prefixArg0Slots = new RustPrefixDelegate[SlotsPerKind];
         private static readonly RustPrefixDelegate[] _prefixArgs0Slots = new RustPrefixDelegate[SlotsPerKind];
+        private static readonly RustPrefixInstanceArgsDelegate[] _prefixInstanceArgsSlots = new RustPrefixInstanceArgsDelegate[SlotsPerKind];
 
         private static bool RunPrefixSlot(int i)
         {
@@ -248,6 +259,72 @@ namespace Unityforge.Shim
 
         private static object Args0(object[] __args)
             => (__args != null && __args.Length > 0) ? __args[0] : null;
+
+        /// <summary>
+        /// One argument to a JSON token, matching the bridge's
+        /// value convention: primitives, enums (as numbers), and
+        /// strings by value; null as null; anything else as
+        /// {"handle": n} the Rust callback owns and releases.
+        /// </summary>
+        private static Newtonsoft.Json.Linq.JToken ArgToJson(object arg)
+        {
+            if (arg == null) return Newtonsoft.Json.Linq.JValue.CreateNull();
+            var t = arg.GetType();
+            if (t.IsEnum) return new Newtonsoft.Json.Linq.JValue(Convert.ToInt64(arg));
+            if (arg is bool || arg is string
+                || arg is sbyte || arg is byte || arg is short || arg is ushort
+                || arg is int || arg is uint || arg is long || arg is ulong
+                || arg is float || arg is double || arg is decimal)
+            {
+                return new Newtonsoft.Json.Linq.JValue(arg);
+            }
+            var handle = (AcquireHandle != null) ? AcquireHandle(arg) : 0;
+            return new Newtonsoft.Json.Linq.JObject { ["handle"] = handle };
+        }
+
+        private static bool RunPrefixInstanceArgsSlot(int i, object instance, object[] args)
+        {
+            var d = _prefixInstanceArgsSlots[i];
+            if (d == null) return true;
+            var instanceHandle = (instance != null && AcquireHandle != null) ? AcquireHandle(instance) : 0;
+            var json = new Newtonsoft.Json.Linq.JArray();
+            if (args != null)
+            {
+                foreach (var a in args) json.Add(ArgToJson(a));
+            }
+            var bytes = System.Text.Encoding.UTF8.GetBytes(json.ToString(Newtonsoft.Json.Formatting.None) + "\0");
+            var pin = GCHandle.Alloc(bytes, GCHandleType.Pinned);
+            try
+            {
+                return d(new IntPtr(instanceHandle), pin.AddrOfPinnedObject()) == 0;
+            }
+            catch (Exception e)
+            {
+                ShimLogger.Error("HarmonyBridge: prefix_instance_args slot " + i + " threw: " + e);
+                return true;
+            }
+            finally
+            {
+                pin.Free();
+            }
+        }
+
+        private static bool PrefixInstanceArgsSlot0(object __instance, object[] __args) => RunPrefixInstanceArgsSlot(0, __instance, __args);
+        private static bool PrefixInstanceArgsSlot1(object __instance, object[] __args) => RunPrefixInstanceArgsSlot(1, __instance, __args);
+        private static bool PrefixInstanceArgsSlot2(object __instance, object[] __args) => RunPrefixInstanceArgsSlot(2, __instance, __args);
+        private static bool PrefixInstanceArgsSlot3(object __instance, object[] __args) => RunPrefixInstanceArgsSlot(3, __instance, __args);
+        private static bool PrefixInstanceArgsSlot4(object __instance, object[] __args) => RunPrefixInstanceArgsSlot(4, __instance, __args);
+        private static bool PrefixInstanceArgsSlot5(object __instance, object[] __args) => RunPrefixInstanceArgsSlot(5, __instance, __args);
+        private static bool PrefixInstanceArgsSlot6(object __instance, object[] __args) => RunPrefixInstanceArgsSlot(6, __instance, __args);
+        private static bool PrefixInstanceArgsSlot7(object __instance, object[] __args) => RunPrefixInstanceArgsSlot(7, __instance, __args);
+        private static bool PrefixInstanceArgsSlot8(object __instance, object[] __args) => RunPrefixInstanceArgsSlot(8, __instance, __args);
+        private static bool PrefixInstanceArgsSlot9(object __instance, object[] __args) => RunPrefixInstanceArgsSlot(9, __instance, __args);
+        private static bool PrefixInstanceArgsSlot10(object __instance, object[] __args) => RunPrefixInstanceArgsSlot(10, __instance, __args);
+        private static bool PrefixInstanceArgsSlot11(object __instance, object[] __args) => RunPrefixInstanceArgsSlot(11, __instance, __args);
+        private static bool PrefixInstanceArgsSlot12(object __instance, object[] __args) => RunPrefixInstanceArgsSlot(12, __instance, __args);
+        private static bool PrefixInstanceArgsSlot13(object __instance, object[] __args) => RunPrefixInstanceArgsSlot(13, __instance, __args);
+        private static bool PrefixInstanceArgsSlot14(object __instance, object[] __args) => RunPrefixInstanceArgsSlot(14, __instance, __args);
+        private static bool PrefixInstanceArgsSlot15(object __instance, object[] __args) => RunPrefixInstanceArgsSlot(15, __instance, __args);
 
         private static bool PrefixArgs0Slot0(object[] __args) => RunPrefixCtxSlot(_prefixArgs0Slots, 0, Args0(__args));
         private static bool PrefixArgs0Slot1(object[] __args) => RunPrefixCtxSlot(_prefixArgs0Slots, 1, Args0(__args));
@@ -370,7 +447,29 @@ namespace Unityforge.Shim
             }
         }
 
-        private static int ApplySlotPatch(MethodBase target, PatchKind kind, RustPrefixDelegate prefixDel, RustPostfixDelegate postfixDel)
+        private static int PatchPrefixInstanceArgs(IntPtr typeNameUtf8, IntPtr methodNameUtf8, IntPtr rustFnPtr)
+        {
+            try
+            {
+                if (_harmony == null || rustFnPtr == IntPtr.Zero) return 0;
+                if (AcquireHandle == null)
+                {
+                    ShimLogger.Error("HarmonyBridge.PatchPrefixInstanceArgs: AcquireHandle not set by the shim entry; refusing patch");
+                    return 0;
+                }
+                var target = ResolveTarget(typeNameUtf8, methodNameUtf8);
+                if (target == null) return 0;
+                var del = (RustPrefixInstanceArgsDelegate)Marshal.GetDelegateForFunctionPointer(rustFnPtr, typeof(RustPrefixInstanceArgsDelegate));
+                return ApplySlotPatch(target, PatchKind.PrefixInstanceArgs, null, null, del);
+            }
+            catch (Exception e)
+            {
+                ShimLogger.Error("HarmonyBridge.PatchPrefixInstanceArgs: " + e);
+                return 0;
+            }
+        }
+
+        private static int ApplySlotPatch(MethodBase target, PatchKind kind, RustPrefixDelegate prefixDel, RustPostfixDelegate postfixDel, RustPrefixInstanceArgsDelegate instanceArgsDel = null)
         {
             lock (_lock)
             {
@@ -388,7 +487,7 @@ namespace Unityforge.Shim
                 // Assign the delegate BEFORE patching so the slot
                 // is live the instant the patch applies; clear on
                 // failure.
-                SetSlot(kind, slot, prefixDel, postfixDel);
+                SetSlot(kind, slot, prefixDel, postfixDel, instanceArgsDel);
                 try
                 {
                     if (kind == PatchKind.Postfix) _harmony.Patch(target, postfix: hm);
@@ -414,6 +513,7 @@ namespace Unityforge.Shim
                 case PatchKind.Postfix: return "PostfixSlot";
                 case PatchKind.PrefixInstanceCtx: return "PrefixInstanceSlot";
                 case PatchKind.PrefixArg0Ctx: return "PrefixArg0Slot";
+                case PatchKind.PrefixInstanceArgs: return "PrefixInstanceArgsSlot";
                 default: return "PrefixArgs0Slot";
             }
         }
@@ -429,6 +529,7 @@ namespace Unityforge.Shim
                     case PatchKind.Postfix: free = _postfixSlots[i] == null; break;
                     case PatchKind.PrefixInstanceCtx: free = _prefixInstanceSlots[i] == null; break;
                     case PatchKind.PrefixArg0Ctx: free = _prefixArg0Slots[i] == null; break;
+                    case PatchKind.PrefixInstanceArgs: free = _prefixInstanceArgsSlots[i] == null; break;
                     default: free = _prefixArgs0Slots[i] == null; break;
                 }
                 if (free) return i;
@@ -436,7 +537,7 @@ namespace Unityforge.Shim
             return -1;
         }
 
-        private static void SetSlot(PatchKind kind, int slot, RustPrefixDelegate prefixDel, RustPostfixDelegate postfixDel)
+        private static void SetSlot(PatchKind kind, int slot, RustPrefixDelegate prefixDel, RustPostfixDelegate postfixDel, RustPrefixInstanceArgsDelegate instanceArgsDel = null)
         {
             switch (kind)
             {
@@ -444,6 +545,7 @@ namespace Unityforge.Shim
                 case PatchKind.Postfix: _postfixSlots[slot] = postfixDel; break;
                 case PatchKind.PrefixInstanceCtx: _prefixInstanceSlots[slot] = prefixDel; break;
                 case PatchKind.PrefixArg0Ctx: _prefixArg0Slots[slot] = prefixDel; break;
+                case PatchKind.PrefixInstanceArgs: _prefixInstanceArgsSlots[slot] = instanceArgsDel; break;
                 default: _prefixArgs0Slots[slot] = prefixDel; break;
             }
         }

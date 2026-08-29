@@ -26,10 +26,11 @@ use std::sync::OnceLock;
 pub const BRIDGE_MAGIC: u32 = 0x52424655;
 
 /// Current ABI version. v4 added `list_methods`; v5 added
-/// `harmony_patch_prefix_ctx`; v6 added `invoke_static` (the
-/// Rust side also accepts a v5 table and leaves the new tail
-/// None until the game restarts on the upgraded shim).
-pub const BRIDGE_VERSION: u32 = 6;
+/// `harmony_patch_prefix_ctx`; v6 added `invoke_static`; v7
+/// added `harmony_patch_prefix_instance_args` (the Rust side
+/// also accepts the previous version's table and leaves the new
+/// tail None until the game restarts on the upgraded shim).
+pub const BRIDGE_VERSION: u32 = 7;
 
 /// Unity runtime backend. Stored in the bridge struct at init;
 /// read via [`runtime_kind`] for code that must branch on
@@ -228,6 +229,23 @@ pub struct BridgeTable {
             cap: i32,
         ) -> i32,
     >,
+
+    // ---- v7 ---------------------------------------------------------
+    /// Prefix patch whose callback receives BOTH the patched
+    /// method's `__instance` (a FRESH handle the callback owns,
+    /// cast the pointer value to i32; 0 = static method) and the
+    /// method's arguments serialized to JSON UTF-8 (Harmony's
+    /// `__args`: primitives, enums-as-numbers, and strings by
+    /// value; anything else as `{"handle": n}` the callback also
+    /// owns). Non-zero return = skip the original. None when the
+    /// running shim is pre-v7.
+    pub harmony_patch_prefix_instance_args: Option<
+        extern "C" fn(
+            type_name_utf8: *const c_char,
+            method_name_utf8: *const c_char,
+            prefix_fn: extern "C" fn(instance: *const c_void, args_json_utf8: *const c_char) -> i32,
+        ) -> PatchHandle,
+    >,
 }
 
 static BRIDGE: OnceLock<BridgeTable> = OnceLock::new();
@@ -259,13 +277,14 @@ pub fn install(bridge: *const BridgeTable) -> bool {
     } else {
         let mut mu = std::mem::MaybeUninit::<BridgeTable>::zeroed();
         // SAFETY: the previous version's table is a byte prefix of
-        // this layout ending right before `invoke_static`; the
-        // zeroed tail is a valid None for the Option fn pointer.
+        // this layout ending right before
+        // `harmony_patch_prefix_instance_args`; the zeroed tail is
+        // a valid None for the Option fn pointer.
         unsafe {
             std::ptr::copy_nonoverlapping(
                 bridge as *const u8,
                 mu.as_mut_ptr() as *mut u8,
-                std::mem::offset_of!(BridgeTable, invoke_static),
+                std::mem::offset_of!(BridgeTable, harmony_patch_prefix_instance_args),
             );
             mu.assume_init()
         }
