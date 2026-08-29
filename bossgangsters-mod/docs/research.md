@@ -179,6 +179,35 @@ Every number above lives on the `PoliceCrimeSettings` object or
 the `crimeTable`, both reachable by handle at runtime, so all of
 it is tunable by a write or a Harmony prefix.
 
+### Comparison with GTA V's wanted system
+
+Left column live-measured above; right column from general
+knowledge of GTA V's design, not its code.
+
+| Aspect | The Boss Gangsters Nightlife | GTA V |
+|---|---|---|
+| Escalation | None. Wanted is on or off | 5 stars; response scales from beat cops to helicopters, roadblocks, NOOSE/FBI teams |
+| What triggers it | Relationship meter must first grind to 0, then any identified crime | Instant per crime, severity-based: one star for a punch, three for killing a cop, five for a rampage |
+| Who reports crimes | The game itself, silently | Witnesses and victims call it in; kill the witness fast and no report happens |
+| Detection | Fixed 20 m radius per cop, no line of sight | Line-of-sight and awareness model; cops must actually see you, peds point you out |
+| Pursuit | Single cop chases; step 21 m away and he gives up | Coordinated pursuit: cars cut you off, units respawn ahead of you, helicopter tracks from above |
+| Searching | 20 s cooldown, then nothing | Search phase with a shrinking zone around your last seen position; leaving line of sight starts the evade timer, being spotted resets it |
+| Duration | Flat 50 s and it just expires | No timer while seen; evading takes real effort and scales with stars |
+| Weapons used | One Colt, 10 damage, 1 shot per second, 35% miss | Pistols to carbines to snipers from the helicopter, scaling with stars |
+| In a vehicle | Cops keep 6 m and pot-shot; no arrest possible | PIT maneuvers, spike strips, roadblocks, shooting out tires, dragging you out of the car |
+| Arrest | Walk within 1.5 m while a bar fills | On foot at gunpoint when cornered; busted costs bail and impounds your car |
+| Clearing it | Wait 50 s, or bribe $1000 at the station | Evade by hiding, respray, Lester call, or die/get busted |
+| Aftermath | Meter regens +5 per quiet minute up to 30 | Cops remember nothing once evaded; stars fully gone |
+
+The structural difference: GTA treats wanted as a pursuit
+simulation (seen versus unseen, escalation, coordination); this
+game treats it as a timer with a radius. The three cheapest
+changes that would close most of the gap, all reachable through
+the settings and classes mapped above: escalation tiers driven
+by the relationship meter, a real search phase around the last
+known position instead of the 21 m give-up, and no flat expiry
+while any cop can see you.
+
 ### Conclusion (punching bag)
 
 On this build (Unity 6000.3.13f1 game version as of 2026-08-29),
