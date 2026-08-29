@@ -20,6 +20,7 @@
 
 mod fight_speed;
 mod food_regen;
+mod hit_squads;
 mod punching_bag;
 mod skill_cap;
 
@@ -57,6 +58,9 @@ fn on_init() {
 
     // Fight skill scales the player's movement speed.
     fight_speed::install();
+
+    // Family hit squads that come for the player (hit_squad op).
+    hit_squads::install();
 
     unityforge::mono::log(
         unityforge::mono::LogLevel::Info,
