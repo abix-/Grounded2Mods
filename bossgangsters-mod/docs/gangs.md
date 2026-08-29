@@ -122,6 +122,34 @@ from (`ResolveRaidFamilyType`).
 - Fighters assigned to a place level up by defending
   (`IncreaseFighterLevel`).
 
+## Vanilla vs GTA V vs real life
+
+Vanilla column measured/decompiled above; GTA V and real life
+from general knowledge.
+
+| Aspect | Vanilla (measured) | GTA V | Real life |
+|---|---|---|---|
+| Do they hold a grudge? | Yes: per-family relationship meter, war at 0 | Barely: gang members forget you minutes after a shootout | Absolutely, for years; grudges outlive the people who started them |
+| Who do they attack? | Your buildings only (club, warehouse, territory spots), never you personally | You personally, on sight, but only inside their turf | You first, then your crew, then your business; the person is the message |
+| Retaliation for violence | Drive-by against them earns one scheduled drive-by against your property next day | None beyond the immediate firefight | Guaranteed and disproportionate; failing to retaliate means losing the streets |
+| Escalation | Attack frequency and squad intensity scale with hate (daily at war) | None; same response at all times | Beatings, then shootings, then wars; proportional to what you took and how publicly |
+| Territory | 11 fixed districts, capture spot by spot, claim battle of 3 waves | Cosmetic turf; gangs stand around in their areas | The whole point: corners are income; losing them without a war is death |
+| Ambushes on the player | Never | Only if you linger on their turf | Standard practice: they find where you eat, train, and sleep |
+| Your people as targets | Yes: raids and attacks fight your assigned gangsters | No | Yes: hurting your people is cheaper and hurts you more |
+| Making peace | $10,000 ceasefire, flat, 5 days | Impossible and unnecessary | Negotiated, expensive, and priced by how much blood you owe |
+| Can a gang die? | Yes: `IsDestroyed`, war is winnable | No | Yes: absorbed, imprisoned, or wiped out |
+| Do they rebuild? | Member replacement runs daily | Infinite respawn, no structure | They recruit, splinter, and come back under new names |
+
+The reading: vanilla out-structures GTA V (grudges, escalation,
+territory economy, peace deals, mortal gangs) and loses only on
+the visceral row: being personally attacked. The one missing
+piece is retribution that finds the PLAYER: hit squads hunting
+you in the open world while at war, scaled by the family's
+existing attack intensity, using the same fighter-spawn
+machinery the drive-bys and raids already use. The operator's
+framing: "you kill gang members, you steal their loot, you take
+their property... how would a real gang react?"
+
 ## Modding notes
 
 Everything is singleton-reachable: `TerritoryManager` (states,
