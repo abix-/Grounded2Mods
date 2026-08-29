@@ -111,102 +111,11 @@ at roughly 0.15 ratio per 0.14 s and is still at ~0.50 when the
 countdown dies. The forgiven perfect ratio (0.15) is reached
 roughly a third of a second AFTER countdown death.
 
-## 4. Police (2026-08-29, live-measured)
+## 4. Police
 
-Classes: `PoliceManager` (crimes, relationship, jail),
-`PoliceCrimeCoordinator` + `PoliceCrimeSettings`
-(wanted/chase/arrest tuning), `PoliceBot` with actions
-(`SpotCriminalAction`, `ChaseCriminalAction`,
-`ArrestCriminalAction`). `research_police.rs` reads the live
-values; several DIFFER from the code defaults.
-
-### The relationship meter drives everything
-
-`PoliceManager.relationship`, 0..100, starts 50. Every crime
-subtracts its score (subject to a per-crime cooldown). You only
-become WANTED when the meter is at 0 and you commit a crime with
-a known criminal. Recovery paths:
-
-- +5 per crime-free minute, but only up to 30
-  (`RecoverRelationshipAfterCrimeFreeMinute`).
-- Bribe at the police station: $1000 for +10, discounted up to
-  50% by Charisma. NOTE: the discount clamps Charisma to 10, so
-  the mod's 100-level cap does not extend it.
-- Story resets put it back to 50.
-
-Per-crime scores, read live off the running game:
-
-| Crime | Score | Cooldown |
-|---|---:|---:|
-| PoliceKill | 30 | 0 s |
-| ClubRaid | 20 | 0 s |
-| IllegalDrinkFatality | 15 | 0 s |
-| DrugDealer | 10 | 30 s |
-| CarSteal / TributeCapture / Pickpocket / VehicleExplosion | 10 | 0 s |
-| PoliceShoot | 10 | 2 s |
-| DrugDealAttempt | 5 | 0 s |
-| TaxiScam | 5 | 5 s |
-| PedestrianKill | 1 | 0 s |
-| HumanTrafficker | 0.3 | 0 s |
-
-### Wanted, chase, arrest (live settings)
-
-| Setting | Live value | Code default |
-|---|---:|---:|
-| wantedDuration | 50 s | 90 s |
-| detectionRadius | 20 m | 15 m |
-| chaseCooldownDuration | 20 s | 60 s |
-| arrestDistance | 1.5 m | 1.5 m |
-| shootingStartDelay | 5 s | 5 s |
-| shootingInterval | 1.0 s | 1.25 s |
-| shotDamage | 10 | 10 |
-| shotMissChance | 0.35 | 0.30 |
-
-Flow: wanted lasts 50 s. A police bot within 20 m spots and
-chases (repathing to you every 0.3 s); step outside 20 m and
-that bot gives up. Within reach it fills an arrest progress bar
-scaled between chase start distance and 1.5 m; at 1.5 m you are
-arrested (jail sequence, seats in the jail, bail priced per
-captivity day per fighter). During a chase, after 5 s the bot
-draws a Colt and shoots every 1.0 s for 10 damage with a 35%
-miss chance. If you are in a vehicle they keep 6 m distance and
-shoot instead of arresting. Player state machine:
-Safe/InRange/Chased/Searching/Escaping/Wanted
-(`PoliceRangeState`). NPCs searching for you regenerate health
-(section: passive regen).
-
-Every number above lives on the `PoliceCrimeSettings` object or
-the `crimeTable`, both reachable by handle at runtime, so all of
-it is tunable by a write or a Harmony prefix.
-
-### Comparison with GTA V's wanted system
-
-Left column live-measured above; right column from general
-knowledge of GTA V's design, not its code.
-
-| Aspect | The Boss Gangsters Nightlife | GTA V |
-|---|---|---|
-| Escalation | None. Wanted is on or off | 5 stars; response scales from beat cops to helicopters, roadblocks, NOOSE/FBI teams |
-| What triggers it | Relationship meter must first grind to 0, then any identified crime | Instant per crime, severity-based: one star for a punch, three for killing a cop, five for a rampage |
-| Who reports crimes | The game itself, silently | Witnesses and victims call it in; kill the witness fast and no report happens |
-| Detection | Fixed 20 m radius per cop, no line of sight | Line-of-sight and awareness model; cops must actually see you, peds point you out |
-| Pursuit | Single cop chases; step 21 m away and he gives up | Coordinated pursuit: cars cut you off, units respawn ahead of you, helicopter tracks from above |
-| Searching | 20 s cooldown, then nothing | Search phase with a shrinking zone around your last seen position; leaving line of sight starts the evade timer, being spotted resets it |
-| Duration | Flat 50 s and it just expires | No timer while seen; evading takes real effort and scales with stars |
-| Weapons used | One Colt, 10 damage, 1 shot per second, 35% miss | Pistols to carbines to snipers from the helicopter, scaling with stars |
-| In a vehicle | Cops keep 6 m and pot-shot; no arrest possible | PIT maneuvers, spike strips, roadblocks, shooting out tires, dragging you out of the car |
-| Arrest | Walk within 1.5 m while a bar fills | On foot at gunpoint when cornered; busted costs bail and impounds your car |
-| Clearing it | Wait 50 s, or bribe $1000 at the station | Evade by hiding, respray, Lester call, or die/get busted |
-| Aftermath | Meter regens +5 per quiet minute up to 30 | Cops remember nothing once evaded; stars fully gone |
-
-The structural difference: GTA treats wanted as a pursuit
-simulation (seen versus unseen, escalation, coordination); this
-game treats it as a timer with a radius. The three cheapest
-changes that would close most of the gap, all reachable through
-the settings and classes mapped above: escalation tiers driven
-by the relationship meter, a real search phase around the last
-known position instead of the 21 m give-up, and no flat expiry
-while any cop can see you.
+Moved to [police.md](police.md): the one doc for everything
+police (measured vanilla system, crime_level design, GTA V
+comparison).
 
 ### Conclusion (punching bag)
 
