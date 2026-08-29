@@ -111,7 +111,75 @@ at roughly 0.15 ratio per 0.14 s and is still at ~0.50 when the
 countdown dies. The forgiven perfect ratio (0.15) is reached
 roughly a third of a second AFTER countdown death.
 
-### Conclusion
+## 4. Police (2026-08-29, live-measured)
+
+Classes: `PoliceManager` (crimes, relationship, jail),
+`PoliceCrimeCoordinator` + `PoliceCrimeSettings`
+(wanted/chase/arrest tuning), `PoliceBot` with actions
+(`SpotCriminalAction`, `ChaseCriminalAction`,
+`ArrestCriminalAction`). `research_police.rs` reads the live
+values; several DIFFER from the code defaults.
+
+### The relationship meter drives everything
+
+`PoliceManager.relationship`, 0..100, starts 50. Every crime
+subtracts its score (subject to a per-crime cooldown). You only
+become WANTED when the meter is at 0 and you commit a crime with
+a known criminal. Recovery paths:
+
+- +5 per crime-free minute, but only up to 30
+  (`RecoverRelationshipAfterCrimeFreeMinute`).
+- Bribe at the police station: $1000 for +10, discounted up to
+  50% by Charisma. NOTE: the discount clamps Charisma to 10, so
+  the mod's 100-level cap does not extend it.
+- Story resets put it back to 50.
+
+Per-crime scores, read live off the running game:
+
+| Crime | Score | Cooldown |
+|---|---:|---:|
+| PoliceKill | 30 | 0 s |
+| ClubRaid | 20 | 0 s |
+| IllegalDrinkFatality | 15 | 0 s |
+| DrugDealer | 10 | 30 s |
+| CarSteal / TributeCapture / Pickpocket / VehicleExplosion | 10 | 0 s |
+| PoliceShoot | 10 | 2 s |
+| DrugDealAttempt | 5 | 0 s |
+| TaxiScam | 5 | 5 s |
+| PedestrianKill | 1 | 0 s |
+| HumanTrafficker | 0.3 | 0 s |
+
+### Wanted, chase, arrest (live settings)
+
+| Setting | Live value | Code default |
+|---|---:|---:|
+| wantedDuration | 50 s | 90 s |
+| detectionRadius | 20 m | 15 m |
+| chaseCooldownDuration | 20 s | 60 s |
+| arrestDistance | 1.5 m | 1.5 m |
+| shootingStartDelay | 5 s | 5 s |
+| shootingInterval | 1.0 s | 1.25 s |
+| shotDamage | 10 | 10 |
+| shotMissChance | 0.35 | 0.30 |
+
+Flow: wanted lasts 50 s. A police bot within 20 m spots and
+chases (repathing to you every 0.3 s); step outside 20 m and
+that bot gives up. Within reach it fills an arrest progress bar
+scaled between chase start distance and 1.5 m; at 1.5 m you are
+arrested (jail sequence, seats in the jail, bail priced per
+captivity day per fighter). During a chase, after 5 s the bot
+draws a Colt and shoots every 1.0 s for 10 damage with a 35%
+miss chance. If you are in a vehicle they keep 6 m distance and
+shoot instead of arresting. Player state machine:
+Safe/InRange/Chased/Searching/Escaping/Wanted
+(`PoliceRangeState`). NPCs searching for you regenerate health
+(section: passive regen).
+
+Every number above lives on the `PoliceCrimeSettings` object or
+the `crimeTable`, both reachable by handle at runtime, so all of
+it is tunable by a write or a Harmony prefix.
+
+### Conclusion (punching bag)
 
 On this build (Unity 6000.3.13f1 game version as of 2026-08-29),
 tier 2's countdown and the bag's return never overlap inside the
