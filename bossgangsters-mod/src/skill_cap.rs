@@ -142,6 +142,15 @@ fn add_skill_xp(instance: *const c_void, args_json: *const c_char) -> Result<(),
         let key = ability.read_field("abilityKey")?;
         let key = key.as_str().ok_or("abilityKey not a string")?;
         fighter.invoke("LevelAnimation", &serde_json::json!([key]))?;
+
+        // Reapply the Fight speed multiplier on any level-up
+        // (idempotent; recomputed from base).
+        if let Err(e) = crate::fight_speed::apply() {
+            mono::log(
+                LogLevel::Warn,
+                &format!("bossgangsters-mod: fight speed reapply failed: {e}"),
+            );
+        }
     } else {
         ability.write_field("progressValue", &serde_json::json!(progress))?;
     }

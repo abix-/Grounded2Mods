@@ -18,6 +18,7 @@
 //! - Unity 6000.3.13f1, Mono scripting backend.
 //! - No shipped mod loader; BepInEx 5.x x64 Mono installed by hand.
 
+mod fight_speed;
 mod food_regen;
 mod punching_bag;
 mod skill_cap;
@@ -53,6 +54,9 @@ fn on_init() {
 
     // Fast food buys healing regen scaled by its price.
     food_regen::install();
+
+    // Fight skill scales the player's movement speed.
+    fight_speed::install();
 
     unityforge::mono::log(
         unityforge::mono::LogLevel::Info,
