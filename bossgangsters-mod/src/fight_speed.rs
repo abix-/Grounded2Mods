@@ -3,8 +3,9 @@
 //! Vanilla: `PlayerBot.Start` copies `walkSpeed` / `runSpeed`
 //! from the `BotManager` singleton (2.8 / 4.5 defaults) and no
 //! skill ever changes them. This module multiplies both by
-//! `1 + 0.01 x Fight level`: +1% per level, uncapped, so the
-//! 100-level cap keeps paying (Fight 100 doubles speed).
+//! `1 + 0.02 x Fight level`: +2% per level, uncapped, so Fight
+//! 100 runs at 300% of base (operator's number: "THAT would be
+//! comical").
 //!
 //! The speeds are recomputed FROM BASE each apply (idempotent,
 //! nothing compounds) at two moments: when the player's bot
@@ -20,8 +21,8 @@ use unityforge::hook::{HOOK_REGISTRY, patch_prefix_instance_args};
 use unityforge::main_thread_queue::MAIN_QUEUE;
 use unityforge::mono::{self, LogLevel, json_handle, owned_object};
 
-/// Speed multiplier gained per Fight level.
-const SPEED_PER_FIGHT_LEVEL: f64 = 0.01;
+/// Speed multiplier gained per Fight level (Fight 100 = x3).
+const SPEED_PER_FIGHT_LEVEL: f64 = 0.02;
 
 /// FighterSkill.Fight.
 const SKILL_FIGHT: i64 = 1;
@@ -30,6 +31,18 @@ pub fn install() {
     match patch_prefix_instance_args("PlayerBot", "Start", player_bot_start_prefix) {
         Ok(hook) => {
             HOOK_REGISTRY.register(hook);
+            // Apply to an already-loaded save too (hot reload or
+            // tuning change mid-session). No save loaded = fine.
+            MAIN_QUEUE.push(|| {
+                if let Err(e) = apply() {
+                    if !e.contains("no ClubPlayer instance") {
+                        mono::log(
+                            LogLevel::Warn,
+                            &format!("bossgangsters-mod: fight speed not applied: {e}"),
+                        );
+                    }
+                }
+            });
             mono::log(
                 LogLevel::Info,
                 "bossgangsters-mod: fight speed armed (PlayerBot.Start patched)",
