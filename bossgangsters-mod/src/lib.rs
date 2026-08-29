@@ -18,6 +18,8 @@
 //! - Unity 6000.3.13f1, Mono scripting backend.
 //! - No shipped mod loader; BepInEx 5.x x64 Mono installed by hand.
 
+mod food_regen;
+mod punching_bag;
 mod skill_cap;
 
 use unityforge::ModDef;
@@ -45,6 +47,12 @@ fn on_init() {
 
     // Raise the skill level cap from 10 to 100.
     skill_cap::install();
+
+    // Hit the punching bag automatically on every prompt.
+    punching_bag::install();
+
+    // Fast food buys healing regen scaled by its price.
+    food_regen::install();
 
     unityforge::mono::log(
         unityforge::mono::LogLevel::Info,
