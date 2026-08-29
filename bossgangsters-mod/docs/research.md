@@ -88,7 +88,21 @@ full passes gave identical grades):
 | 0.30 | 0.68 | 0.096 | Good |
 | 0.35 | 0.58 | 0.048 | Good |
 | 0.40 | 0.43 | 0.000 | Miss |
-| 0.45+ | (no press possible: the prompt is already over; the game itself scores those prompts Miss when the bag arrives) | | |
+
+Extended to the WHOLE timing space (waits 0 to 1.20 s, pressing
+even after the prompt ends; two passes, identical grades):
+
+| Wait | State at press | Grade |
+|---:|---|---|
+| 0.00 - 0.40 | prompt on, countdown alive, bag ratio 0.46 - 0.82 | Good |
+| 0.45 - 0.55 | prompt on, countdown DEAD, bag ratio 0.06 - 0.34 | Miss |
+| 0.60 - 1.05 | prompt over, bag arrived | Miss |
+| 1.10 - 1.20 | bag stopped, next swing | Started |
+
+The decisive line: `wait 0.55s ... ratio 0.086 timer 0.000 ->
+Miss`. The bag WAS inside the perfect window (0.15); the press
+graded Miss anyway because `reactionWindowTimer` was already
+zero.
 
 Frame capture of one full tier 2 prompt: prompt appears with the
 bag at ratio ~0.71 and countdown 0.400; the bag stands still for
