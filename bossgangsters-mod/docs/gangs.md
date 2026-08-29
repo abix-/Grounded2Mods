@@ -13,6 +13,34 @@ family requests (deliver N of an item for money, +5 prestige,
 and relationship). Families are also where gangster hire offers
 and family jobs live.
 
+## Family hostility is dynamic
+
+Each family keeps a relationship with the player (0..100, its
+own value per family, separate from the police relationship),
+an `IsAtWar` flag, and its own prestige. From `FamilyManager`:
+
+- Lower it by competing: opening a competing business (-10),
+  entering their business (-10), executing captives (-20).
+  Raise it with family requests (+10 default).
+- At 0 the family DECLARES WAR (`EnterWar`) and starts an attack
+  campaign: Vice targets the player's club, Kurohana the
+  warehouse, with drive-by squads. War campaigns run 4-6 days.
+- Attack interval scales with hostility (`GetAttackInterval`):
+  every 1 day at war, 2 days otherwise, 3 when the family's own
+  prestige is low.
+- Attack intensity scales too (`CalculateAttackIntensity`): +1
+  at war or relationship 0, +1 more at relationship <= 25, +2
+  from the family's prestige state.
+- Drive-bys against a family earn a scheduled retaliation
+  drive-by the next day (`FamilyDriveByRetaliationData`).
+- Ceasefire: $10,000 buys 5 attack-free days
+  (`ceasefireCost`, `ceasefireDays`).
+- Families can be DESTROYED (`IsDestroyed`): the war is winnable
+  and a destroyed family stops attacking permanently.
+
+The territory raids (below) are the NON-dynamic part: fixed
+even-day schedule regardless of hate.
+
 ## The territory map, live
 
 11 territories. Each has a star level (1..3), an initial owner
