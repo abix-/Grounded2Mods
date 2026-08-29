@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-29
+
+| Area | Shipped | Verification |
+|---|---|---|
+| `bossgangsters-mod` | [x] New game crate for The Boss Gangsters Nightlife (Unity 6000.3.13f1, Mono) with BepInEx 5.4.23.5 install, deploy and restart scripts, and a live control plane on port 17176 | BepInEx log shows `bossgangsters-mod: ready (ops + selectors installed)` and `listening on 127.0.0.1:17176/op`. `research_ping` passed against the live game. BepInEx 5.4.23.2 crashed this Unity build on launch; the 5.4.23.5 loader set from How to Fish fixed it. |
+
 ## 2026-08-27
 
 | Area | Shipped | Verification |
